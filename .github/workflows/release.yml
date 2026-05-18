@@ -123,11 +123,15 @@ jobs:
             git push origin "$TAG"
           fi
 
-          args=(gh release create "$TAG" --generate-notes --verify-tag)
-          if [ "$PRERELEASE" = "true" ]; then
-            args+=(--prerelease)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists."
+          else
+            args=(gh release create "$TAG" --generate-notes --verify-tag)
+            if [ "$PRERELEASE" = "true" ]; then
+              args+=(--prerelease)
+            fi
+            "${args[@]}"
           fi
-          "${args[@]}"
 
       - name: Publish dry run
         if: steps.release.outputs.dry_run == 'true'
