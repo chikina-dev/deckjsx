@@ -1,6 +1,4 @@
-import { Deck, Slide, Text, createElement } from "../../../src/index.ts";
-
-void createElement;
+import { Deck, Slide, Text } from "../../../src/index.ts";
 
 export async function writeMinimalDeck(output = "sample.pptx"): Promise<void> {
   const deck = new Deck({

@@ -1,8 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, EMU_PER_INCH, Image, Slide, Text, View, createElement } from "../src/index.ts";
+import { Deck, EMU_PER_INCH, Image, Slide, Text, View } from "../src/index.ts";
 import { summarizeNodes } from "./helpers.ts";
-
-void createElement;
 
 describe("style-aliases", () => {
   test("render supports css aliases and px units", () => {

@@ -5,9 +5,9 @@ import {
   type DeckLength,
   type StackAlignment,
   type StackAxis,
-} from "../authoring/index.js";
-import { parseLength, type LengthResolutionContext } from "../style/length.js";
-import { type Frame } from "./frame.js";
+} from "../authoring/index";
+import { parseLength, type LengthResolutionContext } from "../style/length";
+import { type Frame } from "./frame";
 
 export type StackEntry<TChild> = {
   child: TChild;

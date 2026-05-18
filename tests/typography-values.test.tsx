@@ -1,8 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, EMU_PER_INCH, Image, Shape, Slide, Text, createElement } from "../src/index.ts";
+import { Deck, EMU_PER_INCH, Image, Shape, Slide, Text } from "../src/index.ts";
 import { SAMPLE_SVG_DATA_URI, summarizeNodes } from "./helpers.ts";
-
-void createElement;
 
 describe("typography-values", () => {
   test("render supports rtl text, hyperlinks, and baseline text variants", () => {

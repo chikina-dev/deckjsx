@@ -1,4 +1,6 @@
 node_modules
 dist
+*.tgz
+sample/output*.pptx
 *.log
 .DS_Store

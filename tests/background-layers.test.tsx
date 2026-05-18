@@ -1,8 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, EMU_PER_INCH, Shape, Slide, Text, View, createElement } from "../src/index.ts";
+import { Deck, EMU_PER_INCH, Shape, Slide, Text, View } from "../src/index.ts";
 import { SAMPLE_SVG_DATA_URI, WIDE_SVG_DATA_URI } from "./helpers.ts";
-
-void createElement;
 
 describe("background layers", () => {
   test("render supports background shorthand with image layers", () => {

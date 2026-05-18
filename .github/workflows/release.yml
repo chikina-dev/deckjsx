@@ -1,0 +1,138 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, for example v0.1.1
+        required: true
+        type: string
+      prerelease:
+        description: Mark the GitHub release as a prerelease
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: Build and pack without publishing to npm
+        required: false
+        type: boolean
+        default: false
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish npm package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            tag="${{ github.event.release.tag_name }}"
+            prerelease="${{ github.event.release.prerelease }}"
+            dry_run="false"
+          else
+            tag="${{ inputs.tag }}"
+            prerelease="${{ inputs.prerelease }}"
+            dry_run="${{ inputs.dry_run }}"
+          fi
+
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag must look like v0.1.1 or v0.1.1-beta.0." >&2
+            exit 1
+          fi
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "dry_run=$dry_run" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+
+      - name: Setup npm registry
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Validate package version
+        shell: bash
+        run: |
+          package_version="$(node -p "require('./package.json').version")"
+          if [ "$package_version" != "${{ steps.release.outputs.version }}" ]; then
+            echo "package.json version $package_version does not match ${{ steps.release.outputs.tag }}." >&2
+            exit 1
+          fi
+
+      - name: Validate release source
+        if: steps.release.outputs.dry_run != 'true'
+        shell: bash
+        run: |
+          default_branch="${{ github.event.repository.default_branch }}"
+          git fetch origin "$default_branch"
+
+          if ! git merge-base --is-ancestor HEAD "origin/$default_branch"; then
+            echo "Release commits must be contained in origin/$default_branch before publishing." >&2
+            exit 1
+          fi
+
+      - name: Check
+        run: bun run check
+
+      - name: Test
+        run: bun run test
+
+      - name: Build
+        run: bun run build
+
+      - name: Pack
+        run: npm pack
+
+      - name: Create GitHub release
+        if: github.event_name == 'workflow_dispatch' && steps.release.outputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
+        shell: bash
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists on origin."
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+
+          args=(gh release create "$TAG" --generate-notes --verify-tag)
+          if [ "$PRERELEASE" = "true" ]; then
+            args+=(--prerelease)
+          fi
+          "${args[@]}"
+
+      - name: Publish dry run
+        if: steps.release.outputs.dry_run == 'true'
+        run: npm publish --dry-run --access public
+
+      - name: Publish to npm
+        if: steps.release.outputs.dry_run != 'true'
+        run: npm publish --access public

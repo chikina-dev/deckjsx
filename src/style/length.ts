@@ -1,5 +1,5 @@
-import type { DeckLength, DeckPointLength } from "../authoring/index.js";
-import { EMU_PER_INCH, PIXELS_PER_INCH, POINTS_PER_INCH } from "../types.js";
+import type { DeckLength, DeckPointLength } from "../authoring/index";
+import { EMU_PER_INCH, PIXELS_PER_INCH, POINTS_PER_INCH } from "../types";
 
 export type LengthResolutionContext = {
   fontSizePt?: number;

@@ -5,11 +5,11 @@ import type {
   FillIR,
   ImageSourceIR,
   StrokeIR,
-} from "../ir/index.js";
-import { EMU_PER_INCH } from "../types.js";
-import { normalizeHue } from "./angle.js";
-import { alphaToTransparency, parseCssColor } from "./color.js";
-import { parseLengthToken, parsePercentage, pointsToEmu } from "./length.js";
+} from "../ir/index";
+import { EMU_PER_INCH } from "../types";
+import { normalizeHue } from "./angle";
+import { alphaToTransparency, parseCssColor } from "./color";
+import { parseLengthToken, parsePercentage, pointsToEmu } from "./length";
 
 export type Frame = {
   xEmu: number;

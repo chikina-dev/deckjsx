@@ -1,5 +1,5 @@
-import type { CssAspectRatio, CssBoxSizing, DeckLength, Spacing } from "../authoring/index.js";
-import { parseLength, type LengthResolutionContext } from "../style/length.js";
+import type { CssAspectRatio, CssBoxSizing, DeckLength, Spacing } from "../authoring/index";
+import { parseLength, type LengthResolutionContext } from "../style/length";
 import {
   applyAffineMatrix,
   matrixTranslatePxToEmu,
@@ -8,9 +8,9 @@ import {
   parseTransformShorthand,
   rotateVectorClockwise,
   skewVector,
-} from "../style/transform.js";
-import { type Frame, type Placement } from "./frame.js";
-import { parseSpacing, resolveInset } from "./spacing.js";
+} from "../style/transform";
+import { type Frame, type Placement } from "./frame";
+import { parseSpacing, resolveInset } from "./spacing";
 
 export function parseAspectRatio(value: CssAspectRatio | undefined): number | undefined {
   if (value === undefined) {

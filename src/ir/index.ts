@@ -7,7 +7,7 @@ import type {
   StrokeLineJoin,
   TextFit,
   VerticalAlign,
-} from "../authoring/index.js";
+} from "../authoring/index";
 
 export type PresentationIR = {
   version: "0.1";

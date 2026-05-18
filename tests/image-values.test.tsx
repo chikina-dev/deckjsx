@@ -1,8 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, Image, Slide, View, createElement } from "../src/index.ts";
+import { Deck, Image, Slide, View } from "../src/index.ts";
 import { WIDE_SVG_DATA_URI } from "./helpers.ts";
-
-void createElement;
 
 describe("image-values", () => {
   test("render supports edge-offset objectPosition and radial-gradient positions", () => {

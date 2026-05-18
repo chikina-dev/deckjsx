@@ -1,6 +1,4 @@
-import { Deck, Image, Shape, Slide, Text, View, createElement } from "../../../src/index.ts";
-
-void createElement;
+import { Deck, Image, Shape, Slide, Text, View } from "../../../src/index.ts";
 
 const sampleSvgDataUri =
   "data:image/svg+xml;base64," +

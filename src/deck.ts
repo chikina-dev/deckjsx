@@ -1,7 +1,7 @@
-import { renderPresentation } from "./compiler.js";
-import type { DeckOptions, OutputConfig, SlideFactory } from "./authoring/index.js";
-import type { PresentationIR } from "./ir/index.js";
-import { outputPresentation } from "./node.js";
+import { renderPresentation } from "./compiler";
+import type { DeckOptions, OutputConfig, SlideFactory } from "./authoring/index";
+import type { PresentationIR } from "./ir/index";
+import { outputPresentation } from "./node";
 
 export class Deck {
   readonly #options: DeckOptions;

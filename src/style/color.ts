@@ -1,4 +1,4 @@
-import { normalizeHue } from "./angle.js";
+import { normalizeHue } from "./angle";
 
 export type ParsedCssColor = {
   color: string;

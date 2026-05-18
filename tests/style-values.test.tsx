@@ -1,16 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import {
-  Deck,
-  EMU_PER_INCH,
-  Image,
-  Shape,
-  Slide,
-  Text,
-  View,
-  createElement,
-} from "../src/index.ts";
-
-void createElement;
+import { Deck, EMU_PER_INCH, Image, Shape, Slide, Text, View } from "../src/index.ts";
 
 const BACKGROUND_IMAGE_PATH = "/tmp/deckjsx-background.png";
 

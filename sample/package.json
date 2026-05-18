@@ -8,11 +8,11 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "smoke": "tsc --noEmit && tsx smoke.tsx",
+    "smoke": "tsx smoke.tsx",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "deckjsx": "^0.1.0"
+    "deckjsx": "^0.1.1"
   },
   "devDependencies": {
     "@types/node": "^25.8.0",

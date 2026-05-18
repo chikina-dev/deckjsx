@@ -2,11 +2,9 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, Slide, Text, createElement } from "../src/index.ts";
+import { Deck, Slide, Text } from "../src/index.ts";
 import { outputPresentation } from "../src/node.ts";
 import type { PresentationIR } from "../src/index.ts";
-
-void createElement;
 
 function emptyPresentation(): PresentationIR {
   return {

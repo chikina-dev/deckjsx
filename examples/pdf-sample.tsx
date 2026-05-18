@@ -1,9 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
-import { Deck, Shape, Slide, Text, View, createElement } from "../src/index.ts";
-
-void createElement;
+import { Deck, Shape, Slide, Text, View } from "../src/index.ts";
 
 type Metric = {
   label: string;

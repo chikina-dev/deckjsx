@@ -1,7 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, Shape, Slide, Text, View, createElement } from "../src/index.ts";
-
-void createElement;
+import { Deck, Shape, Slide, Text, View } from "../src/index.ts";
 
 describe("shadow-values", () => {
   test("render normalizes boxShadow and textShadow shorthands", () => {

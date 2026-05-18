@@ -1,4 +1,4 @@
-import { isContentNode, isSlideNode } from "./jsx.js";
+import { isContentNode, isSlideNode } from "./jsx";
 import {
   normalizeImageProps,
   normalizeShapeProps,
@@ -12,9 +12,9 @@ import {
   type NormalizedShapeProps,
   type NormalizedTextProps,
   type NormalizedViewProps,
-} from "./compiler/normalization.js";
-import { frameFromProps, inflateSpecifiedBoxSize, parseAspectRatio } from "./layout/absolute.js";
-import { intersectClipRect, type ClipRect, type Frame, type Placement } from "./layout/frame.js";
+} from "./compiler/normalization";
+import { frameFromProps, inflateSpecifiedBoxSize, parseAspectRatio } from "./layout/absolute";
+import { intersectClipRect, type ClipRect, type Frame, type Placement } from "./layout/frame";
 import type {
   GroupIR,
   ImageSourceIR,
@@ -24,7 +24,7 @@ import type {
   SlideIR,
   TextIR,
   TextStyleIR,
-} from "./ir/index.js";
+} from "./ir/index";
 import type {
   AuthorNode,
   CssAlignContent,
@@ -39,7 +39,7 @@ import type {
   StackAlignment,
   StackAxis,
   ViewStyle,
-} from "./authoring/index.js";
+} from "./authoring/index";
 import {
   advanceGridAutoPlacementCursor,
   markGridItem,
@@ -59,8 +59,8 @@ import {
   type GridPlacement,
   type GridTemplateResolution,
   type NamedGridArea,
-} from "./layout/grid.js";
-import { parseSpacing, parseSpacingInPoints } from "./layout/spacing.js";
+} from "./layout/grid";
+import { parseSpacing, parseSpacingInPoints } from "./layout/spacing";
 import {
   buildStackLines,
   resolveCrossGap,
@@ -71,22 +71,22 @@ import {
   resolveMainGap,
   type StackEntry,
   type StackMetrics,
-} from "./layout/stack.js";
+} from "./layout/stack";
 import {
   normalizeTransparency,
   parseObjectPosition,
   resolveBackgroundBoxFrames,
   resolveBackgroundLayers,
-} from "./style/background.js";
-import { normalizeColor } from "./style/color.js";
-import { parseLength, parsePointValue, type LengthResolutionContext } from "./style/length.js";
+} from "./style/background";
+import { normalizeColor } from "./style/color";
+import { parseLength, parsePointValue, type LengthResolutionContext } from "./style/length";
 import {
   parseStrokeLineCap,
   parseStrokeLineJoin,
   resolveNodeStrokes,
   toStroke,
-} from "./style/stroke.js";
-import { parseShadowShorthand } from "./style/shadow.js";
+} from "./style/stroke";
+import { parseShadowShorthand } from "./style/shadow";
 import {
   extractText,
   getTextLengthContext,
@@ -95,8 +95,8 @@ import {
   resolveTabStops,
   resolveTextDirection,
   resolveUnderlineStyle,
-} from "./style/typography.js";
-import { EMU_PER_INCH, POINTS_PER_INCH } from "./types.js";
+} from "./style/typography";
+import { EMU_PER_INCH, POINTS_PER_INCH } from "./types";
 
 type IdGenerator = {
   nextSlide(): string;

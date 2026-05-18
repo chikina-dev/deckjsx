@@ -1,8 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, EMU_PER_INCH, Image, Slide, Text, View, createElement } from "../src/index.ts";
+import { Deck, EMU_PER_INCH, Image, Slide, Text, View } from "../src/index.ts";
 import { WIDE_SVG_DATA_URI, summarizeNodes } from "./helpers.ts";
-
-void createElement;
 
 describe("absolute layout", () => {
   test("render supports aspectRatio in absolute and stack layout", () => {

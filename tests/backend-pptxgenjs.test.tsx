@@ -3,10 +3,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import JSZip from "jszip";
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, Image, Shape, Slide, Text, View, createElement } from "../src/index.ts";
+import { Deck, Image, Shape, Slide, Text, View } from "../src/index.ts";
 import { SAMPLE_SVG_DATA_URI, WIDE_SVG_DATA_URI } from "./helpers.ts";
-
-void createElement;
 
 describe("backend", () => {
   test("output writes a real pptx file through the backend", async () => {
