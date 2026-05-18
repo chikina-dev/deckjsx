@@ -9,13 +9,13 @@ import {
   type CssJustifySelf,
   type ViewProps,
   type ViewStyle,
-} from "../authoring/index.js";
+} from "../authoring/index";
 import {
   isDeckLengthString,
   parseLengthToken,
   type LengthResolutionContext,
-} from "../style/length.js";
-import { type Frame } from "./frame.js";
+} from "../style/length";
+import { type Frame } from "./frame";
 
 export type GridPlacement = {
   start?: number;

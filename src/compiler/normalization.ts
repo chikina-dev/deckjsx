@@ -16,17 +16,17 @@ import type {
   TextStyle,
   ViewProps,
   ViewStyle,
-} from "../authoring/index.js";
-import { resolveGridContainerAuthoring } from "../layout/grid.js";
-import { resolveBoxSpacing, resolveInset } from "../layout/spacing.js";
-import { normalizeOpacityAsTransparency, parseBackgroundShorthand } from "../style/background.js";
-import { parseLength, type LengthResolutionContext } from "../style/length.js";
+} from "../authoring/index";
+import { resolveGridContainerAuthoring } from "../layout/grid";
+import { resolveBoxSpacing, resolveInset } from "../layout/spacing";
+import { normalizeOpacityAsTransparency, parseBackgroundShorthand } from "../style/background";
+import { parseLength, type LengthResolutionContext } from "../style/length";
 import {
   parseBorderShorthand,
   parseOutlineShorthand,
   parseSideBorderAuthoring,
-} from "../style/stroke.js";
-import { parseTextDecoration, resolveTextWrap } from "../style/typography.js";
+} from "../style/stroke";
+import { parseTextDecoration, resolveTextWrap } from "../style/typography";
 
 export type NormalizedSlideProps = Omit<SlideProps, "style"> & SlideStyle;
 export type NormalizedViewProps = Omit<ViewProps, "style"> & ViewStyle;

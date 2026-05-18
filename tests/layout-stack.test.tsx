@@ -1,8 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, EMU_PER_INCH, Shape, Slide, Text, View, createElement } from "../src/index.ts";
+import { Deck, EMU_PER_INCH, Shape, Slide, Text, View } from "../src/index.ts";
 import { summarizeNodes } from "./helpers.ts";
-
-void createElement;
 
 describe("stack layout", () => {
   test("render resolves stack layout to absolute frames in the IR", () => {

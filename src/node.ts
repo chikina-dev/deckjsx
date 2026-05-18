@@ -1,8 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { resolveBackend } from "./backend-registry.js";
-import type { OutputConfig } from "./authoring/index.js";
-import type { PresentationIR } from "./ir/index.js";
+import { resolveBackend } from "./backend-registry";
+import type { OutputConfig } from "./authoring/index";
+import type { PresentationIR } from "./ir/index";
 
 export async function outputPresentation(
   presentation: PresentationIR,

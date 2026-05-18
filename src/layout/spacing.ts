@@ -1,6 +1,6 @@
-import type { DeckLength, Spacing } from "../authoring/index.js";
-import { EMU_PER_INCH, POINTS_PER_INCH } from "../types.js";
-import { parseLength, type LengthResolutionContext } from "../style/length.js";
+import type { DeckLength, Spacing } from "../authoring/index";
+import { EMU_PER_INCH, POINTS_PER_INCH } from "../types";
+import { parseLength, type LengthResolutionContext } from "../style/length";
 
 export function parseSpacing(
   value: Spacing | undefined,

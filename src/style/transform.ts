@@ -1,12 +1,12 @@
-import type { DeckLength } from "../authoring/index.js";
-import { EMU_PER_INCH, PIXELS_PER_INCH } from "../types.js";
-import { normalizeHue } from "./angle.js";
+import type { DeckLength } from "../authoring/index";
+import { EMU_PER_INCH, PIXELS_PER_INCH } from "../types";
+import { normalizeHue } from "./angle";
 import {
   isDeckLengthString,
   parseLengthToken,
   parsePercentage,
   type LengthResolutionContext,
-} from "./length.js";
+} from "./length";
 
 export type ParsedTransformOperation =
   | {

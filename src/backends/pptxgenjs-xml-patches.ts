@@ -10,8 +10,8 @@ import type {
   NodeIR,
   PresentationIR,
   TextIR,
-} from "../ir/index.js";
-import { EMU_PER_INCH } from "../types.js";
+} from "../ir/index";
+import { EMU_PER_INCH } from "../types";
 
 export type SrcRectImageLike = {
   frame: ImageIR["frame"];

@@ -1,4 +1,4 @@
-import type { FrameIR } from "../ir/index.js";
+import type { FrameIR } from "../ir/index";
 
 export type Frame = FrameIR;
 

@@ -12,13 +12,13 @@ import type {
   ShadowIR,
   ShapeIR,
   TextIR,
-} from "../ir/index.js";
-import { EMU_PER_INCH } from "../types.js";
+} from "../ir/index";
+import { EMU_PER_INCH } from "../types";
 import {
   expandBackgroundImageLayer,
   isBackgroundImageLayer,
   patchPresentationXml,
-} from "./pptxgenjs-xml-patches.js";
+} from "./pptxgenjs-xml-patches";
 
 type PptxSlide = {
   addImage(options: PptxImageOptions): void;
@@ -145,7 +145,24 @@ const TRANSPARENT_FILL: PptxFillOptions = { color: "FFFFFF", transparency: 100 }
 const TRANSPARENT_LINE: PptxLineOptions = { color: "FFFFFF", transparency: 100, width: 0 };
 
 const PPTX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-const PptxGenJS = PptxGenJSModule as unknown as { new (): PptxPresentation };
+type PptxGenJSConstructor = { new (): PptxPresentation };
+
+function resolvePptxGenJSConstructor(moduleValue: unknown): PptxGenJSConstructor {
+  if (typeof moduleValue === "function") {
+    return moduleValue as PptxGenJSConstructor;
+  }
+
+  if (typeof moduleValue === "object" && moduleValue !== null && "default" in moduleValue) {
+    const defaultExport = moduleValue.default;
+    if (typeof defaultExport === "function") {
+      return defaultExport as PptxGenJSConstructor;
+    }
+  }
+
+  throw new Error("Unable to resolve PptxGenJS constructor.");
+}
+
+const PptxGenJS = resolvePptxGenJSConstructor(PptxGenJSModule);
 
 function emuToInches(value: number): number {
   return value / EMU_PER_INCH;

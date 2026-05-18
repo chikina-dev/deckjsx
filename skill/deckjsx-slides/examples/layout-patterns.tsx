@@ -1,6 +1,4 @@
-import { Deck, Slide, Text, View, createElement } from "../../../src/index.ts";
-
-void createElement;
+import { Deck, Slide, Text, View } from "../../../src/index.ts";
 
 export async function writeLayoutPatterns(output = "layout-patterns.pptx"): Promise<void> {
   const deck = new Deck({

@@ -9,8 +9,6 @@ import type {
   ViewStyle,
 } from "../../src/index.ts";
 
-void createElement;
-
 const directSlide = createElement(Slide, { name: "Direct slide" });
 directSlide.kind satisfies "slide";
 

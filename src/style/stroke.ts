@@ -1,4 +1,4 @@
-import type { EdgeStrokeIR, StrokeIR } from "../ir/index.js";
+import type { EdgeStrokeIR, StrokeIR } from "../ir/index";
 import {
   type BorderStyle,
   type DeckLength,
@@ -7,14 +7,14 @@ import {
   type StrokeLineCap,
   type StrokeLineJoin,
   type ViewStyle,
-} from "../authoring/index.js";
-import { alphaToTransparency, parseCssColor } from "./color.js";
+} from "../authoring/index";
+import { alphaToTransparency, parseCssColor } from "./color";
 import {
   isDeckLengthString,
   parsePointToken,
   parseStrokeWidth,
   type LengthResolutionContext,
-} from "./length.js";
+} from "./length";
 
 function normalizeTransparency(value?: number): number | undefined {
   if (value === undefined) {

@@ -1,7 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, Image, Shape, Slide, Text, View, createElement } from "../src/index.ts";
-
-void createElement;
+import { Deck, Image, Shape, Slide, Text, View } from "../src/index.ts";
 
 describe("Deck", () => {
   test("render compiles multiple slides and passes slide context to factories", () => {

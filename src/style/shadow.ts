@@ -1,6 +1,6 @@
-import type { ShadowIR } from "../ir/index.js";
-import { parseCssColor } from "./color.js";
-import { isDeckPointLengthString, parsePointToken } from "./length.js";
+import type { ShadowIR } from "../ir/index";
+import { parseCssColor } from "./color";
+import { isDeckPointLengthString, parsePointToken } from "./length";
 
 function splitCssValueTokens(value: string): string[] {
   const tokens: string[] = [];

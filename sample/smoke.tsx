@@ -1,16 +1,13 @@
 import assert from "node:assert/strict";
 import { stat } from "node:fs/promises";
-import { createElement, Deck, Fragment, Shape, Slide, Text, View } from "deckjsx";
-
-void createElement;
-void Fragment;
+import { Deck, Shape, Slide, Text, View, type SlideContext } from "deckjsx";
 
 const deck = new Deck({
   layout: { width: 10, height: 5.625, unit: "in" },
   meta: { title: "deckjsx npm TSX smoke test", author: "deckjsx" },
 });
 
-deck.add(({ slideIndex, totalSlides }) => (
+deck.add(({ slideIndex, totalSlides }: SlideContext) => (
   <Slide name="npm tsx smoke" style={{ backgroundColor: "#F8FAFC" }}>
     <Text
       style={{

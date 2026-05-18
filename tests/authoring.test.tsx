@@ -2,8 +2,6 @@ import { describe, expect, test } from "vite-plus/test";
 import { Deck, Fragment, Slide, Text, View, createElement } from "../src/index.ts";
 import { isAuthorNode } from "../src/jsx.ts";
 
-void createElement;
-
 describe("authoring and JSX runtime", () => {
   test("createElement rejects intrinsic elements", () => {
     expect(() => createElement("div", null)).toThrowError(

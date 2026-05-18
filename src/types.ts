@@ -66,7 +66,7 @@ export type {
   VerticalAlign,
   ViewProps,
   ViewStyle,
-} from "./authoring/index.js";
+} from "./authoring/index";
 
 export type {
   BackgroundImageLayerIR,
@@ -102,4 +102,4 @@ export type {
   TextNumberListIR,
   TextStyleIR,
   TextTabStopIR,
-} from "./ir/index.js";
+} from "./ir/index";

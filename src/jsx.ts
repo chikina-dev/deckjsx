@@ -11,7 +11,7 @@ import type {
   SlideProps,
   TextProps,
   ViewProps,
-} from "./authoring/index.js";
+} from "./authoring/index";
 
 type ComponentProps = {
   children?: JsxNode;

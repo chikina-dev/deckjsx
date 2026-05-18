@@ -1,6 +1,6 @@
-import type { ContentJsxChild } from "./authoring/index.js";
+import type { ContentJsxChild } from "./authoring/index";
 
-export { Deck } from "./deck.js";
+export { Deck } from "./deck";
 export {
   Fragment,
   Image,
@@ -12,9 +12,9 @@ export {
   isAuthorNode,
   isContentNode,
   isSlideNode,
-} from "./jsx.js";
-export { pptxgenjsBackend } from "./backends/pptxgenjs.js";
-export { EMU_PER_INCH, POINTS_PER_INCH } from "./types.js";
+} from "./jsx";
+export { pptxgenjsBackend } from "./backends/pptxgenjs";
+export { EMU_PER_INCH, POINTS_PER_INCH } from "./types";
 export {
   type AuthorNode,
   type AuthorNodeKind,
@@ -81,7 +81,7 @@ export {
   type VerticalAlign,
   type ViewProps,
   type ViewStyle,
-} from "./authoring/index.js";
+} from "./authoring/index";
 export type {
   BackgroundImageLayerIR,
   BackgroundLayerIR,
@@ -116,7 +116,7 @@ export type {
   TextBulletListIR,
   TextStyleIR,
   TextTabStopIR,
-} from "./ir/index.js";
+} from "./ir/index";
 
 declare global {
   namespace JSX {

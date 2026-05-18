@@ -2,12 +2,11 @@
   "compilerOptions": {
     "target": "esnext",
     "lib": ["es2023"],
-    "jsx": "react",
-    "jsxFactory": "createElement",
-    "jsxFragmentFactory": "Fragment",
+    "jsx": "react-jsx",
+    "jsxImportSource": "deckjsx",
     "moduleDetection": "force",
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "types": ["node"],
     "strict": true,
@@ -18,6 +17,11 @@
     "esModuleInterop": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
-    "skipLibCheck": true
-  }
+    "skipLibCheck": true,
+    "paths": {
+      "deckjsx": ["./src/index.ts"],
+      "deckjsx/jsx-runtime": ["./src/jsx-runtime.ts"]
+    }
+  },
+  "exclude": ["dist", "sample"]
 }
