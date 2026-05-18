@@ -80,14 +80,6 @@ await deck.output({ backend: "pptxgenjs", output: "quarterly-review.pptx" });
 Use `deck.render()` for tests, snapshots, and backend-independent inspection. Use
 `deck.output({ backend: "pptxgenjs", output })` when writing a PowerPoint file.
 
-## Spec
-
-The current draft specification is here:
-
-- [docs/compiler-spec.md](docs/compiler-spec.md)
-- [docs/css-support-matrix.md](docs/css-support-matrix.md)
-- [docs/css-completion-plan.md](docs/css-completion-plan.md)
-
 ## Development
 
 ```bash
