@@ -20,6 +20,7 @@
     "skipLibCheck": true,
     "paths": {
       "deckjsx": ["./src/index.ts"],
+      "deckjsx/jsx-dev-runtime": ["./src/jsx-dev-runtime.ts"],
       "deckjsx/jsx-runtime": ["./src/jsx-runtime.ts"]
     }
   },
