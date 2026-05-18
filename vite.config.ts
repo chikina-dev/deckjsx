@@ -1,6 +1,12 @@
 import { defineConfig } from "vite-plus";
 
 export default defineConfig({
+  oxc: {
+    jsx: {
+      runtime: "automatic",
+      importSource: new URL("./src", import.meta.url).pathname,
+    },
+  },
   staged: {
     "*": "vp check --fix",
   },
