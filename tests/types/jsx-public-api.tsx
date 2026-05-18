@@ -1,4 +1,5 @@
 import { Fragment, Image, Shape, Slide, Text, View, createElement } from "../../src/index.ts";
+import { jsx } from "../../src/jsx-runtime.ts";
 import type {
   CssAlignContent,
   CssGridTemplate,
@@ -14,6 +15,12 @@ directSlide.kind satisfies "slide";
 
 const directText = createElement(Text, null, "Direct text");
 directText.kind satisfies "text";
+
+const runtimeSlide = jsx(Slide, { name: "Runtime slide" }, "slide-key");
+runtimeSlide.kind satisfies "slide";
+
+const runtimeText = jsx(Text, { children: "Runtime text" });
+runtimeText.kind satisfies "text";
 
 const directView = createElement(View, null, directText, false, null);
 directView.kind satisfies "view";
@@ -45,6 +52,12 @@ createElement(Image, { src: "image.png" }, "caption");
 
 // @ts-expect-error Direct createElement calls preserve Text child constraints.
 createElement(Text, null, directView);
+
+// @ts-expect-error Direct jsx calls preserve Text child constraints.
+jsx(Text, { children: directView });
+
+// @ts-expect-error Direct jsx calls preserve leaf children constraints.
+jsx(Image, { src: "image.png", children: "caption" });
 
 void (
   <Slide name="Valid slide">

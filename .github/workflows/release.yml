@@ -84,6 +84,18 @@ jobs:
             exit 1
           fi
 
+      - name: Validate release source
+        if: steps.release.outputs.dry_run != 'true'
+        shell: bash
+        run: |
+          default_branch="${{ github.event.repository.default_branch }}"
+          git fetch origin "$default_branch"
+
+          if ! git merge-base --is-ancestor HEAD "origin/$default_branch"; then
+            echo "Release commits must be contained in origin/$default_branch before publishing." >&2
+            exit 1
+          fi
+
       - name: Check
         run: bun run check
 

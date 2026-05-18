@@ -4,8 +4,24 @@ export default defineConfig({
   oxc: {
     jsx: {
       runtime: "automatic",
-      importSource: new URL("./src", import.meta.url).pathname,
+      importSource: "deckjsx",
     },
+  },
+  resolve: {
+    alias: [
+      {
+        find: "deckjsx/jsx-dev-runtime",
+        replacement: new URL("./src/jsx-dev-runtime.ts", import.meta.url).pathname,
+      },
+      {
+        find: "deckjsx/jsx-runtime",
+        replacement: new URL("./src/jsx-runtime.ts", import.meta.url).pathname,
+      },
+      {
+        find: "deckjsx",
+        replacement: new URL("./src/index.ts", import.meta.url).pathname,
+      },
+    ],
   },
   staged: {
     "*": "vp check --fix",
