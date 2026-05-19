@@ -412,11 +412,25 @@ export type AuthorNodePropsMap = {
 };
 export type AuthorNodeProps<K extends AuthorNodeKind> = AuthorNodePropsMap[K];
 
-export type AuthorNode<K extends AuthorNodeKind = AuthorNodeKind> = {
-  [NodeKind in K]: {
-    readonly $$typeof: "deckjsx.author-node";
-    readonly kind: NodeKind;
-    readonly props: AuthorNodeProps<NodeKind>;
-    readonly children: ReadonlyArray<JsxNode>;
-  };
-}[K];
+type BaseAuthorNode<K extends AuthorNodeKind, P, C> = {
+  readonly $$typeof: "deckjsx.author-node";
+  readonly kind: K;
+  readonly props: P;
+  readonly children: ReadonlyArray<C>;
+};
+
+export interface SlideAuthorNode extends BaseAuthorNode<"slide", SlideNodeProps, ContentJsxChild> {}
+export interface ViewAuthorNode extends BaseAuthorNode<"view", ViewNodeProps, ContentJsxChild> {}
+export interface TextAuthorNode extends BaseAuthorNode<"text", TextNodeProps, TextJsxChild> {}
+export interface ImageAuthorNode extends BaseAuthorNode<"image", ImageNodeProps, never> {}
+export interface ShapeAuthorNode extends BaseAuthorNode<"shape", ShapeNodeProps, never> {}
+
+type AuthorNodeByKind = {
+  slide: SlideAuthorNode;
+  view: ViewAuthorNode;
+  text: TextAuthorNode;
+  image: ImageAuthorNode;
+  shape: ShapeAuthorNode;
+};
+
+export type AuthorNode<K extends AuthorNodeKind = AuthorNodeKind> = AuthorNodeByKind[K];

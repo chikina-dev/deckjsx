@@ -71,6 +71,20 @@ void (
 );
 
 void (
+  <Slide name="Recursive child probe">
+    <View style={{ x: 1, y: 1, width: 6, height: 3 }}>
+      <Text style={{ x: "10%", y: "20%", width: "50%", height: "25%" }}>percent child</Text>
+      {[
+        <View style={{ x: 0.5, y: 0.5, width: 2, height: 1 }}>
+          <Shape shape="rect" />
+        </View>,
+        <Text>array child</Text>,
+      ]}
+    </View>
+  </Slide>
+);
+
+void (
   <View>
     <Fragment>
       <Text>Inside fragment</Text>
