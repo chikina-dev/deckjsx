@@ -11,9 +11,9 @@ describe("authoring and JSX runtime", () => {
 
   test("JSX primitives produce author nodes with flattened children outside props", () => {
     const node = (
-      <View style={{ x: 1, y: 2 }}>
+      <View key="outer" style={{ x: 1, y: 2 }}>
         <Fragment>
-          <Text>First</Text>
+          <Text key={1}>First</Text>
           {[<Text>Second</Text>, false, null]}
         </Fragment>
       </View>
@@ -26,6 +26,7 @@ describe("authoring and JSX runtime", () => {
 
     expect(node.kind).toBe("view");
     expect(Object.hasOwn(node.props, "children")).toBe(false);
+    expect(Object.hasOwn(node.props, "key")).toBe(false);
     expect(node.children).toHaveLength(4);
     expect(node.children[0]).toMatchObject({ kind: "text" });
     expect(node.children[1]).toMatchObject({ kind: "text" });

@@ -1,4 +1,5 @@
 import type { ContentJsxChild } from "./authoring/index";
+import type { JsxKey } from "./jsx-runtime";
 
 export { Deck } from "./deck";
 export {
@@ -13,6 +14,7 @@ export {
   isContentNode,
   isSlideNode,
 } from "./jsx";
+export type { JsxKey } from "./jsx-runtime";
 export { pptxgenjsBackend } from "./backends/pptxgenjs";
 export { EMU_PER_INCH, POINTS_PER_INCH } from "./types";
 export {
@@ -124,6 +126,10 @@ declare global {
 
     interface ElementChildrenAttribute {
       children: {};
+    }
+
+    interface IntrinsicAttributes {
+      key?: JsxKey;
     }
 
     interface IntrinsicElements {}
