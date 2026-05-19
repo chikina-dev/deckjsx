@@ -4,6 +4,7 @@ import type {
   CssAlignContent,
   CssGridTemplate,
   CssGridTemplateAreas,
+  JsxKey,
   OutputConfig,
   Spacing,
   TextTabStopAuthoring,
@@ -18,6 +19,10 @@ directText.kind satisfies "text";
 
 const runtimeSlide = jsx(Slide, { name: "Runtime slide" }, "slide-key");
 runtimeSlide.kind satisfies "slide";
+
+const runtimeKey = 1n satisfies JsxKey;
+const runtimeKeyedView = jsx(View, { children: directText }, runtimeKey);
+runtimeKeyedView.kind satisfies "view";
 
 const runtimeText = jsx(Text, { children: "Runtime text" });
 runtimeText.kind satisfies "text";
@@ -90,6 +95,26 @@ void (
       <Text>Inside fragment</Text>
       <Shape shape="ellipse" />
     </Fragment>
+  </View>
+);
+
+const keyedItems = [
+  { id: "a", label: "Alpha" },
+  { id: "b", label: "Beta" },
+] as const;
+
+function KeyedLabel(props: { label: string }) {
+  return <Text>{props.label}</Text>;
+}
+
+void (
+  <View>
+    {keyedItems.map((item, index) => (
+      <View key={item.id} style={{ x: index, y: 1, width: 2, height: 1 }}>
+        <KeyedLabel key={index} label={item.label} />
+      </View>
+    ))}
+    <Shape key={1n} shape="rect" />
   </View>
 );
 

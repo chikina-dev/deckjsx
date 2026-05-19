@@ -1,6 +1,8 @@
 import type { ContentJsxChild, JsxNode } from "./authoring/index";
 import { Fragment, createElement } from "./jsx";
 
+export type JsxKey = string | number | bigint;
+
 type JsxComponent<P, R extends JsxNode> = (props: P) => R;
 type JsxProps<P> = P extends { children?: unknown }
   ? Omit<P, "children"> & Partial<Pick<P, "children">>
@@ -11,10 +13,10 @@ export { Fragment };
 export function jsx<P, R extends JsxNode>(
   type: JsxComponent<P, R>,
   props: JsxProps<P> | null,
-  key?: string,
+  key?: JsxKey,
 ): R;
-export function jsx(type: string, props: Record<string, unknown> | null, key?: string): never;
-export function jsx(type: unknown, props: unknown, _key?: string): JsxNode {
+export function jsx(type: string, props: Record<string, unknown> | null, key?: JsxKey): never;
+export function jsx(type: unknown, props: unknown, _key?: JsxKey): JsxNode {
   return createElement(
     type as (props: { children?: unknown }) => JsxNode,
     props as { children?: unknown } | null,
@@ -28,6 +30,10 @@ export namespace JSX {
 
   export interface ElementChildrenAttribute {
     children: {};
+  }
+
+  export interface IntrinsicAttributes {
+    key?: JsxKey;
   }
 
   export interface IntrinsicElements {}
