@@ -9,7 +9,7 @@ RUN apt-get update \
     libreoffice \
   && for policy in /etc/ImageMagick-*/policy.xml; do \
     if [ -f "$policy" ]; then \
-      sed -i 's/domain="coder" rights="none" pattern="PDF"/domain="coder" rights="read | write" pattern="PDF"/' "$policy"; \
+      sed -i 's/domain="coder" rights="none" pattern="PDF"/domain="coder" rights="read" pattern="PDF"/' "$policy"; \
     fi; \
   done \
   && rm -rf /var/lib/apt/lists/*

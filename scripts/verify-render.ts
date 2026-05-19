@@ -86,13 +86,15 @@ async function run(command: string, args: string[]) {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(command, args, { stdio: "inherit" });
     child.on("error", reject);
-    child.on("exit", (code) => {
+    child.on("close", (code, signal) => {
       if (code === 0) {
         resolve();
         return;
       }
 
-      reject(new Error(`${command} ${args.join(" ")} exited with code ${code}.`));
+      const exitReason =
+        code === null ? `terminated by signal ${signal ?? "unknown"}` : `exited with code ${code}`;
+      reject(new Error(`${command} ${args.join(" ")} ${exitReason}.`));
     });
   });
 }

@@ -25,14 +25,25 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Build render image
+        id: build
+        continue-on-error: true
         run: docker build -f Dockerfile.render -t deckjsx-render .
 
       - name: Render sample deck
+        id: render
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
         run: docker run --name deckjsx-render-run deckjsx-render
 
       - name: Copy render artifacts
         if: always()
-        run: docker cp deckjsx-render-run:/workspace/examples/rendered ./examples/rendered
+        run: |
+          mkdir -p ./examples/rendered
+          if docker container inspect deckjsx-render-run >/dev/null 2>&1; then
+            docker cp deckjsx-render-run:/workspace/examples/rendered/. ./examples/rendered
+          else
+            echo "Render container was not created." > ./examples/rendered/render-verification.log
+          fi
 
       - name: Upload render artifacts
         if: always()
@@ -40,3 +51,7 @@ jobs:
         with:
           name: render-verification
           path: examples/rendered
+
+      - name: Fail on render verification error
+        if: steps.build.outcome == 'failure' || steps.render.outcome == 'failure'
+        run: exit 1
