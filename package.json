@@ -27,6 +27,7 @@
     "dev": "vp pack --watch",
     "test": "vp test",
     "check": "vp check",
+    "verify:render": "bun run scripts/verify-render.ts",
     "prepublishOnly": "vp run build"
   },
   "dependencies": {
