@@ -80,6 +80,29 @@ await deck.output({ backend: "pptxgenjs", output: "quarterly-review.pptx" });
 Use `deck.render()` for tests, snapshots, and backend-independent inspection. Use
 `deck.output({ backend: "pptxgenjs", output })` when writing a PowerPoint file.
 
+## View Layout Semantics
+
+`View` is a containing block for its children. Child `x`, `y`, `left`, `top`, `right`,
+`bottom`, `width`, and `height` values are resolved relative to the parent `View`, not
+the slide, so authors can build panels with local coordinates. Percentage lengths use
+the parent frame as their reference.
+
+```tsx
+<View style={{ x: 1, y: 1, width: 6, height: 3 }}>
+  <Text style={{ x: "10%", y: "20%", width: "50%", height: "25%" }}>local percent frame</Text>
+  <Text style={{ left: "55%", top: "10%", right: "10%", bottom: "60%" }}>inset frame</Text>
+</View>
+```
+
+For `display: "flex"` and `display: "grid"`, normal-flow children are laid out inside
+the content frame after padding. `gap`, `flexGrow`, percentage widths, `fr` grid tracks,
+and simple `gridColumn` / `gridRow` spans resolve to concrete slide coordinates during
+rendering. Absolutely positioned children inside flex or grid containers also use the
+container content frame, including padding, as their containing block.
+
+Use direct slide children when you want slide-global absolute placement. Use children
+inside a `View` when you want a local, web-like layout region.
+
 ## Development
 
 ```bash
