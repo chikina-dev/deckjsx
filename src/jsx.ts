@@ -1,15 +1,19 @@
 import type {
   AuthorNode,
   AuthorNodeKind,
-  AuthorNodeMap,
-  AuthorNodeProps,
   ContentAuthorNode,
   ContentJsxChild,
+  ImageAuthorNode,
   ImageProps,
   JsxNode,
+  ShapeAuthorNode,
   ShapeProps,
+  SlideAuthorNode,
   SlideProps,
+  TextAuthorNode,
+  TextJsxChild,
   TextProps,
+  ViewAuthorNode,
   ViewProps,
 } from "./authoring/index";
 
@@ -43,6 +47,9 @@ function requireJsxNode(value: unknown): JsxNode {
   throw new Error("JSX children must be deckjsx nodes or primitive text values.");
 }
 
+function flattenChildren(input: ContentJsxChild): ContentJsxChild[];
+function flattenChildren(input: TextJsxChild): TextJsxChild[];
+function flattenChildren(input: JsxNode): JsxNode[];
 function flattenChildren(input: JsxNode): JsxNode[] {
   if (Array.isArray(input)) {
     return input.flatMap((item) => flattenChildren(item));
@@ -51,17 +58,38 @@ function flattenChildren(input: JsxNode): JsxNode[] {
   return [input];
 }
 
-function authorNode<K extends AuthorNodeKind>(kind: K, props: AuthorNodeMap[K]): AuthorNode<K> {
+function splitContentProps<P extends { children?: ContentJsxChild }>(
+  props: P,
+): {
+  props: Omit<P, "children">;
+  children: ContentJsxChild[];
+} {
   const { children: rawChildren, ...nodeProps } = props;
-  const children = rawChildren === undefined ? [] : flattenChildren(rawChildren);
-  const authoredProps = nodeProps as AuthorNodeProps<K>;
 
   return {
-    $$typeof: "deckjsx.author-node",
-    kind,
-    props: authoredProps,
-    children,
+    props: nodeProps,
+    children: rawChildren === undefined ? [] : flattenChildren(rawChildren),
   };
+}
+
+function splitTextProps<P extends { children?: TextJsxChild }>(
+  props: P,
+): {
+  props: Omit<P, "children">;
+  children: TextJsxChild[];
+} {
+  const { children: rawChildren, ...nodeProps } = props;
+
+  return {
+    props: nodeProps,
+    children: rawChildren === undefined ? [] : flattenChildren(rawChildren),
+  };
+}
+
+function splitLeafProps<P extends { children?: never }>(props: P): Omit<P, "children"> {
+  const { children: _rawChildren, ...nodeProps } = props;
+
+  return nodeProps;
 }
 
 export function createElement<P extends { children?: unknown }, R extends JsxNode>(
@@ -98,23 +126,54 @@ export function Fragment(props: { children?: ContentJsxChild }): ContentJsxChild
 }
 
 export function Slide(props: SlideProps): AuthorNode<"slide"> {
-  return authorNode("slide", props);
+  const authored = splitContentProps(props);
+
+  return {
+    $$typeof: "deckjsx.author-node",
+    kind: "slide",
+    props: authored.props,
+    children: authored.children,
+  } satisfies SlideAuthorNode;
 }
 
 export function View(props: ViewProps): AuthorNode<"view"> {
-  return authorNode("view", props);
+  const authored = splitContentProps(props);
+
+  return {
+    $$typeof: "deckjsx.author-node",
+    kind: "view",
+    props: authored.props,
+    children: authored.children,
+  } satisfies ViewAuthorNode;
 }
 
 export function Text(props: TextProps): AuthorNode<"text"> {
-  return authorNode("text", props);
+  const authored = splitTextProps(props);
+
+  return {
+    $$typeof: "deckjsx.author-node",
+    kind: "text",
+    props: authored.props,
+    children: authored.children,
+  } satisfies TextAuthorNode;
 }
 
 export function Image(props: ImageProps): AuthorNode<"image"> {
-  return authorNode("image", props);
+  return {
+    $$typeof: "deckjsx.author-node",
+    kind: "image",
+    props: splitLeafProps(props),
+    children: [],
+  } satisfies ImageAuthorNode;
 }
 
 export function Shape(props: ShapeProps): AuthorNode<"shape"> {
-  return authorNode("shape", props);
+  return {
+    $$typeof: "deckjsx.author-node",
+    kind: "shape",
+    props: splitLeafProps(props),
+    children: [],
+  } satisfies ShapeAuthorNode;
 }
 
 function isAuthorNodeKind(value: unknown): value is AuthorNodeKind {
