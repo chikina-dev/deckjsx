@@ -1,0 +1,8 @@
+node_modules
+dist
+.git
+.vite-hooks
+examples/rendered
+sample/node_modules
+*.log
+*.tgz
