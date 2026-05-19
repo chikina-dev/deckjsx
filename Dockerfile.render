@@ -7,7 +7,11 @@ RUN apt-get update \
     ghostscript \
     imagemagick \
     libreoffice \
-  && sed -i 's/domain="coder" rights="none" pattern="PDF"/domain="coder" rights="read | write" pattern="PDF"/' /etc/ImageMagick-6/policy.xml \
+  && for policy in /etc/ImageMagick-*/policy.xml; do \
+    if [ -f "$policy" ]; then \
+      sed -i 's/domain="coder" rights="none" pattern="PDF"/domain="coder" rights="read | write" pattern="PDF"/' "$policy"; \
+    fi; \
+  done \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
