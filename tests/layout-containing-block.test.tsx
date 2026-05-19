@@ -2,6 +2,9 @@ import { describe, expect, test } from "vite-plus/test";
 import { Deck, EMU_PER_INCH, Shape, Slide, Text, View } from "../src/index.ts";
 import { summarizeNodes } from "./helpers.ts";
 
+const toEmu = (inches: number) => inches * EMU_PER_INCH;
+const toRoundedEmu = (inches: number) => Math.round(toEmu(inches));
+
 describe("View containing blocks", () => {
   test("render resolves local percent, inset, flex, grid, and absolute frames inside View", () => {
     const deck = new Deck({
@@ -96,19 +99,19 @@ describe("View containing blocks", () => {
       {
         kind: "group",
         frame: {
-          xEmu: 1 * EMU_PER_INCH,
-          yEmu: 1 * EMU_PER_INCH,
-          widthEmu: 6 * EMU_PER_INCH,
-          heightEmu: 3 * EMU_PER_INCH,
+          xEmu: toEmu(1),
+          yEmu: toEmu(1),
+          widthEmu: toEmu(6),
+          heightEmu: toEmu(3),
         },
         children: [
           {
             kind: "text",
             frame: {
-              xEmu: 1.6 * EMU_PER_INCH,
-              yEmu: 1.6 * EMU_PER_INCH,
-              widthEmu: 3 * EMU_PER_INCH,
-              heightEmu: 0.75 * EMU_PER_INCH,
+              xEmu: toEmu(1.6),
+              yEmu: toEmu(1.6),
+              widthEmu: toEmu(3),
+              heightEmu: toEmu(0.75),
             },
             text: "percent child",
             fontSizePt: 12,
@@ -116,10 +119,10 @@ describe("View containing blocks", () => {
           {
             kind: "text",
             frame: {
-              xEmu: 4.3 * EMU_PER_INCH,
-              yEmu: 1.3 * EMU_PER_INCH,
-              widthEmu: 2.1 * EMU_PER_INCH,
-              heightEmu: 0.9 * EMU_PER_INCH,
+              xEmu: toEmu(4.3),
+              yEmu: toEmu(1.3),
+              widthEmu: toEmu(2.1),
+              heightEmu: toEmu(0.9),
             },
             text: "inset child",
             fontSizePt: 12,
@@ -129,19 +132,19 @@ describe("View containing blocks", () => {
       {
         kind: "group",
         frame: {
-          xEmu: 1 * EMU_PER_INCH,
-          yEmu: 4.25 * EMU_PER_INCH,
-          widthEmu: 6 * EMU_PER_INCH,
-          heightEmu: 0.8 * EMU_PER_INCH,
+          xEmu: toEmu(1),
+          yEmu: toEmu(4.25),
+          widthEmu: toEmu(6),
+          heightEmu: toEmu(0.8),
         },
         children: [
           {
             kind: "text",
             frame: {
-              xEmu: 1005840,
-              yEmu: 3977640,
-              widthEmu: 1.8 * EMU_PER_INCH,
-              heightEmu: 0.32 * EMU_PER_INCH,
+              xEmu: toRoundedEmu(1.1),
+              yEmu: toRoundedEmu(4.35),
+              widthEmu: toEmu(1.8),
+              heightEmu: toEmu(0.32),
             },
             text: "30%",
             fontSizePt: 12,
@@ -149,10 +152,10 @@ describe("View containing blocks", () => {
           {
             kind: "text",
             frame: {
-              xEmu: 3 * EMU_PER_INCH,
-              yEmu: 3977640,
-              widthEmu: 2.7 * EMU_PER_INCH,
-              heightEmu: 0.32 * EMU_PER_INCH,
+              xEmu: toEmu(3),
+              yEmu: toRoundedEmu(4.35),
+              widthEmu: toEmu(2.7),
+              heightEmu: toEmu(0.32),
             },
             text: "grow",
             fontSizePt: 12,
@@ -160,10 +163,10 @@ describe("View containing blocks", () => {
           {
             kind: "text",
             frame: {
-              xEmu: 5.8 * EMU_PER_INCH,
-              yEmu: 3977640,
-              widthEmu: 1.1 * EMU_PER_INCH,
-              heightEmu: 0.32 * EMU_PER_INCH,
+              xEmu: toEmu(5.8),
+              yEmu: toRoundedEmu(4.35),
+              widthEmu: toEmu(1.1),
+              heightEmu: toEmu(0.32),
             },
             text: "fixed",
             fontSizePt: 12,
@@ -176,37 +179,37 @@ describe("View containing blocks", () => {
       {
         kind: "group",
         frame: {
-          xEmu: 1 * EMU_PER_INCH,
-          yEmu: 1 * EMU_PER_INCH,
-          widthEmu: 7 * EMU_PER_INCH,
-          heightEmu: 3 * EMU_PER_INCH,
+          xEmu: toEmu(1),
+          yEmu: toEmu(1),
+          widthEmu: toEmu(7),
+          heightEmu: toEmu(3),
         },
         children: [
           {
             kind: "shape",
             frame: {
-              xEmu: 1.2 * EMU_PER_INCH,
-              yEmu: 1.2 * EMU_PER_INCH,
-              widthEmu: 2011680,
-              heightEmu: 1.3 * EMU_PER_INCH,
+              xEmu: toEmu(1.2),
+              yEmu: toEmu(1.2),
+              widthEmu: toRoundedEmu(2.2),
+              heightEmu: toEmu(1.3),
             },
           },
           {
             kind: "shape",
             frame: {
-              xEmu: 3.4 * EMU_PER_INCH,
-              yEmu: 1.2 * EMU_PER_INCH,
-              widthEmu: 4023360,
-              heightEmu: 1.3 * EMU_PER_INCH,
+              xEmu: toEmu(3.4),
+              yEmu: toEmu(1.2),
+              widthEmu: toRoundedEmu(4.4),
+              heightEmu: toEmu(1.3),
             },
           },
           {
             kind: "text",
             frame: {
-              xEmu: 1.2 * EMU_PER_INCH,
-              yEmu: 2.5 * EMU_PER_INCH,
-              widthEmu: 6.6 * EMU_PER_INCH,
-              heightEmu: 1.3 * EMU_PER_INCH,
+              xEmu: toEmu(1.2),
+              yEmu: toEmu(2.5),
+              widthEmu: toEmu(6.6),
+              heightEmu: toEmu(1.3),
             },
             text: "span 2 columns",
             fontSizePt: 12,
@@ -216,19 +219,19 @@ describe("View containing blocks", () => {
       {
         kind: "group",
         frame: {
-          xEmu: 1 * EMU_PER_INCH,
-          yEmu: 4.25 * EMU_PER_INCH,
-          widthEmu: 7 * EMU_PER_INCH,
-          heightEmu: 0.85 * EMU_PER_INCH,
+          xEmu: toEmu(1),
+          yEmu: toEmu(4.25),
+          widthEmu: toEmu(7),
+          heightEmu: toEmu(0.85),
         },
         children: [
           {
             kind: "text",
             frame: {
-              xEmu: 4.5 * EMU_PER_INCH,
-              yEmu: 4.5125 * EMU_PER_INCH,
-              widthEmu: 2.72 * EMU_PER_INCH,
-              heightEmu: 0.26 * EMU_PER_INCH,
+              xEmu: toEmu(4.5),
+              yEmu: toEmu(4.5125),
+              widthEmu: toEmu(2.72),
+              heightEmu: toEmu(0.26),
             },
             text: "absolute inside flex content frame",
             fontSizePt: 12,
