@@ -1,4 +1,4 @@
-import type { ContentJsxChild } from "./authoring/index";
+import type { ContentJsxChild, DeckJsxIntrinsicElements } from "./authoring/index";
 import type { JsxKey } from "./jsx-runtime";
 
 export { Deck } from "./deck";
@@ -53,10 +53,16 @@ export {
   type DeckLength,
   type DeckOptions,
   type DeckPointLength,
+  type DeckJsxIntrinsicElements,
   type ImageCropAuthoring,
   type ImageCropValue,
   type ImageProps,
   type ImageStyle,
+  type IntrinsicDivProps,
+  type IntrinsicImgProps,
+  type IntrinsicPProps,
+  type IntrinsicTextTag,
+  type IntrinsicViewTag,
   type ImplementedBackendName,
   type JsxNode,
   type LayoutMode,
@@ -132,6 +138,6 @@ declare global {
       key?: JsxKey;
     }
 
-    interface IntrinsicElements {}
+    interface IntrinsicElements extends DeckJsxIntrinsicElements {}
   }
 }

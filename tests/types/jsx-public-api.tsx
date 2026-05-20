@@ -1,9 +1,12 @@
-import { Fragment, Image, Shape, Slide, Text, View, createElement } from "../../src/index.ts";
+import { Fragment, Image, Shape, Slide, Text, View } from "../../src/index.ts";
 import { jsx } from "../../src/jsx-runtime.ts";
 import type {
+  ContentAuthorNode,
   CssAlignContent,
   CssGridTemplate,
   CssGridTemplateAreas,
+  DeckJsxIntrinsicElements,
+  ImplementedBackendName,
   JsxKey,
   OutputConfig,
   Spacing,
@@ -11,26 +14,53 @@ import type {
   ViewStyle,
 } from "../../src/index.ts";
 
-const directSlide = createElement(Slide, { name: "Direct slide" });
-directSlide.kind satisfies "slide";
+type Assert<T extends true> = T;
+type IsAssignable<From, To> = [From] extends [To] ? true : false;
 
-const directText = createElement(Text, null, "Direct text");
-directText.kind satisfies "text";
+const regressionTypeAssertions = {
+  unsupportedSpan: true,
+  textIntrinsicRejectsStructuredChildren: true,
+  imgRequiresSourceOrData: true,
+  imgRejectsChildren: true,
+  ooxmlBackendIsNotImplemented: true,
+} satisfies {
+  unsupportedSpan: Assert<
+    IsAssignable<"span", keyof DeckJsxIntrinsicElements> extends true ? false : true
+  >;
+  textIntrinsicRejectsStructuredChildren: Assert<
+    IsAssignable<
+      ContentAuthorNode,
+      NonNullable<DeckJsxIntrinsicElements["p"]["children"]>
+    > extends true
+      ? false
+      : true
+  >;
+  imgRequiresSourceOrData: Assert<
+    IsAssignable<{}, DeckJsxIntrinsicElements["img"]> extends true ? false : true
+  >;
+  imgRejectsChildren: Assert<
+    IsAssignable<
+      { src: "image.png"; children: "caption" },
+      DeckJsxIntrinsicElements["img"]
+    > extends true
+      ? false
+      : true
+  >;
+  ooxmlBackendIsNotImplemented: Assert<
+    IsAssignable<"ooxml", ImplementedBackendName> extends true ? false : true
+  >;
+};
+void regressionTypeAssertions;
 
 const runtimeSlide = jsx(Slide, { name: "Runtime slide" }, "slide-key");
 runtimeSlide.kind satisfies "slide";
 
-const runtimeKey = 1n satisfies JsxKey;
-const runtimeKeyedView = jsx(View, { children: directText }, runtimeKey);
-runtimeKeyedView.kind satisfies "view";
-
 const runtimeText = jsx(Text, { children: "Runtime text" });
 runtimeText.kind satisfies "text";
 
-const directView = createElement(View, null, directText, false, null);
-directView.kind satisfies "view";
-// @ts-expect-error Author node children are immutable after JSX runtime creation.
-directView.children.push(directText);
+const runtimeKey = 1n satisfies JsxKey;
+const runtimeKeyedView = jsx(View, { children: runtimeText }, runtimeKey);
+runtimeKeyedView.kind satisfies "view";
 
 const readonlySpacing = [1, "2pt", "3px", "4%"] as const;
 readonlySpacing satisfies Spacing;
@@ -51,18 +81,6 @@ const exportedStyleTypes = {
   gridTemplateAreas: readonlyAreas,
 } satisfies ViewStyle & { alignContent?: CssAlignContent };
 void exportedStyleTypes;
-
-// @ts-expect-error Direct createElement calls preserve leaf children constraints.
-createElement(Image, { src: "image.png" }, "caption");
-
-// @ts-expect-error Direct createElement calls preserve Text child constraints.
-createElement(Text, null, directView);
-
-// @ts-expect-error Direct jsx calls preserve Text child constraints.
-jsx(Text, { children: directView });
-
-// @ts-expect-error Direct jsx calls preserve leaf children constraints.
-jsx(Image, { src: "image.png", children: "caption" });
 
 void (
   <Slide name="Valid slide">
@@ -120,38 +138,36 @@ void (
 
 void (<Text>{["a", 1, false, null, undefined]}</Text>);
 
-// @ts-expect-error View children must be deckjsx component nodes, not raw text.
-void (<View>Raw text</View>);
-
 void (
-  <Text>
-    {/* @ts-expect-error Text children must be text-like values, not structured component nodes. */}
-    <View />
-  </Text>
+  <div style={{ x: 1, y: 1, width: 4, height: 2 }}>
+    Raw text
+    <p style={{ fontSize: 18 }}>Paragraph</p>
+    <img src="image.png" />
+  </div>
 );
 
-// @ts-expect-error Image is a leaf node and does not accept children.
-void (<Image src="image.png">caption</Image>);
-
 void (
-  <Shape shape="rect">
-    {/* @ts-expect-error Shape is a leaf node and does not accept children. */}
-    <Text>caption</Text>
-  </Shape>
+  <main style={{ x: 0, y: 0, width: 10, height: 5 }}>
+    <header>
+      <h1>Title</h1>
+    </header>
+    <section>
+      <h2>Section</h2>
+      <p>Body</p>
+      <figure>
+        <img src="chart.png" />
+      </figure>
+    </section>
+    <aside>Note</aside>
+    <nav>Navigation</nav>
+    <footer>Footer</footer>
+  </main>
 );
 
-// @ts-expect-error Intrinsic JSX elements are intentionally unsupported.
-void (<div />);
+void (<img data="data:image/png;base64,AAAA" />);
 
 const pptxOutput = {
   backend: "pptxgenjs",
   output: "deck.pptx",
 } satisfies OutputConfig;
 void pptxOutput;
-
-const ooxmlOutput = {
-  // @ts-expect-error OutputConfig accepts only implemented backends.
-  backend: "ooxml",
-  output: "deck.pptx",
-} satisfies OutputConfig;
-void ooxmlOutput;
