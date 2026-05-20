@@ -1,6 +1,7 @@
 # deckjsx
 
-`deckjsx` is a TypeScript library for generating presentation files from JSX through a compiler pipeline.
+`deckjsx` is a TypeScript library for generating presentation files from JSX through a compiler
+pipeline.
 
 The intended architecture is:
 
@@ -13,7 +14,8 @@ JSX
 ```
 
 This project is being designed as a compiler, not as a thin `PptxGenJS` wrapper.
-The current API direction is a class-based compiler with callback-based `.add()`, `.render()`, and `.output()`, and JSX authoring centered on a `style` object prop.
+The API uses a class-based compiler with callback-based `.add()`, `.render()`, and `.output()`.
+Authoring uses typed JSX elements with a `style` object prop.
 
 The implementation preserves the compiler model with explicit module boundaries for authoring,
 style normalization, layout, IR, backend emission, and Node runtime output.
@@ -29,7 +31,7 @@ The package currently targets Node.js output and ships a `pptxgenjs` backend.
 ## Usage
 
 ```tsx
-import { Deck, Slide, Text, View } from "deckjsx";
+import { Deck, Slide } from "deckjsx";
 
 const deck = new Deck({
   layout: { width: 13.333, height: 7.5, unit: "in" },
@@ -38,38 +40,41 @@ const deck = new Deck({
 
 deck.add(({ slideIndex, totalSlides }) => (
   <Slide name={`Slide ${slideIndex + 1}`} style={{ backgroundColor: "#F8FAFC" }}>
-    <Text
+    <main
       style={{
         x: 0.7,
         y: 0.5,
-        width: 8.5,
-        height: 0.6,
-        fontSize: 28,
-        fontWeight: 700,
-        color: "#0F172A",
-      }}
-    >
-      Quarterly Review
-    </Text>
-    <View
-      style={{
-        x: 0.7,
-        y: 1.4,
         width: 11.9,
-        height: 4.8,
+        height: 6.3,
         display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        columnGap: 0.35,
+        gridTemplateRows: ["0.9in", "1fr", "0.4in"],
+        rowGap: 0.25,
       }}
     >
-      <Text style={{ fontSize: 18, color: "#334155", fit: "shrink" }}>
-        Author slides with TSX primitives, inspect the generated IR, and emit PPTX files through the
-        backend boundary.
-      </Text>
-      <Text style={{ fontSize: 18, color: "#334155", fit: "shrink" }}>
-        {slideIndex + 1} / {totalSlides}
-      </Text>
-    </View>
+      <header>
+        <h1 style={{ width: "100%", height: 0.6, fontSize: 28, fontWeight: 700, color: "#0F172A" }}>
+          Quarterly Review
+        </h1>
+      </header>
+
+      <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 0.35 }}>
+        <p style={{ fontSize: 18, color: "#334155", fit: "shrink" }}>
+          Author slides with typed JSX, inspect the generated IR, and emit PPTX files through the
+          backend boundary.
+        </p>
+        <figure style={{ backgroundColor: "#E0F2FE", borderRadius: 0.15, padding: 0.25 }}>
+          <img src="chart.png" style={{ width: "100%", height: "100%", fit: "contain" }} />
+        </figure>
+      </section>
+
+      <footer>
+        <p
+          style={{ width: "100%", height: 0.3, fontSize: 11, color: "#64748B", textAlign: "right" }}
+        >
+          {slideIndex + 1} / {totalSlides}
+        </p>
+      </footer>
+    </main>
   </Slide>
 ));
 
@@ -79,6 +84,41 @@ await deck.output({ backend: "pptxgenjs", output: "quarterly-review.pptx" });
 
 Use `deck.render()` for tests, snapshots, and backend-independent inspection. Use
 `deck.output({ backend: "pptxgenjs", output })` when writing a PowerPoint file.
+
+## JSX elements
+
+`deckjsx` supports both the original capitalized components and a typed HTML-like JSX surface.
+
+View-like elements compile to grouped layout containers:
+
+```tsx
+<main>
+  <header />
+  <section />
+  <article />
+  <aside />
+  <nav />
+  <footer />
+  <figure />
+</main>
+```
+
+Text-like elements compile to text boxes:
+
+```tsx
+<h1>Title</h1>
+<h2>Section</h2>
+<p>Body copy</p>
+```
+
+Image elements compile to images and require either `src` or `data`:
+
+```tsx
+<img src="diagram.png" style={{ width: 4, height: 2.5, fit: "contain" }} />
+```
+
+Primitive string and number children inside view-like elements are normalized to implicit text
+nodes. Inline rich text with `span` is intentionally reserved for a later release.
 
 ## View Layout Semantics
 

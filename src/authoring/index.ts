@@ -90,6 +90,8 @@ export type TextJsxChild = string | number | boolean | null | undefined | TextJs
 export type ContentAuthorNode = AuthorNode<"view" | "text" | "image" | "shape">;
 export interface ContentJsxChildArray extends ReadonlyArray<ContentJsxChild> {}
 export type ContentJsxChild = AuthorNode | boolean | null | undefined | ContentJsxChildArray;
+export interface ViewIntrinsicJsxChildArray extends ReadonlyArray<ViewIntrinsicJsxChild> {}
+export type ViewIntrinsicJsxChild = ContentJsxChild | string | number | ViewIntrinsicJsxChildArray;
 export interface JsxNodeArray extends ReadonlyArray<JsxNode> {}
 export type JsxNode = AuthorNode | string | number | boolean | null | undefined | JsxNodeArray;
 
@@ -377,9 +379,17 @@ export type TextProps = TextNodeProps & {
 
 export type ImageNodeProps = {
   style?: ImageStyle;
-  src?: string;
-  data?: string;
-} & ImageStyle;
+} & ImageStyle &
+  (
+    | {
+        src: string;
+        data?: string;
+      }
+    | {
+        src?: string;
+        data: string;
+      }
+  );
 
 export type ImageProps = ImageNodeProps & {
   children?: never;
@@ -434,3 +444,34 @@ type AuthorNodeByKind = {
 };
 
 export type AuthorNode<K extends AuthorNodeKind = AuthorNodeKind> = AuthorNodeByKind[K];
+
+export type IntrinsicDivProps = ViewNodeProps & {
+  children?: ViewIntrinsicJsxChild;
+};
+
+export type IntrinsicPProps = TextNodeProps & {
+  children?: TextJsxChild;
+};
+
+export type IntrinsicImgProps = ImageProps;
+
+export type IntrinsicViewTag =
+  | "article"
+  | "aside"
+  | "div"
+  | "figure"
+  | "footer"
+  | "header"
+  | "main"
+  | "nav"
+  | "section";
+
+export type IntrinsicTextTag = "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p";
+
+export type DeckJsxIntrinsicElements = {
+  img: IntrinsicImgProps;
+} & {
+  [Tag in IntrinsicViewTag]: IntrinsicDivProps;
+} & {
+  [Tag in IntrinsicTextTag]: IntrinsicPProps;
+};
