@@ -1,15 +1,56 @@
 import { Fragment, Image, Shape, Slide, Text, View } from "../../src/index.ts";
 import { jsx } from "../../src/jsx-runtime.ts";
 import type {
+  ContentAuthorNode,
   CssAlignContent,
   CssGridTemplate,
   CssGridTemplateAreas,
+  DeckJsxIntrinsicElements,
+  ImplementedBackendName,
   JsxKey,
   OutputConfig,
   Spacing,
   TextTabStopAuthoring,
   ViewStyle,
 } from "../../src/index.ts";
+
+type Assert<T extends true> = T;
+type IsAssignable<From, To> = [From] extends [To] ? true : false;
+
+const regressionTypeAssertions = {
+  unsupportedSpan: true,
+  textIntrinsicRejectsStructuredChildren: true,
+  imgRequiresSourceOrData: true,
+  imgRejectsChildren: true,
+  ooxmlBackendIsNotImplemented: true,
+} satisfies {
+  unsupportedSpan: Assert<
+    IsAssignable<"span", keyof DeckJsxIntrinsicElements> extends true ? false : true
+  >;
+  textIntrinsicRejectsStructuredChildren: Assert<
+    IsAssignable<
+      ContentAuthorNode,
+      NonNullable<DeckJsxIntrinsicElements["p"]["children"]>
+    > extends true
+      ? false
+      : true
+  >;
+  imgRequiresSourceOrData: Assert<
+    IsAssignable<{}, DeckJsxIntrinsicElements["img"]> extends true ? false : true
+  >;
+  imgRejectsChildren: Assert<
+    IsAssignable<
+      { src: "image.png"; children: "caption" },
+      DeckJsxIntrinsicElements["img"]
+    > extends true
+      ? false
+      : true
+  >;
+  ooxmlBackendIsNotImplemented: Assert<
+    IsAssignable<"ooxml", ImplementedBackendName> extends true ? false : true
+  >;
+};
+void regressionTypeAssertions;
 
 const runtimeSlide = jsx(Slide, { name: "Runtime slide" }, "slide-key");
 runtimeSlide.kind satisfies "slide";

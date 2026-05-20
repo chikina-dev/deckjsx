@@ -56,6 +56,32 @@ describe("authoring and JSX runtime", () => {
     ).toEqual(["Title", "Paragraph", "42"]);
   });
 
+  test("implicit text nodes preserve explicit edge spaces", () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
+
+    deck.add(() => (
+      <Slide name="Explicit spaces">
+        <div style={{ x: 1, y: 1, width: 6, height: 3 }}>
+          {"Hello "}
+          <p>there</p>
+          {" again"}
+        </div>
+      </Slide>
+    ));
+
+    const ir = deck.render();
+    const [group] = ir.slides[0]?.nodes ?? [];
+    if (!group || group.kind !== "group") {
+      throw new Error("Expected intrinsic div to compile to a group.");
+    }
+
+    expect(
+      group.children.filter((child) => child.kind === "text").map((child) => child.content.text),
+    ).toEqual(["Hello ", "there", " again"]);
+  });
+
   test("semantic view-like intrinsics compile to groups and heading intrinsics compile to text", () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },

@@ -152,7 +152,11 @@ function collectRawChildren(propsObject: Record<PropertyKey, unknown>, children:
 }
 
 function implicitTextNode(value: string | number): AuthorNode<"text"> | null {
-  const text = typeof value === "string" ? value.trim() : String(value);
+  if (typeof value === "string" && value.trim().length === 0) {
+    return null;
+  }
+
+  const text = typeof value === "string" && /[\n\r\t]/.test(value) ? value.trim() : String(value);
   if (text.length === 0) {
     return null;
   }
