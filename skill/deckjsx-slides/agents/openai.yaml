@@ -1,6 +1,6 @@
 interface:
   display_name: "deckjsx Slides"
-  short_description: "Create PowerPoint decks with deckjsx."
-  default_prompt: "Use $deckjsx-slides to create a polished PowerPoint deck with deckjsx."
+  short_description: "Create html-like JSX PowerPoint decks with deckjsx."
+  default_prompt: "Use $deckjsx-slides to create a polished PowerPoint deck with deckjsx's html-like JSX authoring."
 policy:
   allow_implicit_invocation: true

@@ -1,11 +1,11 @@
 ---
 name: deckjsx-slides-ja
-description: deckjsx ライブラリで PowerPoint スライドや PPTX デッキを作成、編集、レビューするときに使う日本語ガイド。Deck、Slide、View、Text、Image、Shape、pptxgenjs backend を使う TSX/JSX スライド制作向け。
+description: deckjsx ライブラリで PowerPoint スライドや PPTX デッキを作成、編集、レビューするときに使う日本語ガイド。Deck、Slide、html-like lowercase tag、Shape、pptxgenjs backend を使う TSX/JSX スライド制作向け。
 ---
 
 # deckjsx Slides 日本語ガイド
 
-`deckjsx` は `pptxgenjs` の薄いラッパーではなく、JSX/TSX で書いたスライドを Presentation IR にコンパイルし、backend で `.pptx` に出力するライブラリとして扱います。
+`deckjsx` は `pptxgenjs` の薄いラッパーではなく、JSX/TSX で書いたスライドを Presentation IR にコンパイルし、backend で `.pptx` に出力するライブラリとして扱います。0.2 以降は `Slide` をスライドルートにし、lowercase の html-like tag でスライド構造を書くのを基本にします。
 
 英語版の標準 skill は `SKILL.md` です。例や運用ルールを更新するときは、この日本語版も同じ内容に揃えてください。
 
@@ -18,23 +18,25 @@ description: deckjsx ライブラリで PowerPoint スライドや PPTX デッ�
 - `examples/layout-patterns.tsx`: absolute、flex/stack、grid、overlay positioning の例。
 - `examples/visual-effects.tsx`: 背景レイヤー、グラデーション、影、画像 fit/position、shape stroke の例。
 
-これらのファイルは、この repository 内で参照しやすいように `../../../src/index.ts` から import しています。外部プロジェクトにコピーして使う場合は import を `from "deckjsx"` に変えてください。
+これらのファイルは `deckjsx` package から import する形にしています。sample project や package consumer でそのまま使いやすく、deckjsx repository 内で compiler test を書く場合は既存テストの import 形式に合わせてください。
 
 ## 基本ワークフロー
 
 1. `Deck` を作り、スライドサイズを明示する。
 2. `deck.add((context) => <Slide>...</Slide>)` でスライドを追加する。
-3. レイアウトと見た目は component の `style` オブジェクトにまとめる。
-4. IR を確認、テスト、snapshot するときは `deck.render()` を使う。
-5. PPTX を書き出すときは `await deck.output({ backend: "pptxgenjs", output: "deck.pptx" })` を使う。
-6. ライブラリを変更したら `vp check` と `vp test` で検証する。出力 backend を触る場合は、必要に応じて生成した PPTX の XML も確認する。
+3. 基本は html-like tag を使う。`div`、`section`、`article`、`main`、`header`、`footer`、`aside`、`nav`、`figure` は view-like container、`p` と `h1`-`h6` は text-like、`img` は leaf image。
+4. layout/container の style は view-like tag に、typography の style は text-like tag に置く。たとえば `fontSize` は `<header>` や `<footer>` ではなく `<h1>` や `<p>` に置く。
+5. `Shape`、および既存 deck の更新や明示性が必要な場面では legacy の `View`、`Text`、`Image` component も使ってよい。
+6. IR を確認、テスト、snapshot するときは `deck.render()` を使う。
+7. PPTX を書き出すときは `await deck.output({ backend: "pptxgenjs", output: "deck.pptx" })` を使う。
+8. ライブラリを変更したら `vp check` と `vp test` で検証する。出力 backend を触る場合は、必要に応じて生成した PPTX の XML も確認する。
 
 ## 最小の PPTX 出力
 
 `tests/backend-pptxgenjs.test.tsx` に近い、最小の出力例です。
 
 ```tsx
-import { Deck, Slide, Text } from "deckjsx";
+import { Deck, Slide } from "deckjsx";
 
 const deck = new Deck({
   layout: { width: 10, height: 5.625, unit: "in" },
@@ -42,7 +44,7 @@ const deck = new Deck({
 
 deck.add(() => (
   <Slide name="File output">
-    <Text style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>Hello PPTX</Text>
+    <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>Hello PPTX</p>
   </Slide>
 ));
 
@@ -55,7 +57,7 @@ await deck.output({
 ## 標準的なスライド例
 
 ```tsx
-import { Deck, Shape, Slide, Text, View } from "deckjsx";
+import { Deck, Shape, Slide } from "deckjsx";
 
 const deck = new Deck({
   layout: { width: 13.333, height: 7.5, unit: "in" },
@@ -64,21 +66,26 @@ const deck = new Deck({
 
 deck.add(({ slideIndex, totalSlides }) => (
   <Slide name={`Slide ${slideIndex + 1}`} style={{ backgroundColor: "#F8FAFC" }}>
-    <Text
+    <header
       style={{
         x: 0.7,
         y: 0.5,
         width: 8.5,
         height: 0.6,
-        fontFamily: "Aptos Display",
-        fontSize: 28,
-        fontWeight: 700,
-        color: "#0F172A",
       }}
     >
-      Quarterly Review
-    </Text>
-    <View
+      <h1
+        style={{
+          fontFamily: "Aptos Display",
+          fontSize: 28,
+          fontWeight: 700,
+          color: "#0F172A",
+        }}
+      >
+        Quarterly Review
+      </h1>
+    </header>
+    <main
       style={{
         x: 0.7,
         y: 1.4,
@@ -89,9 +96,9 @@ deck.add(({ slideIndex, totalSlides }) => (
         columnGap: 0.35,
       }}
     >
-      <Text style={{ fontSize: 18, color: "#334155", fit: "shrink" }}>
+      <p style={{ fontSize: 18, color: "#334155", fit: "shrink" }}>
         1枚のスライドには1つの主張を置き、階層はサイズ、余白、色、配置で表現する。
-      </Text>
+      </p>
       <Shape
         shape="rect"
         style={{
@@ -100,20 +107,19 @@ deck.add(({ slideIndex, totalSlides }) => (
           boxShadow: "3px 3px 8px rgba(15, 23, 42, 0.22)",
         }}
       />
-    </View>
-    <Text
+    </main>
+    <footer
       style={{
         x: 11.2,
         y: 7,
         width: 1.4,
         height: 0.25,
-        fontSize: 9,
-        color: "#64748B",
-        textAlign: "right",
       }}
     >
-      {slideIndex + 1} / {totalSlides}
-    </Text>
+      <p style={{ fontSize: 9, color: "#64748B", textAlign: "right" }}>
+        {slideIndex + 1} / {totalSlides}
+      </p>
+    </footer>
   </Slide>
 ));
 ```
@@ -134,9 +140,9 @@ const deck = new Deck({
 
 deck.add(({ slideIndex, totalSlides }) => (
   <Slide name={`Slide ${slideIndex + 1}`}>
-    <Text style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>
+    <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>
       {slideIndex + 1} / {totalSlides}
-    </Text>
+    </p>
   </Slide>
 ));
 ```
@@ -147,8 +153,8 @@ PowerPoint らしい正確な配置が必要なときに使います。
 
 ```tsx
 <Slide name="Absolute">
-  <Text style={{ x: 0.75, y: 0.6, width: 8, height: 0.55, fontSize: 26 }}>Executive Summary</Text>
-  <View
+  <h1 style={{ x: 0.75, y: 0.6, width: 8, height: 0.55, fontSize: 26 }}>Executive Summary</h1>
+  <section
     style={{
       x: 0.75,
       y: 1.4,
@@ -166,7 +172,7 @@ PowerPoint らしい正確な配置が必要なときに使います。
 `tests/layout-stack.test.tsx` に基づくパターンです。
 
 ```tsx
-<View
+<section
   style={{
     x: 1,
     y: 1,
@@ -178,9 +184,9 @@ PowerPoint らしい正確な配置が必要なときに使います。
     padding: 0.5,
   }}
 >
-  <Text style={{ width: 2, height: 0.5, fontSize: 18, order: -1 }}>First</Text>
-  <Text style={{ width: 2, height: 0.5, fontSize: 18 }}>Second</Text>
-  <Text
+  <p style={{ width: 2, height: 0.5, fontSize: 18, order: -1 }}>First</p>
+  <p style={{ width: 2, height: 0.5, fontSize: 18 }}>Second</p>
+  <p
     style={{
       position: "absolute",
       left: 1,
@@ -191,8 +197,8 @@ PowerPoint らしい正確な配置が必要なときに使います。
     }}
   >
     Overlay
-  </Text>
-</View>
+  </p>
+</section>
 ```
 
 ### grid レイアウト
@@ -200,7 +206,7 @@ PowerPoint らしい正確な配置が必要なときに使います。
 `tests/layout-grid.test.tsx` に基づくパターンです。
 
 ```tsx
-<View
+<section
   style={{
     x: 1,
     y: 1,
@@ -214,9 +220,9 @@ PowerPoint らしい正確な配置が必要なときに使います。
     padding: 0.5,
   }}
 >
-  <View style={{ gridColumn: "span 2", backgroundColor: "#D1D5DB" }} />
-  <View style={{ placeSelf: "start center", width: 1, height: 0.5, backgroundColor: "#CBD5E1" }} />
-</View>
+  <div style={{ gridColumn: "span 2", backgroundColor: "#D1D5DB" }} />
+  <div style={{ placeSelf: "start center", width: 1, height: 0.5, backgroundColor: "#CBD5E1" }} />
+</section>
 ```
 
 ### 画像の fit / crop / position
@@ -224,7 +230,7 @@ PowerPoint らしい正確な配置が必要なときに使います。
 `tests/image-values.test.tsx` に基づくパターンです。
 
 ```tsx
-<Image
+<img
   data={WIDE_SVG_DATA_URI}
   style={{
     x: 1,
@@ -250,7 +256,7 @@ PowerPoint らしい正確な配置が必要なときに使います。
       "linear-gradient(180deg, #111111 0%, #333333 100%)",
   }}
 >
-  <View
+  <div
     style={{
       x: 1,
       y: 1,
@@ -296,7 +302,7 @@ PowerPoint らしい正確な配置が必要なときに使います。
 `tests/typography-values.test.tsx` と `tests/style-values.test.tsx` に基づくパターンです。
 
 ```tsx
-<Text
+<p
   style={{
     x: 1,
     y: 1,
@@ -312,7 +318,7 @@ PowerPoint らしい正確な配置が必要なときに使います。
   }}
 >
   Linked bullet text
-</Text>
+</p>
 ```
 
 ## スライド制作の判断基準
@@ -328,12 +334,15 @@ PowerPoint らしい正確な配置が必要なときに使います。
 
 ## API メモ
 
-- 公開 component は `Slide`、`View`、`Text`、`Image`、`Shape`。
+- 推奨の authoring surface は `Slide` と lowercase html-like tag。view-like tag は `div`、`section`、`article`、`main`、`header`、`footer`、`aside`、`nav`、`figure`。text-like tag は `p` と `h1`-`h6`。image tag は `img`。
+- fallback として `View`、`Text`、`Image`、`Shape` component も使える。
 - `Deck#add()` の callback には `{ slideIndex, totalSlides }` が渡る。
 - 幾何値の number は inch、font size の number は point として扱う。
+- view-like tag は view/layout style を受け取る。text style は `p`、`h1`-`h6`、または `Text` に置く。
+- `span` と rich inline text は 0.2.0 の surface にはまだ含めない。現時点では必要に応じて別の text node として表現する。
 - length 文字列は `"in"`、`"pt"`、`"px"`、`"%"` などを使える。
 - CSS 風 alias は `left`、`top`、`display`、`flexDirection`、`objectFit`、`objectPosition`、`background`、`border`、`boxShadow`、`textDecoration`、grid 系 property を優先する。
-- `Image` は path 用の `src` と data URI 用の `data` を受け取る。
+- `img` と `Image` は path 用の `src` と data URI 用の `data` を受け取る。leaf element なので children は受け取らない。
 - `Shape` は現在 `shape="rect"`、`"ellipse"`、`"line"` をサポートする。
 - 実装済み backend は `"pptxgenjs"`。`"ooxml"` は将来の backend 名で、現時点で選ぶ出力先ではない。
 

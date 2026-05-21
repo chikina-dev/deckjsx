@@ -1,11 +1,11 @@
 ---
 name: deckjsx-slides
-description: Use this skill when creating, editing, or reviewing PowerPoint slide decks with the deckjsx library, especially TSX/JSX slides that compile to PPTX through Deck, Slide, View, Text, Image, Shape, and the pptxgenjs backend.
+description: Use this skill when creating, editing, or reviewing PowerPoint slide decks with the deckjsx library, especially html-like TSX/JSX slides that compile to PPTX through Deck, Slide, semantic lowercase tags, Shape, and the pptxgenjs backend.
 ---
 
 # deckjsx Slides
 
-Use `deckjsx` as a compiler for presentation documents, not as a direct `pptxgenjs` wrapper. Author slides in TSX/JSX, compile to IR with `Deck#render()`, and emit PowerPoint files with `Deck#output({ backend: "pptxgenjs", output })`.
+Use `deckjsx` as a compiler for presentation documents, not as a direct `pptxgenjs` wrapper. In 0.2+, prefer html-like TSX/JSX authoring: `Slide` stays the slide root, while lowercase semantic tags describe slide structure. Compile to IR with `Deck#render()`, and emit PowerPoint files with `Deck#output({ backend: "pptxgenjs", output })`.
 
 For Japanese guidance, read `SKILL-ja.md` in this skill folder. Keep both files aligned when updating examples or workflow.
 
@@ -18,21 +18,23 @@ Concrete TSX examples live in `examples/`. Load the specific file that matches t
 - `examples/layout-patterns.tsx`: absolute, flex/stack, grid, and overlay positioning patterns.
 - `examples/visual-effects.tsx`: background layers, gradients, shadows, image fit/position, and shape stroke effects.
 
-These files import from `../../../src/index.ts` so they are useful inside this repository. When adapting them for an external project, change the import to `from "deckjsx"`.
+These files import from `deckjsx` so they are directly usable in package consumers and sample projects. Inside the deckjsx repository, prefer the repo's existing test imports when adding compiler tests.
 
 ## Core Workflow
 
 1. Create a `Deck` with an explicit slide layout.
 2. Add slides with `deck.add((context) => <Slide>...</Slide>)`.
-3. Prefer component `style` objects for layout and visual styling.
-4. Use `deck.render()` when inspecting, testing, or snapshotting the compiler IR.
-5. Use `await deck.output({ backend: "pptxgenjs", output: "deck.pptx" })` to write a `.pptx`.
-6. Validate library changes with `vp check` and `vp test`; for output-specific work, inspect generated PPTX contents or render/open the result when possible.
+3. Prefer html-like tags for authoring: `div`, `section`, `article`, `main`, `header`, `footer`, `aside`, `nav`, and `figure` are view-like containers; `p` and `h1`-`h6` are text-like; `img` is a leaf image element.
+4. Put layout/container styles on view-like tags and typography styles on text-like tags. For example, put `fontSize` on `<h1>` or `<p>`, not on `<header>` or `<footer>`.
+5. Use `Shape`, and the legacy `View`, `Text`, and `Image` components when they make code clearer or when updating older decks.
+6. Use `deck.render()` when inspecting, testing, or snapshotting the compiler IR.
+7. Use `await deck.output({ backend: "pptxgenjs", output: "deck.pptx" })` to write a `.pptx`.
+8. Validate library changes with `vp check` and `vp test`; for output-specific work, inspect generated PPTX contents or render/open the result when possible.
 
 ## Minimal PPTX Output
 
 ```tsx
-import { Deck, Slide, Text } from "deckjsx";
+import { Deck, Slide } from "deckjsx";
 
 const deck = new Deck({
   layout: { width: 10, height: 5.625, unit: "in" },
@@ -40,7 +42,7 @@ const deck = new Deck({
 
 deck.add(() => (
   <Slide name="File output">
-    <Text style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>Hello PPTX</Text>
+    <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>Hello PPTX</p>
   </Slide>
 ));
 
@@ -55,7 +57,7 @@ This pattern is based on `tests/backend-pptxgenjs.test.tsx`.
 ## Full Slide Pattern
 
 ```tsx
-import { Deck, Shape, Slide, Text, View } from "deckjsx";
+import { Deck, Shape, Slide } from "deckjsx";
 
 const deck = new Deck({
   layout: { width: 13.333, height: 7.5, unit: "in" },
@@ -64,21 +66,26 @@ const deck = new Deck({
 
 deck.add(({ slideIndex, totalSlides }) => (
   <Slide name={`Slide ${slideIndex + 1}`} style={{ backgroundColor: "#F8FAFC" }}>
-    <Text
+    <header
       style={{
         x: 0.7,
         y: 0.5,
         width: 8.5,
         height: 0.6,
-        fontFamily: "Aptos Display",
-        fontSize: 28,
-        fontWeight: 700,
-        color: "#0F172A",
       }}
     >
-      Quarterly Review
-    </Text>
-    <View
+      <h1
+        style={{
+          fontFamily: "Aptos Display",
+          fontSize: 28,
+          fontWeight: 700,
+          color: "#0F172A",
+        }}
+      >
+        Quarterly Review
+      </h1>
+    </header>
+    <main
       style={{
         x: 0.7,
         y: 1.4,
@@ -89,10 +96,10 @@ deck.add(({ slideIndex, totalSlides }) => (
         columnGap: 0.35,
       }}
     >
-      <Text style={{ fontSize: 18, color: "#334155", fit: "shrink" }}>
+      <p style={{ fontSize: 18, color: "#334155", fit: "shrink" }}>
         Keep each slide focused on one message. Use the layout primitives to make the hierarchy
         explicit.
-      </Text>
+      </p>
       <Shape
         shape="rect"
         style={{
@@ -101,20 +108,19 @@ deck.add(({ slideIndex, totalSlides }) => (
           boxShadow: "3px 3px 8px rgba(15, 23, 42, 0.22)",
         }}
       />
-    </View>
-    <Text
+    </main>
+    <footer
       style={{
         x: 11.2,
         y: 7,
         width: 1.4,
         height: 0.25,
-        fontSize: 9,
-        color: "#64748B",
-        textAlign: "right",
       }}
     >
-      {slideIndex + 1} / {totalSlides}
-    </Text>
+      <p style={{ fontSize: 9, color: "#64748B", textAlign: "right" }}>
+        {slideIndex + 1} / {totalSlides}
+      </p>
+    </footer>
   </Slide>
 ));
 
@@ -137,9 +143,9 @@ const deck = new Deck({
 
 deck.add(({ slideIndex, totalSlides }) => (
   <Slide name={`Slide ${slideIndex + 1}`}>
-    <Text style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>
+    <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>
       {slideIndex + 1} / {totalSlides}
-    </Text>
+    </p>
   </Slide>
 ));
 ```
@@ -150,8 +156,8 @@ Use for polished PowerPoint composition where placement must be predictable.
 
 ```tsx
 <Slide name="Absolute">
-  <Text style={{ x: 0.75, y: 0.6, width: 8, height: 0.55, fontSize: 26 }}>Executive Summary</Text>
-  <View
+  <h1 style={{ x: 0.75, y: 0.6, width: 8, height: 0.55, fontSize: 26 }}>Executive Summary</h1>
+  <section
     style={{
       x: 0.75,
       y: 1.4,
@@ -169,7 +175,7 @@ Use for polished PowerPoint composition where placement must be predictable.
 Based on `tests/layout-stack.test.tsx`.
 
 ```tsx
-<View
+<section
   style={{
     x: 1,
     y: 1,
@@ -181,9 +187,9 @@ Based on `tests/layout-stack.test.tsx`.
     padding: 0.5,
   }}
 >
-  <Text style={{ width: 2, height: 0.5, fontSize: 18, order: -1 }}>First</Text>
-  <Text style={{ width: 2, height: 0.5, fontSize: 18 }}>Second</Text>
-  <Text
+  <p style={{ width: 2, height: 0.5, fontSize: 18, order: -1 }}>First</p>
+  <p style={{ width: 2, height: 0.5, fontSize: 18 }}>Second</p>
+  <p
     style={{
       position: "absolute",
       left: 1,
@@ -194,8 +200,8 @@ Based on `tests/layout-stack.test.tsx`.
     }}
   >
     Overlay
-  </Text>
-</View>
+  </p>
+</section>
 ```
 
 ### Grid Layout
@@ -203,7 +209,7 @@ Based on `tests/layout-stack.test.tsx`.
 Based on `tests/layout-grid.test.tsx`.
 
 ```tsx
-<View
+<section
   style={{
     x: 1,
     y: 1,
@@ -217,9 +223,9 @@ Based on `tests/layout-grid.test.tsx`.
     padding: 0.5,
   }}
 >
-  <View style={{ gridColumn: "span 2", backgroundColor: "#D1D5DB" }} />
-  <View style={{ placeSelf: "start center", width: 1, height: 0.5, backgroundColor: "#CBD5E1" }} />
-</View>
+  <div style={{ gridColumn: "span 2", backgroundColor: "#D1D5DB" }} />
+  <div style={{ placeSelf: "start center", width: 1, height: 0.5, backgroundColor: "#CBD5E1" }} />
+</section>
 ```
 
 ### Image Fit, Crop, And Position
@@ -227,7 +233,7 @@ Based on `tests/layout-grid.test.tsx`.
 Based on `tests/image-values.test.tsx`.
 
 ```tsx
-<Image
+<img
   data={WIDE_SVG_DATA_URI}
   style={{
     x: 1,
@@ -253,7 +259,7 @@ Based on `tests/background-layers.test.tsx`.
       "linear-gradient(180deg, #111111 0%, #333333 100%)",
   }}
 >
-  <View
+  <div
     style={{
       x: 1,
       y: 1,
@@ -299,7 +305,7 @@ Based on `tests/gradient-values.test.tsx` and `tests/backend-pptxgenjs.test.tsx`
 Based on `tests/typography-values.test.tsx` and `tests/style-values.test.tsx`.
 
 ```tsx
-<Text
+<p
   style={{
     x: 1,
     y: 1,
@@ -315,7 +321,7 @@ Based on `tests/typography-values.test.tsx` and `tests/style-values.test.tsx`.
   }}
 >
   Linked bullet text
-</Text>
+</p>
 ```
 
 ## Design Rules For Decks
@@ -331,18 +337,21 @@ Based on `tests/typography-values.test.tsx` and `tests/style-values.test.tsx`.
 
 ## deckjsx API Notes
 
-- Public components: `Slide`, `View`, `Text`, `Image`, and `Shape`.
+- Preferred authoring surface: `Slide` plus lowercase html-like tags. View-like tags are `div`, `section`, `article`, `main`, `header`, `footer`, `aside`, `nav`, and `figure`; text-like tags are `p` and `h1`-`h6`; image tags are `img`.
+- Public component fallbacks remain available: `View`, `Text`, `Image`, and `Shape`.
 - `Deck#add()` receives `{ slideIndex, totalSlides }`.
 - Geometry numbers default to inches; font-size numbers default to points.
+- View-like tags accept view/layout styles. Text styles belong on `p`, `h1`-`h6`, or `Text`.
+- `span` and rich inline text are intentionally not part of the 0.2.0 surface; model them as separate text nodes for now.
 - Supported length strings include units such as `"in"`, `"pt"`, `"px"`, and `"%"`.
 - Prefer CSS-like aliases where available: `left`, `top`, `display`, `flexDirection`, `objectFit`, `objectPosition`, `background`, `border`, `boxShadow`, `textDecoration`, and grid properties.
-- `Image` accepts `src` for paths and `data` for data URIs.
+- `img` and `Image` accept `src` for paths and `data` for data URIs. They are leaf elements and do not accept children.
 - `Shape` currently supports `shape="rect"`, `"ellipse"`, or `"line"`.
 - The implemented backend is `"pptxgenjs"`; `"ooxml"` is a future backend name, not the output path to choose today.
 
 ## Visual Styling
 
-- Use `backgroundColor`, `background`, or `backgroundImage` on slides and views.
+- Use `backgroundColor`, `background`, or `backgroundImage` on slides and view-like tags.
 - Use `border`, per-side borders, `borderRadius`, `outline`, `boxShadow`, `opacity`, `rotation`, `flipH`, and `flipV` when useful.
 - For text, use `fontFamily`, `fontSize`, `fontWeight`, `fontStyle`/`italic`, `color`, `textAlign`, `verticalAlign`, `lineHeight`, `letterSpacing`, `textTransform`, bullets through `listStyleType`, and links through `href`/`tooltip`.
 - For images, set `objectFit: "cover"` or `"contain"` and refine with `objectPosition` or `crop`.

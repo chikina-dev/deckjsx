@@ -1,28 +1,27 @@
 import assert from "node:assert/strict";
 import { stat } from "node:fs/promises";
-import { Deck, Shape, Slide, Text, View, type SlideContext } from "deckjsx";
+import { Deck, Shape, Slide, type SlideContext } from "deckjsx";
 
 const deck = new Deck({
   layout: { width: 10, height: 5.625, unit: "in" },
-  meta: { title: "deckjsx npm TSX smoke test", author: "deckjsx" },
+  meta: { title: "deckjsx 0.2 html-like TSX smoke test", author: "deckjsx" },
 });
 
 deck.add(({ slideIndex, totalSlides }: SlideContext) => (
-  <Slide name="npm tsx smoke" style={{ backgroundColor: "#F8FAFC" }}>
-    <Text
+  <Slide name="npm tsx html-like smoke" style={{ backgroundColor: "#F8FAFC" }}>
+    <header
       style={{
         x: 0.7,
         y: 0.55,
         width: 8.5,
         height: 0.5,
-        fontSize: 26,
-        fontWeight: 700,
-        color: "#0F172A",
       }}
     >
-      deckjsx npm TSX smoke test
-    </Text>
-    <View
+      <h1 style={{ fontSize: 26, fontWeight: 700, color: "#0F172A" }}>
+        deckjsx 0.2 html-like TSX smoke test
+      </h1>
+    </header>
+    <main
       style={{
         x: 0.7,
         y: 1.45,
@@ -36,9 +35,9 @@ deck.add(({ slideIndex, totalSlides }: SlideContext) => (
         borderRadius: 0.12,
       }}
     >
-      <Text style={{ fontSize: 16, color: "#334155", fit: "shrink" }}>
+      <p style={{ fontSize: 16, color: "#334155", fit: "shrink" }}>
         Published package generated slide {slideIndex + 1} / {totalSlides}.
-      </Text>
+      </p>
       <Shape
         shape="rect"
         style={{
@@ -47,13 +46,22 @@ deck.add(({ slideIndex, totalSlides }: SlideContext) => (
           boxShadow: "2px 2px 5px rgba(15, 23, 42, 0.2)",
         }}
       />
-    </View>
+    </main>
+    <footer style={{ x: 0.7, y: 4.25, width: 8.6, height: 0.35 }}>
+      <p style={{ fontSize: 12, color: "#64748B" }}>HTML-like authoring API</p>
+    </footer>
   </Slide>
 ));
 
 const ir = deck.render();
 assert.equal(ir.slides.length, 1);
-assert.equal(ir.slides[0]?.name, "npm tsx smoke");
+assert.equal(ir.slides[0]?.name, "npm tsx html-like smoke");
+
+const [header, main, footer] = ir.slides[0]?.nodes ?? [];
+assert.equal(header?.kind, "group");
+assert.equal(main?.kind, "group");
+assert.equal(footer?.kind, "group");
+assert.equal(footer.children[0]?.kind, "text");
 
 await deck.output({
   backend: "pptxgenjs",

@@ -1,4 +1,4 @@
-import { Deck, Image, Shape, Slide, Text, View } from "../../../src/index.ts";
+import { Deck, Shape, Slide } from "deckjsx";
 
 const sampleSvgDataUri =
   "data:image/svg+xml;base64," +
@@ -21,7 +21,7 @@ export async function writeVisualEffects(output = "visual-effects.pptx"): Promis
           "linear-gradient(180deg, #0F172A 0%, #334155 100%)",
       }}
     >
-      <Text
+      <h1
         style={{
           x: 0.7,
           y: 0.55,
@@ -34,8 +34,8 @@ export async function writeVisualEffects(output = "visual-effects.pptx"): Promis
         }}
       >
         Visual effects
-      </Text>
-      <View
+      </h1>
+      <div
         style={{
           x: 0.7,
           y: 1.4,
@@ -48,7 +48,7 @@ export async function writeVisualEffects(output = "visual-effects.pptx"): Promis
           boxShadow: "6px 6px 10px rgba(15, 23, 42, 0.35)",
         }}
       />
-      <Image
+      <img
         data={sampleSvgDataUri}
         style={{
           x: 4.5,

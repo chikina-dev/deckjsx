@@ -1,4 +1,4 @@
-import { Deck, Slide, Text, View } from "../../../src/index.ts";
+import { Deck, Slide } from "deckjsx";
 
 export async function writeLayoutPatterns(output = "layout-patterns.pptx"): Promise<void> {
   const deck = new Deck({
@@ -8,7 +8,7 @@ export async function writeLayoutPatterns(output = "layout-patterns.pptx"): Prom
 
   deck.add(() => (
     <Slide name="Stack and grid" style={{ backgroundColor: "#F8FAFC" }}>
-      <View
+      <section
         style={{
           x: 0.5,
           y: 0.5,
@@ -23,12 +23,10 @@ export async function writeLayoutPatterns(output = "layout-patterns.pptx"): Prom
           borderRadius: 0.1,
         }}
       >
-        <Text style={{ width: 3.4, height: 0.45, fontSize: 20, fontWeight: 700 }}>Stack</Text>
-        <Text style={{ width: 3.4, height: 0.45, fontSize: 14, color: "#475569" }}>First item</Text>
-        <Text style={{ width: 3.4, height: 0.45, fontSize: 14, color: "#475569" }}>
-          Second item
-        </Text>
-        <Text
+        <h2 style={{ width: 3.4, height: 0.45, fontSize: 20, fontWeight: 700 }}>Stack</h2>
+        <p style={{ width: 3.4, height: 0.45, fontSize: 14, color: "#475569" }}>First item</p>
+        <p style={{ width: 3.4, height: 0.45, fontSize: 14, color: "#475569" }}>Second item</p>
+        <p
           style={{
             position: "absolute",
             left: 2.2,
@@ -44,10 +42,10 @@ export async function writeLayoutPatterns(output = "layout-patterns.pptx"): Prom
           }}
         >
           Overlay
-        </Text>
-      </View>
+        </p>
+      </section>
 
-      <View
+      <section
         style={{
           x: 5,
           y: 0.5,
@@ -64,11 +62,11 @@ export async function writeLayoutPatterns(output = "layout-patterns.pptx"): Prom
           borderRadius: 0.1,
         }}
       >
-        <Text style={{ gridColumn: "span 2", fontSize: 20, fontWeight: 700 }}>Grid</Text>
-        <View style={{ backgroundColor: "#DBEAFE", borderRadius: 0.08 }} />
-        <View style={{ backgroundColor: "#DCFCE7", borderRadius: 0.08 }} />
-        <View style={{ gridColumn: "span 2", backgroundColor: "#FEF3C7", borderRadius: 0.08 }} />
-      </View>
+        <h2 style={{ gridColumn: "span 2", fontSize: 20, fontWeight: 700 }}>Grid</h2>
+        <div style={{ backgroundColor: "#DBEAFE", borderRadius: 0.08 }} />
+        <div style={{ backgroundColor: "#DCFCE7", borderRadius: 0.08 }} />
+        <div style={{ gridColumn: "span 2", backgroundColor: "#FEF3C7", borderRadius: 0.08 }} />
+      </section>
     </Slide>
   ));
 

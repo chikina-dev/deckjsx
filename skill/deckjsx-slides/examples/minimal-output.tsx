@@ -1,4 +1,4 @@
-import { Deck, Slide, Text } from "../../../src/index.ts";
+import { Deck, Slide } from "deckjsx";
 
 export async function writeMinimalDeck(output = "sample.pptx"): Promise<void> {
   const deck = new Deck({
@@ -8,7 +8,7 @@ export async function writeMinimalDeck(output = "sample.pptx"): Promise<void> {
 
   deck.add(() => (
     <Slide name="File output">
-      <Text style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>Hello PPTX</Text>
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>Hello PPTX</p>
     </Slide>
   ));
 
