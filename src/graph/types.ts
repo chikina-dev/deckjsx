@@ -99,14 +99,19 @@ export type SemanticNode =
   | SemanticTextNode
   | SemanticTextRunNode;
 
+export type StyleClassRef = {
+  readonly name: string;
+  readonly index: number;
+};
+
 export type StyleEntity = {
   readonly id: StyleEntityId;
   readonly target: SemanticNodeKind;
   readonly authored: {
     readonly style?: unknown;
     readonly direct?: unknown;
+    readonly classRefs?: readonly StyleClassRef[];
   };
-  readonly resolved?: unknown;
 };
 
 export type AssetEntity = {

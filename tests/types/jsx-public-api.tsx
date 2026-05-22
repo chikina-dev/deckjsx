@@ -4,6 +4,7 @@ import type {
   CssAlignContent,
   CssGridTemplate,
   CssGridTemplateAreas,
+  ClassNameValue,
   DeckJsxIntrinsicElements,
   Diagnostics,
   GraphNodeId,
@@ -11,6 +12,8 @@ import type {
   JsxKey,
   OutputConfig,
   Spacing,
+  StyleClassRef,
+  StyleEntity,
   TextTabStopAuthoring,
   ViewStyle,
 } from "../../src/index.ts";
@@ -65,6 +68,32 @@ readonlyAreas satisfies CssGridTemplateAreas;
 const readonlyTabStops = [{ position: "1in", alignment: "right" }] as const;
 readonlyTabStops satisfies readonly TextTabStopAuthoring[];
 
+const clsxLikeClassName = [
+  "card selected",
+  false,
+  null,
+  undefined,
+  ["nested", { active: true, disabled: false, muted: null }],
+] as const satisfies ClassNameValue;
+void clsxLikeClassName;
+
+const styleClassRef = { name: "card", index: 0 } satisfies StyleClassRef;
+const styleEntityWithClassRefs = {
+  id: "style/test" as StyleEntity["id"],
+  target: "container",
+  authored: { classRefs: [styleClassRef] },
+} satisfies StyleEntity;
+void styleEntityWithClassRefs;
+
+const styleEntityWithResolved = {
+  id: "style/resolved" as StyleEntity["id"],
+  target: "text",
+  authored: {},
+  // @ts-expect-error StyleEntity does not carry resolved concrete style values.
+  resolved: {},
+} satisfies StyleEntity;
+void styleEntityWithResolved;
+
 const exportedStyleTypes = {
   alignContent: "space-between",
   padding: readonlySpacing,
@@ -75,13 +104,29 @@ void exportedStyleTypes;
 
 void (
   <Slide name="Valid slide">
-    <View style={{ x: 1, y: 1, width: 4, height: 2 }}>
-      <Text>Hello</Text>
+    <View className={clsxLikeClassName} style={{ x: 1, y: 1, width: 4, height: 2 }}>
+      <Text className={{ title: true }}>Hello</Text>
       <Text tabStops={readonlyTabStops}>Tabs</Text>
-      <Image src="image.png" />
-      <Shape shape="rect" />
+      <Image src="image.png" className="image" />
+      <Shape shape="rect" className={["shape", { active: true }]} />
     </View>
   </Slide>
+);
+
+void (
+  <Text
+    // @ts-expect-error className does not accept numeric class tokens.
+    className={1}
+  >
+    Bad class
+  </Text>
+);
+
+void (
+  <View
+    // @ts-expect-error className object maps accept boolean, null, or undefined values only.
+    className={{ selected: 1 }}
+  />
 );
 
 void (

@@ -18,6 +18,7 @@ export type {
   SemanticTextRunNode,
   SourceIdentity,
   SourceOrigin,
+  StyleClassRef,
   StyleEntity,
   StyleEntityId,
 } from "./types";

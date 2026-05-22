@@ -22,8 +22,30 @@ The meaning raised from an Authored Tag into the Semantic Author Graph, such as 
 _Avoid_: style default only
 
 **Style Entity**:
-A graph entity that represents authored or resolved styling separately from renderable node hierarchy. Renderable semantic nodes reference Style Entities instead of treating styles as child nodes.
+A graph entity that represents authored style inputs and style references separately from renderable node hierarchy. Renderable semantic nodes reference Style Entities instead of treating styles as child nodes. Fully resolved concrete style values belong to a Resolved Style Inspection View rather than becoming the main meaning of the Style Entity.
+Style Entity should not carry its own resolved concrete style payload.
+A node may reference a Style Entity even when its only style-related input is a Style Class Reference.
 _Avoid_: style child node
+
+**Style Class**:
+An author-defined reusable style name that can be referenced from JSX authoring and resolved into Style Entities before output projection. Style Classes are part of authoring semantics, not output-format classes.
+_Avoid_: CSS class, PPTX style id
+
+**Style Class Reference**:
+An unresolved reference from a Style Entity to an authored Style Class. It records the requested class name and merge-order index without containing the resolved style values for that class.
+Style Class References are produced from clsx-like `className` authoring values by dropping falsey and empty entries, expanding arrays and boolean object maps, splitting whitespace in strings, and preserving the resulting order. The merge-order index is assigned after normalization, not from the original input position.
+Any style-capable authoring node may carry Style Class References; fragments and primitive text leaves do not.
+`className` is not a direct style prop; once normalized, it should appear as Style Class References rather than inside authored direct props.
+_Avoid_: resolved class style
+
+**Theme**:
+A reusable design vocabulary for a deck, including design tokens and semantic defaults. Theme values inform style resolution before output projection and should not make the Semantic Author Graph specific to PPTX, PDF, or any other output format.
+Theme belongs to Deck-level configuration rather than to individual Style Entities as authored payload.
+_Avoid_: output template, PowerPoint theme XML
+
+**Resolved Style Inspection View**:
+An inspectable view of style values after deckjsx has applied style resolution rules such as Theme defaults, element defaults, Style Classes, inline style, and direct props. It exists to show what output projections will consume without turning the Semantic Author Graph itself into a PPTX- or PDF-specific model. It may expose theme application trace, but Theme itself remains Deck-level configuration.
+_Avoid_: output style model, PPTX shape properties
 
 **Asset Entity**:
 A graph entity that represents reusable media or external content such as an image source. Renderable nodes reference Asset Entities instead of embedding output-specific media paths.
@@ -48,6 +70,7 @@ _Avoid_: backend
 **Compile**:
 The operation that turns deck authoring into the Semantic Author Graph. It replaces the older idea of rendering as the primary inspection API.
 Graph Composition is introduced through compile first. Legacy render and output paths should not receive separate composition support merely to preserve old output behavior.
+New graph-only authored metadata, such as unresolved Style Class References, may be visible through compile before legacy output paths understand it.
 _Avoid_: render
 
 **Diagnostics**:

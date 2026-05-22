@@ -2,6 +2,7 @@ import { describe, expect, test } from "vite-plus/test";
 import {
   CompositionDiagnosticError,
   Deck,
+  Image,
   SemanticGraphDiagnosticError,
   Slide,
   Text,
@@ -55,6 +56,66 @@ describe("Semantic Author Graph", () => {
     });
     expect(graph.styles.size).toBeGreaterThanOrEqual(2);
     expect(graph.assets.size).toBe(1);
+  });
+
+  test("captures className as ordered style class references without resolving classes", () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
+
+    deck.add(() => (
+      <Slide name="Classes" className="deck-slide">
+        <View
+          className={[
+            "card",
+            false,
+            ["selected", { active: true, disabled: false, "": true, "   ": true }],
+            "wide card",
+          ]}
+          x={1}
+        >
+          <Text className={{ title: true, muted: null }}>
+            Hello <span className="accent">world</span>
+          </Text>
+          <Image src="chart.png" className="chart-image" />
+        </View>
+      </Slide>
+    ));
+
+    const graph = deck.compile();
+    const view = values(graph.nodes).find(
+      (node) => node.kind === "container" && node.authoredComponent === "View",
+    );
+    const slide = values(graph.nodes).find((node) => node.kind === "slide");
+    const image = values(graph.nodes).find((node) => node.kind === "image");
+    const span = values(graph.nodes).find(
+      (node) => node.kind === "textRun" && node.text === "world",
+    );
+
+    expect(view?.styleRef).toBeDefined();
+    expect(graph.styles.get(view?.styleRef ?? ("" as never))?.authored).toEqual({
+      direct: { x: 1 },
+      classRefs: [
+        { name: "card", index: 0 },
+        { name: "selected", index: 1 },
+        { name: "active", index: 2 },
+        { name: "wide", index: 3 },
+        { name: "card", index: 4 },
+      ],
+    });
+    expect(graph.styles.get(slide?.styleRef ?? ("" as never))?.authored.classRefs).toEqual([
+      { name: "deck-slide", index: 0 },
+    ]);
+    expect(graph.styles.get(image?.styleRef ?? ("" as never))?.authored.classRefs).toEqual([
+      { name: "chart-image", index: 0 },
+    ]);
+    expect(graph.styles.get(span?.styleRef ?? ("" as never))?.authored.classRefs).toEqual([
+      { name: "accent", index: 0 },
+    ]);
+    expect(graph.styles.get(view?.styleRef ?? ("" as never))?.authored.direct).not.toHaveProperty(
+      "className",
+    );
+    expect(graph.styles.get(view?.styleRef ?? ("" as never))).not.toHaveProperty("resolved");
   });
 
   test("inspect mode returns diagnostics for invalid inline structure without throwing", () => {

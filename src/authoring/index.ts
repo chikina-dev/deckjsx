@@ -116,6 +116,20 @@ export type JsxNode =
   | undefined
   | JsxNodeArray;
 
+export interface ClassNameValueArray extends ReadonlyArray<ClassNameValue> {}
+export type ClassNameObject = Readonly<Record<string, boolean | null | undefined>>;
+export type ClassNameValue =
+  | string
+  | false
+  | null
+  | undefined
+  | ClassNameValueArray
+  | ClassNameObject;
+
+type ClassNameAuthorProps = {
+  className?: ClassNameValue;
+};
+
 type BaseAuthorProps = {
   opacity?: number;
   rotation?: number;
@@ -366,6 +380,7 @@ export type OutputConfig = {
 
 export type SlideNodeProps = {
   name?: string;
+  className?: ClassNameValue;
   style?: SlideStyle;
   background?: string;
   backgroundImage?: string;
@@ -384,7 +399,8 @@ export type SlideProps = SlideNodeProps & {
 
 export type ViewNodeProps = {
   style?: ViewStyle;
-} & ViewStyle;
+} & ClassNameAuthorProps &
+  ViewStyle;
 
 export type ViewProps = ViewNodeProps & {
   children?: ContentJsxChild;
@@ -392,7 +408,8 @@ export type ViewProps = ViewNodeProps & {
 
 export type TextNodeProps = {
   style?: TextStyle;
-} & TextStyle;
+} & ClassNameAuthorProps &
+  TextStyle;
 
 export type TextProps = TextNodeProps & {
   children?: TextJsxChild;
@@ -400,7 +417,8 @@ export type TextProps = TextNodeProps & {
 
 export type ImageNodeProps = {
   style?: ImageStyle;
-} & ImageStyle &
+} & ClassNameAuthorProps &
+  ImageStyle &
   (
     | {
         src: string;
@@ -419,7 +437,8 @@ export type ImageProps = ImageNodeProps & {
 export type ShapeNodeProps = {
   style?: ShapeStyle;
   shape: "rect" | "ellipse" | "line";
-} & ShapeStyle;
+} & ClassNameAuthorProps &
+  ShapeStyle;
 
 export type ShapeProps = ShapeNodeProps & {
   children?: never;
