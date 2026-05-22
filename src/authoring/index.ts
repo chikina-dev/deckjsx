@@ -353,15 +353,11 @@ export type DeckOptions = {
 };
 
 export type SlideContext = {
-  slideIndex: number;
-  totalSlides: number;
-  context?: {
-    slideIndex: number;
-    totalSlides: number;
-  };
+  composition: import("../composition/types").CompositionContext;
 };
 
-export type SlideFactory = (context: SlideContext) => JsxNode;
+export type SlideFactory<TSourceContext = void> =
+  import("../composition/types").SlideFactory<TSourceContext>;
 
 export type OutputConfig = {
   backend: ImplementedBackendName;

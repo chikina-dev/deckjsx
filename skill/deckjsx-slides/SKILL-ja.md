@@ -64,8 +64,8 @@ const deck = new Deck({
   meta: { title: "Quarterly Review", author: "deckjsx" },
 });
 
-deck.add(({ slideIndex, totalSlides }) => (
-  <Slide name={`Slide ${slideIndex + 1}`} style={{ backgroundColor: "#F8FAFC" }}>
+deck.add(({ composition }) => (
+  <Slide name={`Slide ${composition.slideIndex + 1}`} style={{ backgroundColor: "#F8FAFC" }}>
     <header
       style={{
         x: 0.7,
@@ -117,7 +117,7 @@ deck.add(({ slideIndex, totalSlides }) => (
       }}
     >
       <p style={{ fontSize: 9, color: "#64748B", textAlign: "right" }}>
-        {slideIndex + 1} / {totalSlides}
+        {composition.slideIndex + 1} / {composition.totalSlides}
       </p>
     </footer>
   </Slide>
@@ -138,10 +138,10 @@ const deck = new Deck({
   meta: { title: "Spec test", author: "deckjsx" },
 });
 
-deck.add(({ slideIndex, totalSlides }) => (
-  <Slide name={`Slide ${slideIndex + 1}`}>
+deck.add(({ composition }) => (
+  <Slide name={`Slide ${composition.slideIndex + 1}`}>
     <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>
-      {slideIndex + 1} / {totalSlides}
+      {composition.slideIndex + 1} / {composition.totalSlides}
     </p>
   </Slide>
 ));
@@ -336,7 +336,7 @@ PowerPoint らしい正確な配置が必要なときに使います。
 
 - 推奨の authoring surface は `Slide` と lowercase html-like tag。view-like tag は `div`、`section`、`article`、`main`、`header`、`footer`、`aside`、`nav`、`figure`。text-like tag は `p` と `h1`-`h6`。image tag は `img`。
 - fallback として `View`、`Text`、`Image`、`Shape` component も使える。
-- `Deck#add()` の callback には `{ slideIndex, totalSlides }` が渡る。
+- `Deck#add()` の callback には `{ composition }` が渡る。`composition.slideIndex` と `composition.totalSlides` を使う。
 - 幾何値の number は inch、font size の number は point として扱う。
 - view-like tag は view/layout style を受け取る。text style は `p`、`h1`-`h6`、または `Text` に置く。
 - `span` と rich inline text は 0.2.0 の surface にはまだ含めない。現時点では必要に応じて別の text node として表現する。

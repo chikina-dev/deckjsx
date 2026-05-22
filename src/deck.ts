@@ -1,17 +1,29 @@
 import { renderPresentation } from "./compiler";
-import type { DeckOptions, OutputConfig, SlideFactory } from "./authoring/index";
-import { isLegacyAuthorNode } from "./authoring/legacy";
-import { isAuthorTreeNode, type AuthorElementNode, type AuthorTreeNode } from "./authoring/tree";
+import type { DeckOptions, OutputConfig } from "./authoring/index";
 import {
-  createDiagnostics,
-  diagnostic,
+  CompositionDiagnosticError,
   SemanticGraphDiagnosticError,
-  type Diagnostic,
   type Diagnostics,
 } from "./diagnostics";
+import {
+  COMPOSITION_SOURCE,
+  type CompositionEntry,
+  type CompositionSource,
+  type CompositionSourceInternals,
+  type SlideFactory,
+  type SourceContextInput,
+} from "./composition/types";
+import { resolveComposition } from "./composition/resolve";
 import { buildSemanticAuthorGraph, type SemanticAuthorGraph } from "./graph";
 import type { PresentationIR } from "./ir/index";
 import { outputPresentation } from "./node";
+
+export type {
+  CompositionContext,
+  SlideFactory,
+  SlideFactoryInput,
+  SourceContextMapper,
+} from "./composition/types";
 
 export type CompileMode = "inspect" | "strict";
 
@@ -20,124 +32,176 @@ export type CompileInspectResult = {
   readonly diagnostics: Diagnostics;
 };
 
-function isSlideRoot(value: AuthorTreeNode): value is AuthorElementNode {
-  return (
-    value.kind === "element" &&
-    value.source.kind === "component" &&
-    value.source.component === "Slide"
+type WithSource<TSourceContext> = [TSourceContext] extends [void]
+  ? never
+  : (sourceContext: TSourceContext) => BoundSource<TSourceContext>;
+
+function hasMountedSources(entries: readonly CompositionEntry<any>[]): boolean {
+  return entries.some((entry) => entry.kind === "mount");
+}
+
+function directSlideFactories<TSourceContext>(
+  entries: readonly CompositionEntry<TSourceContext>[],
+): SlideFactory<TSourceContext>[] {
+  return entries.flatMap((entry) => (entry.kind === "slide" ? [entry.factory] : []));
+}
+
+function mountedSourceError(): Error {
+  return new Error(
+    "Mounted sources are supported by compile() only until the output pipeline supports graph composition.",
   );
 }
 
-function describeInvalidRoot(value: unknown): string {
-  if (isLegacyAuthorNode(value)) {
-    return "Slide factory returned a legacy author node.";
+function compileSource(
+  source: CompositionSource<any>,
+  config: { mode?: CompileMode } = {},
+): CompileInspectResult | SemanticAuthorGraph {
+  const composition = resolveComposition(source);
+
+  if (composition.diagnostics.hasErrors) {
+    if (config.mode === "inspect") {
+      return { diagnostics: composition.diagnostics };
+    }
+
+    throw new CompositionDiagnosticError(composition.diagnostics);
   }
 
-  if (isAuthorTreeNode(value)) {
-    return "Slide factory returned an author tree node that is not a <Slide /> root.";
+  const result = buildSemanticAuthorGraph(composition.roots ?? []);
+
+  if (config.mode === "inspect") {
+    return result;
   }
 
-  if (value === null) {
-    return "Slide factory returned null.";
+  if (result.diagnostics.hasErrors) {
+    throw new SemanticGraphDiagnosticError(result.diagnostics);
   }
 
-  return `Slide factory returned ${typeof value}.`;
+  if (!result.graph) {
+    throw new SemanticGraphDiagnosticError(result.diagnostics);
+  }
+
+  return result.graph;
 }
 
-function invalidRootSourceSpan(value: unknown) {
-  return isAuthorTreeNode(value) ? value.sourceSpan : undefined;
-}
+export class BoundSource<TSourceContext = void> implements CompositionSource<TSourceContext> {
+  readonly #source: Deck<TSourceContext>;
+  readonly #sourceContext: TSourceContext;
 
-function invalidRootDiagnostic(value: unknown, slideIndex: number): Diagnostic {
-  const path = `document > slideFactory[${slideIndex}]`;
-  return diagnostic({
-    severity: "error",
-    code: "E_COMPILE_ROOT",
-    title: "slide factory must return a <Slide /> root",
-    message: describeInvalidRoot(value),
-    labels: [
-      {
-        path,
-        message: "Expected a deckjsx Author Tree <Slide /> node.",
-        ...(invalidRootSourceSpan(value) ? { sourceSpan: invalidRootSourceSpan(value) } : {}),
-      },
-    ],
-    help: ["Return <Slide>...</Slide> from the slide factory passed to deck.add()."],
-  });
-}
-
-export class Deck {
-  readonly #options: DeckOptions;
-  readonly #slides: SlideFactory[] = [];
-
-  constructor(options: DeckOptions) {
-    this.#options = options;
+  constructor(source: Deck<TSourceContext>, sourceContext: TSourceContext) {
+    this.#source = source;
+    this.#sourceContext = sourceContext;
   }
 
-  add(slide: SlideFactory): this {
-    this.#slides.push(slide);
-    return this;
-  }
-
-  render(): PresentationIR {
-    return renderPresentation(this.#options, this.#slides);
+  [COMPOSITION_SOURCE](): CompositionSourceInternals<TSourceContext> {
+    const source = this.#source[COMPOSITION_SOURCE]();
+    return {
+      entries: source.entries,
+      cycleId: source.cycleId,
+      boundContext: { present: true, value: this.#sourceContext },
+    };
   }
 
   compile(): SemanticAuthorGraph;
   compile(config: { mode?: "strict" }): SemanticAuthorGraph;
   compile(config: { mode: "inspect" }): CompileInspectResult;
   compile(config: { mode?: CompileMode } = {}): CompileInspectResult | SemanticAuthorGraph {
-    const roots: AuthorElementNode[] = [];
-    const diagnostics: Diagnostic[] = [];
+    return compileSource(this, config);
+  }
 
-    this.#slides.forEach((factory, slideIndex) => {
-      const root = factory({
-        slideIndex,
-        totalSlides: this.#slides.length,
-        context: {
-          slideIndex,
-          totalSlides: this.#slides.length,
-        },
-      });
-
-      if (!isAuthorTreeNode(root) || !isSlideRoot(root)) {
-        diagnostics.push(invalidRootDiagnostic(root, slideIndex));
-        return;
-      }
-
-      roots.push(root);
-    });
-
-    if (diagnostics.length > 0) {
-      const result = {
-        diagnostics: createDiagnostics(diagnostics),
-      };
-
-      if (config.mode === "inspect") {
-        return result;
-      }
-
-      throw new SemanticGraphDiagnosticError(result.diagnostics);
+  render(): PresentationIR {
+    const source = this.#source[COMPOSITION_SOURCE]();
+    if (hasMountedSources(source.entries)) {
+      throw mountedSourceError();
     }
 
-    const result = buildSemanticAuthorGraph(roots);
-
-    if (config.mode === "inspect") {
-      return result;
-    }
-
-    if (result.diagnostics.hasErrors) {
-      throw new SemanticGraphDiagnosticError(result.diagnostics);
-    }
-
-    if (!result.graph) {
-      throw new SemanticGraphDiagnosticError(result.diagnostics);
-    }
-
-    return result.graph;
+    return renderPresentation(
+      this.#source.options,
+      directSlideFactories(source.entries).map(
+        (factory) => (input) =>
+          factory({
+            ...input,
+            context: this.#sourceContext,
+          } as never),
+      ),
+    );
   }
 
   async output(config: OutputConfig): Promise<void> {
+    await outputPresentation(this.render(), config);
+  }
+}
+
+export class Deck<TSourceContext = void> implements CompositionSource<TSourceContext> {
+  readonly #options: DeckOptions;
+  readonly #entries: CompositionEntry<TSourceContext>[] = [];
+
+  readonly withSource: WithSource<TSourceContext>;
+
+  constructor(options: DeckOptions) {
+    this.#options = options;
+    this.withSource = ((sourceContext: TSourceContext) =>
+      new BoundSource(this, sourceContext)) as WithSource<TSourceContext>;
+  }
+
+  get options(): DeckOptions {
+    return this.#options;
+  }
+
+  [COMPOSITION_SOURCE](): CompositionSourceInternals<TSourceContext> {
+    return {
+      entries: this.#entries,
+      cycleId: this,
+      boundContext: { present: false },
+    };
+  }
+
+  add(slide: SlideFactory<TSourceContext>): this {
+    this.#entries.push({ kind: "slide", factory: slide });
+    return this;
+  }
+
+  mount<TChildContext>(
+    sourceKey: string,
+    child: Deck<TChildContext>,
+    ...context: [TChildContext] extends [void]
+      ? []
+      : [sourceContext: SourceContextInput<TSourceContext, TChildContext>]
+  ): this;
+  mount<TChildContext>(sourceKey: string, child: BoundSource<TChildContext>): this;
+  mount(
+    sourceKey: string,
+    child: CompositionSource<unknown>,
+    ...context: readonly unknown[]
+  ): this {
+    this.#entries.push({
+      kind: "mount",
+      sourceKey,
+      source: child,
+      ...(context.length > 0 ? { contextProvider: context[0] } : {}),
+      ...(child instanceof BoundSource && context.length > 0 ? { invalidExtraContext: true } : {}),
+    });
+    return this;
+  }
+
+  render(this: Deck<void>): PresentationIR {
+    if (hasMountedSources(this.#entries)) {
+      throw mountedSourceError();
+    }
+
+    return renderPresentation(this.#options, directSlideFactories(this.#entries));
+  }
+
+  compile(this: Deck<void>): SemanticAuthorGraph;
+  compile(this: Deck<void>, config: { mode?: "strict" }): SemanticAuthorGraph;
+  compile(this: Deck<void>, config: { mode: "inspect" }): CompileInspectResult;
+  compile(
+    this: Deck<void>,
+    config: { mode?: CompileMode } = {},
+  ): CompileInspectResult | SemanticAuthorGraph {
+    return compileSource(this, config);
+  }
+
+  async output(this: Deck<void>, config: OutputConfig): Promise<void> {
     await outputPresentation(this.render(), config);
   }
 }

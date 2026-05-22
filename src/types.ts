@@ -52,8 +52,6 @@ export type {
   OutputConfig,
   ShapeProps,
   ShapeStyle,
-  SlideContext,
-  SlideFactory,
   SlideProps,
   SlideStyle,
   Spacing,
@@ -73,6 +71,13 @@ export type {
   ViewProps,
   ViewStyle,
 } from "./authoring/index";
+export type {
+  BoundSource,
+  CompositionContext,
+  SlideFactory,
+  SlideFactoryInput,
+  SourceContextMapper,
+} from "./deck";
 
 export type {
   BackgroundImageLayerIR,

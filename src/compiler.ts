@@ -36,7 +36,6 @@ import type {
   DeckOptions,
   ImageProps,
   JsxNode,
-  SlideContext,
   SlideFactory,
   StackAlignment,
   StackAxis,
@@ -1670,7 +1669,7 @@ function compileNode(
 
 function compileSlide(
   root: JsxNode,
-  context: SlideContext,
+  context: { slideIndex: number },
   slideFrame: Frame,
   idGenerator: IdGenerator,
   lengthContext?: LengthResolutionContext,
@@ -1746,7 +1745,7 @@ function compileSlide(
 
 export function renderPresentation(
   options: DeckOptions,
-  slides: ReadonlyArray<SlideFactory>,
+  slides: ReadonlyArray<SlideFactory<void>>,
 ): PresentationIR {
   const idGenerator = createIdGenerator();
   const slideSize =
@@ -1775,19 +1774,19 @@ export function renderPresentation(
     meta: options.meta,
     size: slideSize,
     slides: slides.map((factory, slideIndex) => {
-      const context = {
-        slideIndex,
-        totalSlides: slides.length,
-        context: {
-          slideIndex,
-          totalSlides: slides.length,
-        },
-      };
       return compileSlide(
-        toLegacyJsxNode(factory(context)),
+        toLegacyJsxNode(
+          factory({
+            composition: {
+              slideIndex,
+              totalSlides: slides.length,
+              deckSlideIndex: slideIndex,
+              deckTotalSlides: slides.length,
+            },
+          }),
+        ),
         {
           slideIndex,
-          totalSlides: slides.length,
         },
         slideFrame,
         idGenerator,

@@ -64,8 +64,8 @@ const deck = new Deck({
   meta: { title: "Quarterly Review", author: "deckjsx" },
 });
 
-deck.add(({ slideIndex, totalSlides }) => (
-  <Slide name={`Slide ${slideIndex + 1}`} style={{ backgroundColor: "#F8FAFC" }}>
+deck.add(({ composition }) => (
+  <Slide name={`Slide ${composition.slideIndex + 1}`} style={{ backgroundColor: "#F8FAFC" }}>
     <header
       style={{
         x: 0.7,
@@ -118,7 +118,7 @@ deck.add(({ slideIndex, totalSlides }) => (
       }}
     >
       <p style={{ fontSize: 9, color: "#64748B", textAlign: "right" }}>
-        {slideIndex + 1} / {totalSlides}
+        {composition.slideIndex + 1} / {composition.totalSlides}
       </p>
     </footer>
   </Slide>
@@ -141,10 +141,10 @@ const deck = new Deck({
   meta: { title: "Spec test", author: "deckjsx" },
 });
 
-deck.add(({ slideIndex, totalSlides }) => (
-  <Slide name={`Slide ${slideIndex + 1}`}>
+deck.add(({ composition }) => (
+  <Slide name={`Slide ${composition.slideIndex + 1}`}>
     <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>
-      {slideIndex + 1} / {totalSlides}
+      {composition.slideIndex + 1} / {composition.totalSlides}
     </p>
   </Slide>
 ));
@@ -339,7 +339,7 @@ Based on `tests/typography-values.test.tsx` and `tests/style-values.test.tsx`.
 
 - Preferred authoring surface: `Slide` plus lowercase html-like tags. View-like tags are `div`, `section`, `article`, `main`, `header`, `footer`, `aside`, `nav`, and `figure`; text-like tags are `p` and `h1`-`h6`; image tags are `img`.
 - Public component fallbacks remain available: `View`, `Text`, `Image`, and `Shape`.
-- `Deck#add()` receives `{ slideIndex, totalSlides }`.
+- `Deck#add()` receives `{ composition }`; use `composition.slideIndex` and `composition.totalSlides`.
 - Geometry numbers default to inches; font-size numbers default to points.
 - View-like tags accept view/layout styles. Text styles belong on `p`, `h1`-`h6`, or `Text`.
 - `span` and rich inline text are intentionally not part of the 0.2.0 surface; model them as separate text nodes for now.

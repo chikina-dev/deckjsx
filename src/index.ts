@@ -3,6 +3,7 @@ import type { JsxKey } from "./jsx-runtime";
 
 export { Deck } from "./deck";
 export {
+  CompositionDiagnosticError,
   DeckDiagnosticError,
   SemanticGraphDiagnosticError,
   formatDiagnostic,
@@ -75,8 +76,6 @@ export {
   type OutputConfig,
   type ShapeProps,
   type ShapeStyle,
-  type SlideContext,
-  type SlideFactory,
   type SlideProps,
   type SlideStyle,
   type Spacing,
@@ -97,7 +96,15 @@ export {
   type ViewStyle,
 } from "./authoring/index";
 export type { SourceSpan } from "./authoring/tree";
-export type { CompileInspectResult, CompileMode } from "./deck";
+export type {
+  BoundSource,
+  CompileInspectResult,
+  CompileMode,
+  CompositionContext,
+  SlideFactory,
+  SlideFactoryInput,
+  SourceContextMapper,
+} from "./deck";
 export type { Diagnostic, DiagnosticLabel, DiagnosticSeverity, Diagnostics } from "./diagnostics";
 export type {
   AssetEntity,
@@ -116,6 +123,8 @@ export type {
   SemanticSlideNode,
   SemanticTextNode,
   SemanticTextRunNode,
+  SourceIdentity,
+  SourceOrigin,
   StyleEntity,
   StyleEntityId,
 } from "./graph";

@@ -2,24 +2,24 @@ import { describe, expect, test } from "vite-plus/test";
 import { Deck, Image, Shape, Slide, Text, View } from "../src/index.ts";
 
 describe("Deck", () => {
-  test("render compiles multiple slides and passes slide context to factories", () => {
+  test("render compiles multiple slides and passes composition context to factories", () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
       meta: { title: "Spec test", author: "deckjsx" },
     });
 
-    deck.add(({ slideIndex, totalSlides }) => (
-      <Slide name={`Slide ${slideIndex + 1}`}>
+    deck.add(({ composition }) => (
+      <Slide name={`Slide ${composition.slideIndex + 1}`}>
         <Text style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>
-          {slideIndex + 1} / {totalSlides}
+          {composition.slideIndex + 1} / {composition.totalSlides}
         </Text>
       </Slide>
     ));
 
-    deck.add(({ slideIndex, totalSlides }) => (
-      <Slide name={`Slide ${slideIndex + 1}`}>
+    deck.add(({ composition }) => (
+      <Slide name={`Slide ${composition.slideIndex + 1}`}>
         <Text style={{ x: 2, y: 1.5, width: 3, height: 0.5, fontSize: 18 }}>
-          {slideIndex + 1} / {totalSlides}
+          {composition.slideIndex + 1} / {composition.totalSlides}
         </Text>
       </Slide>
     ));

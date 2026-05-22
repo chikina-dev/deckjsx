@@ -37,5 +37,9 @@ export function diagnostic(input: Diagnostic): Diagnostic {
   return input;
 }
 
-export { DeckDiagnosticError, SemanticGraphDiagnosticError } from "./errors";
+export {
+  CompositionDiagnosticError,
+  DeckDiagnosticError,
+  SemanticGraphDiagnosticError,
+} from "./errors";
 export { formatDiagnostic, formatDiagnostics } from "./format";

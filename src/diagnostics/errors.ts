@@ -17,3 +17,10 @@ export class SemanticGraphDiagnosticError extends DeckDiagnosticError {
     this.name = "SemanticGraphDiagnosticError";
   }
 }
+
+export class CompositionDiagnosticError extends DeckDiagnosticError {
+  constructor(diagnostics: Diagnostics) {
+    super(formatDiagnostics(diagnostics), diagnostics);
+    this.name = "CompositionDiagnosticError";
+  }
+}

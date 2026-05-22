@@ -19,7 +19,7 @@ export async function writeMultiSlideReport(output = "multi-slide-report.pptx"):
     meta: { title: "Quarterly Review", author: "deckjsx" },
   });
 
-  deck.add(({ slideIndex, totalSlides }) => (
+  deck.add(({ composition }) => (
     <Slide name="Title" style={{ backgroundColor: "#F8FAFC" }}>
       <h1
         style={{
@@ -40,13 +40,13 @@ export async function writeMultiSlideReport(output = "multi-slide-report.pptx"):
       </p>
       <footer style={{ x: 11.2, y: 7, width: 1.4, height: 0.25 }}>
         <p style={{ fontSize: 9, color: "#64748B", textAlign: "right" }}>
-          {slideIndex + 1} / {totalSlides}
+          {composition.slideIndex + 1} / {composition.totalSlides}
         </p>
       </footer>
     </Slide>
   ));
 
-  deck.add(({ slideIndex, totalSlides }) => (
+  deck.add(({ composition }) => (
     <Slide name="Metrics" style={{ backgroundColor: "#FFFFFF" }}>
       <h1 style={{ x: 0.7, y: 0.5, width: 8, height: 0.45, fontSize: 24, fontWeight: 700 }}>
         Business metrics
@@ -98,7 +98,7 @@ export async function writeMultiSlideReport(output = "multi-slide-report.pptx"):
       </section>
       <footer style={{ x: 11.2, y: 7, width: 1.4, height: 0.25 }}>
         <p style={{ fontSize: 9, color: "#64748B", textAlign: "right" }}>
-          {slideIndex + 1} / {totalSlides}
+          {composition.slideIndex + 1} / {composition.totalSlides}
         </p>
       </footer>
     </Slide>

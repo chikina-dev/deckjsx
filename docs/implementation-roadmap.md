@@ -475,46 +475,217 @@ const root = new Deck({ layout });
 root.mount("child-section", child, sourceContext);
 
 const bound = child.withSource(sourceContext);
-await bound.output({ output: "child-section.pptx" });
+const graph = bound.compile();
 ```
 
 Recommended semantics:
 
-- `Deck<TSourceContext = void>` uses the generic only as a type-level source contract.
+- `Deck<TSourceContext = void>` uses `void` as the only marker for "no Source Context".
+  `Deck<undefined>` and `Deck<{}>` still have Source Context.
 - Deck authoring registration APIs should be fluent and return `this`, including `add()` and
   `mount()`.
-- A `Deck<void>` is a Root Deck and can be built or output directly.
-- A `Deck<TSourceContext>` requires Source Context before it can act as a root.
+- A `Deck<void>` is a Root Deck and can compile directly. A `Deck<TSourceContext>` requires Source
+  Context before it can act as a root.
+- Root-like operations such as `compile()` should be type-constrained to `Deck<void>` or a
+  `BoundSource`.
+- `withSource(sourceContext)` creates a `BoundSource` for a Deck with required Source Context.
+  `Deck<void>` should not expose `withSource()`.
+- `BoundSource` exposes root-like operations such as `compile()` but does not expose authoring
+  registration APIs such as `add()` or `mount()`.
 - `mount(sourceKey, childDeck, sourceContext)` composes a child source under a Source Key.
-- `withSource(sourceContext)` or equivalent creates a Bound Source that can be built or output
-  directly.
+- `mount(sourceKey, childDeck, mapper)` derives child Source Context from the parent Source
+  Context.
+- `mount(sourceKey, childDeck)` is valid only when the child is `Deck<void>` or a fully specified
+  `BoundSource`.
+- Passing Source Context or a Source Context Mapper to `Deck<void>` or to a `BoundSource` should be
+  rejected by types where practical and by runtime validation for JavaScript callers.
 - Source Context is authored input. It should not include bindings, environment, or global config.
-- Composition Context is produced by deckjsx and includes values such as `sourceKey`, `slideIndex`,
-  and `totalSlides`.
+- Slide factory input separates user-authored Source Context from deckjsx-generated Composition
+  Context.
 - JSX children should not be injected into the top of a child Deck through `mount()`.
 - If a child Deck wants caller-provided JSX, it should expose an explicit Source Slot inside Source
   Context, such as `note?: JsxNode`.
 
+Slide factories should receive Source Context through `context` and generated composition values
+through `composition`:
+
+```tsx
+const section = new Deck<{ sectionTitle: string }>({ layout });
+
+section.add(({ context, composition }) => (
+  <Slide name={context.sectionTitle}>
+    <h1>{context.sectionTitle}</h1>
+    <p>
+      {composition.deckSlideIndex + 1} / {composition.deckTotalSlides}
+    </p>
+  </Slide>
+));
+```
+
+Root Deck slide factories have no `context` field:
+
+```tsx
+const root = new Deck({ layout });
+
+root.add(({ composition }) => (
+  <Slide>
+    <p>{composition.slideIndex + 1}</p>
+  </Slide>
+));
+```
+
+Source Context Mappers receive only the parent Source Context, not Composition Context:
+
+```ts
+const company = new Deck<{ company: Company; period: FiscalPeriod }>({ layout });
+const metrics = new Deck<{ companyId: string; period: FiscalPeriod }>({ layout });
+
+company.mount("metrics", metrics, (context) => ({
+  companyId: context.company.id,
+  period: context.period,
+}));
+```
+
+When the parent source is `Deck<void>`, the mapper receives no argument:
+
+```ts
+root.mount("summary", summary, () => ({
+  title: "Summary",
+}));
+```
+
+Composition Context should expose:
+
+- `sourceKey` only for mounted sources. Root-level slide factories omit it.
+- Nested sources receive the local Source Key assigned by their immediate parent, not the full
+  Source Identity path.
+- `slideIndex` and `totalSlides` as source-local numbering.
+- `deckSlideIndex` and `deckTotalSlides` as whole-deck numbering, computed after composition is
+  resolved.
+- No public `sourceIdentity`; Source Identity is visible through graph origin and diagnostics.
+
 ### Implementation Notes
 
-- Replace merge-oriented flattening with source composition records that preserve Source Key and
-  Source Identity.
+- Replace merge-oriented flattening with ordered composition entries:
+  - direct slide entries from `add()`
+  - mounted source entries from `mount()`
+- Preserve registration order across `add()` and `mount()`. A mounted source expands at the point
+  where it was registered.
+- Add a `composition/` layer that resolves Deck authoring registration into source-aware author
+  roots for graph construction.
+- Keep composition resolver functions internal. Export only authoring-facing composition types that
+  users need for TypeScript.
+  - Public: `CompositionContext`, `SlideFactoryInput<TSourceContext = void>`,
+    `SlideFactory<TSourceContext = void>`, `SourceContextMapper<TParentContext, TChildContext>`,
+    and `BoundSource<TSourceContext>`.
+  - Internal by default: Source Identity implementation types, Source Origin resolver internals, and
+    composed author root records.
 - Compose Author Trees and raise them into one Semantic Author Graph with source-aware Graph
-  Identity.
+  Identity. The graph builder should consume source-aware author roots rather than reading Deck
+  instances directly.
+- Support nested mounts in `0.3.0`, including Source Context Mappers.
+- Allow the same child Deck instance to be mounted multiple times under different Source Keys.
+- Detect duplicate Source Keys within the same parent source during compile diagnostics.
+- Detect source cycles and include an internal maximum composition depth guard.
+- Source Keys are public strings, but compile should diagnose empty keys, whitespace-only keys,
+  `.`, `..`, and keys containing `/`.
+- Source Identity is path-like for mounted sources, derived from parent Source Identity plus Source
+  Key, such as `company-a/metrics`.
+- The root source has internal Source Identity but no user-facing Source Identity path string.
+- Add Source Origin to graph node origins so inspection and diagnostics can explain whether a node
+  came from the root source or a mounted source.
+- Source Identity must affect Graph Identity, but it can flow through source root identity or
+  semantic parent identity rather than being repeated in every node's raw identity material.
+- Source Context values are payload, not Graph Identity material. Changing Source Key changes
+  Source Identity and therefore Graph Identity.
 - Use source position plus Graph Identity Hints such as JSX `key` to preserve semantic identity
   across changes.
-- Keep final build configuration owned by the root Deck. Source Context is not configuration.
+- Keep JSX `key` and Source Key separate. Source Key identifies a composition boundary; JSX `key`
+  is a Graph Identity Hint inside Author Tree sibling scope.
+- Keep `0.3` focused on `compile()` and the Semantic Author Graph. Do not add a separate
+  composition path to legacy `render()` or `output()`.
+- Legacy `render()` and `output()` should throw if called on a Deck containing mounted sources, so
+  composed content is not silently omitted.
+- In `0.3`, child Decks may continue to carry the current Deck configuration. Broader root-owned
+  final build configuration belongs to the later configuration and output pipeline work.
 - Use branded types or equivalent constraints to prevent Graph Identity, Source Identity, and output
   identity from being mixed.
+
+Source Slots should be handled as explicit Source Context fields, not as `mount()` children:
+
+- A Source Slot value may be a single JSX node or a normalized JSX child array.
+- Source Slot JSX preserves the caller source as origin even when a child source decides where to
+  place it.
+- Source Slot Graph Identity should account for both caller slot origin and child placement
+  identity.
+- The Source Slot field name, such as `context.note`, is authored meaning and should contribute to
+  slot origin and identity material.
+- Do not mutate source origin into Author Tree nodes. Resolve Source Slot origin and placement
+  through composition and graph-building traversal context.
+
+Composition diagnostics should be separate from Semantic Graph diagnostics:
+
+- Composition failures should use a separate Diagnostic Error subclass from Semantic Graph
+  construction failures.
+- Composition diagnostic codes should use an `E_COMPOSITION_*` family. Initial codes can include
+  `E_COMPOSITION_INVALID_SOURCE_KEY`, `E_COMPOSITION_DUPLICATE_SOURCE_KEY`,
+  `E_COMPOSITION_CYCLE`, `E_COMPOSITION_DEPTH_EXCEEDED`,
+  `E_COMPOSITION_CONTEXT_MAPPER_FAILED`, `E_COMPOSITION_CONTEXT_MAPPER_ASYNC`,
+  `E_COMPOSITION_INVALID_MOUNT`, and `E_COMPOSITION_INVALID_ROOT`.
+- If composition diagnostics contain errors, `compile({ mode: "inspect" })` should return
+  diagnostics without a Semantic Author Graph.
+- Semantic graph diagnostics may still return a graph when graph construction can continue.
+- Source Context Mapper failures should be wrapped in composition diagnostics.
+- Source Context Mappers are synchronous in `0.3`; Promise-like returns should be diagnosed.
+- Mapper return values are not runtime type-checked as Source Context. TypeScript owns that
+  contract; runtime validation should focus on structural failures.
 
 ### Validation
 
 - Tests for mounting sources by Source Key.
 - Tests that Source Context is required for `Deck<TSourceContext>`.
-- Tests that Bound Sources can build or output directly.
-- Tests that Composition Context provides stable `sourceKey`, `slideIndex`, and `totalSlides`.
+- Tests that `Deck<TSourceContext>` can still register `add()` and nested `mount()` entries before
+  being bound.
+- Tests that root-like `compile()` is type-constrained to `Deck<void>` or `BoundSource`.
+- Tests that `Deck<void>` does not expose `withSource()` and does not receive a `context` field in
+  slide factories.
+- Tests that `BoundSource` can compile directly and can be mounted as a fully specified source.
+- Tests that `BoundSource` does not expose `add()` or `mount()`.
+- Keep composition public API type assertions in a dedicated type test file, separate from the JSX
+  public API type tests.
+- Tests that invalid extra context for `Deck<void>` and `BoundSource` is rejected by types and
+  runtime validation.
+- Tests that Composition Context provides local `sourceKey`, source-local `slideIndex` /
+  `totalSlides`, and whole-deck `deckSlideIndex` / `deckTotalSlides`.
+- Tests that Source Context Mappers receive only parent Source Context, and root parent mappers
+  receive no argument.
+- Tests that nested mounts resolve through Source Context Mappers.
+- Tests that duplicate Source Keys, invalid Source Keys, mapper failures, Promise-like mapper
+  returns, cycles, and excessive composition depth produce composition diagnostics.
+- Tests that composition errors in inspect mode return diagnostics without a graph.
 - Tests that Graph Identity survives insertion or reordering where Source Key and JSX `key` allow it.
 - Tests that Source Slots are explicit Source Context fields, not implicit top-level children.
+- Tests that Source Slot origin preserves caller source while identity accounts for child placement
+  and slot field name.
+- Tests that legacy `render()` and `output()` throw for Decks with mounted sources.
+
+### v0.3.0 Completion Line
+
+`0.3.0` is complete when graph composition is visible and inspectable through `compile()` without
+adding a separate composed-output path to legacy `render()` or `output()`.
+
+The minimum completed surface is:
+
+- `Deck<TSourceContext = void>` with `void` as the no-source-context marker.
+- Slide factory input uses the new `composition` field for all Decks, even when no mounted sources
+  are present. Legacy top-level `slideIndex` and `totalSlides` are removed.
+- Source-aware `add()` and `mount()` registration order.
+- `withSource()` and `BoundSource` for compiling a source with required Source Context.
+- Nested mounts with synchronous Source Context Mappers.
+- Source Identity paths and Source Origin in Semantic Author Graph origins.
+- Composition diagnostics and a separate composition Diagnostic Error class.
+- Source Slot origin and identity handling.
+- Legacy `render()` and `output()` throwing when mounted sources are present.
 
 ## 0.4 Class-Like Style Reuse
 
