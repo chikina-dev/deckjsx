@@ -3,6 +3,12 @@ import type { JsxKey } from "./jsx-runtime";
 
 export { Deck } from "./deck";
 export {
+  DeckDiagnosticError,
+  SemanticGraphDiagnosticError,
+  formatDiagnostic,
+  formatDiagnostics,
+} from "./diagnostics";
+export {
   Fragment,
   Image,
   Shape,
@@ -90,6 +96,29 @@ export {
   type ViewProps,
   type ViewStyle,
 } from "./authoring/index";
+export type { SourceSpan } from "./authoring/tree";
+export type { CompileInspectResult, CompileMode } from "./deck";
+export type { Diagnostic, DiagnosticLabel, DiagnosticSeverity, Diagnostics } from "./diagnostics";
+export type {
+  AssetEntity,
+  AssetEntityId,
+  BaseSemanticNode,
+  GraphNodeId,
+  SemanticAuthorGraph,
+  SemanticContainerNode,
+  SemanticDocumentNode,
+  SemanticImageNode,
+  SemanticNode,
+  SemanticNodeKind,
+  SemanticOrigin,
+  SemanticRole,
+  SemanticShapeNode,
+  SemanticSlideNode,
+  SemanticTextNode,
+  SemanticTextRunNode,
+  StyleEntity,
+  StyleEntityId,
+} from "./graph";
 export type {
   BackgroundImageLayerIR,
   BackgroundLayerIR,
@@ -122,6 +151,7 @@ export type {
   TextNumberListIR,
   TextNoListIR,
   TextBulletListIR,
+  TextRunIR,
   TextStyleIR,
   TextTabStopIR,
 } from "./ir/index";

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 import { Deck, Fragment, Slide, Text, View } from "../src/index.ts";
-import { isAuthorNode } from "../src/jsx.ts";
+import { isAuthorTreeNode } from "../src/authoring/tree.ts";
 
 describe("authoring and JSX runtime", () => {
   test("JSX primitives produce author nodes with flattened children outside props", () => {
@@ -13,19 +13,41 @@ describe("authoring and JSX runtime", () => {
       </View>
     );
 
-    expect(isAuthorNode(node)).toBe(true);
-    if (!isAuthorNode(node)) {
-      throw new Error("Expected author node.");
+    expect(isAuthorTreeNode(node)).toBe(true);
+    if (!isAuthorTreeNode(node) || node.kind !== "element") {
+      throw new Error("Expected author tree element.");
     }
 
-    expect(node.kind).toBe("view");
+    expect(node.source).toEqual({ kind: "component", component: "View" });
     expect(Object.hasOwn(node.props, "children")).toBe(false);
     expect(Object.hasOwn(node.props, "key")).toBe(false);
-    expect(node.children).toHaveLength(4);
-    expect(node.children[0]).toMatchObject({ kind: "text" });
-    expect(node.children[1]).toMatchObject({ kind: "text" });
-    expect(node.children[2]).toBe(false);
-    expect(node.children[3]).toBe(null);
+    expect(node.children).toHaveLength(1);
+    expect(node.children[0]).toMatchObject({ kind: "fragment" });
+    if (node.children[0]?.kind !== "fragment") {
+      throw new Error("Expected fragment child.");
+    }
+    expect(node.children[0].children).toHaveLength(2);
+    expect(node.children[0].children[0]).toMatchObject({
+      kind: "element",
+      source: { kind: "component", component: "Text" },
+    });
+  });
+
+  test("Fragment forwards children when called directly", () => {
+    const fragment = Fragment({
+      children: [<Text>First</Text>, <Text>Second</Text>],
+    });
+
+    expect(fragment).toMatchObject({ kind: "fragment" });
+    if (fragment.kind !== "fragment") {
+      throw new Error("Expected fragment node.");
+    }
+
+    expect(fragment.children).toHaveLength(2);
+    expect(fragment.children[0]).toMatchObject({
+      kind: "element",
+      source: { kind: "component", component: "Text" },
+    });
   });
 
   test("lowercase div normalizes primitive children to implicit text nodes", () => {
@@ -116,6 +138,36 @@ describe("authoring and JSX runtime", () => {
     expect(header.children[0]).toMatchObject({ kind: "text", content: { text: "Report" } });
     expect(section.children[0]).toMatchObject({ kind: "text", content: { text: "Body" } });
     expect(footer.children[0]).toMatchObject({ kind: "text", content: { text: "Footer" } });
+  });
+
+  test("span compiles to rich text runs while preserving aggregate text", () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
+
+    deck.add(() => (
+      <Slide name="Rich text">
+        <p style={{ x: 1, y: 1, width: 6, height: 1, fontSize: 20 }}>
+          Sales <span style={{ color: "#DC2626", fontWeight: 700 }}>grew</span> YoY
+        </p>
+      </Slide>
+    ));
+
+    const ir = deck.render();
+    const [text] = ir.slides[0]?.nodes ?? [];
+    if (!text || text.kind !== "text") {
+      throw new Error("Expected rich paragraph to compile to a text node.");
+    }
+
+    expect(text.content.text).toBe("Sales grew YoY");
+    expect(text.content.runs).toEqual([
+      { text: "Sales " },
+      {
+        text: "grew",
+        style: expect.objectContaining({ color: "DC2626", fontWeight: 700 }),
+      },
+      { text: " YoY" },
+    ]);
   });
 
   test("render rejects slide factories that do not return a Slide root", () => {

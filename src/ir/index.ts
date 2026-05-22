@@ -201,6 +201,12 @@ export type EdgeStrokeIR = {
 
 export type TextContentIR = {
   text: string;
+  runs?: ReadonlyArray<TextRunIR>;
+};
+
+export type TextRunIR = {
+  text: string;
+  style?: TextStyleIR;
 };
 
 export type TextTabStopIR = {

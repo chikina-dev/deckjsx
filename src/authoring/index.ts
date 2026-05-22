@@ -86,14 +86,35 @@ export type ImageCropAuthoring = {
 };
 
 export interface TextJsxChildArray extends ReadonlyArray<TextJsxChild> {}
-export type TextJsxChild = string | number | boolean | null | undefined | TextJsxChildArray;
+export type TextJsxChild =
+  | AuthorTreeNode
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | TextJsxChildArray;
 export type ContentAuthorNode = AuthorNode<"view" | "text" | "image" | "shape">;
 export interface ContentJsxChildArray extends ReadonlyArray<ContentJsxChild> {}
-export type ContentJsxChild = AuthorNode | boolean | null | undefined | ContentJsxChildArray;
+export type ContentJsxChild =
+  | AuthorNode
+  | AuthorTreeNode
+  | boolean
+  | null
+  | undefined
+  | ContentJsxChildArray;
 export interface ViewIntrinsicJsxChildArray extends ReadonlyArray<ViewIntrinsicJsxChild> {}
 export type ViewIntrinsicJsxChild = ContentJsxChild | string | number | ViewIntrinsicJsxChildArray;
 export interface JsxNodeArray extends ReadonlyArray<JsxNode> {}
-export type JsxNode = AuthorNode | string | number | boolean | null | undefined | JsxNodeArray;
+export type JsxNode =
+  | AuthorNode
+  | AuthorTreeNode
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | JsxNodeArray;
 
 type BaseAuthorProps = {
   opacity?: number;
@@ -334,6 +355,10 @@ export type DeckOptions = {
 export type SlideContext = {
   slideIndex: number;
   totalSlides: number;
+  context?: {
+    slideIndex: number;
+    totalSlides: number;
+  };
 };
 
 export type SlideFactory = (context: SlideContext) => JsxNode;
@@ -470,8 +495,10 @@ export type IntrinsicTextTag = "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p";
 
 export type DeckJsxIntrinsicElements = {
   img: IntrinsicImgProps;
+  span: IntrinsicPProps;
 } & {
   [Tag in IntrinsicViewTag]: IntrinsicDivProps;
 } & {
   [Tag in IntrinsicTextTag]: IntrinsicPProps;
 };
+import type { AuthorTreeNode } from "./tree";

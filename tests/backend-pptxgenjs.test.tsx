@@ -35,6 +35,41 @@ describe("backend", () => {
     }
   });
 
+  test("output emits styled span as rich text runs", async () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
+    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
+    const output = join(tempDir, "rich-text.pptx");
+
+    deck.add(() => (
+      <Slide name="Rich text">
+        <p style={{ x: 1, y: 1, width: 6, height: 1, fontSize: 20 }}>
+          Sales <span style={{ color: "#DC2626", fontWeight: 700 }}>grew</span> YoY
+        </p>
+      </Slide>
+    ));
+
+    try {
+      await deck.output({
+        backend: "pptxgenjs",
+        output,
+      });
+
+      const content = await readFile(output);
+      const zip = await JSZip.loadAsync(content);
+      const slideXml = await zip.file("ppt/slides/slide1.xml")?.async("string");
+
+      expect(slideXml).toContain("<a:t>Sales </a:t>");
+      expect(slideXml).toContain("<a:t>grew</a:t>");
+      expect(slideXml).toContain("<a:t> YoY</a:t>");
+      expect(slideXml).toContain('val="DC2626"');
+      expect(slideXml).toContain('b="1"');
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   test("output emits shadow markup through the pptxgenjs backend", async () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },

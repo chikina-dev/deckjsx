@@ -1,4 +1,5 @@
 import { isContentNode, isSlideNode } from "./jsx";
+import { toLegacyJsxNode } from "./authoring/legacy";
 import {
   normalizeImageProps,
   normalizeShapeProps,
@@ -23,6 +24,7 @@ import type {
   ShapeIR,
   SlideIR,
   TextIR,
+  TextRunIR,
   TextStyleIR,
 } from "./ir/index";
 import type {
@@ -1268,36 +1270,22 @@ function compileGroupNode(
   };
 }
 
-function compileTextNode(
-  node: Extract<LayoutChildNode, { kind: "text" }>,
-  parentFrame: Frame,
-  idGenerator: IdGenerator,
-  placement?: Placement,
-  clipRect?: ClipRect,
-  context?: LengthResolutionContext,
-): TextIR | null {
-  const { props } = node;
-  const textLengthContext = getTextLengthContext(props, context);
-  const resolved = frameFromProps(props, parentFrame, placement, textLengthContext);
-  const strokes = resolveNodeStrokes(props, textLengthContext);
-  const shadow = parseShadowShorthand(props.textShadow ?? props.boxShadow);
+function textStyleFromProps(
+  props: NormalizedTextProps,
+  textLengthContext?: LengthResolutionContext,
+): TextStyleIR {
   const list = resolveListStyle(props, textLengthContext);
   const lineHeight = resolveLineHeight(props.lineHeight, textLengthContext);
   const underlineStyle = resolveUnderlineStyle(props.textDecorationStyle);
   const underlineColor = normalizeColor(props.textDecorationColor);
   const textDirection = resolveTextDirection(props.writingMode);
   const tabStops = resolveTabStops(props.tabStops, textLengthContext);
-  const hyperlink = props.href
-    ? {
-        url: props.href,
-        ...(props.tooltip ? { tooltip: props.tooltip } : {}),
-      }
-    : undefined;
   const fontSizePt =
     props.fontSize === undefined
       ? undefined
       : parsePointValue(props.fontSize, 0, textLengthContext);
-  const style: TextStyleIR = {
+
+  return {
     fontFamily: props.fontFamily,
     fontSizePt,
     fontWeight: props.fontWeight,
@@ -1327,6 +1315,86 @@ function compileTextNode(
     ...(props.superscript ? { superscript: true } : {}),
     ...(props.subscript ? { subscript: true } : {}),
   };
+}
+
+function isEmptyRunStyle(style: TextStyleIR): boolean {
+  return Object.values(style).every((value) => value === undefined);
+}
+
+function flattenUnknownChildren(children: ReadonlyArray<unknown>): unknown[] {
+  return children.flatMap((child): unknown[] =>
+    Array.isArray(child) ? flattenUnknownChildren(child) : [child],
+  );
+}
+
+function extractRichTextRuns(
+  children: ReadonlyArray<unknown>,
+  textTransform: NormalizedTextProps["textTransform"],
+  textLengthContext?: LengthResolutionContext,
+): TextRunIR[] {
+  const runs: TextRunIR[] = [];
+
+  for (const child of flattenUnknownChildren(children)) {
+    if (child === null || child === undefined || child === false || child === true) {
+      continue;
+    }
+
+    if (typeof child === "string" || typeof child === "number") {
+      runs.push({ text: extractText([child], textTransform) });
+      continue;
+    }
+
+    if (typeof child === "object" && child !== null && "kind" in child) {
+      const authorNode = child as AuthorNode;
+      if (authorNode.kind !== "text") {
+        throw new Error("Text nodes can only contain primitive text or inline text runs.");
+      }
+
+      const props = normalizeTextProps(authorNode.props);
+      const childLengthContext = getTextLengthContext(props, textLengthContext);
+      const style = textStyleFromProps(props, childLengthContext);
+      const text = extractRichTextRuns(
+        authorNode.children as ReadonlyArray<unknown>,
+        props.textTransform ?? textTransform,
+        childLengthContext,
+      )
+        .map((run) => run.text)
+        .join("");
+      runs.push({
+        text,
+        ...(!isEmptyRunStyle(style) ? { style } : {}),
+      });
+    }
+  }
+
+  return runs;
+}
+
+function compileTextNode(
+  node: Extract<LayoutChildNode, { kind: "text" }>,
+  parentFrame: Frame,
+  idGenerator: IdGenerator,
+  placement?: Placement,
+  clipRect?: ClipRect,
+  context?: LengthResolutionContext,
+): TextIR | null {
+  const { props } = node;
+  const textLengthContext = getTextLengthContext(props, context);
+  const resolved = frameFromProps(props, parentFrame, placement, textLengthContext);
+  const strokes = resolveNodeStrokes(props, textLengthContext);
+  const shadow = parseShadowShorthand(props.textShadow ?? props.boxShadow);
+  const hyperlink = props.href
+    ? {
+        url: props.href,
+        ...(props.tooltip ? { tooltip: props.tooltip } : {}),
+      }
+    : undefined;
+  const style = textStyleFromProps(props, textLengthContext);
+  const runs = extractRichTextRuns(
+    node.source.children as ReadonlyArray<unknown>,
+    props.textTransform,
+    textLengthContext,
+  );
 
   const visibleFrame = intersectClipRect(
     {
@@ -1375,7 +1443,8 @@ function compileTextNode(
     flipH: resolved.flipH,
     flipV: resolved.flipV,
     content: {
-      text: extractText(node.source.children, props.textTransform),
+      text: runs.map((run) => run.text).join(""),
+      ...(runs.length > 1 || runs.some((run) => run.style) ? { runs } : {}),
     },
     style,
     fill: backgroundFill.fill,
@@ -1705,12 +1774,17 @@ export function renderPresentation(
     version: "0.1",
     meta: options.meta,
     size: slideSize,
-    slides: slides.map((factory, slideIndex) =>
-      compileSlide(
-        factory({
+    slides: slides.map((factory, slideIndex) => {
+      const context = {
+        slideIndex,
+        totalSlides: slides.length,
+        context: {
           slideIndex,
           totalSlides: slides.length,
-        }),
+        },
+      };
+      return compileSlide(
+        toLegacyJsxNode(factory(context)),
         {
           slideIndex,
           totalSlides: slides.length,
@@ -1718,7 +1792,7 @@ export function renderPresentation(
         slideFrame,
         idGenerator,
         lengthContext,
-      ),
-    ),
+      );
+    }),
   };
 }

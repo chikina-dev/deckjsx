@@ -106,6 +106,7 @@ export type {
   TextListIR,
   TextNoListIR,
   TextNumberListIR,
+  TextRunIR,
   TextStyleIR,
   TextTabStopIR,
 } from "./ir/index";
