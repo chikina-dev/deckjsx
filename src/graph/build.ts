@@ -326,15 +326,19 @@ function buildTextLikeNode(
     }
 
     if (child.kind === "fragment") {
+      const childContext = contextForNode(child, {
+        ...context,
+        parentId: id,
+        parentMaterial: material,
+        path,
+        inline: true,
+      });
+      const segment = `fragment:${keySegment(child.key, index)}`;
       inlineChildren.push(
         ...buildChildren(state, child.children, {
-          parentId: id,
-          parentMaterial: [...material, `fragment:${keySegment(child.key, index)}`],
-          path: `${path} > fragment[${keySegment(child.key, index)}]`,
-          inline: true,
-          source: sourceFor(context),
-          slotOrigins: context.slotOrigins,
-          activeSlot: context.activeSlot,
+          ...childContext,
+          parentMaterial: [...childContext.parentMaterial, segment],
+          path: `${childContext.path} > fragment[${keySegment(child.key, index)}]`,
         }),
       );
       return;

@@ -7,6 +7,7 @@ import {
   Text,
   View,
   type ContentJsxChild,
+  type TextJsxChild,
 } from "../src/index.ts";
 
 function values<T>(map: ReadonlyMap<unknown, T>): T[] {
@@ -285,6 +286,39 @@ describe("Semantic Author Graph", () => {
 
     expect(noteRun?.origin.source).toEqual({ kind: "root" });
     expect(String(noteRun?.id)).toContain("slot:note");
+  });
+
+  test("source slot fragment origin is preserved inside text-like nodes", () => {
+    const section = new Deck<{ note: TextJsxChild }>({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
+    section.add(({ context }) => (
+      <Slide name="Section">
+        <Text>{context.note}</Text>
+      </Slide>
+    ));
+
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.mount("section", section, {
+      note: (
+        <>
+          Caller <span>note</span>
+        </>
+      ),
+    });
+
+    const graph = deck.compile();
+    const callerRun = values(graph.nodes).find(
+      (node) => node.kind === "textRun" && node.text === "Caller ",
+    );
+    const spanRun = values(graph.nodes).find(
+      (node) => node.kind === "textRun" && node.text === "note",
+    );
+
+    expect(callerRun?.origin.source).toEqual({ kind: "root" });
+    expect(spanRun?.origin.source).toEqual({ kind: "root" });
+    expect(String(callerRun?.id)).toContain("slot:note");
+    expect(String(spanRun?.id)).toContain("slot:note");
   });
 
   test("legacy render and output reject decks with mounted sources", async () => {
