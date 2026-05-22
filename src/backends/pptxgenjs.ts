@@ -23,7 +23,7 @@ import {
 type PptxSlide = {
   addImage(options: PptxImageOptions): void;
   addShape(shapeName: string, options?: PptxShapeOptions): void;
-  addText(text: string, options?: PptxTextOptions): void;
+  addText(text: string | PptxTextRun[], options?: PptxTextOptions): void;
   background?: PptxFillOptions;
 };
 
@@ -139,6 +139,25 @@ type PptxTextOptions = PptxShapeOptions & {
   shape?: string;
   transparency?: number;
   breakLine?: boolean;
+};
+
+type PptxTextRun = {
+  text: string;
+  options?: PptxTextRunOptions;
+};
+
+type PptxTextRunOptions = {
+  fontFace?: string;
+  fontSize?: number;
+  color?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: PptxUnderlineOptions;
+  strike?: boolean;
+  charSpacing?: number;
+  breakLine?: boolean;
+  superscript?: boolean;
+  subscript?: boolean;
 };
 
 const TRANSPARENT_FILL: PptxFillOptions = { color: "FFFFFF", transparency: 100 };
@@ -325,6 +344,34 @@ function toPptxTabStops(tabStops: TextIR["style"]["tabStops"]): PptxTabStopOptio
   }));
 }
 
+function toPptxTextRunOptions(style: TextIR["style"] | undefined): PptxTextRunOptions | undefined {
+  if (!style) {
+    return undefined;
+  }
+
+  const options: PptxTextRunOptions = {
+    fontFace: style.fontFamily,
+    fontSize: style.fontSizePt,
+    color: style.color,
+    bold:
+      style.fontWeight === "bold" ||
+      (typeof style.fontWeight === "number" && style.fontWeight >= 600),
+    italic: style.italic,
+    underline: toPptxUnderline(style),
+    strike: style.strike,
+    charSpacing: style.charSpacing,
+    superscript: style.superscript,
+    subscript: style.subscript,
+    breakLine: false,
+  };
+
+  if (Object.values(options).every((value) => value === undefined || value === false)) {
+    return undefined;
+  }
+
+  return options;
+}
+
 function emitOutlineShape(
   slide: PptxSlide,
   shapeName: string,
@@ -483,7 +530,14 @@ function emitText(slide: PptxSlide, node: TextIR, inheritedOpacity?: number) {
     node.flipV,
   );
 
-  slide.addText(node.content.text, {
+  const textContent: string | PptxTextRun[] = node.content.runs
+    ? node.content.runs.map((run) => ({
+        text: run.text,
+        ...(toPptxTextRunOptions(run.style) ? { options: toPptxTextRunOptions(run.style) } : {}),
+      }))
+    : node.content.text;
+
+  slide.addText(textContent, {
     x: emuToInches(node.frame.xEmu),
     y: emuToInches(node.frame.yEmu),
     w: emuToInches(node.frame.widthEmu),

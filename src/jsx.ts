@@ -1,218 +1,68 @@
+import { Image, Shape, Slide, Text, View } from "./authoring/components";
+import {
+  createAuthorElement,
+  createAuthorFragment,
+  type AuthorTreeChild,
+  type AuthorTreeNode,
+  type JsxKey,
+  type SourceSpan,
+  collectChildren,
+  isAuthorTreeNode,
+} from "./authoring/tree";
+import {
+  isAuthoredTag,
+  isIntrinsicTextTag,
+  isIntrinsicViewTag,
+  type IntrinsicTextTag,
+  type IntrinsicViewTag,
+} from "./authoring/tags";
+import { isLegacyAuthorNode } from "./authoring/legacy";
 import type {
   AuthorNode,
   AuthorNodeKind,
   ContentAuthorNode,
-  ContentJsxChild,
-  ImageAuthorNode,
-  ImageProps,
   IntrinsicDivProps,
   IntrinsicImgProps,
   IntrinsicPProps,
-  IntrinsicTextTag,
-  IntrinsicViewTag,
-  JsxNode,
-  ShapeAuthorNode,
-  ShapeProps,
-  SlideAuthorNode,
-  SlideProps,
-  TextAuthorNode,
-  TextJsxChild,
-  TextProps,
-  ViewAuthorNode,
-  ViewIntrinsicJsxChild,
-  ViewProps,
 } from "./authoring/index";
 
 type ComponentProps = {
-  children?: JsxNode;
+  children?: AuthorTreeChild;
 };
 type ElementChildren<P> = P extends { children?: infer Child } ? Child : never;
 type ElementChildArgs<P> = P extends { children?: never } ? [] : ElementChildren<P>[];
-
-const VIEW_INTRINSIC_TAGS = new Set<string>([
-  "article",
-  "aside",
-  "div",
-  "figure",
-  "footer",
-  "header",
-  "main",
-  "nav",
-  "section",
-]);
-const TEXT_INTRINSIC_TAGS = new Set<string>(["h1", "h2", "h3", "h4", "h5", "h6", "p"]);
 
 function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function isViewIntrinsicTag(value: string): value is IntrinsicViewTag {
-  return VIEW_INTRINSIC_TAGS.has(value);
-}
-
-function isTextIntrinsicTag(value: string): value is IntrinsicTextTag {
-  return TEXT_INTRINSIC_TAGS.has(value);
-}
-
-function isJsxNode(value: unknown): value is JsxNode {
-  return (
-    value === null ||
-    value === undefined ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean" ||
-    isAuthorNode(value) ||
-    (Array.isArray(value) && value.every((item) => isJsxNode(item)))
-  );
-}
-
-function isTextJsxNode(value: unknown): value is TextJsxChild {
-  return (
-    value === null ||
-    value === undefined ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean" ||
-    (Array.isArray(value) && value.every((item) => isTextJsxNode(item)))
-  );
-}
-
-function requireJsxNode(value: unknown): JsxNode {
-  if (isJsxNode(value)) {
-    return value;
-  }
-
-  throw new Error("JSX children must be deckjsx nodes or primitive text values.");
-}
-
-function requireTextJsxNode(value: unknown): TextJsxChild {
-  if (isTextJsxNode(value)) {
-    return value;
-  }
-
-  throw new Error("Text-like intrinsic children must be primitive text values.");
-}
-
-function flattenChildren(input: ContentJsxChild): ContentJsxChild[];
-function flattenChildren(input: TextJsxChild): TextJsxChild[];
-function flattenChildren(input: ViewIntrinsicJsxChild): ViewIntrinsicJsxChild[];
-function flattenChildren(input: JsxNode): JsxNode[];
-function flattenChildren(input: JsxNode): JsxNode[] {
-  if (Array.isArray(input)) {
-    return input.flatMap((item) => flattenChildren(item));
-  }
-
-  return [input];
-}
-
-function splitContentProps<P extends { children?: ContentJsxChild }>(
-  props: P,
-): {
-  props: Omit<P, "children">;
-  children: ContentJsxChild[];
-} {
-  const { children: rawChildren, ...nodeProps } = props;
-
+function splitProps(props: Record<PropertyKey, unknown>, children: readonly unknown[]) {
+  const rawChildren = collectChildren(props, children);
+  const { children: _children, ...nodeProps } = props;
   return {
-    props: nodeProps,
-    children: rawChildren === undefined ? [] : flattenChildren(rawChildren),
+    props: nodeProps as Record<string, unknown>,
+    children: rawChildren === undefined ? [] : [rawChildren as AuthorTreeChild],
   };
-}
-
-function splitTextProps<P extends { children?: TextJsxChild }>(
-  props: P,
-): {
-  props: Omit<P, "children">;
-  children: TextJsxChild[];
-} {
-  const { children: rawChildren, ...nodeProps } = props;
-
-  return {
-    props: nodeProps,
-    children: rawChildren === undefined ? [] : flattenChildren(rawChildren),
-  };
-}
-
-function splitLeafProps<P extends { children?: never }>(props: P): Omit<P, "children"> {
-  const { children: _rawChildren, ...nodeProps } = props;
-
-  return nodeProps;
-}
-
-function collectRawChildren(propsObject: Record<PropertyKey, unknown>, children: unknown[]) {
-  if (children.length === 0) {
-    return propsObject.children;
-  }
-
-  if (children.length === 1) {
-    return children[0];
-  }
-
-  return children;
-}
-
-function implicitTextNode(value: string | number): AuthorNode<"text"> | null {
-  if (typeof value === "string" && value.trim().length === 0) {
-    return null;
-  }
-
-  const text = typeof value === "string" && /[\n\r\t]/.test(value) ? value.trim() : String(value);
-  if (text.length === 0) {
-    return null;
-  }
-
-  return Text({ children: text });
-}
-
-function normalizeViewIntrinsicChildren(value: ViewIntrinsicJsxChild | undefined): ContentJsxChild {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  return flattenChildren(value).map((child) => {
-    if (typeof child === "string" || typeof child === "number") {
-      return implicitTextNode(child);
-    }
-
-    return child;
-  }) as ContentJsxChild;
 }
 
 function intrinsicElement(
-  type: IntrinsicViewTag | IntrinsicTextTag | "img",
+  type: IntrinsicViewTag | IntrinsicTextTag | "img" | "span",
   propsObject: Record<PropertyKey, unknown>,
   children: unknown[],
-) {
-  const rawChildren = collectRawChildren(propsObject, children);
-  const { children: _children, ...nodeProps } = propsObject;
-
-  if (isViewIntrinsicTag(type)) {
-    const viewChildren = requireJsxNode(rawChildren) as ViewIntrinsicJsxChild | undefined;
-    return View({
-      ...nodeProps,
-      children: normalizeViewIntrinsicChildren(viewChildren),
-    } as ViewProps);
-  }
-
-  if (isTextIntrinsicTag(type)) {
-    return Text({
-      ...nodeProps,
-      children: requireTextJsxNode(rawChildren),
-    } as IntrinsicPProps);
-  }
-
-  if (rawChildren !== undefined) {
-    throw new Error("<img> is a leaf element and does not accept children.");
-  }
-
-  if (typeof propsObject.src !== "string" && typeof propsObject.data !== "string") {
-    throw new Error("<img> requires either src or data.");
-  }
-
-  return Image(nodeProps as IntrinsicImgProps);
+  key?: JsxKey,
+  sourceSpan?: SourceSpan,
+): AuthorTreeNode {
+  const authored = splitProps(propsObject, children);
+  return createAuthorElement({
+    source: { kind: "tag", tag: type },
+    props: authored.props,
+    children: authored.children,
+    ...(key !== undefined ? { key } : {}),
+    ...(sourceSpan ? { sourceSpan } : {}),
+  });
 }
 
-export function createElement<P extends { children?: unknown }, R extends JsxNode>(
+export function createElement<P extends { children?: unknown }, R extends AuthorTreeNode>(
   type: (props: P) => R,
   props: (Omit<P, "children"> & Partial<Pick<P, "children">>) | null,
   ...children: ElementChildArgs<P>
@@ -223,94 +73,83 @@ export function createElement(
     | (Omit<IntrinsicDivProps, "children"> & Partial<Pick<IntrinsicDivProps, "children">>)
     | null,
   ...children: ElementChildArgs<IntrinsicDivProps>
-): AuthorNode<"view">;
+): AuthorTreeNode;
 export function createElement(
   type: IntrinsicTextTag,
   props: (Omit<IntrinsicPProps, "children"> & Partial<Pick<IntrinsicPProps, "children">>) | null,
   ...children: ElementChildArgs<IntrinsicPProps>
-): AuthorNode<"text">;
-export function createElement(type: "img", props: IntrinsicImgProps): AuthorNode<"image">;
+): AuthorTreeNode;
+export function createElement(type: "span", props: IntrinsicPProps | null): AuthorTreeNode;
+export function createElement(type: "img", props: IntrinsicImgProps): AuthorTreeNode;
 export function createElement(type: string, props: ComponentProps | null): never;
-export function createElement(type: unknown, props: unknown, ...children: unknown[]): JsxNode {
+export function createElement(
+  type: unknown,
+  props: unknown,
+  ...children: unknown[]
+): AuthorTreeNode {
+  return createElementWithMetadata(type, props, undefined, undefined, children);
+}
+
+export function createElementWithMetadata(
+  type: unknown,
+  props: unknown,
+  key?: JsxKey,
+  sourceSpan?: SourceSpan,
+  children: unknown[] = [],
+): AuthorTreeNode {
   if (typeof type === "string") {
-    if (isViewIntrinsicTag(type) || isTextIntrinsicTag(type) || type === "img") {
-      return intrinsicElement(type, isRecord(props) ? props : {}, children);
+    if (isIntrinsicViewTag(type) || isIntrinsicTextTag(type) || type === "img" || type === "span") {
+      return intrinsicElement(type, isRecord(props) ? props : {}, children, key, sourceSpan);
     }
 
-    throw new Error(`Intrinsic element is not supported: <${type}>.`);
+    if (!isAuthoredTag(type)) {
+      throw new Error(`Intrinsic element is not supported: <${type}>.`);
+    }
   }
 
   if (typeof type !== "function") {
     throw new Error("JSX element type must be a function component.");
   }
 
+  if (type === Fragment) {
+    const propsObject = isRecord(props) ? props : {};
+    const rawChildren = collectChildren(propsObject, children);
+    return createAuthorFragment({
+      children: rawChildren === undefined ? [] : [rawChildren as AuthorTreeChild],
+      ...(key !== undefined ? { key } : {}),
+      ...(sourceSpan ? { sourceSpan } : {}),
+    });
+  }
+
   const propsObject = isRecord(props) ? props : {};
+  const rawChildren = collectChildren(propsObject, children);
   const nextProps: ComponentProps = {
     ...propsObject,
-    children:
-      children.length === 0
-        ? requireJsxNode(propsObject.children)
-        : children.length === 1
-          ? requireJsxNode(children[0])
-          : children.map((child) => requireJsxNode(child)),
+    children: rawChildren as AuthorTreeChild,
   };
+  const result = type(nextProps);
 
-  return type(nextProps);
+  if (!isAuthorTreeNode(result)) {
+    throw new Error("Function components must return a deckjsx author tree node.");
+  }
+
+  if (key === undefined && sourceSpan === undefined) {
+    return result;
+  }
+
+  if (result.kind === "element") {
+    return {
+      ...result,
+      ...(key !== undefined ? { key } : {}),
+      ...(sourceSpan ? { sourceSpan } : {}),
+    };
+  }
+
+  return result;
 }
 
-export function Fragment(props: { children?: ContentJsxChild }): ContentJsxChild {
-  return props.children ?? null;
-}
-
-export function Slide(props: SlideProps): AuthorNode<"slide"> {
-  const authored = splitContentProps(props);
-
-  return {
-    $$typeof: "deckjsx.author-node",
-    kind: "slide",
-    props: authored.props,
-    children: authored.children,
-  } satisfies SlideAuthorNode;
-}
-
-export function View(props: ViewProps): AuthorNode<"view"> {
-  const authored = splitContentProps(props);
-
-  return {
-    $$typeof: "deckjsx.author-node",
-    kind: "view",
-    props: authored.props,
-    children: authored.children,
-  } satisfies ViewAuthorNode;
-}
-
-export function Text(props: TextProps): AuthorNode<"text"> {
-  const authored = splitTextProps(props);
-
-  return {
-    $$typeof: "deckjsx.author-node",
-    kind: "text",
-    props: authored.props,
-    children: authored.children,
-  } satisfies TextAuthorNode;
-}
-
-export function Image(props: ImageProps): AuthorNode<"image"> {
-  return {
-    $$typeof: "deckjsx.author-node",
-    kind: "image",
-    props: splitLeafProps(props) as ImageProps,
-    children: [],
-  } satisfies ImageAuthorNode;
-}
-
-export function Shape(props: ShapeProps): AuthorNode<"shape"> {
-  return {
-    $$typeof: "deckjsx.author-node",
-    kind: "shape",
-    props: splitLeafProps(props),
-    children: [],
-  } satisfies ShapeAuthorNode;
+export function Fragment(_props: { children?: AuthorTreeChild }): AuthorTreeNode {
+  return createAuthorFragment({});
 }
 
 function isAuthorNodeKind(value: unknown): value is AuthorNodeKind {
@@ -324,16 +163,11 @@ function isAuthorNodeKind(value: unknown): value is AuthorNodeKind {
 }
 
 export function isAuthorNode(value: unknown): value is AuthorNode {
-  if (!isRecord(value)) {
+  if (!isLegacyAuthorNode(value)) {
     return false;
   }
 
-  return (
-    value.$$typeof === "deckjsx.author-node" &&
-    isAuthorNodeKind(value.kind) &&
-    isRecord(value.props) &&
-    Array.isArray(value.children)
-  );
+  return isAuthorNodeKind((value as { kind?: unknown }).kind);
 }
 
 export function isSlideNode(value: unknown): value is AuthorNode<"slide"> {
@@ -343,3 +177,6 @@ export function isSlideNode(value: unknown): value is AuthorNode<"slide"> {
 export function isContentNode(value: unknown): value is ContentAuthorNode {
   return isAuthorNode(value) && value.kind !== "slide";
 }
+
+export { Image, Shape, Slide, Text, View };
+export type { AuthorTreeNode, JsxKey, SourceSpan };

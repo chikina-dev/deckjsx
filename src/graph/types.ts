@@ -1,0 +1,123 @@
+import type { AuthoredComponent, AuthoredTag, SectioningTag } from "../authoring/tags";
+import type { JsxKey, SourceSpan } from "../authoring/tree";
+
+export type Brand<T, B extends string> = T & { readonly __brand: B };
+export type GraphNodeId = Brand<string, "GraphNodeId">;
+export type StyleEntityId = Brand<string, "StyleEntityId">;
+export type AssetEntityId = Brand<string, "AssetEntityId">;
+
+export type SemanticNodeKind =
+  | "container"
+  | "document"
+  | "image"
+  | "shape"
+  | "slide"
+  | "text"
+  | "textRun";
+
+export type SemanticRole =
+  | { readonly kind: "document" }
+  | { readonly kind: "slide" }
+  | { readonly kind: "genericContainer" }
+  | { readonly kind: "sectioning"; readonly tag: SectioningTag }
+  | { readonly kind: "figure" }
+  | { readonly kind: "paragraph" }
+  | { readonly kind: "heading"; readonly level: 1 | 2 | 3 | 4 | 5 | 6 }
+  | { readonly kind: "image" }
+  | { readonly kind: "shape" };
+
+export type SemanticOrigin = {
+  readonly kind: "authored" | "implicit";
+  readonly path: string;
+  readonly sourceSpan?: SourceSpan;
+  readonly reason?: "primitive-text-in-container";
+};
+
+export type BaseSemanticNode = {
+  readonly id: GraphNodeId;
+  readonly kind: SemanticNodeKind;
+  readonly origin: SemanticOrigin;
+  readonly authoredTag?: AuthoredTag;
+  readonly authoredComponent?: AuthoredComponent;
+  readonly role?: SemanticRole;
+  readonly key?: JsxKey;
+  readonly styleRef?: StyleEntityId;
+};
+
+export type SemanticDocumentNode = BaseSemanticNode & {
+  readonly kind: "document";
+  readonly children: readonly GraphNodeId[];
+};
+
+export type SemanticSlideNode = BaseSemanticNode & {
+  readonly kind: "slide";
+  readonly name?: string;
+  readonly children: readonly GraphNodeId[];
+};
+
+export type SemanticContainerNode = BaseSemanticNode & {
+  readonly kind: "container";
+  readonly children: readonly GraphNodeId[];
+};
+
+export type SemanticTextNode = BaseSemanticNode & {
+  readonly kind: "text";
+  readonly inlineChildren: readonly GraphNodeId[];
+  readonly implicit?: boolean;
+};
+
+export type SemanticTextRunNode = BaseSemanticNode & {
+  readonly kind: "textRun";
+  readonly text: string;
+};
+
+export type SemanticImageNode = BaseSemanticNode & {
+  readonly kind: "image";
+  readonly assetRef?: AssetEntityId;
+};
+
+export type SemanticShapeNode = BaseSemanticNode & {
+  readonly kind: "shape";
+};
+
+export type SemanticNode =
+  | SemanticContainerNode
+  | SemanticDocumentNode
+  | SemanticImageNode
+  | SemanticShapeNode
+  | SemanticSlideNode
+  | SemanticTextNode
+  | SemanticTextRunNode;
+
+export type StyleEntity = {
+  readonly id: StyleEntityId;
+  readonly target: SemanticNodeKind;
+  readonly authored: {
+    readonly style?: unknown;
+    readonly direct?: unknown;
+  };
+  readonly resolved?: unknown;
+};
+
+export type AssetEntity = {
+  readonly id: AssetEntityId;
+  readonly kind: "image";
+  readonly source:
+    | { readonly kind: "path"; readonly path: string }
+    | { readonly kind: "data"; readonly data: string };
+  readonly metadata: {
+    readonly mediaType?: string;
+    readonly byteLength?: number;
+    readonly widthPx?: number;
+    readonly heightPx?: number;
+    readonly contentHash?: string;
+  };
+  readonly resolution: "failed" | "resolved" | "unresolved";
+};
+
+export type SemanticAuthorGraph = {
+  readonly documentId: GraphNodeId;
+  readonly nodes: ReadonlyMap<GraphNodeId, SemanticNode>;
+  readonly styles: ReadonlyMap<StyleEntityId, StyleEntity>;
+  readonly assets: ReadonlyMap<AssetEntityId, AssetEntity>;
+};

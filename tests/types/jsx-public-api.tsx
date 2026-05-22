@@ -1,11 +1,12 @@
 import { Fragment, Image, Shape, Slide, Text, View } from "../../src/index.ts";
 import { jsx } from "../../src/jsx-runtime.ts";
 import type {
-  ContentAuthorNode,
   CssAlignContent,
   CssGridTemplate,
   CssGridTemplateAreas,
   DeckJsxIntrinsicElements,
+  Diagnostics,
+  GraphNodeId,
   ImplementedBackendName,
   JsxKey,
   OutputConfig,
@@ -13,28 +14,18 @@ import type {
   TextTabStopAuthoring,
   ViewStyle,
 } from "../../src/index.ts";
+import { Deck } from "../../src/index.ts";
 
 type Assert<T extends true> = T;
 type IsAssignable<From, To> = [From] extends [To] ? true : false;
 
 const regressionTypeAssertions = {
-  unsupportedSpan: true,
-  textIntrinsicRejectsStructuredChildren: true,
+  supportedSpan: true,
   imgRequiresSourceOrData: true,
   imgRejectsChildren: true,
   ooxmlBackendIsNotImplemented: true,
 } satisfies {
-  unsupportedSpan: Assert<
-    IsAssignable<"span", keyof DeckJsxIntrinsicElements> extends true ? false : true
-  >;
-  textIntrinsicRejectsStructuredChildren: Assert<
-    IsAssignable<
-      ContentAuthorNode,
-      NonNullable<DeckJsxIntrinsicElements["p"]["children"]>
-    > extends true
-      ? false
-      : true
-  >;
+  supportedSpan: Assert<IsAssignable<"span", keyof DeckJsxIntrinsicElements>>;
   imgRequiresSourceOrData: Assert<
     IsAssignable<{}, DeckJsxIntrinsicElements["img"]> extends true ? false : true
   >;
@@ -53,14 +44,14 @@ const regressionTypeAssertions = {
 void regressionTypeAssertions;
 
 const runtimeSlide = jsx(Slide, { name: "Runtime slide" }, "slide-key");
-runtimeSlide.kind satisfies "slide";
+runtimeSlide.kind satisfies "element";
 
 const runtimeText = jsx(Text, { children: "Runtime text" });
-runtimeText.kind satisfies "text";
+runtimeText.kind satisfies "element";
 
 const runtimeKey = 1n satisfies JsxKey;
 const runtimeKeyedView = jsx(View, { children: runtimeText }, runtimeKey);
-runtimeKeyedView.kind satisfies "view";
+runtimeKeyedView.kind satisfies "element";
 
 const readonlySpacing = [1, "2pt", "3px", "4%"] as const;
 readonlySpacing satisfies Spacing;
@@ -171,3 +162,9 @@ const pptxOutput = {
   output: "deck.pptx",
 } satisfies OutputConfig;
 void pptxOutput;
+
+const typedDeck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+const typedGraph = typedDeck.compile();
+typedGraph.documentId satisfies GraphNodeId;
+const typedInspect = typedDeck.compile({ mode: "inspect" });
+typedInspect.diagnostics satisfies Diagnostics;
