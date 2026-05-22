@@ -19,16 +19,18 @@ long-term center of the architecture.
 
 ## Versioning Strategy
 
-The current package is `0.2.0`. Until the API is stable enough for `1.0`, each new feature family
+The current package is `0.3.1`. Until the API is stable enough for `1.0`, each new feature family
 should land as a separate minor version:
 
 - `0.2`: HTML-like authoring syntax, followed by the first Semantic Author Graph work
-- `0.3`: graph composition across multiple authoring sources
+- `0.3.0`: graph composition across multiple authoring sources
+- `0.3.1`: inspect, diagnostics, documentation, and Semantic Author Graph readiness review
 - `0.4`: class-like style reuse
-- `0.5`: layout templates and output pipeline API shape
-- `0.6`: theme support
-- `0.7`: direct PPTX output projection and writer, replacing the required `pptxgenjs` path
-- `0.8`: HMR-oriented compilation/runtime
+- `0.5`: theme support
+- `0.6`: Output Projection boundary and build/project/write API shape
+- `0.7`: layout templates
+- `0.8`: direct PPTX output projection and writer, replacing the required `pptxgenjs` path
+- `0.9`: HMR-oriented compilation/runtime
 
 Patch releases should be reserved for bug fixes, compatibility fixes, and documentation updates
 within the latest minor line.
@@ -174,8 +176,8 @@ This should normalize to a view with `Text("Title")`, image, and `Text("Caption"
   - Add graph nodes for text runs and preserve run-level styles.
   - Include non-renderable graph entities from the start, at least document, asset, and style
     entities, so the graph can represent relationships instead of only renderable output nodes.
-  - Keep Style Entities split between authored `style`, authored direct props, and resolved values
-    where available. This preserves inspection data for future class/theme/template resolution.
+  - Keep Style Entities split between authored `style`, authored direct props, and style references.
+    Resolved concrete values belong to a later Resolved Style Inspection View.
   - Give Asset Entities metadata slots such as media type, byte length, dimensions, content hash, and
     resolution status, but avoid heavy file IO, image decoding, or hashing during `0.2.1` graph
     construction.
@@ -304,8 +306,13 @@ type StyleEntity = {
   readonly authored: {
     readonly style?: unknown;
     readonly direct?: unknown;
+    readonly classRefs?: readonly StyleClassRef[];
   };
-  readonly resolved?: unknown;
+};
+
+type StyleClassRef = {
+  readonly name: string;
+  readonly index: number;
 };
 
 type AssetEntity = {
@@ -687,6 +694,136 @@ The minimum completed surface is:
 - Source Slot origin and identity handling.
 - Legacy `render()` and `output()` throwing when mounted sources are present.
 
+## 0.3.1 Inspectability And Graph Readiness
+
+### Goal
+
+Stabilize the `0.3.0` graph composition surface before adding output projection work. The release
+should make compile results, diagnostics, and the Semantic Author Graph easier to inspect, then
+review whether the graph is ready to act as the input to Output Projection.
+
+This is not a new output feature release. It should strengthen the contract that `compile()` exposes
+and reduce ambiguity before `build()`, `project()`, `write()`, and output-format models are added.
+
+### Scope
+
+- Improve `compile({ mode: "inspect" })` usability without adding hidden Deck output state.
+- Keep `compile({ mode: "inspect" })` result shape as `{ graph?, diagnostics }` in `0.3.1`.
+  Resolved Style Inspection View should be named and bounded now, but its public API shape should
+  wait until class/theme resolution work begins.
+- Improve composition and semantic graph diagnostic messages, labels, help text, and test coverage.
+- Review graph node shape, Style Entities, Asset Entities, Source Origin, Graph Identity, and
+  diagnostics as the input contract for Output Projection.
+- Define where upcoming Style Class and Theme resolution plug into the graph pipeline.
+- Add the graph-side extension points needed for style resolution, such as authored style inputs,
+  class references, Deck-level Theme configuration, and a resolved style inspection boundary.
+- Keep Style Entities focused on authored inputs and references. Resolved concrete style values
+  should be exposed through a Resolved Style Inspection View rather than treated as the primary
+  Style Entity payload.
+- Add minimal graph types for unresolved style references:
+  - `StyleEntity.authored.classRefs` should be the only new graph-side style reference in `0.3.1`.
+  - `classRefs` should preserve only the class name and merge-order index at the graph stage.
+  - Theme should not be stored as `StyleEntity.authored` payload; it belongs to Deck configuration
+    and should appear in resolved inspection output as applied values or trace.
+- Remove the existing `StyleEntity.resolved` field in `0.3.1`; resolved concrete styles belong to
+  the future Resolved Style Inspection View.
+- Capture authored `className` props into `StyleEntity.authored.classRefs`, but do not resolve
+  classes, check class existence, add `DeckOptions.styles`, or merge class style values until `0.4`.
+- Accept clsx-like `className` values in `0.3.1`: strings, nested arrays, object maps, and falsey
+  entries. Normalize them into ordered `StyleClassRef` records.
+- Exclude numbers from the `className` type. deckjsx Style Class names are authored style names, not
+  arbitrary DOM class tokens.
+- Restrict object-map `className` values to `boolean | null | undefined` values. Broader truthy or
+  falsy payloads should not be accepted by the TypeScript API.
+- Ignore empty and whitespace-only class names, including empty object-map keys, during `classRefs`
+  normalization.
+- Assign `StyleClassRef.index` after normalization as merge order. Do not use original input
+  positions, and do not leave index gaps for omitted falsey or empty entries.
+- Add `className` to all style-capable authoring node props, including `Slide`, component nodes,
+  and intrinsic HTML-like tags. Fragments and primitive text leaves remain outside this surface.
+- Create a Style Entity when a node has only `className` and no inline `style` or direct style props,
+  so the graph preserves class references for later resolution.
+- Exclude `className` from `StyleEntity.authored.direct`; `className` should only appear as
+  normalized `classRefs`.
+- Do not make `className` affect legacy `render()` or `output()` in `0.3.1`; it is visible through
+  compile and graph inspection only until class resolution lands.
+- Add or adjust tests for composition edge cases found during review.
+- Add practical documentation examples for Graph Composition and inspect mode.
+- Record readiness findings in this roadmap, separating immediate fixes from v0.4 work.
+
+### Objective Review Method
+
+`0.3.1` should include a docs-blind codebase review before finalizing the readiness summary. The
+goal is to test whether the project can be understood from its code and tests before relying on
+CONTEXT, roadmap, or ADR documents.
+
+Recommended review phases:
+
+1. Docs-blind codebase review:
+   - Read `src/` and `tests/` without consulting `CONTEXT.md`, roadmap, or ADRs.
+   - Infer the public API, graph/composition boundaries, diagnostics model, and output boundary from
+     code alone.
+   - Record what is clear, what is discoverable only by convention, and what cannot be inferred.
+2. Documentation cross-check:
+   - Read `CONTEXT.md`, this roadmap, and ADRs.
+   - Compare the docs-blind understanding with the documented domain language and planned
+     architecture.
+   - Classify mismatches as terminology drift, missing docs, missing code structure, overbuilt code,
+     or missing tests.
+3. Readiness summary:
+   - Record what is ready before v0.4.
+   - Record what must be fixed in v0.3.1.
+   - Record what belongs to v0.4 Style Classes, v0.5 Theme Support, or v0.6 Output Projection.
+
+The review record should live at `docs/reviews/v0.3.1-graph-readiness.md`. It should use an
+ADR-like structure with status, context, review method, findings, remediation, and outcome sections.
+Unlike an ADR, it records objective review findings and the v0.3.1 improvements made in response.
+
+### Non-Goals
+
+- Do not add `project()`, `build()`, or `write()`.
+- Do not introduce Pptx Package Model or PDF/PPTX format branching.
+- Do not implement layout templates, class-like styles, themes, or direct OOXML writing.
+- Do not fully resolve Style Classes or Theme values in `0.3.1`; only define and prepare the graph
+  boundary they will use.
+
+### Validation
+
+- Tests for inspect-mode result shape and diagnostic content.
+- Additional composition edge-case tests where the review finds gaps.
+- Documentation examples showing how to inspect graph, diagnostics, source origin, and composition
+  context.
+- A written readiness summary identifying what must change before Output Projection and what can
+  wait.
+- A graph-readiness checklist for style resolution insertion points before `0.4` and `0.5`.
+- Tests or snapshots that distinguish authored style inputs from resolved style inspection output
+  once the boundary exists.
+- Type-level or graph-shape tests for `StyleClassRef` placement on `StyleEntity.authored`, and for
+  keeping Theme as Deck-level configuration.
+- Tests that authored `className` props are captured as ordered `classRefs` without changing current
+  inline style/direct prop behavior.
+- Tests for clsx-like `className` normalization: whitespace splitting, nested arrays, object maps,
+  falsey omission, empty-name omission, order preservation, and duplicate preservation.
+
+### v0.3.1 Readiness Summary
+
+- Ready before v0.4:
+  - Graph Composition remains compile-first and source-aware.
+  - Style Entities now preserve authored style inputs and ordered Style Class References.
+  - Resolved concrete style values are kept out of the primary graph payload.
+  - `className` can be inspected through `compile()` without affecting legacy output.
+- Completed in v0.3.1:
+  - Docs-blind graph readiness review record.
+  - `StyleClassRef` and `StyleEntity.authored.classRefs`.
+  - clsx-like `className` capture on style-capable authoring nodes.
+  - Removal of `StyleEntity.resolved`.
+- Deferred to v0.4:
+  - `DeckOptions.styles`, class lookup, missing class diagnostics, and style merge behavior.
+- Deferred to v0.5:
+  - Theme configuration, tokens, component defaults, and theme application trace.
+- Deferred to v0.6:
+  - Output Projection and build/project/write API.
+
 ## 0.4 Class-Like Style Reuse
 
 ### Goal
@@ -715,23 +852,21 @@ Supported names:
 
 ### Semantics
 
-Style resolution order should be:
+Style resolution order before Theme support should be:
 
-1. Theme defaults
-2. Element defaults
-3. Classes in order
-4. Inline `style`
-5. Direct props outside `style`
+1. Element defaults
+2. Classes in order
+3. Inline `style`
+4. Direct props outside `style`
 
 This preserves current behavior where direct props and inline style are local overrides.
 
 ### Implementation Notes
 
 - Add `styles` to `DeckOptions`.
-- Add `className` to authoring props.
-- Resolve classes during semantic graph construction or graph resolution, before shorthand parsing and
-  output projection.
-- Support string, string array, and conditional falsey entries.
+- Resolve the `className` references captured in `0.3.1` during semantic graph construction or graph
+  resolution, before shorthand parsing and output projection.
+- Support the clsx-like input shape captured in `0.3.1`.
 
 ### Validation
 
@@ -739,110 +874,15 @@ This preserves current behavior where direct props and inline style are local ov
 - Tests for missing class error messages.
 - Tests that existing inline style behavior is unchanged.
 
-## 0.5 Layout Templates
-
-### Goal
-
-Provide reusable layout definitions that can be applied to slides or views. Templates should reduce
-manual `x`, `y`, `width`, and `height` repetition while keeping semantic layout relationships
-visible in the graph.
-
-`0.5` is also the point where Deck configuration and the output pipeline API should be shaped more
-explicitly. By this milestone, the graph should be rich enough for users to inspect transformed
-layout values, and output-specific projections should be explicit enough to expose format-specific
-results without making users manually thread every pipeline step.
-
-### Proposed API
-
-```ts
-const deck = new Deck({
-  layout,
-  templates: {
-    titleSlide: {
-      areas: {
-        title: { x: 0.7, y: 0.6, width: 12, height: 0.8 },
-        body: { x: 0.7, y: 1.7, width: 12, height: 4.8 },
-      },
-    },
-  },
-});
-```
-
-```tsx
-<Slide template="titleSlide">
-  <Text area="title">Quarterly Review</Text>
-  <View area="body">...</View>
-</Slide>
-```
-
-### Semantics
-
-- A template defines named areas.
-- A child with `area` links to a template area in the Semantic Author Graph.
-- Inline `style` can still override dimensions if needed.
-- Templates should work independently from CSS grid. They are named layout slots, not full layout
-  engines.
-- Template areas are semantic relationships first. Concrete coordinates are resolved before or
-  during Output Projection, depending on which inspection view is needed.
-
-### Output Pipeline API
-
-`Deck` should own pipeline configuration and authoring inputs, but it should not hide compiled or
-projected results as implicit mutable state.
-
-```ts
-const deck = new Deck({
-  layout,
-  output: { format: "pptx" },
-});
-
-const graph = deck.compile();
-const build = deck.build();
-
-build.graph;
-build.diagnostics;
-build.projection; // PptxPackageModel when output.format is "pptx"
-
-await build.write({ output: "deck.pptx" });
-await deck.output({ output: "deck.pptx" });
-```
-
-Recommended API shape:
-
-- `compile()` returns the Semantic Author Graph.
-- `build()` returns an explicit Build object with the graph, diagnostics, and the configured Output
-  Projection.
-- `output.format` defaults to `"pptx"`.
-- `Build` is typed by Output Format, so a PPTX build exposes a `PptxPackageModel` projection and a
-  PPTX writer.
-- `output()` remains the convenience API for `compile -> project -> write`.
-- `project()` and `write()` may exist as lower-level operations, but their core implementations
-  should be independent functions so tests, HMR, and tooling can reuse them.
-
-### Implementation Notes
-
-- Add `templates` to `DeckOptions`.
-- Add `template` to `SlideStyle` or `SlideProps`.
-- Add `area` to content node props.
-- Represent template-area relationships in the Semantic Author Graph.
-- Add resolved layout/style inspection data without making PPTX-specific values part of the graph.
-- Add the typed Build result and default PPTX Output Format.
-
-### Validation
-
-- Tests for slide templates.
-- Tests for missing template and missing area errors.
-- Tests for inline overrides.
-- Tests that `compile()` exposes graph relationships before output projection.
-- Tests that `build()` return types follow `output.format`.
-- Tests that output convenience APIs do not depend on hidden mutable compile/project state.
-
-## 0.6 Theme Support
+## 0.5 Theme Support
 
 ### Goal
 
 Introduce reusable design tokens and semantic defaults so decks can share colors, typography, and
 component-level defaults.
+
+Theme support should build on Style Classes and Style Entities before Output Projection begins, so
+projection code can consume concrete style information instead of owning theme or token semantics.
 
 ### Proposed API
 
@@ -877,6 +917,12 @@ const deck = new Deck({
 - Theme component defaults apply before class styles and inline styles.
 - Theme values should be resolved into the Semantic Author Graph or its resolved inspection view, so
   output projections receive concrete values without making the graph output-format-specific.
+- Style resolution order after Theme support should be:
+  1. Theme defaults
+  2. Element defaults
+  3. Classes in order
+  4. Inline `style`
+  5. Direct props outside `style`
 
 ### Implementation Notes
 
@@ -893,7 +939,127 @@ const deck = new Deck({
 - Snapshot tests showing graph/resolved inspection values and Output Projection values contain
   resolved values where appropriate.
 
-## 0.7 Direct PPTX Output Projection And Writer
+## 0.6 Output Projection And Build Pipeline
+
+### Goal
+
+Introduce the output boundary that turns the Semantic Author Graph into an explicit
+output-format-specific projection, without making the graph output-specific. This milestone should
+shape the user-facing pipeline API before direct PPTX OOXML ownership expands in a later release.
+
+`Deck` should own pipeline configuration and authoring inputs, but it should not hide compiled or
+projected results as implicit mutable state.
+
+### Proposed API
+
+```ts
+const deck = new Deck({
+  layout,
+  output: { format: "pptx" },
+});
+
+const graph = deck.compile();
+const build = deck.build();
+
+build.graph;
+build.diagnostics;
+build.projection; // PptxPackageModel when output.format is "pptx"
+
+await build.write({ output: "deck.pptx" });
+await deck.output({ output: "deck.pptx" });
+```
+
+Recommended API shape:
+
+- `compile()` returns the Semantic Author Graph.
+- `build()` returns an explicit Build object with the graph, diagnostics, and the configured Output
+  Projection.
+- `output.format` defaults to `"pptx"`.
+- `Build` is typed by Output Format, so a PPTX build exposes a PPTX projection and writer.
+- `output()` remains the convenience API for `compile -> project -> write`.
+- `project()` and `write()` may exist as lower-level operations, but their core implementations
+  should be independent functions so tests, HMR, and tooling can reuse them.
+- The first projection may adapt through the existing rendering path where necessary, but the API
+  boundary should not require Output Projections to read the Author Tree.
+
+### Implementation Notes
+
+- Add Output Format configuration to `DeckOptions`, defaulting to PPTX.
+- Add the typed Build result and explicit graph/projection/diagnostics fields.
+- Keep Output Projection separate from Output Writer.
+- Keep Graph Identity distinct from output object ids, relationship ids, package paths, and other
+  Output Identity.
+- Keep the Semantic Author Graph output-agnostic. Projection-specific resolved values should belong
+  to the projection or an explicit resolved inspection view.
+
+### Validation
+
+- Tests that `build()` return types follow `output.format`.
+- Tests that output convenience APIs do not depend on hidden mutable compile/project state.
+- Tests that Projection and Writer boundaries are independently callable.
+- Tests that Output Projection consumes the Semantic Author Graph rather than Author Tree nodes.
+
+## 0.7 Layout Templates
+
+### Goal
+
+Provide reusable layout definitions that can be applied to slides or views. Templates should reduce
+manual `x`, `y`, `width`, and `height` repetition while keeping semantic layout relationships
+visible in the graph.
+
+By this milestone, the output pipeline boundary should already exist. Layout templates should add
+semantic layout relationships and resolved layout inspection data without redefining the
+build/project/write API.
+
+### Proposed API
+
+```ts
+const deck = new Deck({
+  layout,
+  templates: {
+    titleSlide: {
+      areas: {
+        title: { x: 0.7, y: 0.6, width: 12, height: 0.8 },
+        body: { x: 0.7, y: 1.7, width: 12, height: 4.8 },
+      },
+    },
+  },
+});
+```
+
+```tsx
+<Slide template="titleSlide">
+  <Text area="title">Quarterly Review</Text>
+  <View area="body">...</View>
+</Slide>
+```
+
+### Semantics
+
+- A template defines named areas.
+- A child with `area` links to a template area in the Semantic Author Graph.
+- Inline `style` can still override dimensions if needed.
+- Templates should work independently from CSS grid. They are named layout slots, not full layout
+  engines.
+- Template areas are semantic relationships first. Concrete coordinates are resolved before or
+  during Output Projection, depending on which inspection view is needed.
+
+### Implementation Notes
+
+- Add `templates` to `DeckOptions`.
+- Add `template` to `SlideStyle` or `SlideProps`.
+- Add `area` to content node props.
+- Represent template-area relationships in the Semantic Author Graph.
+- Add resolved layout/style inspection data without making PPTX-specific values part of the graph.
+
+### Validation
+
+- Tests for slide templates.
+- Tests for missing template and missing area errors.
+- Tests for inline overrides.
+- Tests that `compile()` exposes graph relationships before output projection.
+
+## 0.8 Direct PPTX Output Projection And Writer
 
 ### Goal
 
@@ -984,7 +1150,7 @@ Semantic Author Graph
 - XML snapshot tests for slides.
 - Render verification through `scripts/verify-render.ts`.
 
-## 0.8 Hot Module Replacement
+## 0.9 Hot Module Replacement
 
 ### Goal
 
@@ -1047,17 +1213,20 @@ preview UI if needed.
 
 ## Suggested Release Order
 
-1. Ship `0.2` first because it changes authoring ergonomics without requiring output writer work.
-2. Ship `0.2.1` next because rich text is the first feature that forces an explicit Author Tree and
-   Semantic Author Graph.
-3. Ship `0.3` because source composition helps larger decks immediately and gives HMR the source
-   identity it will need later.
-4. Ship `0.4` and `0.6` close together, but keep them separate because style classes and themes
-   have different compatibility risks.
-5. Ship `0.5` after classes, because templates will likely use class/theme defaults in examples and
-   this is the right point to firm up build/project/write APIs.
-6. Ship `0.7` before `0.8`, because HMR depends on source-aware graph compilation and incremental
-   output projection behavior.
+1. `0.3.1` should stabilize inspect mode, diagnostics, documentation, and Semantic Author Graph
+   readiness before output work starts.
+2. `0.4` should add Style Classes because they strengthen Style Entity semantics without requiring
+   output projection.
+3. `0.5` should add Theme Support before projection work so token and default resolution stay in
+   graph/style semantics rather than leaking into PPTX or PDF projection code.
+4. `0.6` should establish Output Projection and build/project/write boundaries while keeping the
+   Semantic Author Graph output-agnostic.
+5. `0.7` should follow the output boundary because template relationships need clear inspection and
+   projection behavior.
+6. `0.8` should add the direct PPTX projection and writer after the public output pipeline shape is
+   already clear.
+7. `0.9` should come after source-aware graph compilation and at least one output projection/writer
+   path can preserve identity well enough for incremental rebuilds.
 
 ## Compatibility Policy Before 1.0
 

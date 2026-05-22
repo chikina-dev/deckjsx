@@ -18,6 +18,7 @@ import type {
   SemanticNodeKind,
   SemanticOrigin,
   SourceOrigin,
+  StyleClassRef,
   StyleEntity,
   StyleEntityId,
 } from "./types";
@@ -101,8 +102,38 @@ function textOriginFor(node: AuthorTextLeaf, path: string, context: BuildContext
 }
 
 function propsWithoutStyle(props: Record<string, unknown>): Record<string, unknown> | undefined {
-  const { style: _style, children: _children, ...direct } = props;
+  const { style: _style, children: _children, className: _className, ...direct } = props;
   return Object.keys(direct).length === 0 ? undefined : direct;
+}
+
+function collectClassNames(value: unknown, names: string[]): void {
+  if (value === false || value === null || value === undefined) {
+    return;
+  }
+
+  if (typeof value === "string") {
+    names.push(...value.trim().split(/\s+/).filter(Boolean));
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectClassNames(item, names));
+    return;
+  }
+
+  if (typeof value === "object") {
+    Object.entries(value as Record<string, unknown>).forEach(([name, enabled]) => {
+      if (enabled === true) {
+        collectClassNames(name, names);
+      }
+    });
+  }
+}
+
+function classRefsFor(value: unknown): readonly StyleClassRef[] | undefined {
+  const names: string[] = [];
+  collectClassNames(value, names);
+  return names.length === 0 ? undefined : names.map((name, index) => ({ name, index }));
 }
 
 function styleRefFor(
@@ -113,8 +144,9 @@ function styleRefFor(
 ): StyleEntityId | undefined {
   const style = props.style;
   const direct = propsWithoutStyle(props);
+  const classRefs = classRefsFor(props.className);
 
-  if (style === undefined && direct === undefined) {
+  if (style === undefined && direct === undefined && classRefs === undefined) {
     return undefined;
   }
 
@@ -125,6 +157,7 @@ function styleRefFor(
     authored: {
       ...(style !== undefined ? { style } : {}),
       ...(direct !== undefined ? { direct } : {}),
+      ...(classRefs !== undefined ? { classRefs } : {}),
     },
   });
   return id;

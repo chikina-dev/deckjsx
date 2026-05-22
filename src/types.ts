@@ -8,6 +8,9 @@ export type {
   AuthorNodeMap,
   BackendName,
   BorderStyle,
+  ClassNameObject,
+  ClassNameValue,
+  ClassNameValueArray,
   ContentAuthorNode,
   ContentJsxChild,
   CssAlignContent,
@@ -78,6 +81,30 @@ export type {
   SlideFactoryInput,
   SourceContextMapper,
 } from "./deck";
+
+export type {
+  AssetEntity,
+  AssetEntityId,
+  BaseSemanticNode,
+  GraphNodeId,
+  SemanticAuthorGraph,
+  SemanticContainerNode,
+  SemanticDocumentNode,
+  SemanticImageNode,
+  SemanticNode,
+  SemanticNodeKind,
+  SemanticOrigin,
+  SemanticRole,
+  SemanticShapeNode,
+  SemanticSlideNode,
+  SemanticTextNode,
+  SemanticTextRunNode,
+  SourceIdentity,
+  SourceOrigin,
+  StyleClassRef,
+  StyleEntity,
+  StyleEntityId,
+} from "./graph";
 
 export type {
   BackgroundImageLayerIR,

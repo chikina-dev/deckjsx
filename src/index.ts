@@ -32,6 +32,9 @@ export {
   type AuthorNodePropsMap,
   type BackendName,
   type BorderStyle,
+  type ClassNameObject,
+  type ClassNameValue,
+  type ClassNameValueArray,
   type ContentAuthorNode,
   type ContentJsxChild,
   type CssAlignContent,
@@ -125,6 +128,7 @@ export type {
   SemanticTextRunNode,
   SourceIdentity,
   SourceOrigin,
+  StyleClassRef,
   StyleEntity,
   StyleEntityId,
 } from "./graph";
