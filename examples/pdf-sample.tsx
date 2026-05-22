@@ -24,7 +24,7 @@ export async function writeSampleDeck(output = "examples/output/deckjsx-sample.p
     meta: { title: "deckjsx Sample Report", author: "deckjsx" },
   });
 
-  deck.add(({ slideIndex, totalSlides }) => (
+  deck.add(({ composition }) => (
     <Slide name="Title" style={{ backgroundColor: "#F8FAFC" }}>
       <Shape shape="rect" style={{ x: 0.7, y: 0.65, width: 0.12, height: 5.8, fill: "#2563EB" }} />
       <Text
@@ -100,12 +100,12 @@ export async function writeSampleDeck(output = "examples/output/deckjsx-sample.p
           textAlign: "right",
         }}
       >
-        {slideIndex + 1} / {totalSlides}
+        {composition.slideIndex + 1} / {composition.totalSlides}
       </Text>
     </Slide>
   ));
 
-  deck.add(({ slideIndex, totalSlides }) => (
+  deck.add(({ composition }) => (
     <Slide name="Takeaways" style={{ backgroundColor: "#FFFFFF" }}>
       <Text
         style={{
@@ -176,7 +176,7 @@ export async function writeSampleDeck(output = "examples/output/deckjsx-sample.p
           textAlign: "right",
         }}
       >
-        {slideIndex + 1} / {totalSlides}
+        {composition.slideIndex + 1} / {composition.totalSlides}
       </Text>
     </Slide>
   ));

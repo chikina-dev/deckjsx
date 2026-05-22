@@ -38,8 +38,8 @@ const deck = new Deck({
   meta: { title: "Quarterly Review", author: "deckjsx" },
 });
 
-deck.add(({ slideIndex, totalSlides }) => (
-  <Slide name={`Slide ${slideIndex + 1}`} style={{ backgroundColor: "#F8FAFC" }}>
+deck.add(({ composition }) => (
+  <Slide name={`Slide ${composition.slideIndex + 1}`} style={{ backgroundColor: "#F8FAFC" }}>
     <main
       style={{
         x: 0.7,
@@ -71,7 +71,7 @@ deck.add(({ slideIndex, totalSlides }) => (
         <p
           style={{ width: "100%", height: 0.3, fontSize: 11, color: "#64748B", textAlign: "right" }}
         >
-          {slideIndex + 1} / {totalSlides}
+          {composition.slideIndex + 1} / {composition.totalSlides}
         </p>
       </footer>
     </main>

@@ -5,6 +5,7 @@ export type Brand<T, B extends string> = T & { readonly __brand: B };
 export type GraphNodeId = Brand<string, "GraphNodeId">;
 export type StyleEntityId = Brand<string, "StyleEntityId">;
 export type AssetEntityId = Brand<string, "AssetEntityId">;
+export type SourceIdentity = Brand<string, "SourceIdentity">;
 
 export type SemanticNodeKind =
   | "container"
@@ -26,9 +27,18 @@ export type SemanticRole =
   | { readonly kind: "image" }
   | { readonly kind: "shape" };
 
+export type SourceOrigin =
+  | { readonly kind: "root" }
+  | {
+      readonly kind: "mounted";
+      readonly sourceKey: string;
+      readonly sourceIdentity: SourceIdentity;
+    };
+
 export type SemanticOrigin = {
   readonly kind: "authored" | "implicit";
   readonly path: string;
+  readonly source?: SourceOrigin;
   readonly sourceSpan?: SourceSpan;
   readonly reason?: "primitive-text-in-container";
 };

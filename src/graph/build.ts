@@ -1,5 +1,6 @@
 import type { AuthoredComponent, AuthoredTag } from "../authoring/tags";
 import type { AuthorElementNode, AuthorTextLeaf, AuthorTreeNode, JsxKey } from "../authoring/tree";
+import type { ComposedAuthorRoot, SourceSlotOrigin } from "../composition/types";
 import { createDiagnostics, diagnostic, type Diagnostic, type Diagnostics } from "../diagnostics";
 import { assetEntityId, graphNodeId, styleEntityId } from "./identity";
 import {
@@ -16,6 +17,7 @@ import type {
   SemanticNode,
   SemanticNodeKind,
   SemanticOrigin,
+  SourceOrigin,
   StyleEntity,
   StyleEntityId,
 } from "./types";
@@ -32,6 +34,9 @@ type BuildContext = {
   parentMaterial: readonly string[];
   path: string;
   inline: boolean;
+  source: SourceOrigin;
+  slotOrigins: WeakMap<AuthorTreeNode, SourceSlotOrigin>;
+  activeSlot?: SourceSlotOrigin;
 };
 
 type BuildChild = {
@@ -59,18 +64,38 @@ function nodeRole(node: AuthorElementNode) {
     : semanticRoleForComponent(node.source.component);
 }
 
-function originFor(node: AuthorElementNode, path: string): SemanticOrigin {
+function sourceFor(context: BuildContext): SourceOrigin {
+  return context.activeSlot?.source ?? context.source;
+}
+
+function contextForNode(node: AuthorTreeNode, context: BuildContext): BuildContext {
+  const slot = context.slotOrigins.get(node);
+  if (!slot) {
+    return context;
+  }
+
+  return {
+    ...context,
+    activeSlot: slot,
+    parentMaterial: [...context.parentMaterial, ...slot.identityMaterial],
+    path: `${context.path} > slot[${slot.field}]`,
+  };
+}
+
+function originFor(node: AuthorElementNode, path: string, context: BuildContext): SemanticOrigin {
   return {
     kind: "authored",
     path,
+    source: sourceFor(context),
     ...(node.sourceSpan ? { sourceSpan: node.sourceSpan } : {}),
   };
 }
 
-function textOriginFor(node: AuthorTextLeaf, path: string): SemanticOrigin {
+function textOriginFor(node: AuthorTextLeaf, path: string, context: BuildContext): SemanticOrigin {
   return {
     kind: "authored",
     path,
+    source: sourceFor(context),
     ...(node.sourceSpan ? { sourceSpan: node.sourceSpan } : {}),
   };
 }
@@ -166,12 +191,13 @@ function semanticBase(
   kind: SemanticNodeKind,
   path: string,
   material: readonly string[],
+  context: BuildContext,
 ) {
   const styleRef = styleRefFor(state, material, kind, node.props);
   return {
     id,
     kind,
-    origin: originFor(node, path),
+    origin: originFor(node, path, context),
     ...(node.source.kind === "tag" ? { authoredTag: node.source.tag as AuthoredTag } : {}),
     ...(node.source.kind === "component"
       ? { authoredComponent: node.source.component as AuthoredComponent }
@@ -200,7 +226,7 @@ function buildTextRunFromLeaf(
   state.nodes.set(id, {
     id,
     kind: "textRun",
-    origin: textOriginFor(leaf, path),
+    origin: textOriginFor(leaf, path, context),
     text,
   });
   return { id, kind: "textRun" };
@@ -235,6 +261,7 @@ function buildImplicitTextNode(
     origin: {
       kind: "implicit",
       path: `${context.path} > implicitText[${index}]`,
+      source: sourceFor(context),
       ...(leaf.sourceSpan ? { sourceSpan: leaf.sourceSpan } : {}),
       reason: "primitive-text-in-container",
     },
@@ -253,12 +280,13 @@ function buildChildren(
 
   children.forEach((child, index) => {
     if (child.kind === "fragment") {
+      const childContext = contextForNode(child, context);
       const segment = `fragment:${keySegment(child.key, index)}`;
       ids.push(
         ...buildChildren(state, child.children, {
-          ...context,
-          parentMaterial: [...context.parentMaterial, segment],
-          path: `${context.path} > fragment[${keySegment(child.key, index)}]`,
+          ...childContext,
+          parentMaterial: [...childContext.parentMaterial, segment],
+          path: `${childContext.path} > fragment[${keySegment(child.key, index)}]`,
         }),
       );
       return;
@@ -279,6 +307,7 @@ function buildTextLikeNode(
   id: GraphNodeId,
   path: string,
   material: readonly string[],
+  context: BuildContext,
 ): BuildChild {
   const inlineChildren: GraphNodeId[] = [];
 
@@ -287,7 +316,7 @@ function buildTextLikeNode(
       const run = buildTextRunFromLeaf(
         state,
         child,
-        { parentId: id, parentMaterial: material, path, inline: true },
+        { ...context, parentId: id, parentMaterial: material, path, inline: true },
         index,
       );
       if (run) {
@@ -303,6 +332,9 @@ function buildTextLikeNode(
           parentMaterial: [...material, `fragment:${keySegment(child.key, index)}`],
           path: `${path} > fragment[${keySegment(child.key, index)}]`,
           inline: true,
+          source: sourceFor(context),
+          slotOrigins: context.slotOrigins,
+          activeSlot: context.activeSlot,
         }),
       );
       return;
@@ -312,7 +344,7 @@ function buildTextLikeNode(
       const built = buildNode(
         state,
         child,
-        { parentId: id, parentMaterial: material, path, inline: true },
+        { ...context, parentId: id, parentMaterial: material, path, inline: true },
         index,
       );
       if (built) {
@@ -332,7 +364,7 @@ function buildTextLikeNode(
   });
 
   state.nodes.set(id, {
-    ...semanticBase(state, node, id, "text", path, material),
+    ...semanticBase(state, node, id, "text", path, material, context),
     kind: "text",
     inlineChildren,
   });
@@ -389,21 +421,23 @@ function buildNode(
   context: BuildContext,
   index: number,
 ): BuildChild | undefined {
+  const nodeContext = contextForNode(node, context);
+
   if (node.kind === "fragment") {
     return undefined;
   }
 
   if (node.kind === "text") {
-    return context.inline
-      ? buildTextRunFromLeaf(state, node, context, index)
-      : buildImplicitTextNode(state, node, context, index);
+    return nodeContext.inline
+      ? buildTextRunFromLeaf(state, node, nodeContext, index)
+      : buildImplicitTextNode(state, node, nodeContext, index);
   }
 
   const kind = nodeSemanticKind(node);
   const segment = `${sourceName(node)}:${keySegment(node.key, index)}`;
-  const material = [...context.parentMaterial, segment];
+  const material = [...nodeContext.parentMaterial, segment];
   const id = graphNodeId(material);
-  const path = `${context.path} > ${sourceName(node)}[${keySegment(node.key, index)}]`;
+  const path = `${nodeContext.path} > ${sourceName(node)}[${keySegment(node.key, index)}]`;
 
   if (kind === "textRun") {
     if (!context.inline) {
@@ -421,7 +455,7 @@ function buildNode(
 
     const text = collectInlineText(state, node.children, path);
     state.nodes.set(id, {
-      ...semanticBase(state, node, id, "textRun", path, material),
+      ...semanticBase(state, node, id, "textRun", path, material, nodeContext),
       kind: "textRun",
       text,
     });
@@ -429,7 +463,7 @@ function buildNode(
   }
 
   if (kind === "text") {
-    return buildTextLikeNode(state, node, id, path, material);
+    return buildTextLikeNode(state, node, id, path, material, nodeContext);
   }
 
   if (kind === "image") {
@@ -442,7 +476,7 @@ function buildNode(
 
     const assetRef = assetForImage(state, material, node.props, path);
     state.nodes.set(id, {
-      ...semanticBase(state, node, id, "image", path, material),
+      ...semanticBase(state, node, id, "image", path, material, nodeContext),
       kind: "image",
       ...(assetRef ? { assetRef } : {}),
     });
@@ -454,16 +488,43 @@ function buildNode(
     parentMaterial: material,
     path,
     inline: false,
+    source: sourceFor(nodeContext),
+    slotOrigins: nodeContext.slotOrigins,
+    activeSlot: nodeContext.activeSlot,
   });
   state.nodes.set(id, {
-    ...semanticBase(state, node, id, kind, path, material),
+    ...semanticBase(state, node, id, kind, path, material, nodeContext),
     kind,
     children: childIds,
   } as SemanticNode);
   return { id, kind };
 }
 
-export function buildSemanticAuthorGraph(roots: readonly AuthorTreeNode[]): {
+function rootSource(): SourceOrigin {
+  return { kind: "root" };
+}
+
+function asComposedRoot(root: AuthorTreeNode, index: number): ComposedAuthorRoot {
+  if (root.kind !== "element") {
+    throw new Error("Semantic graph roots must be element nodes.");
+  }
+
+  return {
+    root,
+    source: rootSource(),
+    sourceIdentityMaterial: ["source", "root"],
+    path: `document > slideFactory[${index}]`,
+    composition: {
+      slideIndex: index,
+      totalSlides: 0,
+      deckSlideIndex: index,
+      deckTotalSlides: 0,
+    },
+    slotOrigins: new WeakMap(),
+  };
+}
+
+export function buildSemanticAuthorGraph(roots: readonly (AuthorTreeNode | ComposedAuthorRoot)[]): {
   graph?: SemanticAuthorGraph;
   diagnostics: Diagnostics;
 } {
@@ -475,17 +536,32 @@ export function buildSemanticAuthorGraph(roots: readonly AuthorTreeNode[]): {
     diagnostics: [],
   };
 
-  const slideIds = buildChildren(state, roots, {
-    parentId: documentId,
-    parentMaterial: ["document", "root"],
-    path: "document",
-    inline: false,
+  const slideIds: GraphNodeId[] = [];
+  roots.forEach((root, index) => {
+    const composed = "root" in root ? root : asComposedRoot(root, index);
+    const built = buildNode(
+      state,
+      composed.root,
+      {
+        parentId: documentId,
+        parentMaterial: ["document", "root", ...composed.sourceIdentityMaterial],
+        path: composed.path,
+        inline: false,
+        source: composed.source,
+        slotOrigins: composed.slotOrigins,
+      },
+      composed.composition.slideIndex,
+    );
+
+    if (built) {
+      slideIds.push(built.id);
+    }
   });
 
   const documentNode: SemanticNode = {
     id: documentId,
     kind: "document",
-    origin: { kind: "implicit", path: "document" },
+    origin: { kind: "implicit", path: "document", source: rootSource() },
     role: { kind: "document" },
     children: slideIds,
   };

@@ -16,6 +16,8 @@ export type {
   SemanticSlideNode,
   SemanticTextNode,
   SemanticTextRunNode,
+  SourceIdentity,
+  SourceOrigin,
   StyleEntity,
   StyleEntityId,
 } from "./types";
