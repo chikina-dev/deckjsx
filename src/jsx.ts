@@ -148,8 +148,10 @@ export function createElementWithMetadata(
   return result;
 }
 
-export function Fragment(_props: { children?: AuthorTreeChild }): AuthorTreeNode {
-  return createAuthorFragment({});
+export function Fragment(props: { children?: AuthorTreeChild }): AuthorTreeNode {
+  return createAuthorFragment({
+    children: props.children === undefined ? [] : [props.children],
+  });
 }
 
 function isAuthorNodeKind(value: unknown): value is AuthorNodeKind {

@@ -1,11 +1,5 @@
 import type { AuthoredComponent, AuthoredTag } from "../authoring/tags";
-import type {
-  AuthorElementNode,
-  AuthorFragmentNode,
-  AuthorTextLeaf,
-  AuthorTreeNode,
-  JsxKey,
-} from "../authoring/tree";
+import type { AuthorElementNode, AuthorTextLeaf, AuthorTreeNode, JsxKey } from "../authoring/tree";
 import { createDiagnostics, diagnostic, type Diagnostic, type Diagnostics } from "../diagnostics";
 import { assetEntityId, graphNodeId, styleEntityId } from "./identity";
 import {
@@ -258,6 +252,18 @@ function buildChildren(
   const ids: GraphNodeId[] = [];
 
   children.forEach((child, index) => {
+    if (child.kind === "fragment") {
+      const segment = `fragment:${keySegment(child.key, index)}`;
+      ids.push(
+        ...buildChildren(state, child.children, {
+          ...context,
+          parentMaterial: [...context.parentMaterial, segment],
+          path: `${context.path} > fragment[${keySegment(child.key, index)}]`,
+        }),
+      );
+      return;
+    }
+
     const built = buildNode(state, child, context, index);
     if (built) {
       ids.push(built.id);
@@ -265,23 +271,6 @@ function buildChildren(
   });
 
   return ids;
-}
-
-function buildFragment(
-  state: BuildState,
-  node: AuthorFragmentNode,
-  context: BuildContext,
-  index: number,
-): BuildChild | undefined {
-  const segment = `fragment:${keySegment(node.key, index)}`;
-  const ids = buildChildren(state, node.children, {
-    ...context,
-    parentMaterial: [...context.parentMaterial, segment],
-    path: `${context.path} > fragment[${keySegment(node.key, index)}]`,
-  });
-  return ids.length === 1
-    ? { id: ids[0], kind: state.nodes.get(ids[0])?.kind ?? "container" }
-    : undefined;
 }
 
 function buildTextLikeNode(
@@ -401,7 +390,7 @@ function buildNode(
   index: number,
 ): BuildChild | undefined {
   if (node.kind === "fragment") {
-    return buildFragment(state, node, context, index);
+    return undefined;
   }
 
   if (node.kind === "text") {

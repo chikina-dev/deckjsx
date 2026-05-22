@@ -531,10 +531,13 @@ function emitText(slide: PptxSlide, node: TextIR, inheritedOpacity?: number) {
   );
 
   const textContent: string | PptxTextRun[] = node.content.runs
-    ? node.content.runs.map((run) => ({
-        text: run.text,
-        ...(toPptxTextRunOptions(run.style) ? { options: toPptxTextRunOptions(run.style) } : {}),
-      }))
+    ? node.content.runs.map((run) => {
+        const options = toPptxTextRunOptions(run.style);
+        return {
+          text: run.text,
+          ...(options ? { options } : {}),
+        };
+      })
     : node.content.text;
 
   slide.addText(textContent, {

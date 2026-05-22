@@ -33,6 +33,23 @@ describe("authoring and JSX runtime", () => {
     });
   });
 
+  test("Fragment forwards children when called directly", () => {
+    const fragment = Fragment({
+      children: [<Text>First</Text>, <Text>Second</Text>],
+    });
+
+    expect(fragment).toMatchObject({ kind: "fragment" });
+    if (fragment.kind !== "fragment") {
+      throw new Error("Expected fragment node.");
+    }
+
+    expect(fragment.children).toHaveLength(2);
+    expect(fragment.children[0]).toMatchObject({
+      kind: "element",
+      source: { kind: "component", component: "Text" },
+    });
+  });
+
   test("lowercase div normalizes primitive children to implicit text nodes", () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
