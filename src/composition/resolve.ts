@@ -1,4 +1,5 @@
 import { isLegacyAuthorNode } from "../authoring/legacy";
+import type { StyleSheet } from "../authoring/index";
 import { isAuthorTreeNode, type AuthorElementNode, type AuthorTreeNode } from "../authoring/tree";
 import { createDiagnostics, diagnostic, type Diagnostic } from "../diagnostics";
 import type { SourceOrigin } from "../graph/types";
@@ -19,6 +20,7 @@ const ROOT_SOURCE: SourceOrigin = { kind: "root" };
 type SourcePlan = {
   readonly source: SourceOrigin;
   readonly sourceIdentityMaterial: readonly string[];
+  readonly stylesheets: readonly StyleSheet[];
   readonly context: SourceContextBinding<unknown>;
   readonly entries: readonly PlanEntry[];
   readonly slideCount: number;
@@ -355,6 +357,7 @@ function resolveSource(
   return {
     source: context.source,
     sourceIdentityMaterial: context.sourceIdentityMaterial,
+    stylesheets: sourceState.stylesheets,
     context: effectiveContext,
     entries,
     slideCount,
@@ -412,6 +415,7 @@ function flattenPlan(
         root,
         source: plan.source,
         sourceIdentityMaterial: plan.sourceIdentityMaterial,
+        stylesheets: plan.stylesheets,
         path: entry.path,
         composition,
         slotOrigins: plan.slotOrigins,

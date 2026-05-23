@@ -101,11 +101,6 @@ function textOriginFor(node: AuthorTextLeaf, path: string, context: BuildContext
   };
 }
 
-function propsWithoutStyle(props: Record<string, unknown>): Record<string, unknown> | undefined {
-  const { style: _style, children: _children, className: _className, ...direct } = props;
-  return Object.keys(direct).length === 0 ? undefined : direct;
-}
-
 function collectClassNames(value: unknown, names: string[]): void {
   if (value === false || value === null || value === undefined) {
     return;
@@ -143,10 +138,9 @@ function styleRefFor(
   props: Record<string, unknown>,
 ): StyleEntityId | undefined {
   const style = props.style;
-  const direct = propsWithoutStyle(props);
   const classRefs = classRefsFor(props.className);
 
-  if (style === undefined && direct === undefined && classRefs === undefined) {
+  if (style === undefined && classRefs === undefined) {
     return undefined;
   }
 
@@ -156,7 +150,6 @@ function styleRefFor(
     target,
     authored: {
       ...(style !== undefined ? { style } : {}),
-      ...(direct !== undefined ? { direct } : {}),
       ...(classRefs !== undefined ? { classRefs } : {}),
     },
   });
@@ -550,6 +543,7 @@ function asComposedRoot(root: AuthorTreeNode, index: number): ComposedAuthorRoot
     root,
     source: rootSource(),
     sourceIdentityMaterial: ["source", "root"],
+    stylesheets: [],
     path: `document > slideFactory[${index}]`,
     composition: {
       slideIndex: index,

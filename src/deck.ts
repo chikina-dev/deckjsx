@@ -1,8 +1,10 @@
 import { renderPresentation } from "./compiler";
-import type { DeckOptions, OutputConfig } from "./authoring/index";
+import type { DeckOptions, OutputConfig, StyleSheet } from "./authoring/index";
 import {
   CompositionDiagnosticError,
+  createDiagnostics,
   SemanticGraphDiagnosticError,
+  StyleDiagnosticError,
   type Diagnostics,
 } from "./diagnostics";
 import {
@@ -15,6 +17,7 @@ import {
 } from "./composition/types";
 import { resolveComposition } from "./composition/resolve";
 import { buildSemanticAuthorGraph, type SemanticAuthorGraph } from "./graph";
+import { resolveStyles, type ResolvedStyleMap } from "./style/resolve";
 import type { PresentationIR } from "./ir/index";
 import { outputPresentation } from "./node";
 
@@ -30,6 +33,7 @@ export type CompileMode = "inspect" | "strict";
 export type CompileInspectResult = {
   readonly graph?: SemanticAuthorGraph;
   readonly diagnostics: Diagnostics;
+  readonly resolvedStyles?: ResolvedStyleMap;
 };
 
 type WithSource<TSourceContext> = [TSourceContext] extends [void]
@@ -52,6 +56,10 @@ function mountedSourceError(): Error {
   );
 }
 
+function combineDiagnostics(...diagnostics: readonly Diagnostics[]): Diagnostics {
+  return createDiagnostics(diagnostics.flatMap((item) => item.items));
+}
+
 function compileSource(
   source: CompositionSource<any>,
   config: { mode?: CompileMode } = {},
@@ -67,13 +75,27 @@ function compileSource(
   }
 
   const result = buildSemanticAuthorGraph(composition.roots ?? []);
+  const styleResult = result.graph
+    ? resolveStyles(result.graph, composition.roots ?? [])
+    : undefined;
+  const diagnostics = styleResult
+    ? combineDiagnostics(result.diagnostics, styleResult.diagnostics)
+    : result.diagnostics;
 
   if (config.mode === "inspect") {
-    return result;
+    return {
+      ...(result.graph ? { graph: result.graph } : {}),
+      diagnostics,
+      ...(styleResult ? { resolvedStyles: styleResult.resolvedStyles } : {}),
+    };
   }
 
   if (result.diagnostics.hasErrors) {
     throw new SemanticGraphDiagnosticError(result.diagnostics);
+  }
+
+  if (styleResult?.diagnostics.hasErrors) {
+    throw new StyleDiagnosticError(styleResult.diagnostics);
   }
 
   if (!result.graph) {
@@ -96,6 +118,7 @@ export class BoundSource<TSourceContext = void> implements CompositionSource<TSo
     const source = this.#source[COMPOSITION_SOURCE]();
     return {
       entries: source.entries,
+      stylesheets: source.stylesheets,
       cycleId: source.cycleId,
       boundContext: { present: true, value: this.#sourceContext },
     };
@@ -134,6 +157,7 @@ export class BoundSource<TSourceContext = void> implements CompositionSource<TSo
 export class Deck<TSourceContext = void> implements CompositionSource<TSourceContext> {
   readonly #options: DeckOptions;
   readonly #entries: CompositionEntry<TSourceContext>[] = [];
+  readonly #stylesheets: StyleSheet[] = [];
 
   readonly withSource: WithSource<TSourceContext>;
 
@@ -150,9 +174,15 @@ export class Deck<TSourceContext = void> implements CompositionSource<TSourceCon
   [COMPOSITION_SOURCE](): CompositionSourceInternals<TSourceContext> {
     return {
       entries: this.#entries,
+      stylesheets: this.#stylesheets,
       cycleId: this,
       boundContext: { present: false },
     };
+  }
+
+  useStyles(stylesheet: StyleSheet): this {
+    this.#stylesheets.push(stylesheet);
+    return this;
   }
 
   add(slide: SlideFactory<TSourceContext>): this {

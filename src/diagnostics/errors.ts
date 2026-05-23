@@ -24,3 +24,10 @@ export class CompositionDiagnosticError extends DeckDiagnosticError {
     this.name = "CompositionDiagnosticError";
   }
 }
+
+export class StyleDiagnosticError extends DeckDiagnosticError {
+  constructor(diagnostics: Diagnostics) {
+    super(formatDiagnostics(diagnostics), diagnostics);
+    this.name = "StyleDiagnosticError";
+  }
+}

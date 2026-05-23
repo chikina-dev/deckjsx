@@ -28,15 +28,26 @@ A node may reference a Style Entity even when its only style-related input is a 
 _Avoid_: style child node
 
 **Style Class**:
-An author-defined reusable style name that can be referenced from JSX authoring and resolved into Style Entities before output projection. Style Classes are part of authoring semantics, not output-format classes.
-_Avoid_: CSS class, PPTX style id
+An author-defined reusable style name that participates in deckjsx's CSS-like cascade. A Style Class is referenced from JSX `className`, usually defined inside a registered StyleSheet, and should behave like a CSS class selector rather than like an output-format style id.
+Style Classes are authoring semantics and should not be confused with PPTX style identifiers or package-specific class concepts.
+_Avoid_: PPTX style id, output-format class
 
 **Style Class Reference**:
-An unresolved reference from a Style Entity to an authored Style Class. It records the requested class name and merge-order index without containing the resolved style values for that class.
-Style Class References are produced from clsx-like `className` authoring values by dropping falsey and empty entries, expanding arrays and boolean object maps, splitting whitespace in strings, and preserving the resulting order. The merge-order index is assigned after normalization, not from the original input position.
+An unresolved reference from a Style Entity to an authored Style Class. It records the requested class name and normalized token position for provenance without containing the resolved style values for that class.
+Style Class References are produced from clsx-like `className` authoring values by dropping falsey and empty entries, expanding arrays and boolean object maps, splitting whitespace in strings, and preserving the resulting authored token order for inspection. That order is provenance, not cascade precedence; resolved style precedence should follow CSS-like specificity and stylesheet source order.
 Any style-capable authoring node may carry Style Class References; fragments and primitive text leaves do not.
 `className` is not a direct style prop; once normalized, it should appear as Style Class References rather than inside authored direct props.
-_Avoid_: resolved class style
+_Avoid_: resolved class style, merge-order precedence
+
+**StyleSheet**:
+An author-defined collection of reusable style classes registered on a Deck instance, typically created with `defineStyles()` and attached with `deck.useStyles()`. StyleSheets are source-local authored resources; parent Deck stylesheets do not implicitly flow into mounted child Decks.
+StyleSheet class entries are CSS-like stylesheet rules. A class dictionary entry behaves like a `.className` rule, and future selector targets should extend the same stylesheet model rather than introducing a separate non-CSS rule system.
+_Avoid_: DeckOptions.styles as primary API, global style registry, output stylesheet
+
+**Stylesheet Target**:
+A CSS-like selector string attached to a StyleSheet class definition to constrain where that style applies, such as `p.title`, `div.card`, `header.title`, or future descendant selectors like `.card .caption`.
+Public Stylesheet Targets should be authored-tag and class selector language, not deckjsx-specific semantic target strings such as `"text"` or `"view"`. Internal style classification may still map authored tags to text, view, textRun, image, shape, or slide categories for typing and diagnostics.
+_Avoid_: public semantic target, PPTX target
 
 **Theme**:
 A reusable design vocabulary for a deck, including design tokens and semantic defaults. Theme values inform style resolution before output projection and should not make the Semantic Author Graph specific to PPTX, PDF, or any other output format.
@@ -44,7 +55,7 @@ Theme belongs to Deck-level configuration rather than to individual Style Entiti
 _Avoid_: output template, PowerPoint theme XML
 
 **Resolved Style Inspection View**:
-An inspectable view of style values after deckjsx has applied style resolution rules such as Theme defaults, element defaults, Style Classes, inline style, and direct props. It exists to show what output projections will consume without turning the Semantic Author Graph itself into a PPTX- or PDF-specific model. It may expose theme application trace, but Theme itself remains Deck-level configuration.
+An inspectable view of style values after deckjsx has applied CSS-like style resolution rules such as element defaults, Theme defaults, registered StyleSheet rules, and inline style. It exists to show what output projections will consume without turning the Semantic Author Graph itself into a PPTX- or PDF-specific model. It may expose theme application trace, stylesheet source order, specificity, and property-level winner provenance, but Theme itself remains Deck-level configuration.
 _Avoid_: output style model, PPTX shape properties
 
 **Asset Entity**:

@@ -1,4 +1,4 @@
-import type { JsxNode } from "../authoring/index";
+import type { JsxNode, StyleSheet } from "../authoring/index";
 import type { AuthorElementNode, AuthorTreeNode } from "../authoring/tree";
 import type { Diagnostics } from "../diagnostics";
 import type { SourceIdentity, SourceOrigin } from "../graph/types";
@@ -43,6 +43,7 @@ export type ComposedAuthorRoot = {
   readonly root: AuthorElementNode;
   readonly source: SourceOrigin;
   readonly sourceIdentityMaterial: readonly string[];
+  readonly stylesheets: readonly StyleSheet[];
   readonly path: string;
   readonly composition: CompositionContext;
   readonly slotOrigins: WeakMap<AuthorTreeNode, SourceSlotOrigin>;
@@ -68,6 +69,7 @@ export type CompositionEntry<TSourceContext = unknown> =
 
 export type CompositionSourceInternals<TSourceContext = unknown> = {
   readonly entries: readonly CompositionEntry<TSourceContext>[];
+  readonly stylesheets: readonly StyleSheet[];
   readonly cycleId: object;
   readonly boundContext: SourceContextBinding<TSourceContext>;
 };

@@ -353,6 +353,65 @@ export type ShapeStyle = FrameAuthorProps &
     radius?: DeckLength;
   };
 
+export type TextRunStyle = Pick<
+  TextStyle,
+  | "fontFamily"
+  | "fontSize"
+  | "fontWeight"
+  | "italic"
+  | "fontStyle"
+  | "underline"
+  | "strike"
+  | "textDecoration"
+  | "textDecorationLine"
+  | "textDecorationStyle"
+  | "textDecorationColor"
+  | "textTransform"
+  | "direction"
+  | "writingMode"
+  | "color"
+  | "verticalAlign"
+  | "charSpacing"
+  | "letterSpacing"
+  | "href"
+  | "tooltip"
+  | "superscript"
+  | "subscript"
+  | "textShadow"
+>;
+
+export type StyleTargetSelector = string;
+export type StyleClassStyle =
+  | SlideStyle
+  | ViewStyle
+  | TextStyle
+  | TextRunStyle
+  | ImageStyle
+  | ShapeStyle;
+
+export type TargetedStyleClassDefinition<TStyle extends StyleClassStyle = StyleClassStyle> = {
+  readonly target?: StyleTargetSelector | readonly StyleTargetSelector[];
+  readonly style: TStyle;
+};
+
+export type StyleClassDefinition<TStyle extends StyleClassStyle = StyleClassStyle> =
+  | TStyle
+  | TargetedStyleClassDefinition<TStyle>;
+
+export type StyleSheet<
+  TClasses extends Readonly<Record<string, StyleClassDefinition>> = Readonly<
+    Record<string, StyleClassDefinition>
+  >,
+> = {
+  readonly classes: TClasses;
+};
+
+export function defineStyles<const TStyleSheet extends StyleSheet>(
+  stylesheet: TStyleSheet,
+): TStyleSheet {
+  return stylesheet;
+}
+
 export type DeckOptions = {
   layout: {
     width: number;
@@ -414,6 +473,11 @@ export type TextNodeProps = {
 export type TextProps = TextNodeProps & {
   children?: TextJsxChild;
 };
+
+export type TextRunNodeProps = {
+  style?: TextRunStyle;
+} & ClassNameAuthorProps &
+  TextRunStyle;
 
 export type ImageNodeProps = {
   style?: ImageStyle;
@@ -493,6 +557,10 @@ export type IntrinsicPProps = TextNodeProps & {
   children?: TextJsxChild;
 };
 
+export type IntrinsicSpanProps = TextRunNodeProps & {
+  children?: TextJsxChild;
+};
+
 export type IntrinsicImgProps = ImageProps;
 
 export type IntrinsicViewTag =
@@ -510,7 +578,7 @@ export type IntrinsicTextTag = "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p";
 
 export type DeckJsxIntrinsicElements = {
   img: IntrinsicImgProps;
-  span: IntrinsicPProps;
+  span: IntrinsicSpanProps;
 } & {
   [Tag in IntrinsicViewTag]: IntrinsicDivProps;
 } & {

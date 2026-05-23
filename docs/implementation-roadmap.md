@@ -176,7 +176,7 @@ This should normalize to a view with `Text("Title")`, image, and `Text("Caption"
   - Add graph nodes for text runs and preserve run-level styles.
   - Include non-renderable graph entities from the start, at least document, asset, and style
     entities, so the graph can represent relationships instead of only renderable output nodes.
-  - Keep Style Entities split between authored `style`, authored direct props, and style references.
+  - Keep Style Entities split between authored `style` and style references.
     Resolved concrete values belong to a later Resolved Style Inspection View.
   - Give Asset Entities metadata slots such as media type, byte length, dimensions, content hash, and
     resolution status, but avoid heavy file IO, image decoding, or hashing during `0.2.1` graph
@@ -305,7 +305,6 @@ type StyleEntity = {
   readonly target: SemanticNodeKind;
   readonly authored: {
     readonly style?: unknown;
-    readonly direct?: unknown;
     readonly classRefs?: readonly StyleClassRef[];
   };
 };
@@ -722,13 +721,15 @@ and reduce ambiguity before `build()`, `project()`, `write()`, and output-format
   Style Entity payload.
 - Add minimal graph types for unresolved style references:
   - `StyleEntity.authored.classRefs` should be the only new graph-side style reference in `0.3.1`.
-  - `classRefs` should preserve only the class name and merge-order index at the graph stage.
+  - `classRefs` should preserve the class name and normalized token index for provenance at the graph
+    stage. This index is not CSS cascade precedence.
   - Theme should not be stored as `StyleEntity.authored` payload; it belongs to Deck configuration
     and should appear in resolved inspection output as applied values or trace.
 - Remove the existing `StyleEntity.resolved` field in `0.3.1`; resolved concrete styles belong to
   the future Resolved Style Inspection View.
 - Capture authored `className` props into `StyleEntity.authored.classRefs`, but do not resolve
-  classes, check class existence, add `DeckOptions.styles`, or merge class style values until `0.4`.
+  classes, check class existence, add stylesheet registration, or merge class style values until
+  `0.4`.
 - Accept clsx-like `className` values in `0.3.1`: strings, nested arrays, object maps, and falsey
   entries. Normalize them into ordered `StyleClassRef` records.
 - Exclude numbers from the `className` type. deckjsx Style Class names are authored style names, not
@@ -737,8 +738,9 @@ and reduce ambiguity before `build()`, `project()`, `write()`, and output-format
   falsy payloads should not be accepted by the TypeScript API.
 - Ignore empty and whitespace-only class names, including empty object-map keys, during `classRefs`
   normalization.
-- Assign `StyleClassRef.index` after normalization as merge order. Do not use original input
-  positions, and do not leave index gaps for omitted falsey or empty entries.
+- Assign `StyleClassRef.index` after normalization as provenance order. Do not use original input
+  positions, and do not leave index gaps for omitted falsey or empty entries. This order must not be
+  treated as stylesheet cascade order once CSS-like style resolution lands.
 - Add `className` to all style-capable authoring node props, including `Slide`, component nodes,
   and intrinsic HTML-like tags. Fragments and primitive text leaves remain outside this surface.
 - Create a Style Entity when a node has only `className` and no inline `style` or direct style props,
@@ -801,7 +803,7 @@ Unlike an ADR, it records objective review findings and the v0.3.1 improvements 
 - Type-level or graph-shape tests for `StyleClassRef` placement on `StyleEntity.authored`, and for
   keeping Theme as Deck-level configuration.
 - Tests that authored `className` props are captured as ordered `classRefs` without changing current
-  inline style/direct prop behavior.
+  inline style behavior.
 - Tests for clsx-like `className` normalization: whitespace splitting, nested arrays, object maps,
   falsey omission, empty-name omission, order preservation, and duplicate preservation.
 
@@ -818,7 +820,8 @@ Unlike an ADR, it records objective review findings and the v0.3.1 improvements 
   - clsx-like `className` capture on style-capable authoring nodes.
   - Removal of `StyleEntity.resolved`.
 - Deferred to v0.4:
-  - `DeckOptions.styles`, class lookup, missing class diagnostics, and style merge behavior.
+  - `defineStyles()`, Deck stylesheet registration, class lookup, missing class diagnostics, and
+    style merge behavior.
 - Deferred to v0.5:
   - Theme configuration, tokens, component defaults, and theme application trace.
 - Deferred to v0.6:
@@ -833,46 +836,455 @@ Add a class-like style mechanism to avoid repeating large inline style objects.
 ### Proposed API
 
 ```tsx
-const deck = new Deck({
-  layout,
-  styles: {
-    title: { fontSize: 32, fontWeight: 700 },
-    card: { backgroundColor: "#fff", borderRadius: 0.12 },
+// report.styles.ts
+import { defineStyles } from "deckjsx";
+
+export const reportStyles = defineStyles({
+  classes: {
+    title: {
+      target: "p.title",
+      style: { fontSize: 32, fontWeight: 700 },
+    },
+    card: {
+      target: "div.card",
+      style: { backgroundColor: "#fff", borderRadius: 0.12 },
+    },
   },
 });
-
-<Text className="title">Revenue</Text>
-<View className={["card", active && "selected"]} />
 ```
+
+```tsx
+// report.deck.tsx
+import { reportStyles } from "./report.styles";
+
+const deck = new Deck({
+  layout,
+});
+
+deck.useStyles(reportStyles);
+
+<p className="title">Revenue</p>
+<div className={["card", active && "selected"]} />
+```
+
+Style dictionaries should be easy to author in separate files and register on a Deck instance.
+`defineStyles()` should be the recommended authoring helper because it can preserve literal class
+names, improve target inference, and provide a future runtime validation entry point. The registration
+method name should be `deck.useStyles(stylesheet)`. Stylesheet registration should support class
+dictionaries now and a future CSS-like selector target path over authored tags/classes, rather
+than forcing the long-term design into flat class-name lookup. Future selector support should extend
+the existing `target` concept instead of adding a separate `rules` array.
 
 Supported names:
 
-- `className` for HTML familiarity.
-- `class` may be supported for intrinsic tags, but `className` should be preferred in TSX.
+- `className` is the primary and only class-like authoring prop in `0.4`.
+- Do not add a `class` alias in `0.4`. The release should focus on making `className` highly usable
+  through strong typing, clsx-like inputs, source-local lookup, diagnostics, and inspection.
 
 ### Semantics
+
+`0.4` should make class resolution part of the Semantic Author Graph / `compile()` path only.
+Legacy `render()` and `output()` should continue to ignore `className`; `0.4` should not expand the
+legacy `PresentationIR` path or make class-like styles observable through legacy output.
+
+`StyleEntity.authored` should remain the source-of-truth for what the user wrote: inline `style` and
+ordered `classRefs`. Resolved class output should live in a separate resolved style view or lookup
+structure, not by reintroducing `StyleEntity.resolved`. This keeps authored style provenance
+inspectable while giving future Theme, token, and Output Projection work a concrete resolved-style
+surface to consume.
+
+Resolved class output should be exposed as an inspection view instead of being embedded into the
+Semantic Author Graph itself. `compile({ mode: "inspect" })` may return a resolved style lookup
+alongside the graph and diagnostics, while `graph.styles` continues to represent authored style
+entities only. This avoids making the graph model a mixed authored/resolved container.
+Strict compile mode should keep returning only `SemanticAuthorGraph`; resolved style inspection is an
+inspect-mode affordance, not part of the normal graph return value.
+Strict compile mode should still run style resolution rules and fail on style diagnostics such as
+missing classes or target mismatches. It should not return the resolved style view; the resolved view
+is exposed only through inspect mode.
+Style resolution failures should throw a dedicated `StyleDiagnosticError` that extends
+`DeckDiagnosticError`, rather than being folded into `SemanticGraphDiagnosticError`.
+Inspect mode should return a single combined `diagnostics` collection that includes composition,
+semantic graph, and style diagnostics. Internally those diagnostics may be produced by separate
+phases, but users should not need to inspect multiple diagnostic collections.
+Style diagnostic codes should use the `E_STYLE_*` prefix, such as `E_STYLE_INVALID_CLASS_NAME`,
+`E_STYLE_UNKNOWN_CLASS`, `E_STYLE_TARGET_MISMATCH`, and `E_STYLE_INVALID_CLASS_DEFINITION`.
+Style diagnostics should include both the semantic node kind and the authored tag when available.
+For example, a target mismatch should explain that an authored `div` is a view-like node and cannot
+receive a text-only class, rather than only mentioning the internal `view` kind.
+Inline text runs should participate in style resolution and target mismatch diagnostics. Public
+stylesheet `target` values should be CSS-like selector strings over authored tags and classes rather
+than deckjsx-specific semantic targets such as `"text"` or `"view"`. Internal style classification
+may still distinguish text boxes, view-like containers, inline text runs, images, shapes, and slides
+for typing and diagnostics, but those categories should not be the public target vocabulary.
+`textRun` should use an inline typography style vocabulary rather than the full text-box style
+surface. It should allow run-level text styling such as color, font size, weight, emphasis,
+decoration, links, and related inline typography, while excluding frame, box, layout, and positioning
+properties.
+`TextRunStyle` should be part of the public style vocabulary so authors can type targeted inline
+style classes explicitly.
+The `span` intrinsic should use text-run authoring props backed by `TextRunStyle`, not full
+`TextNodeProps`/`TextStyle`. This is an acceptable breaking change because `span` represents inline
+text runs rather than standalone text boxes.
+`TextRunStyle` should not include `backgroundColor` in `0.4`. Inline highlight-like behavior can be
+introduced later as a text-run-specific property, such as `highlightColor`, once the output semantics
+are clear.
+`TextRunStyle` should include run-level link semantics such as `href` and `tooltip`.
+`TextRunStyle` should exclude paragraph-level properties such as `textAlign`, `lineHeight`,
+`listStyleType`, `textIndent`, and `tabStops`; those belong to text boxes or paragraphs rather than
+inline runs.
+Initial `TextRunStyle` should stay close to inline text semantics:
+
+```ts
+type TextRunStyle = {
+  fontFamily?: string;
+  fontSize?: DeckPointLength;
+  fontWeight?: number | "normal" | "bold";
+  italic?: boolean;
+  fontStyle?: "normal" | "italic";
+  underline?: boolean;
+  strike?: boolean;
+  textDecoration?: string;
+  textDecorationLine?: string;
+  textDecorationStyle?: "solid" | "double" | "dotted" | "dashed" | "wavy";
+  textDecorationColor?: string;
+  textTransform?: "none" | "uppercase" | "lowercase" | "capitalize";
+  color?: string;
+  charSpacing?: number;
+  letterSpacing?: number;
+  superscript?: boolean;
+  subscript?: boolean;
+  href?: string;
+  tooltip?: string;
+};
+```
+
+The resolved style inspection shape should be public because it appears in inspect-mode return types.
+Resolver functions and low-level merge helpers should remain internal implementation details.
+Resolved style inspection should include minimal provenance, not just the final merged style object.
+It should expose enough information to answer which active classes were applied and whether inline
+`style` overrode class values, without trying to become a full cascade debugger in `0.4`.
+Property-level winner provenance should be included. The inspection view does not need to keep a full
+history of every overwritten value, but each resolved property should identify the winning source,
+such as a specific class, inline `style`, or an element default.
+Style resolution should be modeled around a CSS-like cascade. Defaults are the lowest-priority
+cascade layer: they provide the baseline values for semantic node kinds when nothing else supplies a
+value. Higher-priority layers, such as future Theme support, should sit above defaults instead of
+being treated as the same concept. Defaults should be modeled as a first-class resolution layer from
+`0.4.0`, even if the actual default values are minimal or empty at first. The resolver and provenance
+types should reserve this layer so `0.4.x` can deepen node-kind defaults without reshaping the class
+resolution pipeline.
+
+`className` should keep the clsx-like authoring experience established in `0.3.1` as the standard
+operation model: strings, whitespace-separated tokens, nested arrays, object maps with boolean-like
+values, and ignored falsey entries. `0.4` should improve this experience by adding class definition
+types, source-local lookup, target-aware diagnostics, and resolved style inspection.
+Class lookup and diagnostics should run after clsx-like normalization. Falsey branches are ignored;
+only active class tokens should participate in missing-class errors, target compatibility checks, and
+style merging.
+`className` token order should not affect style precedence. CSS-like cascade behavior is the primary
+design axis: class dictionary entries should behave like simple `.className` stylesheet rules, and
+precedence should come from specificity and stylesheet source order rather than the order of tokens
+inside a node's `className` prop.
+Duplicate active class tokens should not increase specificity or apply a class more than once. They
+may remain visible in authored `classRefs` for provenance, but resolved style behavior should match
+CSS class semantics.
+Stylesheets should leave room for CSS-like selector targets such as `.a .b` and `header.a`, but
+selector matching does not need to ship in `0.4.0`. Selector targets are future graph-matching style
+targets that match authored tags, normalized active classes, and ancestry relationships. The v0.4
+stylesheet shape should avoid blocking that future path, even though the initial implementation can
+focus on registered class dictionaries.
+Unused class definitions in registered stylesheets should not produce diagnostics in `0.4`. The
+compiler should focus on active class usages; unused style cleanup can be handled later by an
+optional lint-like mode if needed.
+Duplicate class definition keys do not need special handling in `0.4`; normal JavaScript object
+semantics apply, so the final property value is what the compiler sees.
+Invalid class definition names, such as empty strings or names that cannot be matched by normalized
+`className` tokens, should be reported as compile diagnostics rather than throwing from the `Deck`
+constructor. `compile({ mode: "inspect" })` should be able to report these configuration problems
+alongside class usage diagnostics.
+Class names should follow the same whitespace-token model as `className`: empty names are invalid,
+names containing whitespace are invalid, and `/` is allowed so authors can use namespace-like names
+such as `report/title` or `company-a/metrics`.
+Registered stylesheets should be treated as readonly authored resources for `0.4`. Runtime freezing
+is not required, but public types should communicate that a stylesheet is an authored snapshot. Future
+mutable editing or sandbox-style APIs can be added as explicit update mechanisms rather than relying
+on direct mutation of the original stylesheet object.
+Imported style dictionaries and inline `defineStyles()` calls should behave the same after
+registration. Source-local lookup is defined by the stylesheets registered on the Deck instance.
+Composition should pass only the source-local style metadata needed for class lookup into graph
+construction, not the entire `DeckOptions` object. Graph construction should not become coupled to
+layout or presentation metadata just because class resolution needs source-local style dictionaries.
+
+Class lookup should be source-local. Stylesheets registered on a Deck instance belong to the source
+authored by that Deck, and `className` inside that source should resolve against that same Deck
+instance's registered stylesheets. Parent Deck stylesheets should not implicitly flow into mounted
+child Decks. Shared cross-source design language should be handled later through Theme support
+instead of class scope inheritance.
+
+Class definitions should be type-checked against deckjsx style vocabularies. Unsupported style keys
+should fail at type-check time when authored through `defineStyles()`. Element/class target mismatch
+should be reported as compile error diagnostics rather than requiring a more complex scoped JSX type
+system in `0.4`. For example, a text-only class applied to a `div`/`View` should produce an error
+diagnostic that names the class, the receiving semantic node, and the unsupported properties.
+
+Style class definitions may optionally carry explicit selector targets. Targeted definitions enable
+stronger typing and clearer diagnostics without forcing all classes into a verbose shape. Untargeted
+definitions should stay lightweight and infer compatibility from the authored style keys where
+practical.
+
+```ts
+const reportStyles = defineStyles({
+  classes: {
+    card: { borderWidth: 1, padding: 12 },
+    title: {
+      target: "p.title",
+      style: { fontSize: 32, fontWeight: 700 },
+    },
+    surface: {
+      target: ["div.surface", "p.surface"],
+      style: { backgroundColor: "#fff", padding: 12 },
+    },
+    headerTitle: {
+      target: "header.title",
+      style: { fontSize: 36 },
+    },
+  },
+});
+```
+
+The future selector subset should be deliberately small. The likely first selector target should
+include class selectors, authored tag selectors, compound tag/class selectors such as `header.a`, and
+descendant selectors such as `.a .b`. Avoid full CSS selector parity; pseudo-classes,
+pseudo-elements, sibling combinators, attribute selectors, and media/page rules should wait for later
+work.
+Selector targets should integrate with the existing `target` field rather than introducing a separate
+`rules` collection. `target` should be a CSS-like selector string, and it should continue to accept
+multiple entries when a style applies to more than one selector target. Avoid exposing semantic
+targets such as `"text"` or `"view"` as public stylesheet vocabulary; authored tags such as `p`,
+`div`, `span`, `img`, and `header` should carry that intent in a CSS-like way.
+
+Targeted class definitions should use the `{ target, style }` shape. Do not mix `target` into the
+same object level as style properties; keeping target metadata outside the style object preserves a
+clean CSS-like style key space.
+`target` and `style` should be reserved as style class definition metadata keys. Lightweight class
+definitions should not treat those names as style properties, which keeps detection between
+lightweight and targeted definitions unambiguous.
+Targeted class definitions with an empty `style` object should be allowed. They may not be useful in
+simple cases, but they are not harmful and can remain valid marker-like definitions.
+Lightweight class definitions may also be empty objects. They should behave as no-op classes unless a
+future lint-like mode chooses to report them.
+
+`target` should accept either a single selector target or an ordered readonly list of selector
+targets. Multi-selector classes should be valid only when their style keys are supported by every
+listed target.
+Applying a targeted class to a node kind outside its target set should be a compile error diagnostic.
+At the type level, multi-selector class definitions should expose only the shared style surface of all
+listed targets when those targets can be inferred from authored tags. For example,
+`target: ["div.surface", "p.surface"]` should allow shared box keys such as `backgroundColor` and
+`padding`, but reject text-only keys such as `fontSize`.
+An empty target list does not need a dedicated invalid-definition diagnostic in `0.4`. Type-level
+helpers may prefer non-empty target tuples, but if an empty list reaches runtime it can be interpreted
+as a class that is applicable to no targets, so any active use should fail through the normal target
+mismatch path.
+Unused classes with empty target lists should remain silent, matching the general rule that unused
+class definitions do not produce diagnostics.
+
+Untargeted class compatibility should be inferred only where the style keys make the target clear.
+For example, typography-only keys such as `fontSize` or `fontWeight` can make a class text-oriented,
+so applying it to a `div`/`View` should produce an error diagnostic. Shared box keys such as
+`padding` or `backgroundColor` should remain usable across compatible node kinds unless the class
+author opts into an explicit `target`.
+At the type level, untargeted lightweight class definitions should be accepted as a union of known
+deckjsx style vocabularies. They should reject unsupported style keys, but they do not need to prove
+compatibility with every possible receiving node until compile-time diagnostics run.
 
 Style resolution order before Theme support should be:
 
 1. Element defaults
-2. Classes in order
+2. Stylesheet classes by CSS-like specificity and source order
 3. Inline `style`
-4. Direct props outside `style`
 
-This preserves current behavior where direct props and inline style are local overrides.
+This order is the Semantic Author Graph / inspect-mode source of truth for `0.4`. Style-capable
+direct props should be removed from the public authoring style surface rather than preserved as a
+deckjsx-specific cascade layer. Structural props such as `children`, `className`, `src`, `data`,
+`shape`, and `name` remain direct props, but style values should be authored through `style` or
+stylesheets.
+User-configurable defaults do not need to ship in `0.4.0`. The initial release should add the
+internal default layer, merge slot, and provenance kind; public defaults configuration can be designed
+in a later `0.4.x` release.
+Future Theme support should be added as a higher-priority cascade layer than defaults, not as a
+replacement for defaults.
+The intended future cascade order is: defaults, theme, stylesheet rules by CSS-like specificity and
+source order, then inline `style`. `0.4` should implement the default and class-rule portions while
+reserving a clear slot for Theme support in `0.5`.
+Resolved style provenance types should include a `theme` origin kind from `0.4.0` even though Theme
+does not produce values until `0.5`. This keeps the inspect API aligned with the intended cascade
+model before Theme support is implemented.
+Public provenance layer names should stay short and cascade-oriented:
+`"default" | "theme" | "class" | "style"`.
+`StyleEntity.authored.direct` should stop carrying style-capable direct props in `0.4`. The style
+foundation should stay CSS-like by keeping structure and style resolution separate.
+Runtime style classification is still required for compile diagnostics, target compatibility, and
+direct style capture, but it should be designed to coexist with strong types. Runtime key sets should
+be derived from or checked against the public style vocabularies where practical so the implementation
+does not drift into a weaker `Record<string, unknown>` model.
 
 ### Implementation Notes
 
-- Add `styles` to `DeckOptions`.
+Version split inside `0.4`:
+
+- `0.4.0`: ship `defineStyles({ classes })`, `deck.useStyles()`, CSS-like cascade/source-order
+  foundations, class dictionary resolution, diagnostics, resolved style inspection, and internal
+  semantic style classification. Public `target` should already be shaped as an optional CSS-like
+  selector string, but selector matching beyond simple class dictionary sugar can remain deferred.
+- `0.4.1`: deepen `target` into selector matching for authored tag selectors, class selectors,
+  compound tag/class selectors such as `header.title`, and descendant selectors such as `.card
+.caption`. Add selector specificity, selector diagnostics, and provenance for selector-targeted
+  matches.
+- `0.4.2`: add user-configurable defaults on top of the default cascade layer.
+- `0.4.3`: polish resolved style inspection, diagnostics, examples, and optional lint-like checks if
+  they are still needed.
+
+- Add `defineStyles()` as the recommended stylesheet authoring helper.
+- Add `deck.useStyles(stylesheet)` as the Deck stylesheet registration API.
+- Do not make `DeckOptions.styles` the primary v0.4 API. Constructor config can remain focused on
+  structural Deck configuration such as layout and metadata.
+- Support importable stylesheets so authors can split class definitions into separate files and
+  register them on a Deck instance.
+- Split authoring style vocabulary and style-key classification into an `authoring/style/` folder
+  rather than continuing to grow `authoring/index.ts`.
+  Start with:
+  - `types.ts` for public style vocabularies such as `ViewStyle` and `TextStyle`.
+  - `targets.ts` for selector target typing helpers and target/style relationships.
+  - `keys.ts` for runtime style-key sets and classifiers.
+  - `classes.ts` for `defineStyles()`, `StyleSheet`, and `StyleClassDefinition` typing.
+  - Reserve room for a future `selectors.ts` when selector-rule vocabulary becomes an implemented
+    feature.
+  - `index.ts` as the style folder boundary.
+    Keep cascade and resolved-style logic outside `authoring/style/`; those belong to graph
+    resolution/inspection rather than authoring vocabulary.
+- Add a top-level `src/style/` domain for cascade resolution and resolved-style inspection. This
+  keeps input style vocabulary in `authoring/style/`, semantic structure in `graph/`, and reusable
+  style resolution available to future Output Projection work.
+  Keep `src/diagnostics/` as the generic diagnostic model, formatter, and error boundary. Style-
+  specific rules and diagnostic factories, such as missing class names, invalid class definition
+  names, and target mismatch, should live in `src/style/` and produce generic `Diagnostic` values.
+  This prevents the diagnostics package from becoming a domain-rule registry.
+  Start with:
+  - `cascade.ts` for layer order and provenance helpers.
+  - `types.ts` for public resolved-style inspection types.
+  - `rules.ts` for invalid class name, missing class, and target mismatch checks.
+  - `diagnostics.ts` for converting style rule violations into `Diagnostic` values.
+  - `resolve.ts` for turning graph style entities plus source-local class dictionaries into resolved
+    style inspection.
+  - Reserve room for a future `selectors.ts` when selector parsing/matching is implemented.
+  - `index.ts` as the style domain boundary.
 - Resolve the `className` references captured in `0.3.1` during semantic graph construction or graph
   resolution, before shorthand parsing and output projection.
-- Support the clsx-like input shape captured in `0.3.1`.
+  Resolution should run after Semantic Author Graph construction rather than inside
+  `buildSemanticAuthorGraph()`. Graph construction owns authored semantic structure; `src/style/`
+  owns cascade resolution and inspect-only resolved style views.
+- Do not apply resolved class styles to legacy `render()` or `output()`. The first output path that
+  consumes resolved classes should be the future Output Projection boundary.
+- Keep authored style data and resolved style data separate. Do not add a `resolved` field back to
+  `StyleEntity`.
+- Expose resolved class output through an inspect-only view or lookup, not by expanding the core
+  graph shape.
+- Export public types for the resolved style inspection result, but keep resolver functions internal.
+- Include minimal provenance in resolved style inspection, such as applied class names and local
+  override sources.
+- Track property-level winner provenance for resolved styles without retaining full overwrite
+  history.
+- Add an internal element-default resolution layer and provenance kind, even if default values are
+  initially minimal or empty.
+- Defer user-configurable defaults to `0.4.x`.
+- Treat defaults as the bottom layer of a CSS-like cascade, with future Theme support layered above
+  defaults.
+- Reserve the future Theme cascade slot between defaults and classes.
+- Include a `theme` provenance kind in resolved style inspection types, even though `0.4.0` does not
+  produce theme-origin values.
+- Use public provenance layer names `"default" | "theme" | "class" | "style"`.
+- Remove style-capable direct props from the public authoring style surface and from
+  `StyleEntity.authored.direct`.
+- Add runtime style-key classification for graph construction and diagnostics while keeping it
+  aligned with the strongly typed style vocabularies.
+- Keep `compile()` and `compile({ mode: "strict" })` returning only `SemanticAuthorGraph`.
+- Run style diagnostics in strict compile mode even though resolved style inspection is returned only
+  in inspect mode.
+- Add `StyleDiagnosticError` for style-resolution diagnostics.
+- Combine composition, semantic graph, and style diagnostics into the single inspect-mode
+  `diagnostics` result.
+- Use `E_STYLE_*` diagnostic codes for style resolution errors.
+- Include authored tag information in style diagnostics when available.
+- Include inline text runs in style resolution and target compatibility checks.
+- Keep semantic style target classification internal. Public stylesheet targets should be CSS-like
+  selector strings over authored tags and classes, not `"slide" | "view" | "text" | "textRun" |
+"image" | "shape"` string literals.
+- Define `TextRunStyle` as an inline typography subset, not an alias of full `TextStyle`.
+- Export `TextRunStyle` as a public type.
+- Change `span` intrinsic props to use text-run authoring props backed by `TextRunStyle`.
+- Exclude `backgroundColor` from `TextRunStyle` in `0.4`.
+- Include `href` and `tooltip` in `TextRunStyle`.
+- Exclude paragraph-level properties from `TextRunStyle`.
+- Apply the graph-side style merge order as element defaults, stylesheet class rules by CSS-like
+  specificity/source order, then inline `style`.
+- Treat registered stylesheets as source-local Deck resources. Mounted child Decks resolve their own
+  class names against their own registered stylesheets.
+- Keep the stylesheet model compatible with a future CSS-like selector target path for class, authored
+  tag, compound tag/class, and descendant selectors, without implementing selector matching in
+  `0.4.0`.
+- Support the clsx-like input shape captured in `0.3.1` as the normal class authoring model.
+- Resolve and diagnose only normalized active class tokens. Falsey class branches should be ignored.
+- Preserve duplicate active class tokens in authored provenance if useful, but do not let duplicates
+  affect CSS-like resolved style precedence.
+- Do not report unused class definitions.
+- Do not add custom duplicate class definition detection beyond normal JavaScript object semantics.
+- Report invalid class definition names as compile diagnostics, not constructor-time exceptions.
+- Treat empty class names and names containing whitespace as invalid, while allowing `/`.
+- Type stylesheets as readonly authored resources; do not add direct mutation APIs in `0.4`.
+- Ensure inline `defineStyles()` calls and imported stylesheets share the same typing, source-local
+  lookup, and diagnostics behavior after registration.
+- Pass source-local style metadata into graph construction without coupling graph construction to the
+  full `DeckOptions` shape.
+- Support lightweight style class definitions plus explicit single-selector and multi-selector target
+  definitions.
+- Use `{ target, style }` for targeted class definitions.
+- Reserve `target` and `style` as class definition metadata keys rather than lightweight style keys.
+- Allow targeted class definitions with empty `style` objects.
+- Allow empty lightweight class definitions as no-op classes.
+- Prefer type-level guidance for empty target lists; at runtime, an empty target list should behave as
+  a class that matches no selector targets rather than requiring a separate definition diagnostic.
+- Do not report unused empty-target class definitions.
+- Type multi-selector class definitions as the shared style surface of every listed selector target
+  when tag inference makes that possible.
+- Type untargeted lightweight class definitions as a union of known deckjsx style vocabularies.
+- Infer untargeted class compatibility only from unambiguous style keys. Ambiguous shared keys should
+  remain allowed.
+- Add compile error diagnostics for missing class names and target-incompatible class properties.
 
 ### Validation
 
-- Tests for class lookup and merge order.
+- Tests for class lookup, CSS-like specificity, and stylesheet source order.
 - Tests for missing class error messages.
+- Tests for target-incompatible class diagnostics, such as applying text-only class properties to a
+  view-like node.
+- Type tests that `defineStyles()` rejects unsupported style keys.
+- Tests that clsx-like `className` inputs continue to normalize in order.
 - Tests that existing inline style behavior is unchanged.
+
+### Out of Scope
+
+- Applying resolved classes to legacy `render()` or `output()`.
+- Supporting a `class` alias.
+- Public user-configurable defaults.
+- Theme value resolution.
+- Output Projection and `build()` / `project()` / `write()` APIs.
+- Full cascade debugging with complete overwrite history.
+- Unused class linting.
+- Paged Media / Print CSS features such as `@page`-like rules and page breaks.
+- CSS-like selector matching for `.a .b`, `header.a`, and related contextual stylesheet rules.
+- Direct PPTX writer style application.
 
 ## 0.5 Theme Support
 
@@ -918,11 +1330,10 @@ const deck = new Deck({
 - Theme values should be resolved into the Semantic Author Graph or its resolved inspection view, so
   output projections receive concrete values without making the graph output-format-specific.
 - Style resolution order after Theme support should be:
-  1. Theme defaults
-  2. Element defaults
-  3. Classes in order
+  1. Element defaults
+  2. Theme defaults
+  3. Stylesheet rules by CSS-like specificity and source order
   4. Inline `style`
-  5. Direct props outside `style`
 
 ### Implementation Notes
 
@@ -949,6 +1360,12 @@ shape the user-facing pipeline API before direct PPTX OOXML ownership expands in
 
 `Deck` should own pipeline configuration and authoring inputs, but it should not hide compiled or
 projected results as implicit mutable state.
+
+Paged Media / Print CSS support should be considered near this boundary, not inside `0.4` element
+style classes. `@page`-like rules, page size, page margins, bleed, page counters, and
+`break-before`/`break-after`/`break-inside` are output-surface and pagination semantics. They should
+remain output-agnostic at the graph or projection-input level, then be interpreted by PDF, PPTX, or
+other output projections according to each format's capabilities.
 
 ### Proposed API
 
@@ -991,6 +1408,8 @@ Recommended API shape:
   Output Identity.
 - Keep the Semantic Author Graph output-agnostic. Projection-specific resolved values should belong
   to the projection or an explicit resolved inspection view.
+- Reserve a future extension point for output-surface style rules and pagination semantics without
+  mixing them into element-level class resolution.
 
 ### Validation
 
@@ -1058,6 +1477,31 @@ const deck = new Deck({
 - Tests for missing template and missing area errors.
 - Tests for inline overrides.
 - Tests that `compile()` exposes graph relationships before output projection.
+
+## Future Paged Media And Print CSS
+
+### Goal
+
+Support page-oriented authoring semantics inspired by Print CSS and tools such as WeasyPrint, while
+keeping deckjsx output-agnostic until projection. This area should cover pagination and output-surface
+rules, not ordinary element class reuse.
+
+### Scope
+
+- `@page`-like page rules for page or slide surface properties.
+- Page size, margins, bleed, and page backgrounds where the output format supports them.
+- Page breaks such as `break-before`, `break-after`, and `break-inside`.
+- Potential page counters, headers, footers, and generated page metadata.
+
+### Boundaries
+
+- Do not model these as `className` classes in `0.4`; they are not element-local style reuse.
+- Keep the semantic representation output-agnostic so PDF and PPTX projections can interpret the
+  same authored intent differently when needed.
+- Connect this work to Output Projection and Layout Templates rather than to legacy
+  `render()`/`output()`.
+- Treat WeasyPrint-style CSS support as a useful reference point, not as a requirement to implement
+  the full CSS Paged Media spec.
 
 ## 0.8 Direct PPTX Output Projection And Writer
 

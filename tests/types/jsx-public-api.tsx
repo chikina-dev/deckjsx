@@ -1,4 +1,4 @@
-import { Fragment, Image, Shape, Slide, Text, View } from "../../src/index.ts";
+import { Fragment, Image, Shape, Slide, Text, View, defineStyles } from "../../src/index.ts";
 import { jsx } from "../../src/jsx-runtime.ts";
 import type {
   CssAlignContent,
@@ -11,9 +11,12 @@ import type {
   ImplementedBackendName,
   JsxKey,
   OutputConfig,
+  ResolvedStyleMap,
   Spacing,
   StyleClassRef,
   StyleEntity,
+  StyleSheet,
+  TextRunStyle,
   TextTabStopAuthoring,
   ViewStyle,
 } from "../../src/index.ts";
@@ -24,11 +27,17 @@ type IsAssignable<From, To> = [From] extends [To] ? true : false;
 
 const regressionTypeAssertions = {
   supportedSpan: true,
+  spanRejectsBoxStyle: true,
   imgRequiresSourceOrData: true,
   imgRejectsChildren: true,
   ooxmlBackendIsNotImplemented: true,
 } satisfies {
   supportedSpan: Assert<IsAssignable<"span", keyof DeckJsxIntrinsicElements>>;
+  spanRejectsBoxStyle: Assert<
+    IsAssignable<{ backgroundColor: "red" }, DeckJsxIntrinsicElements["span"]> extends true
+      ? false
+      : true
+  >;
   imgRequiresSourceOrData: Assert<
     IsAssignable<{}, DeckJsxIntrinsicElements["img"]> extends true ? false : true
   >;
@@ -102,6 +111,29 @@ const exportedStyleTypes = {
 } satisfies ViewStyle & { alignContent?: CssAlignContent };
 void exportedStyleTypes;
 
+const textRunStyle = {
+  color: "red",
+  fontSize: 18,
+  href: "https://example.com",
+} satisfies TextRunStyle;
+void textRunStyle;
+
+const reportStyles = defineStyles({
+  classes: {
+    card: { target: "div.card", style: { backgroundColor: "#fff", padding: 0.2 } },
+    title: { target: ["p.title", "h1.title"], style: { color: "navy", fontSize: 28 } },
+    accent: textRunStyle,
+  },
+});
+reportStyles satisfies StyleSheet;
+
+defineStyles({
+  classes: {
+    // @ts-expect-error defineStyles rejects unknown style keys.
+    broken: { unknownStyleKey: true },
+  },
+});
+
 void (
   <Slide name="Valid slide">
     <View className={clsxLikeClassName} style={{ x: 1, y: 1, width: 4, height: 2 }}>
@@ -127,6 +159,12 @@ void (
     // @ts-expect-error className object maps accept boolean, null, or undefined values only.
     className={{ selected: 1 }}
   />
+);
+
+void (
+  <Text>
+    <span style={{ color: "red" }}>Inline</span>
+  </Text>
 );
 
 void (
@@ -209,7 +247,9 @@ const pptxOutput = {
 void pptxOutput;
 
 const typedDeck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+typedDeck.useStyles(reportStyles).add(() => <Slide />);
 const typedGraph = typedDeck.compile();
 typedGraph.documentId satisfies GraphNodeId;
 const typedInspect = typedDeck.compile({ mode: "inspect" });
 typedInspect.diagnostics satisfies Diagnostics;
+typedInspect.resolvedStyles satisfies ResolvedStyleMap | undefined;
