@@ -30,6 +30,7 @@ _Avoid_: style child node
 **Style Class**:
 An author-defined reusable style name that participates in deckjsx's CSS-like cascade. A Style Class is referenced from JSX `className`, usually defined inside a registered StyleSheet, and should behave like a CSS class selector rather than like an output-format style id.
 Style Classes are authoring semantics and should not be confused with PPTX style identifiers or package-specific class concepts.
+Style Class names are authored class tokens. When a Style Class name contains characters that are not directly writable in CSS selector class syntax, Stylesheet Targets should refer to it with CSS escaping rather than changing the Style Class name.
 _Avoid_: PPTX style id, output-format class
 
 **Style Class Reference**:
@@ -41,12 +42,12 @@ _Avoid_: resolved class style, merge-order precedence
 
 **StyleSheet**:
 An author-defined collection of reusable style classes registered on a Deck instance, typically created with `defineStyles()` and attached with `deck.useStyles()`. StyleSheets are source-local authored resources; parent Deck stylesheets do not implicitly flow into mounted child Decks.
-StyleSheet class entries are CSS-like stylesheet rules. A class dictionary entry behaves like a `.className` rule, and future selector targets should extend the same stylesheet model rather than introducing a separate non-CSS rule system.
+StyleSheet class entries are CSS-like stylesheet rules. A class dictionary entry behaves like a `.className` rule, and selector targets extend the same stylesheet model rather than introducing a separate non-CSS rule system.
 _Avoid_: DeckOptions.styles as primary API, global style registry, output stylesheet
 
 **Stylesheet Target**:
-A CSS-like selector string attached to a StyleSheet class definition to constrain where that style applies, such as `p.title`, `div.card`, `header.title`, or future descendant selectors like `.card .caption`.
-Public Stylesheet Targets should be authored-tag and class selector language, not deckjsx-specific semantic target strings such as `"text"` or `"view"`. Internal style classification may still map authored tags to text, view, textRun, image, shape, or slide categories for typing and diagnostics.
+A CSS selector string attached to a StyleSheet class definition to constrain where that Style Class applies, such as `p.title`, `div.card`, `header.title`, or descendant selectors like `.card .caption`.
+Public Stylesheet Targets should be authored-tag and class selector language, not deckjsx-specific semantic target strings such as `"text"` or `"view"`. A Stylesheet Target belongs to its Style Class, so it must include the selector for that Style Class rather than relying on implicit class injection.
 _Avoid_: public semantic target, PPTX target
 
 **Theme**:

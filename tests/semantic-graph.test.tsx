@@ -234,6 +234,97 @@ describe("Semantic Author Graph", () => {
     });
   });
 
+  test("selector specificity wins over stylesheet source order", () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
+    deck.useStyles(
+      defineStyles({
+        classes: {
+          caption: { target: ".card .caption", style: { color: "red" } },
+        },
+      }),
+    );
+    deck.useStyles(
+      defineStyles({
+        classes: {
+          caption: { target: ".caption", style: { color: "blue" } },
+        },
+      }),
+    );
+
+    deck.add(() => (
+      <Slide>
+        <div className="card">
+          <p className="caption">Revenue</p>
+        </div>
+      </Slide>
+    ));
+
+    const result = deck.compile({ mode: "inspect" });
+    const text = values(result.graph?.nodes ?? new Map()).find(
+      (node) => node.kind === "text" && node.authoredTag === "p",
+    );
+    const resolved = result.resolvedStyles?.get(text?.styleRef ?? ("" as never));
+
+    expect(result.diagnostics.hasErrors).toBe(false);
+    expect(resolved?.style).toEqual({ color: "red" });
+    expect(
+      resolved?.properties.color?.source.layer === "class" &&
+        resolved.properties.color.source.selector,
+    ).toBe(".card .caption");
+  });
+
+  test("target selectors match authored tags, classes, and descendants", () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
+    deck.useStyles(
+      defineStyles({
+        classes: {
+          title: { target: "header.title", style: { backgroundColor: "#eef" } },
+          caption: { target: "div.card p.caption", style: { color: "green" } },
+          "report/title": { style: { fontWeight: 700 } },
+        },
+      }),
+    );
+
+    deck.add(() => (
+      <Slide>
+        <header className="title">
+          <div className="card">
+            <p className={["caption", "report/title"]}>Revenue</p>
+          </div>
+        </header>
+      </Slide>
+    ));
+
+    const result = deck.compile({ mode: "inspect" });
+    const header = values(result.graph?.nodes ?? new Map()).find(
+      (node) => node.kind === "container" && node.authoredTag === "header",
+    );
+    const text = values(result.graph?.nodes ?? new Map()).find(
+      (node) => node.kind === "text" && node.authoredTag === "p",
+    );
+
+    expect(result.diagnostics.hasErrors).toBe(false);
+    expect(result.resolvedStyles?.get(header?.styleRef ?? ("" as never))?.style).toEqual({
+      backgroundColor: "#eef",
+    });
+    expect(result.resolvedStyles?.get(text?.styleRef ?? ("" as never))?.style).toEqual({
+      color: "green",
+      fontWeight: 700,
+    });
+    expect(
+      result.resolvedStyles?.get(text?.styleRef ?? ("" as never))?.appliedClasses,
+    ).toContainEqual(
+      expect.objectContaining({
+        className: "report/title",
+        selector: ".report\\/title",
+      }),
+    );
+  });
+
   test("style classes resolve against the source-local stylesheet", () => {
     const parent = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
@@ -272,7 +363,7 @@ describe("Semantic Author Graph", () => {
     });
   });
 
-  test("strict compile throws StyleDiagnosticError for style resolution errors", () => {
+  test("unknown style classes are warnings and do not fail strict compile", () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
     });
@@ -287,9 +378,34 @@ describe("Semantic Author Graph", () => {
 
     expect(result.diagnostics.items[0]).toMatchObject({
       code: "E_STYLE_UNKNOWN_CLASS",
-      severity: "error",
+      severity: "warning",
     });
-    expect(() => deck.compile()).toThrowError(StyleDiagnosticError);
+    expect(() => deck.compile()).not.toThrow();
+  });
+
+  test("selector condition classes do not require style class definitions", () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
+    deck.useStyles(
+      defineStyles({
+        classes: {
+          caption: { target: ".card .caption", style: { color: "red" } },
+        },
+      }),
+    );
+
+    deck.add(() => (
+      <Slide>
+        <div className="card">
+          <p className="caption">Revenue</p>
+        </div>
+      </Slide>
+    ));
+
+    const result = deck.compile({ mode: "inspect" });
+
+    expect(result.diagnostics.items).toHaveLength(0);
   });
 
   test("stylesheet definition diagnostics do not require class usage", () => {
@@ -314,14 +430,82 @@ describe("Semantic Author Graph", () => {
     expect(() => deck.compile()).toThrowError(StyleDiagnosticError);
   });
 
-  test("slash-separated style class names are invalid stylesheet definitions", () => {
+  test("slash-separated style class names resolve through CSS-escaped selectors", () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
     });
     deck.useStyles(
       defineStyles({
         classes: {
-          "report/title": { color: "red" },
+          "report/title": { target: "p.report\\/title", style: { color: "red" } },
+        },
+      }),
+    );
+    deck.add(() => (
+      <Slide>
+        <p className="report/title">Revenue</p>
+      </Slide>
+    ));
+
+    const result = deck.compile({ mode: "inspect" });
+    const text = values(result.graph?.nodes ?? new Map()).find(
+      (node) => node.kind === "text" && node.authoredTag === "p",
+    );
+
+    expect(result.diagnostics.hasErrors).toBe(false);
+    expect(result.resolvedStyles?.get(text?.styleRef ?? ("" as never))?.style).toEqual({
+      color: "red",
+    });
+  });
+
+  test("untargeted selector provenance uses CSS.escape-compatible class selectors", () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
+    deck.useStyles(
+      defineStyles({
+        classes: {
+          "123": { color: "red" },
+          "-1": { fontWeight: 700 },
+          "foo:bar": { fontSize: 24 },
+          "😀": { backgroundColor: "yellow" },
+        },
+      }),
+    );
+    deck.add(() => (
+      <Slide>
+        <p className={["123", "-1", "foo:bar", "😀"]}>Revenue</p>
+      </Slide>
+    ));
+
+    const result = deck.compile({ mode: "inspect" });
+    const text = values(result.graph?.nodes ?? new Map()).find(
+      (node) => node.kind === "text" && node.authoredTag === "p",
+    );
+    const resolved = result.resolvedStyles?.get(text?.styleRef ?? ("" as never));
+
+    expect(result.diagnostics.hasErrors).toBe(false);
+    expect(resolved?.style).toEqual({
+      color: "red",
+      fontWeight: 700,
+      fontSize: 24,
+      backgroundColor: "yellow",
+    });
+    expect(
+      resolved?.appliedClasses.map((source) => source.layer === "class" && source.selector),
+    ).toEqual([".\\31 23", ".-\\31 ", ".foo\\:bar", ".😀"]);
+  });
+
+  test("style class targets must include the self class in the rightmost selector", () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
+    deck.useStyles(
+      defineStyles({
+        classes: {
+          title: { target: "p", style: { color: "red" } },
+          lead: { target: ".lead .caption", style: { fontSize: 24 } },
+          kicker: { target: ["p.kicker", "h1"], style: { fontWeight: 700 } },
         },
       }),
     );
@@ -329,10 +513,38 @@ describe("Semantic Author Graph", () => {
 
     const result = deck.compile({ mode: "inspect" });
 
-    expect(result.diagnostics.items[0]).toMatchObject({
-      code: "E_STYLE_INVALID_CLASS_NAME",
-      message: "Style Class names must not contain /.",
+    expect(result.diagnostics.items.map((item) => item.code)).toEqual([
+      "E_STYLE_INVALID_CLASS_TARGET",
+      "E_STYLE_INVALID_CLASS_TARGET",
+      "E_STYLE_INVALID_CLASS_TARGET",
+    ]);
+    expect(() => deck.compile()).toThrowError(StyleDiagnosticError);
+  });
+
+  test("unsupported selector features are stylesheet diagnostics", () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
     });
+    deck.useStyles(
+      defineStyles({
+        classes: {
+          pseudo: { target: ".pseudo:hover", style: { color: "red" } },
+          child: { target: ".card > .child", style: { color: "blue" } },
+          button: { target: "button.button", style: { color: "green" } },
+          comma: { target: "p.comma, h1.comma", style: { color: "purple" } },
+        },
+      }),
+    );
+    deck.add(() => <Slide />);
+
+    const result = deck.compile({ mode: "inspect" });
+
+    expect(result.diagnostics.items.map((item) => item.code)).toEqual([
+      "E_STYLE_UNSUPPORTED_SELECTOR",
+      "E_STYLE_UNSUPPORTED_SELECTOR",
+      "E_STYLE_UNSUPPORTED_SELECTOR",
+      "E_STYLE_UNSUPPORTED_SELECTOR",
+    ]);
   });
 
   test("style class target mismatches are compile diagnostics", () => {
