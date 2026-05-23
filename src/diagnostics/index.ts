@@ -41,5 +41,6 @@ export {
   CompositionDiagnosticError,
   DeckDiagnosticError,
   SemanticGraphDiagnosticError,
+  StyleDiagnosticError,
 } from "./errors";
 export { formatDiagnostic, formatDiagnostics } from "./format";

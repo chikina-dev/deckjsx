@@ -109,7 +109,6 @@ export type StyleEntity = {
   readonly target: SemanticNodeKind;
   readonly authored: {
     readonly style?: unknown;
-    readonly direct?: unknown;
     readonly classRefs?: readonly StyleClassRef[];
   };
 };

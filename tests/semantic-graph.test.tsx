@@ -5,8 +5,10 @@ import {
   Image,
   SemanticGraphDiagnosticError,
   Slide,
+  StyleDiagnosticError,
   Text,
   View,
+  defineStyles,
   type ContentJsxChild,
   type TextJsxChild,
 } from "../src/index.ts";
@@ -58,10 +60,24 @@ describe("Semantic Author Graph", () => {
     expect(graph.assets.size).toBe(1);
   });
 
-  test("captures className as ordered style class references without resolving classes", () => {
+  test("captures className as ordered style class references", () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
     });
+    deck.useStyles(
+      defineStyles({
+        classes: {
+          active: {},
+          accent: {},
+          card: {},
+          "chart-image": {},
+          "deck-slide": {},
+          selected: {},
+          title: {},
+          wide: {},
+        },
+      }),
+    );
 
     deck.add(() => (
       <Slide name="Classes" className="deck-slide">
@@ -94,7 +110,7 @@ describe("Semantic Author Graph", () => {
 
     expect(view?.styleRef).toBeDefined();
     expect(graph.styles.get(view?.styleRef ?? ("" as never))?.authored).toEqual({
-      direct: { x: 1 },
+      style: { x: 1 },
       classRefs: [
         { name: "card", index: 0 },
         { name: "selected", index: 1 },
@@ -112,10 +128,264 @@ describe("Semantic Author Graph", () => {
     expect(graph.styles.get(span?.styleRef ?? ("" as never))?.authored.classRefs).toEqual([
       { name: "accent", index: 0 },
     ]);
-    expect(graph.styles.get(view?.styleRef ?? ("" as never))?.authored.direct).not.toHaveProperty(
-      "className",
-    );
     expect(graph.styles.get(view?.styleRef ?? ("" as never))).not.toHaveProperty("resolved");
+  });
+
+  test("normalizes legacy direct style props into authored style for graph inspection", () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
+
+    deck.add(() => (
+      <Slide>
+        <View x={1} y={2} style={{ y: 3, width: 4 }}>
+          <Text>
+            Hello <span color="red">world</span>
+          </Text>
+        </View>
+      </Slide>
+    ));
+
+    const graph = deck.compile();
+    const view = values(graph.nodes).find(
+      (node) => node.kind === "container" && node.authoredComponent === "View",
+    );
+    const span = values(graph.nodes).find(
+      (node) => node.kind === "textRun" && node.text === "world",
+    );
+
+    expect(graph.styles.get(view?.styleRef ?? ("" as never))?.authored.style).toEqual({
+      x: 1,
+      y: 3,
+      width: 4,
+    });
+    expect(graph.styles.get(span?.styleRef ?? ("" as never))?.authored.style).toEqual({
+      color: "red",
+    });
+  });
+
+  test("inspect mode exposes CSS-like resolved styles without changing the graph", () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
+    deck.useStyles(
+      defineStyles({
+        classes: {
+          title: { target: "p.title", style: { color: "red", fontSize: 28 } },
+          override: { style: { color: "green", fontSize: 16 } },
+        },
+      }),
+    );
+
+    deck.add(() => (
+      <Slide>
+        <p className={["override", "title"]} style={{ color: "blue" }}>
+          Revenue
+        </p>
+      </Slide>
+    ));
+
+    const result = deck.compile({ mode: "inspect" });
+    const text = values(result.graph?.nodes ?? new Map()).find(
+      (node) => node.kind === "text" && node.authoredTag === "p",
+    );
+    const resolved = result.resolvedStyles?.get(text?.styleRef ?? ("" as never));
+
+    expect(result.diagnostics.hasErrors).toBe(false);
+    expect(result.graph?.styles.get(text?.styleRef ?? ("" as never))?.authored).toEqual({
+      style: { color: "blue" },
+      classRefs: [
+        { name: "override", index: 0 },
+        { name: "title", index: 1 },
+      ],
+    });
+    expect(resolved?.style).toEqual({ color: "blue", fontSize: 28 });
+    expect(
+      resolved?.appliedClasses.map((source) => source.layer === "class" && source.className),
+    ).toEqual(["override", "title"]);
+  });
+
+  test("stylesheet source order wins over className token order", () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
+    deck.useStyles(
+      defineStyles({
+        classes: {
+          a: { color: "red" },
+          b: { color: "blue" },
+        },
+      }),
+    );
+
+    deck.add(() => (
+      <Slide>
+        <p className="b a">Revenue</p>
+      </Slide>
+    ));
+
+    const result = deck.compile({ mode: "inspect" });
+    const text = values(result.graph?.nodes ?? new Map()).find(
+      (node) => node.kind === "text" && node.authoredTag === "p",
+    );
+
+    expect(result.resolvedStyles?.get(text?.styleRef ?? ("" as never))?.style).toEqual({
+      color: "blue",
+    });
+  });
+
+  test("style classes resolve against the source-local stylesheet", () => {
+    const parent = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
+    const child = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
+
+    parent.useStyles(defineStyles({ classes: { note: { color: "red" } } }));
+    child.useStyles(defineStyles({ classes: { note: { color: "blue" } } }));
+
+    parent.add(() => (
+      <Slide>
+        <p className="note">Parent</p>
+      </Slide>
+    ));
+    child.add(() => (
+      <Slide>
+        <p className="note">Child</p>
+      </Slide>
+    ));
+    parent.mount("child", child);
+
+    const result = parent.compile({ mode: "inspect" });
+    const texts = values(result.graph?.nodes ?? new Map()).filter(
+      (node) => node.kind === "text" && node.authoredTag === "p",
+    );
+    const parentText = texts.find((node) => node.origin.source?.kind === "root");
+    const childText = texts.find((node) => node.origin.source?.kind === "mounted");
+
+    expect(result.resolvedStyles?.get(parentText?.styleRef ?? ("" as never))?.style).toEqual({
+      color: "red",
+    });
+    expect(result.resolvedStyles?.get(childText?.styleRef ?? ("" as never))?.style).toEqual({
+      color: "blue",
+    });
+  });
+
+  test("strict compile throws StyleDiagnosticError for style resolution errors", () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
+
+    deck.add(() => (
+      <Slide>
+        <p className="missing">Revenue</p>
+      </Slide>
+    ));
+
+    const result = deck.compile({ mode: "inspect" });
+
+    expect(result.diagnostics.items[0]).toMatchObject({
+      code: "E_STYLE_UNKNOWN_CLASS",
+      severity: "error",
+    });
+    expect(() => deck.compile()).toThrowError(StyleDiagnosticError);
+  });
+
+  test("stylesheet definition diagnostics do not require class usage", () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
+    deck.useStyles(
+      defineStyles({
+        classes: {
+          "bad class": { color: "red" },
+        },
+      }),
+    );
+    deck.add(() => <Slide />);
+
+    const result = deck.compile({ mode: "inspect" });
+
+    expect(result.diagnostics.items[0]).toMatchObject({
+      code: "E_STYLE_INVALID_CLASS_NAME",
+      severity: "error",
+    });
+    expect(() => deck.compile()).toThrowError(StyleDiagnosticError);
+  });
+
+  test("slash-separated style class names are invalid stylesheet definitions", () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
+    deck.useStyles(
+      defineStyles({
+        classes: {
+          "report/title": { color: "red" },
+        },
+      }),
+    );
+    deck.add(() => <Slide />);
+
+    const result = deck.compile({ mode: "inspect" });
+
+    expect(result.diagnostics.items[0]).toMatchObject({
+      code: "E_STYLE_INVALID_CLASS_NAME",
+      message: "Style Class names must not contain /.",
+    });
+  });
+
+  test("style class target mismatches are compile diagnostics", () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
+    deck.useStyles(
+      defineStyles({
+        classes: {
+          title: { target: "div.title", style: { color: "red" } },
+        },
+      }),
+    );
+
+    deck.add(() => (
+      <Slide>
+        <p className="title">Revenue</p>
+      </Slide>
+    ));
+
+    const result = deck.compile({ mode: "inspect" });
+
+    expect(result.diagnostics.items[0]).toMatchObject({
+      code: "E_STYLE_TARGET_MISMATCH",
+      severity: "error",
+    });
+    expect(() => deck.compile()).toThrowError(StyleDiagnosticError);
+  });
+
+  test("empty target arrays match no elements", () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
+    deck.useStyles(
+      defineStyles({
+        classes: {
+          title: { target: [], style: { color: "red" } },
+        },
+      }),
+    );
+
+    deck.add(() => (
+      <Slide>
+        <p className="title">Revenue</p>
+      </Slide>
+    ));
+
+    const result = deck.compile({ mode: "inspect" });
+
+    expect(result.diagnostics.items[0]).toMatchObject({
+      code: "E_STYLE_TARGET_MISMATCH",
+      severity: "error",
+    });
   });
 
   test("inspect mode returns diagnostics for invalid inline structure without throwing", () => {

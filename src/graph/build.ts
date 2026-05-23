@@ -101,11 +101,6 @@ function textOriginFor(node: AuthorTextLeaf, path: string, context: BuildContext
   };
 }
 
-function propsWithoutStyle(props: Record<string, unknown>): Record<string, unknown> | undefined {
-  const { style: _style, children: _children, className: _className, ...direct } = props;
-  return Object.keys(direct).length === 0 ? undefined : direct;
-}
-
 function collectClassNames(value: unknown, names: string[]): void {
   if (value === false || value === null || value === undefined) {
     return;
@@ -136,17 +131,52 @@ function classRefsFor(value: unknown): readonly StyleClassRef[] | undefined {
   return names.length === 0 ? undefined : names.map((name, index) => ({ name, index }));
 }
 
+function directStyleProps(props: Record<string, unknown>): Record<string, unknown> | undefined {
+  const {
+    children: _children,
+    className: _className,
+    data: _data,
+    name: _name,
+    shape: _shape,
+    src: _src,
+    style: _style,
+    ...directStyle
+  } = props;
+
+  return Object.keys(directStyle).length === 0 ? undefined : directStyle;
+}
+
+function mergedAuthoredStyle(props: Record<string, unknown>): unknown {
+  const directStyle = directStyleProps(props);
+  const inlineStyle = props.style;
+
+  if (directStyle === undefined) {
+    return inlineStyle;
+  }
+
+  if (
+    inlineStyle !== undefined &&
+    (typeof inlineStyle !== "object" || inlineStyle === null || Array.isArray(inlineStyle))
+  ) {
+    return inlineStyle;
+  }
+
+  return {
+    ...directStyle,
+    ...(inlineStyle as Record<string, unknown> | undefined),
+  };
+}
+
 function styleRefFor(
   state: BuildState,
   idMaterial: readonly string[],
   target: SemanticNodeKind,
   props: Record<string, unknown>,
 ): StyleEntityId | undefined {
-  const style = props.style;
-  const direct = propsWithoutStyle(props);
+  const style = mergedAuthoredStyle(props);
   const classRefs = classRefsFor(props.className);
 
-  if (style === undefined && direct === undefined && classRefs === undefined) {
+  if (style === undefined && classRefs === undefined) {
     return undefined;
   }
 
@@ -156,7 +186,6 @@ function styleRefFor(
     target,
     authored: {
       ...(style !== undefined ? { style } : {}),
-      ...(direct !== undefined ? { direct } : {}),
       ...(classRefs !== undefined ? { classRefs } : {}),
     },
   });
@@ -550,6 +579,7 @@ function asComposedRoot(root: AuthorTreeNode, index: number): ComposedAuthorRoot
     root,
     source: rootSource(),
     sourceIdentityMaterial: ["source", "root"],
+    stylesheets: [],
     path: `document > slideFactory[${index}]`,
     composition: {
       slideIndex: index,

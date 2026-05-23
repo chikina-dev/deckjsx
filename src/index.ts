@@ -6,6 +6,7 @@ export {
   CompositionDiagnosticError,
   DeckDiagnosticError,
   SemanticGraphDiagnosticError,
+  StyleDiagnosticError,
   formatDiagnostic,
   formatDiagnostics,
 } from "./diagnostics";
@@ -82,6 +83,10 @@ export {
   type SlideProps,
   type SlideStyle,
   type Spacing,
+  type StyleClassDefinition,
+  type StyleClassStyle,
+  type StyleSheet,
+  type StyleTargetSelector,
   type StackAlignment,
   type StackAxis,
   type StrokeDashType,
@@ -89,6 +94,8 @@ export {
   type StrokeLineJoin,
   type TextFit,
   type TextProps,
+  type TextRunNodeProps,
+  type TextRunStyle,
   type TextStyle,
   type TextJsxChild,
   type TextTabStopAlignment,
@@ -97,6 +104,7 @@ export {
   type VerticalAlign,
   type ViewProps,
   type ViewStyle,
+  defineStyles,
 } from "./authoring/index";
 export type { SourceSpan } from "./authoring/tree";
 export type {
@@ -109,6 +117,14 @@ export type {
   SourceContextMapper,
 } from "./deck";
 export type { Diagnostic, DiagnosticLabel, DiagnosticSeverity, Diagnostics } from "./diagnostics";
+export type {
+  ResolvedStyle,
+  ResolvedStyleLayer,
+  ResolvedStyleMap,
+  ResolvedStyleProperty,
+  ResolvedStyleSource,
+  StyleResolutionResult,
+} from "./style/resolve";
 export type {
   AssetEntity,
   AssetEntityId,
