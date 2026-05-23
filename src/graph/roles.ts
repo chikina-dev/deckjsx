@@ -6,7 +6,7 @@ export function semanticKindForTag(tag: AuthoredTag): SemanticNodeKind {
     return "image";
   }
 
-  if (tag === "p" || tag.startsWith("h") || tag === "span") {
+  if (tag === "p" || /^h[1-6]$/.test(tag) || tag === "span") {
     return tag === "span" ? "textRun" : "text";
   }
 

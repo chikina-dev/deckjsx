@@ -982,10 +982,26 @@ types, source-local lookup, target-aware diagnostics, and resolved style inspect
 Class lookup and diagnostics should run after clsx-like normalization. Falsey branches are ignored;
 only active class tokens should participate in missing-class errors, target compatibility checks, and
 style merging.
+CSS allows class tokens without matching stylesheet rules. To stay CSS-compatible, an active class
+token without a matching Style Class definition should not be a compile error. deckjsx may report it
+as a warning to catch likely typos, but strict compile should continue unless other style errors are
+present.
+Undefined active class token warnings should be suppressed when that class token appears in any
+registered selector target as a selector condition. Warn only for active class tokens that have no
+Style Class definition and are not referenced by any selector target in the source-local stylesheet.
+Style warnings alone should not make strict `compile()` throw. A future lint or strictness
+configuration may promote warnings to errors, but that is out of scope for `0.4.1`.
 `className` token order should not affect style precedence. CSS-like cascade behavior is the primary
 design axis: class dictionary entries should behave like simple `.className` stylesheet rules, and
 precedence should come from specificity and stylesheet source order rather than the order of tokens
 inside a node's `className` prop.
+For the supported selector subset, specificity should follow CSS specificity: class selectors add to
+the class column, authored tag/type selectors add to the type column, compound and descendant
+selectors sum their parts, and no hidden Style Class key specificity is added beyond the actual
+selector.
+When specificity ties, stylesheet source order wins: later `deck.useStyles()` registrations override
+earlier registrations, and later class entries by object insertion order override earlier entries
+inside the same stylesheet.
 Duplicate active class tokens should not increase specificity or apply a class more than once. They
 may remain visible in authored `classRefs` for provenance, but resolved style behavior should match
 CSS class semantics.
@@ -1003,9 +1019,10 @@ Invalid class definition names, such as empty strings or names that cannot be ma
 `className` tokens, should be reported as compile diagnostics rather than throwing from the `Deck`
 constructor. `compile({ mode: "inspect" })` should be able to report these configuration problems
 alongside class usage diagnostics.
-Class names should follow the same whitespace-token model as `className`: empty names are invalid,
-names containing whitespace are invalid, and `/` is allowed so authors can use namespace-like names
-such as `report/title` or `company-a/metrics`.
+Style Class names are authored class tokens. Empty names and names containing whitespace are
+invalid. Other characters are allowed in Style Class names, but characters that are not directly
+writable in CSS class selector syntax must be escaped when referenced from a Stylesheet Target.
+Stylesheet Targets should resolve CSS-escaped class selectors back to the authored Style Class name.
 Registered stylesheets should be treated as readonly authored resources for `0.4`. Runtime freezing
 is not required, but public types should communicate that a stylesheet is an authored snapshot. Future
 mutable editing or sandbox-style APIs can be added as explicit update mechanisms rather than relying
@@ -1032,6 +1049,13 @@ Style class definitions may optionally carry explicit selector targets. Targeted
 stronger typing and clearer diagnostics without forcing all classes into a verbose shape. Untargeted
 definitions should stay lightweight and infer compatibility from the authored style keys where
 practical.
+When a Style Class definition has a `target`, that target is a CSS selector and must explicitly
+include the class selector for the Style Class key. For example, `classes.title.target` may be
+`"p.title"` or `".card .title"`, but not `"p"`. A selector that omits its own class selector is a
+style target definition error rather than an implicit `p.title` shorthand.
+The required self class selector must appear in the rightmost compound selector, because that is the
+CSS selector subject. For `classes.title`, `.card .title` and `p.title` are valid, but
+`.title .caption` is invalid.
 
 ```ts
 const reportStyles = defineStyles({
@@ -1058,15 +1082,69 @@ include class selectors, authored tag selectors, compound tag/class selectors su
 descendant selectors such as `.a .b`. Avoid full CSS selector parity; pseudo-classes,
 pseudo-elements, sibling combinators, attribute selectors, and media/page rules should wait for later
 work.
+CSS escape syntax is in scope for `0.4.1` for class selectors. A Style Class such as
+`"report/title"` may be referenced from a Stylesheet Target as `.report\\/title`.
+Descendant selectors should follow CSS semantics: whitespace means any-depth ancestor matching, not
+direct-parent matching.
+Selector diagnostics should distinguish Style Class contract errors from unsupported selector
+features. A selector that omits the Style Class key from the rightmost compound selector, such as
+`classes.title.target = "p"`, is `E_STYLE_INVALID_CLASS_TARGET`. A selector that includes the class
+key but uses an out-of-subset selector feature, such as `.title:hover` or `.card > .title`, is
+`E_STYLE_UNSUPPORTED_SELECTOR`.
+Selector syntax and Style Class target contract diagnostics should run for registered stylesheet
+definitions even when the class is unused. This is separate from unused-class linting: an unused but
+invalid selector is still an authored stylesheet error.
+
+The v0.4.1 selector implementation should be CSS-compatible for the supported subset, not a custom
+selector language. The supported subset is:
+
+- class selectors, including CSS-escaped class identifiers
+- authored tag/type selectors for deckjsx intrinsic tags
+- compound tag/class selectors such as `p.title` or `header.report\\/title`
+- descendant combinators using CSS whitespace semantics
+
+CSS type selectors outside the deckjsx authored intrinsic tag vocabulary, such as `button.title`, are
+outside the v0.4.1 subset and should produce `E_STYLE_UNSUPPORTED_SELECTOR`.
+Class selectors used only as selector conditions, such as `.card` in `.card .caption`, do not require
+their own Style Class definition. Undefined selector-condition classes should behave as empty style
+matches: they can participate in selector matching as authored class tokens, but they do not produce
+resolved style properties. Undefined active class tokens may produce warnings for likely typos, but
+they are not errors.
+Style Class definitions are still resolved through active `className` references in `0.4.1`: a rule
+under `classes.title` is considered only for nodes that actively reference `title`. The selector
+target further constrains those candidate nodes. Future global stylesheet rules may require matching
+all rules against all graph nodes, but that is outside the class dictionary model for `0.4.1`.
+CSS selector matching and CSS inheritance are separate concerns. v0.4.1 should not implement style
+inheritance from ancestor nodes to implicit text nodes or descendants. Resolved style inspection
+should remain scoped to nodes with explicit Style Entities; inheritance can be designed later as part
+of the broader cascade/defaults/theme work.
+
+The following CSS selector features are intentionally not implemented in `0.4.1` and should produce
+`E_STYLE_UNSUPPORTED_SELECTOR` when used:
+
+- selector lists with commas, such as `p.title, h1.title`; use `target: [...]` instead
+- ID selectors
+- attribute selectors
+- pseudo-classes and pseudo-elements
+- child, sibling, column, and namespace combinators
+- universal selectors
+- `:is()`, `:where()`, `:not()`, `:has()`, and other functional selector syntax
+- CSS nesting, scoping, media, or page-rule selector contexts
+
 Selector targets should integrate with the existing `target` field rather than introducing a separate
-`rules` collection. `target` should be a CSS-like selector string, and it should continue to accept
+`rules` collection. `target` should be a CSS selector string, and it should continue to accept
 multiple entries when a style applies to more than one selector target. Avoid exposing semantic
 targets such as `"text"` or `"view"` as public stylesheet vocabulary; authored tags such as `p`,
-`div`, `span`, `img`, and `header` should carry that intent in a CSS-like way.
+`div`, `span`, `img`, and `header` should carry that intent in a CSS-compatible way.
 
 Targeted class definitions should use the `{ target, style }` shape. Do not mix `target` into the
 same object level as style properties; keeping target metadata outside the style object preserves a
 clean CSS-like style key space.
+Targeted class definitions must include the class selector for their Style Class key in every target
+selector string's rightmost compound selector. Missing self class selectors should be reported as
+`E_STYLE_INVALID_CLASS_TARGET`.
+For multi-target arrays, every selector entry must include the Style Class key in the rightmost
+compound selector. A single valid selector does not make the whole target list valid.
 `target` and `style` should be reserved as style class definition metadata keys. Lightweight class
 definitions should not treat those names as style properties, which keeps detection between
 lightweight and targeted definitions unambiguous.
@@ -1074,9 +1152,16 @@ Targeted class definitions with an empty `style` object should be allowed. They 
 simple cases, but they are not harmful and can remain valid marker-like definitions.
 Lightweight class definitions may also be empty objects. They should behave as no-op classes unless a
 future lint-like mode chooses to report them.
+An untargeted lightweight class definition behaves as a `.className` selector for the Style Class key
+with normal class selector specificity.
+Resolved style provenance should report the effective selector as a CSS selector string. For
+untargeted lightweight class definitions, that selector should be the escaped class selector for the
+Style Class name, such as `.report\\/title`.
 
 `target` should accept either a single selector target or an ordered readonly list of selector
-targets. Multi-selector classes should be valid only when their style keys are supported by every
+targets. A single selector target is not a CSS selector list; comma-separated selector lists such as
+`"p.title, h1.title"` are invalid in `0.4.1`. Use `target: ["p.title", "h1.title"]` for multiple
+selectors. Multi-selector classes should be valid only when their style keys are supported by every
 listed target.
 Applying a targeted class to a node kind outside its target set should be a compile error diagnostic.
 At the type level, multi-selector class definitions should expose only the shared style surface of all
@@ -1244,7 +1329,8 @@ Version split inside `0.4`:
 - Do not report unused class definitions.
 - Do not add custom duplicate class definition detection beyond normal JavaScript object semantics.
 - Report invalid class definition names as compile diagnostics, not constructor-time exceptions.
-- Treat empty class names and names containing whitespace as invalid, while allowing `/`.
+- Treat empty class names and names containing whitespace as invalid. Allow class names containing
+  selector-special characters such as `/` when the corresponding Stylesheet Target uses CSS escaping.
 - Type stylesheets as readonly authored resources; do not add direct mutation APIs in `0.4`.
 - Ensure inline `defineStyles()` calls and imported stylesheets share the same typing, source-local
   lookup, and diagnostics behavior after registration.
@@ -1264,7 +1350,8 @@ Version split inside `0.4`:
 - Type untargeted lightweight class definitions as a union of known deckjsx style vocabularies.
 - Infer untargeted class compatibility only from unambiguous style keys. Ambiguous shared keys should
   remain allowed.
-- Add compile error diagnostics for missing class names and target-incompatible class properties.
+- Add warnings for missing class definitions and compile error diagnostics for invalid selector
+  targets and target-incompatible class properties.
 
 ### Validation
 
@@ -1286,7 +1373,8 @@ Version split inside `0.4`:
 - Full cascade debugging with complete overwrite history.
 - Unused class linting.
 - Paged Media / Print CSS features such as `@page`-like rules and page breaks.
-- CSS-like selector matching for `.a .b`, `header.a`, and related contextual stylesheet rules.
+- Full CSS selector parity beyond the v0.4.1 subset of tag, class, compound tag/class, and
+  descendant selectors.
 - Direct PPTX writer style application.
 
 ## 0.5 Theme Support
