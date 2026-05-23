@@ -1106,10 +1106,11 @@ Style resolution order before Theme support should be:
 3. Inline `style`
 
 This order is the Semantic Author Graph / inspect-mode source of truth for `0.4`. Style-capable
-direct props should be removed from the public authoring style surface rather than preserved as a
-deckjsx-specific cascade layer. Structural props such as `children`, `className`, `src`, `data`,
-`shape`, and `name` remain direct props, but style values should be authored through `style` or
-stylesheets.
+direct props should not be preserved as a deckjsx-specific cascade layer. Structural props such as
+`children`, `className`, `src`, `data`, `shape`, and `name` remain direct props, but style values
+should be authored through `style` or stylesheets. While legacy direct style props remain accepted,
+graph construction must normalize them into `authored.style` with explicit `style` object values
+taking precedence, so accepted authoring values are not silently dropped.
 User-configurable defaults do not need to ship in `0.4.0`. The initial release should add the
 internal default layer, merge slot, and provenance kind; public defaults configuration can be designed
 in a later `0.4.x` release.
@@ -1123,8 +1124,9 @@ does not produce values until `0.5`. This keeps the inspect API aligned with the
 model before Theme support is implemented.
 Public provenance layer names should stay short and cascade-oriented:
 `"default" | "theme" | "class" | "style"`.
-`StyleEntity.authored.direct` should stop carrying style-capable direct props in `0.4`. The style
-foundation should stay CSS-like by keeping structure and style resolution separate.
+`StyleEntity.authored.direct` should stop carrying style-capable direct props in `0.4`. Direct style
+props accepted for legacy compatibility should be normalized into `authored.style`; they should not
+appear as a separate cascade/provenance layer.
 Runtime style classification is still required for compile diagnostics, target compatibility, and
 direct style capture, but it should be designed to coexist with strong types. Runtime key sets should
 be derived from or checked against the public style vocabularies where practical so the implementation
@@ -1205,8 +1207,9 @@ Version split inside `0.4`:
 - Include a `theme` provenance kind in resolved style inspection types, even though `0.4.0` does not
   produce theme-origin values.
 - Use public provenance layer names `"default" | "theme" | "class" | "style"`.
-- Remove style-capable direct props from the public authoring style surface and from
-  `StyleEntity.authored.direct`.
+- Remove `StyleEntity.authored.direct`. Legacy direct style props that are still accepted by public
+  authoring types should normalize into `authored.style` instead of being dropped or represented as
+  a separate cascade layer.
 - Add runtime style-key classification for graph construction and diagnostics while keeping it
   aligned with the strongly typed style vocabularies.
 - Keep `compile()` and `compile({ mode: "strict" })` returning only `SemanticAuthorGraph`.

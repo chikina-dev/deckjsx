@@ -131,13 +131,49 @@ function classRefsFor(value: unknown): readonly StyleClassRef[] | undefined {
   return names.length === 0 ? undefined : names.map((name, index) => ({ name, index }));
 }
 
+function directStyleProps(props: Record<string, unknown>): Record<string, unknown> | undefined {
+  const {
+    children: _children,
+    className: _className,
+    data: _data,
+    name: _name,
+    shape: _shape,
+    src: _src,
+    style: _style,
+    ...directStyle
+  } = props;
+
+  return Object.keys(directStyle).length === 0 ? undefined : directStyle;
+}
+
+function mergedAuthoredStyle(props: Record<string, unknown>): unknown {
+  const directStyle = directStyleProps(props);
+  const inlineStyle = props.style;
+
+  if (directStyle === undefined) {
+    return inlineStyle;
+  }
+
+  if (
+    inlineStyle !== undefined &&
+    (typeof inlineStyle !== "object" || inlineStyle === null || Array.isArray(inlineStyle))
+  ) {
+    return inlineStyle;
+  }
+
+  return {
+    ...directStyle,
+    ...(inlineStyle as Record<string, unknown> | undefined),
+  };
+}
+
 function styleRefFor(
   state: BuildState,
   idMaterial: readonly string[],
   target: SemanticNodeKind,
   props: Record<string, unknown>,
 ): StyleEntityId | undefined {
-  const style = props.style;
+  const style = mergedAuthoredStyle(props);
   const classRefs = classRefsFor(props.className);
 
   if (style === undefined && classRefs === undefined) {

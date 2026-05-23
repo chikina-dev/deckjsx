@@ -101,9 +101,9 @@ function styleObjectFor(definition: StyleClassDefinition): Record<string, unknow
   return style as Record<string, unknown>;
 }
 
-function targetsFor(definition: StyleClassDefinition): readonly StyleTargetSelector[] {
+function targetsFor(definition: StyleClassDefinition): readonly StyleTargetSelector[] | undefined {
   if (!isTargetedDefinition(definition) || definition.target === undefined) {
-    return [];
+    return undefined;
   }
 
   return typeof definition.target === "string" ? [definition.target] : definition.target;
@@ -116,6 +116,10 @@ function invalidClassNameReason(name: string): string | undefined {
 
   if (/\s/.test(name)) {
     return "Style Class names must not contain whitespace.";
+  }
+
+  if (name.includes("/")) {
+    return "Style Class names must not contain /.";
   }
 
   return undefined;
@@ -271,7 +275,7 @@ function resolveClassMatches(
     let hasSelectorDiagnostic = false;
     registrations.forEach((registration) => {
       const targets = targetsFor(registration.definition);
-      const selectors = targets.length === 0 ? [undefined] : targets;
+      const selectors = targets === undefined ? [undefined] : targets;
 
       selectors.forEach((target) => {
         const selectorText = selectorFor(className, target);
