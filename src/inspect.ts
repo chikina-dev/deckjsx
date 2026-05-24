@@ -1,0 +1,32 @@
+export type { CompileInspectResult, CompileMode } from "./deck";
+export type {
+  ResolvedStyle,
+  ResolvedStyleLayer,
+  ResolvedStyleMap,
+  ResolvedStyleProperty,
+  ResolvedStyleSource,
+  StyleResolutionResult,
+} from "./style/resolve";
+export type {
+  AssetEntity,
+  AssetEntityId,
+  BaseSemanticNode,
+  GraphNodeId,
+  SemanticAuthorGraph,
+  SemanticContainerNode,
+  SemanticDocumentNode,
+  SemanticImageNode,
+  SemanticNode,
+  SemanticNodeKind,
+  SemanticOrigin,
+  SemanticRole,
+  SemanticShapeNode,
+  SemanticSlideNode,
+  SemanticTextNode,
+  SemanticTextRunNode,
+  SourceIdentity,
+  SourceOrigin,
+  StyleClassRef,
+  StyleEntity,
+  StyleEntityId,
+} from "./graph";

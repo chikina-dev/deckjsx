@@ -1,5 +1,5 @@
+import type { BackendName } from "../authoring/index";
 import type {
-  BackendName,
   BorderStyle,
   CssVisibility,
   StrokeDashType,
@@ -7,7 +7,7 @@ import type {
   StrokeLineJoin,
   TextFit,
   VerticalAlign,
-} from "../authoring/index";
+} from "../style/types";
 
 export type PresentationIR = {
   version: "0.1";

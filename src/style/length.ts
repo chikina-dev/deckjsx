@@ -1,4 +1,4 @@
-import type { DeckLength, DeckPointLength } from "../authoring/index";
+import type { DeckLength, DeckPointLength } from "./types";
 import { EMU_PER_INCH, PIXELS_PER_INCH, POINTS_PER_INCH } from "../types";
 
 export type LengthResolutionContext = {

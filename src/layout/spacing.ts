@@ -1,4 +1,4 @@
-import type { DeckLength, Spacing } from "../authoring/index";
+import type { DeckLength, Spacing } from "../style/types";
 import { EMU_PER_INCH, POINTS_PER_INCH } from "../types";
 import { parseLength, type LengthResolutionContext } from "../style/length";
 

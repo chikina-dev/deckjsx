@@ -1,4 +1,4 @@
-import type { CssAspectRatio, CssBoxSizing, DeckLength, Spacing } from "../authoring/index";
+import type { CssAspectRatio, CssBoxSizing, DeckLength, Spacing } from "../style/types";
 import { parseLength, type LengthResolutionContext } from "../style/length";
 import {
   applyAffineMatrix,

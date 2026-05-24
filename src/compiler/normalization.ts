@@ -1,3 +1,4 @@
+import type { ImageProps, ShapeProps, SlideProps, TextProps, ViewProps } from "../authoring/index";
 import type {
   CssAlignContent,
   CssAlignSelf,
@@ -5,18 +6,13 @@ import type {
   CssJustifyContent,
   CssJustifySelf,
   DeckLength,
-  ImageProps,
   ImageStyle,
-  ShapeProps,
   ShapeStyle,
-  SlideProps,
   SlideStyle,
   StackAxis,
-  TextProps,
   TextStyle,
-  ViewProps,
   ViewStyle,
-} from "../authoring/index";
+} from "../style/types";
 import { resolveGridContainerAuthoring } from "../layout/grid";
 import { resolveBoxSpacing, resolveInset } from "../layout/spacing";
 import { normalizeOpacityAsTransparency, parseBackgroundShorthand } from "../style/background";

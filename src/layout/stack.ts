@@ -1,11 +1,11 @@
-import {
-  type CssAlignItems,
-  type CssFlexWrap,
-  type CssJustifyContent,
-  type DeckLength,
-  type StackAlignment,
-  type StackAxis,
-} from "../authoring/index";
+import type {
+  CssAlignItems,
+  CssFlexWrap,
+  CssJustifyContent,
+  DeckLength,
+  StackAlignment,
+  StackAxis,
+} from "../style/types";
 import { parseLength, type LengthResolutionContext } from "../style/length";
 import { type Frame } from "./frame";
 

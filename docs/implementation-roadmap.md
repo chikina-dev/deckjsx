@@ -820,10 +820,11 @@ Unlike an ADR, it records objective review findings and the v0.3.1 improvements 
   - clsx-like `className` capture on style-capable authoring nodes.
   - Removal of `StyleEntity.resolved`.
 - Deferred to v0.4:
-  - `defineStyles()`, Deck stylesheet registration, class lookup, missing class diagnostics, and
+  - `StyleSheet`, Deck stylesheet registration, class lookup, missing class diagnostics, and
     style merge behavior.
 - Deferred to v0.5:
-  - Theme configuration, tokens, component defaults, and theme application trace.
+  - Theme configuration, typed design values, authored-tag Theme defaults, and resolved-style
+    provenance for the Theme layer.
 - Deferred to v0.6:
   - Output Projection and build/project/write API.
 
@@ -837,9 +838,9 @@ Add a class-like style mechanism to avoid repeating large inline style objects.
 
 ```tsx
 // report.styles.ts
-import { defineStyles } from "deckjsx";
+import { StyleSheet } from "deckjsx";
 
-export const reportStyles = defineStyles({
+export const reportStyles = new StyleSheet({
   classes: {
     title: {
       target: "p.title",
@@ -868,12 +869,13 @@ deck.useStyles(reportStyles);
 ```
 
 Style dictionaries should be easy to author in separate files and register on a Deck instance.
-`defineStyles()` should be the recommended authoring helper because it can preserve literal class
-names, improve target inference, and provide a future runtime validation entry point. The registration
-method name should be `deck.useStyles(stylesheet)`. Stylesheet registration should support class
-dictionaries now and a future CSS-like selector target path over authored tags/classes, rather
-than forcing the long-term design into flat class-name lookup. Future selector support should extend
-the existing `target` concept instead of adding a separate `rules` array.
+`new StyleSheet(...)` should be the standard authoring entry point because it can preserve literal
+class names, improve target inference, and provide a runtime validation entry point without adding
+another top-level helper. The registration method name should be `deck.useStyles(stylesheet)`.
+Stylesheet registration should support class dictionaries now and a future CSS-like selector target
+path over authored tags/classes, rather than forcing the long-term design into flat class-name
+lookup. Future selector support should extend the existing `target` concept instead of adding a
+separate `rules` array.
 
 Supported names:
 
@@ -1027,7 +1029,7 @@ Registered stylesheets should be treated as readonly authored resources for `0.4
 is not required, but public types should communicate that a stylesheet is an authored snapshot. Future
 mutable editing or sandbox-style APIs can be added as explicit update mechanisms rather than relying
 on direct mutation of the original stylesheet object.
-Imported style dictionaries and inline `defineStyles()` calls should behave the same after
+Imported style dictionaries and inline `new StyleSheet(...)` calls should behave the same after
 registration. Source-local lookup is defined by the stylesheets registered on the Deck instance.
 Composition should pass only the source-local style metadata needed for class lookup into graph
 construction, not the entire `DeckOptions` object. Graph construction should not become coupled to
@@ -1040,7 +1042,7 @@ child Decks. Shared cross-source design language should be handled later through
 instead of class scope inheritance.
 
 Class definitions should be type-checked against deckjsx style vocabularies. Unsupported style keys
-should fail at type-check time when authored through `defineStyles()`. Element/class target mismatch
+should fail at type-check time when authored through `new StyleSheet(...)`. Element/class target mismatch
 should be reported as compile error diagnostics rather than requiring a more complex scoped JSX type
 system in `0.4`. For example, a text-only class applied to a `div`/`View` should produce an error
 diagnostic that names the class, the receiving semantic node, and the unsupported properties.
@@ -1058,7 +1060,7 @@ CSS selector subject. For `classes.title`, `.card .title` and `p.title` are vali
 `.title .caption` is invalid.
 
 ```ts
-const reportStyles = defineStyles({
+const reportStyles = new StyleSheet({
   classes: {
     card: { borderWidth: 1, padding: 12 },
     title: {
@@ -1196,9 +1198,10 @@ direct props should not be preserved as a deckjsx-specific cascade layer. Struct
 should be authored through `style` or stylesheets. While legacy direct style props remain accepted,
 graph construction must normalize them into `authored.style` with explicit `style` object values
 taking precedence, so accepted authoring values are not silently dropped.
-User-configurable defaults do not need to ship in `0.4.0`. The initial release should add the
-internal default layer, merge slot, and provenance kind; public defaults configuration can be designed
-in a later `0.4.x` release.
+User-configurable defaults should not be introduced as a public `DeckOptions.defaults` API in `0.4`.
+The initial release should add the internal default layer, merge slot, and provenance kind, but
+author-configurable element or component defaults belong to Theme support rather than to a separate
+Deck-level defaults concept.
 Future Theme support should be added as a higher-priority cascade layer than defaults, not as a
 replacement for defaults.
 The intended future cascade order is: defaults, theme, stylesheet rules by CSS-like specificity and
@@ -1221,7 +1224,7 @@ does not drift into a weaker `Record<string, unknown>` model.
 
 Version split inside `0.4`:
 
-- `0.4.0`: ship `defineStyles({ classes })`, `deck.useStyles()`, CSS-like cascade/source-order
+- `0.4.0`: ship `StyleSheet({ classes })`, `deck.useStyles()`, CSS-like cascade/source-order
   foundations, class dictionary resolution, diagnostics, resolved style inspection, and internal
   semantic style classification. Public `target` should already be shaped as an optional CSS-like
   selector string, but selector matching beyond simple class dictionary sugar can remain deferred.
@@ -1229,11 +1232,13 @@ Version split inside `0.4`:
   compound tag/class selectors such as `header.title`, and descendant selectors such as `.card
 .caption`. Add selector specificity, selector diagnostics, and provenance for selector-targeted
   matches.
-- `0.4.2`: add user-configurable defaults on top of the default cascade layer.
+- `0.4.2`: keep the internal default cascade layer reserved, but do not add a public
+  `DeckOptions.defaults` API. Use this release to close the remaining pre-Theme style-resolution
+  gaps that are still needed after selector targets.
 - `0.4.3`: polish resolved style inspection, diagnostics, examples, and optional lint-like checks if
   they are still needed.
 
-- Add `defineStyles()` as the recommended stylesheet authoring helper.
+- Add `new StyleSheet(...)` as the recommended stylesheet authoring entry point.
 - Add `deck.useStyles(stylesheet)` as the Deck stylesheet registration API.
 - Do not make `DeckOptions.styles` the primary v0.4 API. Constructor config can remain focused on
   structural Deck configuration such as layout and metadata.
@@ -1245,7 +1250,7 @@ Version split inside `0.4`:
   - `types.ts` for public style vocabularies such as `ViewStyle` and `TextStyle`.
   - `targets.ts` for selector target typing helpers and target/style relationships.
   - `keys.ts` for runtime style-key sets and classifiers.
-  - `classes.ts` for `defineStyles()`, `StyleSheet`, and `StyleClassDefinition` typing.
+  - `classes.ts` for `StyleSheet` and `StyleClassDefinition` typing.
   - Reserve room for a future `selectors.ts` when selector-rule vocabulary becomes an implemented
     feature.
   - `index.ts` as the style folder boundary.
@@ -1285,7 +1290,8 @@ Version split inside `0.4`:
   history.
 - Add an internal element-default resolution layer and provenance kind, even if default values are
   initially minimal or empty.
-- Defer user-configurable defaults to `0.4.x`.
+- Do not add public user-configurable defaults in `0.4.x`; author-configurable defaults belong to
+  Theme support.
 - Treat defaults as the bottom layer of a CSS-like cascade, with future Theme support layered above
   defaults.
 - Reserve the future Theme cascade slot between defaults and classes.
@@ -1332,7 +1338,7 @@ Version split inside `0.4`:
 - Treat empty class names and names containing whitespace as invalid. Allow class names containing
   selector-special characters such as `/` when the corresponding Stylesheet Target uses CSS escaping.
 - Type stylesheets as readonly authored resources; do not add direct mutation APIs in `0.4`.
-- Ensure inline `defineStyles()` calls and imported stylesheets share the same typing, source-local
+- Ensure inline `new StyleSheet(...)` calls and imported stylesheets share the same typing, source-local
   lookup, and diagnostics behavior after registration.
 - Pass source-local style metadata into graph construction without coupling graph construction to the
   full `DeckOptions` shape.
@@ -1359,7 +1365,7 @@ Version split inside `0.4`:
 - Tests for missing class error messages.
 - Tests for target-incompatible class diagnostics, such as applying text-only class properties to a
   view-like node.
-- Type tests that `defineStyles()` rejects unsupported style keys.
+- Type tests that `new StyleSheet(...)` rejects unsupported style keys.
 - Tests that clsx-like `className` inputs continue to normalize in order.
 - Tests that existing inline style behavior is unchanged.
 
@@ -1381,43 +1387,152 @@ Version split inside `0.4`:
 
 ### Goal
 
-Introduce reusable design tokens and semantic defaults so decks can share colors, typography, and
-component-level defaults.
+Introduce reusable named design values and semantic defaults so decks can share colors, typography, and
+authoring-language defaults.
 
 Theme support should build on Style Classes and Style Entities before Output Projection begins, so
-projection code can consume concrete style information instead of owning theme or token semantics.
+projection code can consume concrete style information instead of owning theme semantics.
 
 ### Proposed API
 
 ```ts
-const deck = new Deck({
-  layout,
-  theme: {
-    colors: {
-      primary: "#2563EB",
-      text: "#0F172A",
-      surface: "#FFFFFF",
+const theme = new Theme({
+  colors: {
+    text: "#0F172A",
+    primary: "#2563EB",
+  },
+  fonts: {
+    body: "Aptos",
+    heading: "Aptos Display",
+  },
+  defaults: {
+    p: {
+      color: "#0F172A",
+      fontSize: 18,
+      fontFamily: "Aptos",
     },
-    fonts: {
-      body: "Aptos",
-      heading: "Aptos Display",
-    },
-    components: {
-      Text: {
-        style: { fontFamily: "$fonts.body", color: "$colors.text" },
-      },
-      Slide: {
-        style: { backgroundColor: "$colors.surface" },
-      },
+    h1: {
+      color: "#0F172A",
+      fontSize: 32,
+      fontFamily: "Aptos Display",
+      fontWeight: 700,
     },
   },
 });
+
+const reportTheme = theme.extend({
+  colors: {
+    primary: "#DC2626",
+  },
+}).extend((theme) => ({
+  defaults: {
+    p: {
+      color: theme.colors.text,
+      fontFamily: theme.fonts.body,
+    },
+  },
+});
+
+const styles = reportTheme.defineStyles((theme) => ({
+  classes: {
+    title: {
+      target: "h1.title",
+      style: {
+        color: theme.colors.text,
+        fontFamily: theme.fonts.heading,
+      },
+    },
+  },
+}));
+
+const deck = new Deck({ layout, theme: reportTheme });
+deck.useStyles(styles);
 ```
 
 ### Semantics
 
-- Token references use a predictable string form such as `$colors.primary`.
-- Theme component defaults apply before class styles and inline styles.
+- Theme values should be consumed through typed TypeScript access rather than string token paths.
+- Prefer constructor/object APIs over adding more top-level public helper functions. Theme should be
+  authored with `new Theme(...)` rather than a new `defineTheme(...)` helper.
+- Move StyleSheet authoring toward `new StyleSheet(...)` and remove the top-level `defineStyles(...)`
+  API in `0.5.0`. Breaking public API changes are acceptable before the future HMR-oriented authoring
+  surface stabilizes.
+  `new StyleSheet(...)` should accept a stylesheet object only. Theme-aware callback authoring should
+  be limited to `theme.defineStyles(...)`.
+  Theme and StyleSheet instances should be immutable-ish authored snapshots. Public types should be
+  readonly, and authors should create a new Theme via `theme.extend(...)` or a new StyleSheet rather
+  than mutating existing instances. Runtime freezing is not required.
+  `Deck.useStyles(...)` should remain a fluent API that returns the Deck instance.
+  `DeckOptions.theme` should accept a `Theme` instance only, not a raw Theme object. Raw objects are
+  accepted by `new Theme(...)` and `theme.extend(...)`.
+- Theme-bound stylesheets may be authored through the Theme instance, such as
+  `theme.defineStyles(...)`, so callback parameters preserve the concrete Theme type.
+- `theme.defineStyles(...)` should produce a `StyleSheet` instance with concrete style values.
+  deckjsx should not implement `$token.path` resolution or token provenance in `0.5.0`.
+- Because `theme.defineStyles(...)` resolves immediately to concrete StyleSheet values, active Theme
+  composition inside mounted Decks should not retroactively rewrite those StyleSheets.
+  By default, `theme.defineStyles(...)` should not materialize Theme defaults into class style
+  definitions. Theme defaults remain a separate active Deck Theme layer during resolved style
+  calculation. A targeted class definition may later expose explicit metadata near `target` to opt
+  into composing with Theme defaults, but that behavior is a design note only and should not ship in
+  `0.5.0`.
+- Theme defaults should use a direct element-to-style map. Do not wrap each default in `{ style }`
+  unless Theme defaults later need metadata beyond the style object.
+- Theme default keys in `0.5.0` should be authored tags only. Do not expose `Slide`, `View`, `Text`,
+  `Shape`, graph semantic kinds, or roles as public Theme default keys.
+  Theme default style values should be typed by authored tag: text tags use `TextStyle`, `span` uses
+  `TextRunStyle`, view-like tags use `ViewStyle`, and `img` uses `ImageStyle`.
+  Theme defaults should apply only to graph nodes that preserve a matching authored tag. Do not treat
+  implicit text runs created from primitive text leaves as `span` for Theme default purposes in
+  `0.5.0`.
+  Runtime validation should also exist for Theme defaults because styles are created when the Theme is
+  defined or extended. Start with clear diagnostics for invalid default style keys for a tag; full
+  value validation can remain incremental.
+  Runtime Theme validation should collect diagnostics on the Theme and report them during
+  `compile({ mode: "inspect" })` or strict compile rather than throwing from `new Theme(...)` or
+  `theme.extend(...)`.
+  Theme diagnostics should use `E_THEME_*` codes so Theme authoring problems are distinguishable from
+  StyleSheet and style-resolution diagnostics.
+- Supplying a Theme to `new Deck({ theme })` should mean the Theme is active for that Deck's own
+  default-like style behavior. It should not be required merely to use concrete Theme values inside a
+  StyleSheet.
+- Theme defaults are part of `0.5.0`; an active Deck Theme should apply them before class styles and
+  inline styles.
+  Theme defaults should merge at the property level with the rest of resolved style resolution:
+  class styles override individual Theme default properties, and inline `style` overrides individual
+  Theme or class properties.
+  Resolved style provenance for Theme defaults should include the Theme default key, such as
+  `{ layer: "theme", defaultKey: "p" }`, rather than only `{ layer: "theme" }`. This is Theme default
+  provenance, not token provenance.
+  The active Theme should be treated as a merged snapshot for provenance purposes. Do not track which
+  parent or child Theme fragment supplied an individual property in `0.5.0`.
+- Theme composition across mounted Decks should differ from StyleSheet lookup. StyleSheets remain
+  source-local class/rule resources, but an active parent Theme should provide the base Theme for a
+  mounted child source. A child Theme deep-merges over that parent Theme, overriding selected design
+  values and defaults at the property path level while inheriting unspecified values.
+  Deep merge should recurse into plain objects only. Arrays and primitive values are replaced by the
+  child Theme value.
+  In `0.5.0`, this automatic composition affects Theme Defaults. StyleSheets produced from
+  `theme.defineStyles(...)` are already concrete and should only use merged Theme values if the author
+  explicitly creates a merged Theme before defining those styles.
+  A mounted child without its own Theme should still receive the parent active Theme defaults. A
+  mounted child with its own Theme should receive `parentActiveTheme.extend(childTheme)` defaults.
+  A child Deck compiled on its own should use only its own Theme. The active Theme snapshot may differ
+  between standalone compile and mounted compile because mounted composition supplies a parent Theme.
+  Theme values and active Theme composition should not participate in Graph Node ID or Source
+  Identity material. Theme changes are resolved-style payload changes, not authoring identity changes.
+- Expose `theme.extend(childTheme)` as the public Theme composition API. It should use the same merge
+  semantics as mounted Deck active Theme composition.
+  `extend(...)` should accept a Theme instance, a raw partial Theme input, or a callback from the
+  current Theme to a raw partial Theme input. This allows authors to derive defaults or additional
+  values from an already-typed Theme without string token references. Mounted Deck Theme composition
+  should be implemented as if the parent active Theme calls `baseTheme.extend(childTheme)`.
+  Theme typing should preserve literal values through `new Theme(...)` and `theme.extend(...)`
+  where TypeScript can reasonably infer them.
+  Theme top-level keys should be open-ended so authors can model project-specific design vocabulary
+  such as `colors`, `fonts`, `spacing`, `radii`, or `chart`. deckjsx may reserve specific keys, such
+  as `defaults`, for behavior it interprets directly. `0.5.0` should only treat `defaults` as a
+  reserved interpreted key; do not reserve `tokens`, `vars`, `metadata`, or `name` ahead of need.
 - Theme values should be resolved into the Semantic Author Graph or its resolved inspection view, so
   output projections receive concrete values without making the graph output-format-specific.
 - Style resolution order after Theme support should be:
@@ -1425,19 +1540,65 @@ const deck = new Deck({
   2. Theme defaults
   3. Stylesheet rules by CSS-like specificity and source order
   4. Inline `style`
+     The cascade pipeline should exist even when a Deck has no Theme. The internal element default layer
+     provides the CSS-like baseline, then Theme defaults apply when an active Theme contributes values,
+     then stylesheet classes and inline style override property-by-property. Empty layers should not
+     appear in resolved-style provenance unless they contribute a value.
+     Internal element defaults should contain real baseline values for properties that output projection
+     needs to behave predictably, such as text font size. Projection code should consume resolved style
+     values rather than inventing separate fallback style semantics.
+     These baseline defaults should be broad enough to keep style fallback responsibility inside style
+     resolution rather than scattering fallback decisions across projection code. Text, text-run,
+     view/box, image, and other authored-tag style defaults should be centralized here where applicable.
+     Initial default values should be based on CSS initial/user-agent behavior, then adjusted where raw
+     CSS defaults are awkward for presentation authoring. Treat this as deckjsx's internal UA stylesheet
+     for presentation documents.
+     Resolved style inspection should include default-layer values and provenance. The inspect
+     experience should be closer to browser DevTools computed styles than to a view of only the
+     author-written style values.
+     The normal resolved style view may expose the default properties that deckjsx defines as its active
+     baseline. A fuller DevTools-like mode that expands every known style property with its default value
+     should remain possible as a later inspection feature; do not implement that full computed mode in
+     `0.5.0`.
+     Design note for a future sandbox/debugger: graph output alone is not enough for a useful inspection
+     experience. The sandbox should be able to expose the final artifact size, such as deck width and
+     height, the active Theme snapshot for each source, internal element defaults, Theme defaults, and
+     resolved style values so authors can understand why the final output looks the way it does.
 
 ### Implementation Notes
 
-- Add `theme` to `DeckOptions`.
-- Add a token resolver in semantic graph construction or graph resolution.
-- Keep Output Projection values concrete, not tokenized.
+- Add `theme` to `DeckOptions` together with active Theme defaults.
+- Move Theme and StyleSheet authoring classes into the top-level `src/style/` domain alongside
+  cascade resolution. The style domain should own `Theme`, `StyleSheet`, element defaults, and
+  resolved-style logic; `authoring/index.ts` should avoid continuing to accumulate style
+  implementation details.
+  Public style vocabularies such as `TextStyle`, `ViewStyle`, `TextRunStyle`, `ImageStyle`, and
+  related style value types should also move into `src/style/`, with public re-exports preserved from
+  the package entrypoint.
+  Export `Theme` and `StyleSheet` from the package root.
+- Apply element defaults and Theme defaults in style resolution, not during graph construction.
+  `StyleEntity` should continue to represent authored inputs and references only; resolved concrete
+  values belong to the resolved style view.
+  Because defaults apply even when a node has no authored Style Entity, resolved style lookup should
+  be node-oriented rather than StyleEntity-only. `0.5.0` may change `ResolvedStyleMap` to key by
+  `GraphNodeId` so style-capable nodes can expose default-only computed styles.
+  `ResolvedStyle` does not need to duplicate the node's `styleRef`; callers can inspect the graph
+  node when they need the authored Style Entity reference.
+  Resolved styles should be produced for style-capable renderable nodes, not for non-renderable graph
+  nodes such as the document node.
+- Do not add a string token resolver in semantic graph construction or graph resolution.
+- Keep Output Projection values concrete.
 - Document precedence with style classes because the two features interact.
+- Do not apply Theme defaults or new resolved default behavior to legacy `render()` / `output()` in
+  `0.5.0`; keep the canonical behavior visible through compile/inspect until Output Projection owns
+  the concrete output path.
 
 ### Validation
 
-- Tests for token resolution.
-- Tests for component defaults.
-- Tests for unknown token diagnostics.
+- Tests that `theme.defineStyles(...)` preserves concrete typed theme values in registered
+  stylesheets.
+- Tests for Theme defaults.
+- Do not add unknown token diagnostics; string token paths are not part of the `0.5.0` model.
 - Snapshot tests showing graph/resolved inspection values and Output Projection values contain
   resolved values where appropriate.
 

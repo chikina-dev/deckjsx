@@ -7,9 +7,9 @@ import {
   type CssGridTemplate,
   type CssGridTemplateAreas,
   type CssJustifySelf,
-  type ViewProps,
   type ViewStyle,
-} from "../authoring/index";
+} from "../style/types";
+import type { ViewProps } from "../authoring/index";
 import {
   isDeckLengthString,
   parseLengthToken,

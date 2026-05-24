@@ -1,11 +1,11 @@
-import { Deck, Slide, Text } from "../../src/index.ts";
+import { Deck, Slide, Text } from "deckjsx";
 import type {
   BoundSource,
   CompositionContext,
   SlideFactory,
   SlideFactoryInput,
   SourceContextMapper,
-} from "../../src/index.ts";
+} from "deckjsx";
 
 type Assert<T extends true> = T;
 type IsAssignable<From, To> = [From] extends [To] ? true : false;

@@ -1,7 +1,9 @@
-import type { JsxNode, StyleSheet } from "../authoring/index";
+import type { JsxNode } from "../authoring/index";
 import type { AuthorElementNode, AuthorTreeNode } from "../authoring/tree";
 import type { Diagnostics } from "../diagnostics";
 import type { SourceIdentity, SourceOrigin } from "../graph/types";
+import type { StyleSheet } from "../style/stylesheet";
+import type { Theme } from "../style/theme";
 
 export const COMPOSITION_SOURCE = Symbol("deckjsx.compositionSource");
 
@@ -44,6 +46,7 @@ export type ComposedAuthorRoot = {
   readonly source: SourceOrigin;
   readonly sourceIdentityMaterial: readonly string[];
   readonly stylesheets: readonly StyleSheet[];
+  readonly theme?: Theme;
   readonly path: string;
   readonly composition: CompositionContext;
   readonly slotOrigins: WeakMap<AuthorTreeNode, SourceSlotOrigin>;
@@ -70,6 +73,7 @@ export type CompositionEntry<TSourceContext = unknown> =
 export type CompositionSourceInternals<TSourceContext = unknown> = {
   readonly entries: readonly CompositionEntry<TSourceContext>[];
   readonly stylesheets: readonly StyleSheet[];
+  readonly theme?: Theme;
   readonly cycleId: object;
   readonly boundContext: SourceContextBinding<TSourceContext>;
 };

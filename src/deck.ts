@@ -1,5 +1,5 @@
 import { renderPresentation } from "./compiler";
-import type { DeckOptions, OutputConfig, StyleSheet } from "./authoring/index";
+import type { DeckOptions, OutputConfig } from "./authoring/index";
 import {
   CompositionDiagnosticError,
   createDiagnostics,
@@ -18,6 +18,7 @@ import {
 import { resolveComposition } from "./composition/resolve";
 import { buildSemanticAuthorGraph, type SemanticAuthorGraph } from "./graph";
 import { resolveStyles, type ResolvedStyleMap } from "./style/resolve";
+import type { StyleSheet } from "./style/stylesheet";
 import type { PresentationIR } from "./ir/index";
 import { outputPresentation } from "./node";
 
@@ -119,6 +120,7 @@ export class BoundSource<TSourceContext = void> implements CompositionSource<TSo
     return {
       entries: source.entries,
       stylesheets: source.stylesheets,
+      ...(source.theme ? { theme: source.theme } : {}),
       cycleId: source.cycleId,
       boundContext: { present: true, value: this.#sourceContext },
     };
@@ -175,6 +177,7 @@ export class Deck<TSourceContext = void> implements CompositionSource<TSourceCon
     return {
       entries: this.#entries,
       stylesheets: this.#stylesheets,
+      ...(this.#options.theme ? { theme: this.#options.theme } : {}),
       cycleId: this,
       boundContext: { present: false },
     };

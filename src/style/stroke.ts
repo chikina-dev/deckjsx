@@ -2,12 +2,12 @@ import type { EdgeStrokeIR, StrokeIR } from "../ir/index";
 import {
   type BorderStyle,
   type DeckLength,
-  type ShapeProps,
+  type ShapeStyle,
   type StrokeDashType,
   type StrokeLineCap,
   type StrokeLineJoin,
   type ViewStyle,
-} from "../authoring/index";
+} from "./types";
 import { alphaToTransparency, parseCssColor } from "./color";
 import {
   isDeckLengthString,
@@ -387,7 +387,7 @@ export function resolveNodeStrokes(
     | "borderBottomStyle"
     | "borderLeftStyle"
   > &
-    Partial<Pick<ShapeProps, "strokeDasharray" | "strokeLinecap" | "strokeLinejoin">>,
+    Partial<Pick<ShapeStyle, "strokeDasharray" | "strokeLinecap" | "strokeLinejoin">>,
   context?: LengthResolutionContext,
 ): {
   stroke?: StrokeIR;
