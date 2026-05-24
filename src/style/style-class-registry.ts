@@ -135,7 +135,7 @@ export function registerStylesheets(
               code: "E_STYLE_UNSUPPORTED_SELECTOR",
               title: "unsupported stylesheet selector",
               path,
-              message: `Selector "${selectorText}" is not supported in v0.4.1.`,
+              message: `Selector "${selectorText}" is not supported.`,
               help: [
                 "Use class, tag, compound tag/class, or descendant selectors such as .title, p.title, or .card .caption.",
               ],

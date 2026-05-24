@@ -1224,7 +1224,7 @@ does not drift into a weaker `Record<string, unknown>` model.
 
 Version split inside `0.4`:
 
-- `0.4.0`: ship `StyleSheet({ classes })`, `deck.useStyles()`, CSS-like cascade/source-order
+- `0.4.0`: ship `new StyleSheet({ classes })`, `deck.useStyles()`, CSS-like cascade/source-order
   foundations, class dictionary resolution, diagnostics, resolved style inspection, and internal
   semantic style classification. Public `target` should already be shaped as an optional CSS-like
   selector string, but selector matching beyond simple class dictionary sugar can remain deferred.
