@@ -1,4 +1,4 @@
-import type { DeckLength } from "../authoring/index";
+import type { DeckLength } from "./types";
 import { EMU_PER_INCH, PIXELS_PER_INCH } from "../types";
 import { normalizeHue } from "./angle";
 import {

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "vite-plus/test";
 import { Deck, Slide, Text } from "../src/index.ts";
 import { outputPresentation } from "../src/node.ts";
-import type { PresentationIR } from "../src/index.ts";
+import type { PresentationIR } from "../src/legacy.ts";
 
 function emptyPresentation(): PresentationIR {
   return {

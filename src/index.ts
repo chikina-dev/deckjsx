@@ -2,6 +2,8 @@ import type { ContentJsxChild, DeckJsxIntrinsicElements } from "./authoring/inde
 import type { JsxKey } from "./jsx-runtime";
 
 export { Deck } from "./deck";
+export { StyleSheet } from "./style/stylesheet";
+export { Theme, type ThemeInput } from "./style/theme";
 export {
   CompositionDiagnosticError,
   DeckDiagnosticError,
@@ -10,33 +12,15 @@ export {
   formatDiagnostic,
   formatDiagnostics,
 } from "./diagnostics";
-export {
-  Fragment,
-  Image,
-  Shape,
-  Slide,
-  Text,
-  View,
-  createElement,
-  isAuthorNode,
-  isContentNode,
-  isSlideNode,
-} from "./jsx";
+export { Fragment, Image, Shape, Slide, Text, View, createElement } from "./jsx";
 export type { JsxKey } from "./jsx-runtime";
-export { pptxgenjsBackend } from "./backends/pptxgenjs";
 export { EMU_PER_INCH, POINTS_PER_INCH } from "./types";
 export {
-  type AuthorNode,
-  type AuthorNodeKind,
-  type AuthorNodeMap,
-  type AuthorNodeProps,
-  type AuthorNodePropsMap,
   type BackendName,
   type BorderStyle,
   type ClassNameObject,
   type ClassNameValue,
   type ClassNameValueArray,
-  type ContentAuthorNode,
   type ContentJsxChild,
   type CssAlignContent,
   type CssAlignItems,
@@ -75,18 +59,14 @@ export {
   type IntrinsicTextTag,
   type IntrinsicViewTag,
   type ImplementedBackendName,
-  type JsxNode,
   type LayoutMode,
   type OutputConfig,
   type ShapeProps,
   type ShapeStyle,
+  type SlideContext,
   type SlideProps,
   type SlideStyle,
   type Spacing,
-  type StyleClassDefinition,
-  type StyleClassStyle,
-  type StyleSheet,
-  type StyleTargetSelector,
   type StackAlignment,
   type StackAxis,
   type StrokeDashType,
@@ -104,8 +84,8 @@ export {
   type VerticalAlign,
   type ViewProps,
   type ViewStyle,
-  defineStyles,
 } from "./authoring/index";
+export type { ThemeDefaults } from "./style/defaults";
 export type { SourceSpan } from "./authoring/tree";
 export type {
   BoundSource,
@@ -117,73 +97,6 @@ export type {
   SourceContextMapper,
 } from "./deck";
 export type { Diagnostic, DiagnosticLabel, DiagnosticSeverity, Diagnostics } from "./diagnostics";
-export type {
-  ResolvedStyle,
-  ResolvedStyleLayer,
-  ResolvedStyleMap,
-  ResolvedStyleProperty,
-  ResolvedStyleSource,
-  StyleResolutionResult,
-} from "./style/resolve";
-export type {
-  AssetEntity,
-  AssetEntityId,
-  BaseSemanticNode,
-  GraphNodeId,
-  SemanticAuthorGraph,
-  SemanticContainerNode,
-  SemanticDocumentNode,
-  SemanticImageNode,
-  SemanticNode,
-  SemanticNodeKind,
-  SemanticOrigin,
-  SemanticRole,
-  SemanticShapeNode,
-  SemanticSlideNode,
-  SemanticTextNode,
-  SemanticTextRunNode,
-  SourceIdentity,
-  SourceOrigin,
-  StyleClassRef,
-  StyleEntity,
-  StyleEntityId,
-} from "./graph";
-export type {
-  BackgroundImageLayerIR,
-  BackgroundLayerIR,
-  BackendArtifact,
-  BaseNodeIR,
-  CompileBackend,
-  EdgeStrokeIR,
-  FillIR,
-  FrameIR,
-  GroupIR,
-  HyperlinkIR,
-  ImageCropIR,
-  ImageIR,
-  ImageSourceIR,
-  LinearGradientFillIR,
-  LinearGradientStopIR,
-  NodeIR,
-  ObjectPositionIR,
-  PresentationIR,
-  RadialGradientFillIR,
-  ShadowIR,
-  ShapeIR,
-  SizeIR,
-  SlideIR,
-  SolidFillIR,
-  StrokeIR,
-  TextContentIR,
-  TextIR,
-  TextListIR,
-  TextNumberListIR,
-  TextNoListIR,
-  TextBulletListIR,
-  TextRunIR,
-  TextStyleIR,
-  TextTabStopIR,
-} from "./ir/index";
 
 declare global {
   namespace JSX {

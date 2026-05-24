@@ -27,20 +27,16 @@ import type {
   TextRunIR,
   TextStyleIR,
 } from "./ir/index";
+import type { AuthorNode, DeckOptions, ImageProps, JsxNode, SlideFactory } from "./authoring/index";
 import type {
-  AuthorNode,
   CssAlignContent,
   CssAlignSelf,
   CssJustifySelf,
   DeckLength,
-  DeckOptions,
-  ImageProps,
-  JsxNode,
-  SlideFactory,
   StackAlignment,
   StackAxis,
   ViewStyle,
-} from "./authoring/index";
+} from "./style/types";
 import {
   advanceGridAutoPlacementCursor,
   markGridItem,

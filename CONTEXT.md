@@ -13,6 +13,11 @@ The structural tree produced from JSX authoring. It preserves JSX parent-child s
 Composition-specific source metadata should not be mutated into Author Tree nodes; source origin is resolved by composition and graph-building context.
 _Avoid_: backend input model
 
+**Authoring Interface**:
+The user-facing vocabulary for writing decks with deckjsx, including Deck, JSX authoring elements, Theme, StyleSheet, diagnostics that authors handle, and the type helpers needed to author slides. It should not make graph internals, legacy output projections, or concrete output adapters look like ordinary authoring concepts.
+It is not a public surface for directly constructing or inspecting Author Tree nodes.
+_Avoid_: root export as every public type, graph inspection surface, legacy output surface
+
 **Authored Tag**:
 The original JSX tag preserved in the Author Tree, such as `h1`, `p`, `section`, or `figure`. It is the input for semantic interpretation and should not be erased by early aliasing.
 _Avoid_: sourceTag as incidental metadata
@@ -41,7 +46,7 @@ Any style-capable authoring node may carry Style Class References; fragments and
 _Avoid_: resolved class style, merge-order precedence
 
 **StyleSheet**:
-An author-defined collection of reusable style classes registered on a Deck instance, typically created with `defineStyles()` and attached with `deck.useStyles()`. StyleSheets are source-local authored resources; parent Deck stylesheets do not implicitly flow into mounted child Decks.
+An author-defined collection of reusable style classes registered on a Deck instance, created with `new StyleSheet(...)` or `theme.defineStyles(...)` and attached with `deck.useStyles()`. StyleSheets are source-local authored resources; parent Deck stylesheets do not implicitly flow into mounted child Decks.
 StyleSheet class entries are CSS-like stylesheet rules. A class dictionary entry behaves like a `.className` rule, and selector targets extend the same stylesheet model rather than introducing a separate non-CSS rule system.
 _Avoid_: DeckOptions.styles as primary API, global style registry, output stylesheet
 
@@ -51,13 +56,35 @@ Public Stylesheet Targets should be authored-tag and class selector language, no
 _Avoid_: public semantic target, PPTX target
 
 **Theme**:
-A reusable design vocabulary for a deck, including design tokens and semantic defaults. Theme values inform style resolution before output projection and should not make the Semantic Author Graph specific to PPTX, PDF, or any other output format.
+A reusable design vocabulary for a deck, including named design values and semantic defaults. Theme values inform style resolution before output projection and should not make the Semantic Author Graph specific to PPTX, PDF, or any other output format.
 Theme belongs to Deck-level configuration rather than to individual Style Entities as authored payload.
-_Avoid_: output template, PowerPoint theme XML
+When Decks are mounted, a child Deck's Theme deep-merges over the active parent Theme so the child can override selected design values while inheriting the rest.
+Author-configurable defaults belong to Theme, not to a separate public Deck-level defaults concept.
+Public Theme defaults should be expressed in authoring-language terms rather than exposing graph-only semantic kinds or roles.
+Theme authoring should preserve TypeScript access to theme values instead of relying on string token paths.
+Styles authored from Theme values should receive concrete style values directly; deckjsx should not implement string token path resolution or token provenance for every class or inline style property.
+Theme composition should not retroactively affect already-authored concrete StyleSheets; active Theme composition applies to Theme Defaults unless an author explicitly creates a merged Theme with `theme.extend(childTheme)` before deriving styles from it.
+_Avoid_: output template, PowerPoint theme XML, string token reference
+
+**Theme Snapshot**:
+The immutable-ish authored Theme value visible to Deck composition and style resolution. A Theme Snapshot owns typed value access, Theme Default diagnostics, and Theme composition policy, while exposing only a fixed snapshot to downstream modules.
+Theme Snapshot internals may clone, validate, or merge values, but callers should not observe mutable Theme state.
+Internal helper types for representing Theme implementation state should not become ordinary authoring vocabulary.
+_Avoid_: live theme object, token resolver, theme provenance graph
+
+**Theme Default**:
+A Theme-provided style baseline that applies to authored elements before StyleSheet classes and inline styles. Theme Defaults are active only when a Theme is attached to a Deck, and they are distinct from StyleSheet rules because they express the deck's design vocabulary rather than selector-authored local overrides.
+Theme Defaults should use authored tag vocabulary and should not expose graph-only semantic kinds, roles, or component names.
+_Avoid_: DeckOptions.defaults, global style rule, semantic kind default, component default
 
 **Resolved Style Inspection View**:
 An inspectable view of style values after deckjsx has applied CSS-like style resolution rules such as element defaults, Theme defaults, registered StyleSheet rules, and inline style. It exists to show what output projections will consume without turning the Semantic Author Graph itself into a PPTX- or PDF-specific model. It may expose theme application trace, stylesheet source order, specificity, and property-level winner provenance, but Theme itself remains Deck-level configuration.
 _Avoid_: output style model, PPTX shape properties
+
+**Inspection Interface**:
+The explicit public surface for inspecting compiled deck meaning, including the Semantic Author Graph and inspection-only views such as resolved styles. It is separate from the Authoring Interface so graph internals and debug-oriented payloads do not look like everyday authoring vocabulary.
+The public result contract for inspect-mode compile may be reachable from the Authoring Interface, but detailed graph and resolved-style vocabulary belongs to the Inspection Interface.
+_Avoid_: root authoring export, output projection surface, legacy output surface
 
 **Asset Entity**:
 A graph entity that represents reusable media or external content such as an image source. Renderable nodes reference Asset Entities instead of embedding output-specific media paths.
@@ -66,6 +93,10 @@ _Avoid_: PPTX media path
 **Presentation IR**:
 A legacy backend-independent projection used by the current rendering path. It is not the canonical model of author intent and should not be assumed as a required step for future OOXML output.
 _Avoid_: canonical IR, semantic model, required backend boundary
+
+**Legacy Interface**:
+The explicit public surface for the current legacy rendering path and Presentation IR related adapters. It exists so older output machinery can remain available without defining the main authoring or inspection vocabulary.
+_Avoid_: Authoring Interface, canonical graph model, future output projection surface
 
 **Pptx Package Model**:
 The PPTX-specific output model projected from the Semantic Author Graph. It owns OOXML package structure concerns such as slide parts, relationships, content types, media entries, package paths, and PowerPoint identifiers.

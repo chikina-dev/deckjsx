@@ -1,8 +1,9 @@
 import { isAuthorNode } from "../jsx";
 import type { TextStyleIR } from "../ir/index";
-import { type JsxNode, type TextProps, type TextTabStopAuthoring } from "../authoring/index";
+import type { JsxNode, TextProps } from "../authoring/index";
 import { POINTS_PER_INCH } from "../types";
 import { DEFAULT_FONT_SIZE_PT, parsePointValue, type LengthResolutionContext } from "./length";
+import type { TextTabStopAuthoring } from "./types";
 
 type TextDecorationResolution = {
   underline?: boolean;

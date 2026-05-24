@@ -1,26 +1,23 @@
-import { Fragment, Image, Shape, Slide, Text, View, defineStyles } from "../../src/index.ts";
-import { jsx } from "../../src/jsx-runtime.ts";
+import { Fragment, Image, Shape, Slide, Text, View, StyleSheet, Theme } from "deckjsx";
+import { jsx } from "deckjsx/jsx-runtime";
 import type {
   CssAlignContent,
   CssGridTemplate,
   CssGridTemplateAreas,
   ClassNameValue,
+  CompileInspectResult,
   DeckJsxIntrinsicElements,
   Diagnostics,
-  GraphNodeId,
   ImplementedBackendName,
   JsxKey,
   OutputConfig,
-  ResolvedStyleMap,
   Spacing,
-  StyleClassRef,
-  StyleEntity,
-  StyleSheet,
   TextRunStyle,
   TextTabStopAuthoring,
+  ThemeInput,
   ViewStyle,
-} from "../../src/index.ts";
-import { Deck } from "../../src/index.ts";
+} from "deckjsx";
+import { Deck } from "deckjsx";
 
 type Assert<T extends true> = T;
 type IsAssignable<From, To> = [From] extends [To] ? true : false;
@@ -86,23 +83,6 @@ const clsxLikeClassName = [
 ] as const satisfies ClassNameValue;
 void clsxLikeClassName;
 
-const styleClassRef = { name: "card", index: 0 } satisfies StyleClassRef;
-const styleEntityWithClassRefs = {
-  id: "style/test" as StyleEntity["id"],
-  target: "container",
-  authored: { classRefs: [styleClassRef] },
-} satisfies StyleEntity;
-void styleEntityWithClassRefs;
-
-const styleEntityWithResolved = {
-  id: "style/resolved" as StyleEntity["id"],
-  target: "text",
-  authored: {},
-  // @ts-expect-error StyleEntity does not carry resolved concrete style values.
-  resolved: {},
-} satisfies StyleEntity;
-void styleEntityWithResolved;
-
 const exportedStyleTypes = {
   alignContent: "space-between",
   padding: readonlySpacing,
@@ -118,7 +98,7 @@ const textRunStyle = {
 } satisfies TextRunStyle;
 void textRunStyle;
 
-const reportStyles = defineStyles({
+const reportStyles = new StyleSheet({
   classes: {
     card: { target: "div.card", style: { backgroundColor: "#fff", padding: 0.2 } },
     title: { target: ["p.title", "h1.title"], style: { color: "navy", fontSize: 28 } },
@@ -127,10 +107,91 @@ const reportStyles = defineStyles({
 });
 reportStyles satisfies StyleSheet;
 
-defineStyles({
+new StyleSheet({
   classes: {
-    // @ts-expect-error defineStyles rejects unknown style keys.
+    // @ts-expect-error StyleSheet rejects unknown style keys.
     broken: { unknownStyleKey: true },
+  },
+});
+
+new StyleSheet({
+  classes: {
+    // @ts-expect-error span-targeted styles use TextRunStyle and reject frame keys.
+    accent: {
+      target: "span.accent",
+      style: {
+        x: 1,
+      },
+    },
+  },
+});
+
+new StyleSheet({
+  classes: {
+    // @ts-expect-error img-targeted styles use ImageStyle and reject text keys.
+    logo: {
+      target: "img.logo",
+      style: {
+        fontSize: 18,
+      },
+    },
+  },
+});
+
+new StyleSheet({
+  classes: {
+    unknownElement: {
+      target: "button.unknownElement",
+      style: { color: "red" },
+    },
+  },
+});
+
+const reportTheme = new Theme({
+  colors: {
+    text: "#111111",
+    accent: "#2563eb",
+  },
+  defaults: {
+    p: { fontSize: 18, color: "#111111" },
+    div: { padding: 0.2 },
+    span: { color: "#2563eb" },
+    img: { objectFit: "contain" },
+  },
+});
+reportTheme.colors.text satisfies "#111111";
+
+const extendedTheme = reportTheme.extend({
+  colors: { accent: "#dc2626" },
+  defaults: { p: { color: "#0f172a" } },
+});
+extendedTheme.colors.accent satisfies "#dc2626";
+
+const themedStyles = extendedTheme.defineStyles((theme) => ({
+  classes: {
+    title: { color: theme.colors.accent },
+  },
+}));
+themedStyles satisfies StyleSheet;
+
+const rawThemeInput = {
+  defaults: { p: { fontSize: 18 } },
+} satisfies ThemeInput;
+void rawThemeInput;
+
+// @ts-expect-error Theme defaults are authored tag keyed, not component keyed.
+new Theme({
+  defaults: {
+    Text: { fontSize: 18 },
+  },
+});
+
+// @ts-expect-error span defaults use TextRunStyle and reject box positioning.
+new Theme({
+  defaults: {
+    span: {
+      x: 1,
+    },
   },
 });
 
@@ -249,7 +310,7 @@ void pptxOutput;
 const typedDeck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 typedDeck.useStyles(reportStyles).add(() => <Slide />);
 const typedGraph = typedDeck.compile();
-typedGraph.documentId satisfies GraphNodeId;
+typedGraph.documentId satisfies string;
 const typedInspect = typedDeck.compile({ mode: "inspect" });
+typedInspect satisfies CompileInspectResult;
 typedInspect.diagnostics satisfies Diagnostics;
-typedInspect.resolvedStyles satisfies ResolvedStyleMap | undefined;

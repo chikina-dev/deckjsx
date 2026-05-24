@@ -1,8 +1,9 @@
 import { isLegacyAuthorNode } from "../authoring/legacy";
-import type { StyleSheet } from "../authoring/index";
 import { isAuthorTreeNode, type AuthorElementNode, type AuthorTreeNode } from "../authoring/tree";
 import { createDiagnostics, diagnostic, type Diagnostic } from "../diagnostics";
 import type { SourceOrigin } from "../graph/types";
+import type { StyleSheet } from "../style/stylesheet";
+import type { Theme } from "../style/theme";
 import {
   sourceIdentity,
   COMPOSITION_SOURCE,
@@ -21,6 +22,7 @@ type SourcePlan = {
   readonly source: SourceOrigin;
   readonly sourceIdentityMaterial: readonly string[];
   readonly stylesheets: readonly StyleSheet[];
+  readonly theme?: Theme;
   readonly context: SourceContextBinding<unknown>;
   readonly entries: readonly PlanEntry[];
   readonly slideCount: number;
@@ -46,6 +48,7 @@ type ResolveContext = {
   readonly sourceIdentityMaterial: readonly string[];
   readonly sourcePath: string;
   readonly context: SourceContextBinding<unknown>;
+  readonly activeTheme?: Theme;
   readonly slotOwnerSource: SourceOrigin;
   readonly slotOwnerMaterial: readonly string[];
 };
@@ -251,6 +254,10 @@ function resolveSource(
 ): SourcePlan | undefined {
   const sourceState = source[COMPOSITION_SOURCE]();
   const effectiveContext = context.context.present ? context.context : sourceState.boundContext;
+  const activeTheme =
+    context.activeTheme && sourceState.theme
+      ? context.activeTheme.extend(sourceState.theme)
+      : (sourceState.theme ?? context.activeTheme);
 
   if (context.depth > MAX_COMPOSITION_DEPTH) {
     addDiagnostic(
@@ -342,6 +349,7 @@ function resolveSource(
       sourceIdentityMaterial: sourceMaterialFor(childSource),
       sourcePath: sourcePathFor(context.sourcePath, entry.sourceKey),
       context: childContext,
+      activeTheme,
       slotOwnerSource: context.source,
       slotOwnerMaterial: context.sourceIdentityMaterial,
     });
@@ -358,6 +366,7 @@ function resolveSource(
     source: context.source,
     sourceIdentityMaterial: context.sourceIdentityMaterial,
     stylesheets: sourceState.stylesheets,
+    ...(activeTheme ? { theme: activeTheme } : {}),
     context: effectiveContext,
     entries,
     slideCount,
@@ -416,6 +425,7 @@ function flattenPlan(
         source: plan.source,
         sourceIdentityMaterial: plan.sourceIdentityMaterial,
         stylesheets: plan.stylesheets,
+        ...(plan.theme ? { theme: plan.theme } : {}),
         path: entry.path,
         composition,
         slotOrigins: plan.slotOrigins,
@@ -439,6 +449,7 @@ export function resolveComposition(source: CompositionSource<any>): CompositionI
     sourceIdentityMaterial: sourceMaterialFor(ROOT_SOURCE),
     sourcePath: "root",
     context: { present: false },
+    activeTheme: undefined,
     slotOwnerSource: ROOT_SOURCE,
     slotOwnerMaterial: sourceMaterialFor(ROOT_SOURCE),
   });
