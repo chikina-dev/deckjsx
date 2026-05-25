@@ -1,12 +1,5 @@
-import { renderPresentation } from "./compiler";
-import type { DeckOptions, OutputConfig } from "./authoring/index";
-import {
-  CompositionDiagnosticError,
-  createDiagnostics,
-  SemanticGraphDiagnosticError,
-  StyleDiagnosticError,
-  type Diagnostics,
-} from "./diagnostics";
+import type { DeckOptions } from "./authoring/index";
+import type { RenderOptions, WriterAdapter } from "./adapter";
 import {
   COMPOSITION_SOURCE,
   type CompositionEntry,
@@ -15,12 +8,20 @@ import {
   type SlideFactory,
   type SourceContextInput,
 } from "./composition/types";
-import { resolveComposition } from "./composition/resolve";
-import { buildSemanticAuthorGraph, type SemanticAuthorGraph } from "./graph";
-import { resolveStyles, type ResolvedStyleMap } from "./style/resolve";
+import type { Diagnostics } from "./diagnostics";
+import type { SemanticAuthorGraph } from "./graph";
+import { resultOk, stageSummary, type StageArtifactStatus } from "./pipeline";
+import { PipelineArtifactCollection } from "./pipeline-artifacts";
+import {
+  compileSource,
+  projectSource,
+  renderSource,
+  type CompileResult,
+  type ProjectResult,
+  type RenderResult,
+} from "./pipeline-runner";
+import type { PptxPackageModel } from "./projection/pptx";
 import type { StyleSheet } from "./style/stylesheet";
-import type { PresentationIR } from "./ir/index";
-import { outputPresentation } from "./node";
 
 export type {
   CompositionContext,
@@ -28,82 +29,21 @@ export type {
   SlideFactoryInput,
   SourceContextMapper,
 } from "./composition/types";
-
-export type CompileMode = "inspect" | "strict";
-
-export type CompileInspectResult = {
-  readonly graph?: SemanticAuthorGraph;
-  readonly diagnostics: Diagnostics;
-  readonly resolvedStyles?: ResolvedStyleMap;
-};
+export type { CompileResult, ProjectResult, RenderResult } from "./pipeline-runner";
 
 type WithSource<TSourceContext> = [TSourceContext] extends [void]
   ? never
   : (sourceContext: TSourceContext) => BoundSource<TSourceContext>;
 
-function hasMountedSources(entries: readonly CompositionEntry<any>[]): boolean {
-  return entries.some((entry) => entry.kind === "mount");
-}
-
-function directSlideFactories<TSourceContext>(
-  entries: readonly CompositionEntry<TSourceContext>[],
-): SlideFactory<TSourceContext>[] {
-  return entries.flatMap((entry) => (entry.kind === "slide" ? [entry.factory] : []));
-}
-
-function mountedSourceError(): Error {
-  return new Error(
-    "Mounted sources are supported by compile() only until the output pipeline supports graph composition.",
-  );
-}
-
-function combineDiagnostics(...diagnostics: readonly Diagnostics[]): Diagnostics {
-  return createDiagnostics(diagnostics.flatMap((item) => item.items));
-}
-
-function compileSource(
-  source: CompositionSource<any>,
-  config: { mode?: CompileMode } = {},
-): CompileInspectResult | SemanticAuthorGraph {
-  const composition = resolveComposition(source);
-
-  if (composition.diagnostics.hasErrors) {
-    if (config.mode === "inspect") {
-      return { diagnostics: composition.diagnostics };
-    }
-
-    throw new CompositionDiagnosticError(composition.diagnostics);
+function projectedArtifactStatus<T>(
+  value: T | undefined,
+  diagnostics: Diagnostics,
+): StageArtifactStatus {
+  if (value === undefined) {
+    return "missing";
   }
 
-  const result = buildSemanticAuthorGraph(composition.roots ?? []);
-  const styleResult = result.graph
-    ? resolveStyles(result.graph, composition.roots ?? [])
-    : undefined;
-  const diagnostics = styleResult
-    ? combineDiagnostics(result.diagnostics, styleResult.diagnostics)
-    : result.diagnostics;
-
-  if (config.mode === "inspect") {
-    return {
-      ...(result.graph ? { graph: result.graph } : {}),
-      diagnostics,
-      ...(styleResult ? { resolvedStyles: styleResult.resolvedStyles } : {}),
-    };
-  }
-
-  if (result.diagnostics.hasErrors) {
-    throw new SemanticGraphDiagnosticError(result.diagnostics);
-  }
-
-  if (styleResult?.diagnostics.hasErrors) {
-    throw new StyleDiagnosticError(styleResult.diagnostics);
-  }
-
-  if (!result.graph) {
-    throw new SemanticGraphDiagnosticError(result.diagnostics);
-  }
-
-  return result.graph;
+  return diagnostics.hasErrors ? "partial" : "available";
 }
 
 export class BoundSource<TSourceContext = void> implements CompositionSource<TSourceContext> {
@@ -126,33 +66,20 @@ export class BoundSource<TSourceContext = void> implements CompositionSource<TSo
     };
   }
 
-  compile(): SemanticAuthorGraph;
-  compile(config: { mode?: "strict" }): SemanticAuthorGraph;
-  compile(config: { mode: "inspect" }): CompileInspectResult;
-  compile(config: { mode?: CompileMode } = {}): CompileInspectResult | SemanticAuthorGraph {
-    return compileSource(this, config);
+  compile(): CompileResult {
+    return compileSource(this);
   }
 
-  render(): PresentationIR {
-    const source = this.#source[COMPOSITION_SOURCE]();
-    if (hasMountedSources(source.entries)) {
-      throw mountedSourceError();
-    }
-
-    return renderPresentation(
-      this.#source.options,
-      directSlideFactories(source.entries).map(
-        (factory) => (input) =>
-          factory({
-            ...input,
-            context: this.#sourceContext,
-          } as never),
-      ),
-    );
+  project(): ProjectResult {
+    return projectSource({ source: this, options: this.#source.options });
   }
 
-  async output(config: OutputConfig): Promise<void> {
-    await outputPresentation(this.render(), config);
+  render(config?: RenderOptions | WriterAdapter<PptxPackageModel>): Promise<RenderResult> {
+    return renderSource({
+      source: this,
+      options: this.#source.options,
+      renderInput: config ?? {},
+    });
   }
 }
 
@@ -160,6 +87,7 @@ export class Deck<TSourceContext = void> implements CompositionSource<TSourceCon
   readonly #options: DeckOptions;
   readonly #entries: CompositionEntry<TSourceContext>[] = [];
   readonly #stylesheets: StyleSheet[] = [];
+  readonly #artifacts = new PipelineArtifactCollection();
 
   readonly withSource: WithSource<TSourceContext>;
 
@@ -185,11 +113,13 @@ export class Deck<TSourceContext = void> implements CompositionSource<TSourceCon
 
   useStyles(stylesheet: StyleSheet): this {
     this.#stylesheets.push(stylesheet);
+    this.#artifacts.invalidateFromSource();
     return this;
   }
 
   add(slide: SlideFactory<TSourceContext>): this {
     this.#entries.push({ kind: "slide", factory: slide });
+    this.#artifacts.invalidateFromSource();
     return this;
   }
 
@@ -213,28 +143,64 @@ export class Deck<TSourceContext = void> implements CompositionSource<TSourceCon
       ...(context.length > 0 ? { contextProvider: context[0] } : {}),
       ...(child instanceof BoundSource && context.length > 0 ? { invalidExtraContext: true } : {}),
     });
+    this.#artifacts.invalidateFromSource();
     return this;
   }
 
-  render(this: Deck<void>): PresentationIR {
-    if (hasMountedSources(this.#entries)) {
-      throw mountedSourceError();
+  defineGraph(graph: SemanticAuthorGraph): this {
+    this.#artifacts.replaceGraphArtifact(this, graph);
+    return this;
+  }
+
+  defineProjection(projection: PptxPackageModel): this {
+    this.#artifacts.replaceProjectionArtifact(projection);
+    return this;
+  }
+
+  compile(this: Deck<void>): CompileResult;
+  compile(this: Deck<void>): CompileResult {
+    if (this.#artifacts.graph) {
+      const diagnostics = this.#artifacts.graph.diagnostics;
+
+      return {
+        ok: resultOk(diagnostics),
+        diagnostics,
+        stages: {
+          compile: stageSummary(
+            "compile",
+            diagnostics,
+            projectedArtifactStatus(this.#artifacts.graph.graph, diagnostics),
+          ),
+        },
+        graph: this.#artifacts.graph.graph,
+        resolvedStyles: this.#artifacts.graph.resolvedStyles,
+      };
     }
 
-    return renderPresentation(this.#options, directSlideFactories(this.#entries));
+    return compileSource(this, this.#artifacts);
   }
 
-  compile(this: Deck<void>): SemanticAuthorGraph;
-  compile(this: Deck<void>, config: { mode?: "strict" }): SemanticAuthorGraph;
-  compile(this: Deck<void>, config: { mode: "inspect" }): CompileInspectResult;
-  compile(
+  project(this: Deck<void>): ProjectResult {
+    return projectSource({
+      source: this,
+      options: this.#options,
+      definedGraph: this.#artifacts.graph,
+      definedProjection: this.#artifacts.projection,
+      artifacts: this.#artifacts,
+    });
+  }
+
+  render(
     this: Deck<void>,
-    config: { mode?: CompileMode } = {},
-  ): CompileInspectResult | SemanticAuthorGraph {
-    return compileSource(this, config);
-  }
-
-  async output(this: Deck<void>, config: OutputConfig): Promise<void> {
-    await outputPresentation(this.render(), config);
+    config?: RenderOptions | WriterAdapter<PptxPackageModel>,
+  ): Promise<RenderResult> {
+    return renderSource({
+      source: this,
+      options: this.#options,
+      renderInput: config ?? {},
+      definedGraph: this.#artifacts.graph,
+      definedProjection: this.#artifacts.projection,
+      artifacts: this.#artifacts,
+    });
   }
 }

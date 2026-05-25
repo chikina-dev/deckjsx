@@ -50,197 +50,44 @@ describe("typography-values", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
+    const ir = deck.project().projection!;
+    const [rtl, superscript, subscript, image, shape] = ir.slides[0].payload.elements;
 
-    expect(ir.slides[0].nodes).toMatchInlineSnapshot(`
-    	[
-    	  {
-    	    "content": {
-    	      "text": "RTL link",
-    	    },
-    	    "fill": undefined,
-    	    "flipH": undefined,
-    	    "flipV": undefined,
-    	    "frame": {
-    	      "heightEmu": 685800,
-    	      "widthEmu": 2743200,
-    	      "xEmu": 914400,
-    	      "yEmu": 914400,
-    	    },
-    	    "hyperlink": {
-    	      "tooltip": "Open docs",
-    	      "url": "https://example.com/docs",
-    	    },
-    	    "id": "node-1",
-    	    "kind": "text",
-    	    "opacity": undefined,
-    	    "radiusEmu": 0,
-    	    "rotation": undefined,
-    	    "stroke": undefined,
-    	    "style": {
-    	      "charSpacing": undefined,
-    	      "color": undefined,
-    	      "fit": undefined,
-    	      "fontFamily": undefined,
-    	      "fontSizePt": undefined,
-    	      "fontWeight": undefined,
-    	      "italic": undefined,
-    	      "lineSpacing": undefined,
-    	      "lineSpacingMultiple": undefined,
-    	      "paddingPt": undefined,
-    	      "paragraphSpacingAfter": undefined,
-    	      "paragraphSpacingBefore": undefined,
-    	      "rtlMode": true,
-    	      "strike": undefined,
-    	      "textAlign": undefined,
-    	      "underline": undefined,
-    	      "verticalAlign": undefined,
-    	      "wrap": undefined,
-    	    },
-    	    "zIndex": undefined,
-    	  },
-    	  {
-    	    "content": {
-    	      "text": "Super",
-    	    },
-    	    "fill": undefined,
-    	    "flipH": undefined,
-    	    "flipV": undefined,
-    	    "frame": {
-    	      "heightEmu": 685800,
-    	      "widthEmu": 2743200,
-    	      "xEmu": 914400,
-    	      "yEmu": 1828800,
-    	    },
-    	    "id": "node-2",
-    	    "kind": "text",
-    	    "opacity": undefined,
-    	    "radiusEmu": 0,
-    	    "rotation": undefined,
-    	    "stroke": undefined,
-    	    "style": {
-    	      "charSpacing": undefined,
-    	      "color": undefined,
-    	      "fit": undefined,
-    	      "fontFamily": undefined,
-    	      "fontSizePt": undefined,
-    	      "fontWeight": undefined,
-    	      "italic": undefined,
-    	      "lineSpacing": undefined,
-    	      "lineSpacingMultiple": undefined,
-    	      "paddingPt": undefined,
-    	      "paragraphSpacingAfter": undefined,
-    	      "paragraphSpacingBefore": undefined,
-    	      "strike": undefined,
-    	      "superscript": true,
-    	      "textAlign": undefined,
-    	      "underline": undefined,
-    	      "verticalAlign": undefined,
-    	      "wrap": undefined,
-    	    },
-    	    "zIndex": undefined,
-    	  },
-    	  {
-    	    "content": {
-    	      "text": "Sub",
-    	    },
-    	    "fill": undefined,
-    	    "flipH": undefined,
-    	    "flipV": undefined,
-    	    "frame": {
-    	      "heightEmu": 685800,
-    	      "widthEmu": 2743200,
-    	      "xEmu": 914400,
-    	      "yEmu": 2743200,
-    	    },
-    	    "id": "node-3",
-    	    "kind": "text",
-    	    "opacity": undefined,
-    	    "radiusEmu": 0,
-    	    "rotation": undefined,
-    	    "stroke": undefined,
-    	    "style": {
-    	      "charSpacing": undefined,
-    	      "color": undefined,
-    	      "fit": undefined,
-    	      "fontFamily": undefined,
-    	      "fontSizePt": undefined,
-    	      "fontWeight": undefined,
-    	      "italic": undefined,
-    	      "lineSpacing": undefined,
-    	      "lineSpacingMultiple": undefined,
-    	      "paddingPt": undefined,
-    	      "paragraphSpacingAfter": undefined,
-    	      "paragraphSpacingBefore": undefined,
-    	      "strike": undefined,
-    	      "subscript": true,
-    	      "textAlign": undefined,
-    	      "underline": undefined,
-    	      "verticalAlign": undefined,
-    	      "wrap": undefined,
-    	    },
-    	    "zIndex": undefined,
-    	  },
-    	  {
-    	    "fit": "contain",
-    	    "flipH": undefined,
-    	    "flipV": undefined,
-    	    "frame": {
-    	      "heightEmu": 1371600,
-    	      "widthEmu": 1371600,
-    	      "xEmu": 4572000,
-    	      "yEmu": 914400,
-    	    },
-    	    "hyperlink": {
-    	      "tooltip": "Open image link",
-    	      "url": "https://example.com/image",
-    	    },
-    	    "id": "node-4",
-    	    "kind": "image",
-    	    "opacity": undefined,
-    	    "rotation": undefined,
-    	    "rounding": undefined,
-    	    "source": {
-    	      "data": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiI+PHJlY3Qgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSIjZjk3MzE2Ii8+PC9zdmc+",
-    	      "kind": "data",
-    	    },
-    	    "sourceFrame": {
-    	      "heightEmu": 1371600,
-    	      "widthEmu": 1371600,
-    	      "xEmu": 4572000,
-    	      "yEmu": 914400,
-    	    },
-    	    "transparency": undefined,
-    	    "zIndex": undefined,
-    	  },
-    	  {
-    	    "fill": {
-    	      "color": "2563EB",
-    	      "kind": "solid",
-    	      "transparency": undefined,
-    	    },
-    	    "flipH": undefined,
-    	    "flipV": undefined,
-    	    "frame": {
-    	      "heightEmu": 914400,
-    	      "widthEmu": 1828800,
-    	      "xEmu": 4572000,
-    	      "yEmu": 2743200,
-    	    },
-    	    "hyperlink": {
-    	      "url": "https://example.com/shape",
-    	    },
-    	    "id": "node-5",
-    	    "kind": "shape",
-    	    "opacity": undefined,
-    	    "radiusEmu": 0,
-    	    "rotation": undefined,
-    	    "shape": "rect",
-    	    "stroke": undefined,
-    	    "zIndex": undefined,
-    	  },
-    	]
-    `);
+    expect(rtl?.kind).toBe("text");
+    if (!rtl || rtl.kind !== "text") {
+      throw new Error("Expected rtl text element.");
+    }
+    expect(rtl.content.text).toBe("RTL link");
+    expect(rtl.hyperlink).toEqual({ url: "https://example.com/docs", tooltip: "Open docs" });
+    expect(rtl.style.rtlMode).toBe(true);
+
+    expect(superscript?.kind).toBe("text");
+    if (!superscript || superscript.kind !== "text") {
+      throw new Error("Expected superscript text element.");
+    }
+    expect(superscript.style.superscript).toBe(true);
+
+    expect(subscript?.kind).toBe("text");
+    if (!subscript || subscript.kind !== "text") {
+      throw new Error("Expected subscript text element.");
+    }
+    expect(subscript.style.subscript).toBe(true);
+
+    expect(image?.kind).toBe("image");
+    if (!image || image.kind !== "image") {
+      throw new Error("Expected image element.");
+    }
+    expect(image.hyperlink).toEqual({
+      url: "https://example.com/image",
+      tooltip: "Open image link",
+    });
+
+    expect(shape?.kind).toBe("shape");
+    if (!shape || shape.kind !== "shape") {
+      throw new Error("Expected shape element.");
+    }
+    expect(shape.hyperlink).toEqual({ url: "https://example.com/shape" });
+    expect(shape.fill).toEqual({ kind: "solid", color: "2563EB", transparency: undefined });
   });
 
   test("render supports listStyleType authoring for bullets and numbering", () => {
@@ -277,102 +124,24 @@ describe("typography-values", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
+    const ir = deck.project().projection!;
+    const [bullet, number] = ir.slides[0].payload.elements;
 
-    expect(ir.slides[0].nodes).toMatchInlineSnapshot(`
-      [
-        {
-          "content": {
-            "text": "Bullet item",
-          },
-          "fill": undefined,
-          "flipH": undefined,
-          "flipV": undefined,
-          "frame": {
-            "heightEmu": 685800,
-            "widthEmu": 2743200,
-            "xEmu": 914400,
-            "yEmu": 914400,
-          },
-          "id": "node-1",
-          "kind": "text",
-          "opacity": undefined,
-          "radiusEmu": 0,
-          "rotation": undefined,
-          "stroke": undefined,
-          "style": {
-            "charSpacing": undefined,
-            "color": undefined,
-            "fit": undefined,
-            "fontFamily": undefined,
-            "fontSizePt": undefined,
-            "fontWeight": undefined,
-            "italic": undefined,
-            "lineSpacing": undefined,
-            "lineSpacingMultiple": undefined,
-            "list": {
-              "characterCode": "25E6",
-              "indentPt": 18,
-              "type": "bullet",
-            },
-            "paddingPt": undefined,
-            "paragraphSpacingAfter": undefined,
-            "paragraphSpacingBefore": undefined,
-            "strike": undefined,
-            "textAlign": undefined,
-            "underline": undefined,
-            "verticalAlign": undefined,
-            "wrap": undefined,
-          },
-          "zIndex": undefined,
-        },
-        {
-          "content": {
-            "text": "Number item",
-          },
-          "fill": undefined,
-          "flipH": undefined,
-          "flipV": undefined,
-          "frame": {
-            "heightEmu": 685800,
-            "widthEmu": 2743200,
-            "xEmu": 914400,
-            "yEmu": 1828800,
-          },
-          "id": "node-2",
-          "kind": "text",
-          "opacity": undefined,
-          "radiusEmu": 0,
-          "rotation": undefined,
-          "stroke": undefined,
-          "style": {
-            "charSpacing": undefined,
-            "color": undefined,
-            "fit": undefined,
-            "fontFamily": undefined,
-            "fontSizePt": undefined,
-            "fontWeight": undefined,
-            "italic": undefined,
-            "lineSpacing": undefined,
-            "lineSpacingMultiple": undefined,
-            "list": {
-              "startAt": 3,
-              "style": "romanUcPeriod",
-              "type": "number",
-            },
-            "paddingPt": undefined,
-            "paragraphSpacingAfter": undefined,
-            "paragraphSpacingBefore": undefined,
-            "strike": undefined,
-            "textAlign": undefined,
-            "underline": undefined,
-            "verticalAlign": undefined,
-            "wrap": undefined,
-          },
-          "zIndex": undefined,
-        },
-      ]
-    `);
+    expect(bullet?.kind).toBe("text");
+    expect(number?.kind).toBe("text");
+    if (!bullet || bullet.kind !== "text" || !number || number.kind !== "text") {
+      throw new Error("Expected text elements.");
+    }
+    expect(bullet.style.list).toEqual({
+      type: "bullet",
+      characterCode: "25E6",
+      indentPt: 18,
+    });
+    expect(number.style.list).toEqual({
+      type: "number",
+      style: "romanUcPeriod",
+      startAt: 3,
+    });
   });
 
   test("render supports writingMode and text decoration style/color", () => {
@@ -399,55 +168,17 @@ describe("typography-values", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
+    const ir = deck.project().projection!;
+    const text = ir.slides[0].payload.elements[0];
 
-    expect(ir.slides[0].nodes).toMatchInlineSnapshot(`
-      [
-        {
-          "content": {
-            "text": "Decorated",
-          },
-          "fill": undefined,
-          "flipH": undefined,
-          "flipV": undefined,
-          "frame": {
-            "heightEmu": 1828800,
-            "widthEmu": 1828800,
-            "xEmu": 914400,
-            "yEmu": 914400,
-          },
-          "id": "node-1",
-          "kind": "text",
-          "opacity": undefined,
-          "radiusEmu": 0,
-          "rotation": undefined,
-          "stroke": undefined,
-          "style": {
-            "charSpacing": undefined,
-            "color": undefined,
-            "fit": undefined,
-            "fontFamily": undefined,
-            "fontSizePt": undefined,
-            "fontWeight": undefined,
-            "italic": undefined,
-            "lineSpacing": undefined,
-            "lineSpacingMultiple": undefined,
-            "paddingPt": undefined,
-            "paragraphSpacingAfter": undefined,
-            "paragraphSpacingBefore": undefined,
-            "strike": undefined,
-            "textAlign": undefined,
-            "textDirection": "vert270",
-            "underline": true,
-            "underlineColor": "FF6347",
-            "underlineStyle": "wavy",
-            "verticalAlign": undefined,
-            "wrap": undefined,
-          },
-          "zIndex": undefined,
-        },
-      ]
-    `);
+    expect(text?.kind).toBe("text");
+    if (!text || text.kind !== "text") {
+      throw new Error("Expected text element.");
+    }
+    expect(text.style.textDirection).toBe("vert270");
+    expect(text.style.underline).toBe(true);
+    expect(text.style.underlineStyle).toBe("wavy");
+    expect(text.style.underlineColor).toBe("FF6347");
   });
 
   test("render supports tabStops authoring for text paragraphs", () => {
@@ -475,8 +206,8 @@ describe("typography-values", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
-    const textNode = ir.slides[0].nodes[0];
+    const ir = deck.project().projection!;
+    const textNode = ir.slides[0].payload.elements[0];
 
     expect(textNode.kind).toBe("text");
     if (textNode.kind !== "text") {
@@ -511,8 +242,8 @@ describe("typography-values", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
-    const textNode = ir.slides[0].nodes[0];
+    const ir = deck.project().projection!;
+    const textNode = ir.slides[0].payload.elements[0];
 
     expect(textNode.kind).toBe("text");
     if (textNode.kind !== "text") {
@@ -558,9 +289,9 @@ describe("typography-values", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
+    const ir = deck.project().projection!;
 
-    expect(summarizeNodes(ir.slides[0].nodes)).toEqual([
+    expect(summarizeNodes(ir.slides[0].payload.elements)).toEqual([
       {
         kind: "text",
         frame: {
@@ -585,7 +316,7 @@ describe("typography-values", () => {
       },
     ]);
 
-    const [first, second] = ir.slides[0].nodes.filter((node) => node.kind === "text");
+    const [first, second] = ir.slides[0].payload.elements.filter((node) => node.kind === "text");
 
     expect(first.style.underline).toBe(true);
     expect(first.style.strike).toBe(true);
@@ -631,8 +362,8 @@ describe("typography-values", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
-    const [first, second] = ir.slides[0].nodes.filter((node) => node.kind === "text");
+    const ir = deck.project().projection!;
+    const [first, second] = ir.slides[0].payload.elements.filter((node) => node.kind === "text");
 
     expect(first.style.lineSpacing).toBeUndefined();
     expect(first.style.lineSpacingMultiple).toBe(1.6);
@@ -692,7 +423,9 @@ describe("typography-values", () => {
       </Slide>
     ));
 
-    const texts = deck.render().slides[0].nodes.filter((node) => node.kind === "text");
+    const texts = deck
+      .project()
+      .projection!.slides[0].payload.elements.filter((node) => node.kind === "text");
 
     expect(texts[0].style.wrap).toBe(false);
     expect(texts[1].style.wrap).toBe(true);
@@ -746,7 +479,9 @@ describe("typography-values", () => {
       </Slide>
     ));
 
-    const texts = deck.render().slides[0].nodes.filter((node) => node.kind === "text");
+    const texts = deck
+      .project()
+      .projection!.slides[0].payload.elements.filter((node) => node.kind === "text");
 
     expect(texts[0].style.wrap).toBe(true);
     expect(texts[1].style.wrap).toBe(true);

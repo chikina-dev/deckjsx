@@ -104,5 +104,5 @@ export async function writeMultiSlideReport(output = "multi-slide-report.pptx"):
     </Slide>
   ));
 
-  await deck.output({ backend: "pptxgenjs", output });
+  await deck.render({ output });
 }

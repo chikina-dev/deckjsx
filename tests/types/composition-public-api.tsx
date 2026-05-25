@@ -51,14 +51,14 @@ section.add(({ context, composition }) => (
 ));
 
 // @ts-expect-error A Deck with required Source Context cannot compile as a root.
-section.compile();
+void section.compile().graph!;
 
 // @ts-expect-error Deck<void> has no Source Context to bind.
 root.withSource({});
 
 const bound = section.withSource({ sectionTitle: "Section" });
 bound satisfies BoundSource<{ sectionTitle: string }>;
-bound.compile();
+void bound.compile().graph!;
 
 // @ts-expect-error Bound Source is not an authoring registration API.
 bound.add(() => <Slide />);

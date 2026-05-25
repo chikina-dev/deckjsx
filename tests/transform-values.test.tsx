@@ -54,7 +54,7 @@ describe("transform-values", () => {
       </Slide>
     ));
 
-    const [view, text, shape, image] = deck.render().slides[0].nodes;
+    const [view, text, shape, image] = deck.project().projection!.slides[0].payload.elements;
 
     expect(view?.rotation).toBe(15);
     expect(view?.flipH).toBe(true);
@@ -155,7 +155,8 @@ describe("transform-values", () => {
       </Slide>
     ));
 
-    const [scaled, rotated, skewX, skewY, matrix] = deck.render().slides[0].nodes;
+    const [scaled, rotated, skewX, skewY, matrix] =
+      deck.project().projection!.slides[0].payload.elements;
 
     expect(scaled?.frame).toEqual({
       xEmu: 914400,
@@ -215,6 +216,10 @@ describe("transform-values", () => {
       </Slide>
     ));
 
-    expect(() => deck.render()).toThrowError("Unsupported transform function: matrix3d");
+    const result = deck.project();
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.items[0]?.message).toContain(
+      "Unsupported transform function: matrix3d",
+    );
   });
 });

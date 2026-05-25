@@ -1,11 +1,11 @@
 ---
 name: deckjsx-slides
-description: Use this skill when creating, editing, or reviewing PowerPoint slide decks with the deckjsx library, especially html-like TSX/JSX slides that compile to PPTX through Deck, Slide, semantic lowercase tags, Shape, and the pptxgenjs backend.
+description: Use this skill when creating, editing, or reviewing PowerPoint slide decks with the deckjsx library, especially html-like TSX/JSX slides that compile to PPTX through Deck, Slide, semantic lowercase tags, Shape, and the pptxgenjs writer adapter.
 ---
 
 # deckjsx Slides
 
-Use `deckjsx` as a compiler for presentation documents, not as a direct `pptxgenjs` wrapper. In 0.2+, prefer html-like TSX/JSX authoring: `Slide` stays the slide root, while lowercase semantic tags describe slide structure. Compile to IR with `Deck#render()`, and emit PowerPoint files with `Deck#output({ backend: "pptxgenjs", output })`.
+Use `deckjsx` as a compiler for presentation documents, not as a direct `pptxgenjs` wrapper. Prefer html-like TSX/JSX authoring: `Slide` stays the slide root, while lowercase semantic tags describe slide structure. Inspect authoring semantics with `Deck#compile()`, inspect output-facing state with `Deck#project()`, and emit PowerPoint files with `Deck#render({ output })`.
 
 For Japanese guidance, read `SKILL-ja.md` in this skill folder. Keep both files aligned when updating examples or workflow.
 
@@ -13,7 +13,7 @@ For Japanese guidance, read `SKILL-ja.md` in this skill folder. Keep both files 
 
 Concrete TSX examples live in `examples/`. Load the specific file that matches the task instead of retyping large examples:
 
-- `examples/minimal-output.tsx`: minimal `.pptx` output through the `pptxgenjs` backend.
+- `examples/minimal-output.tsx`: minimal `.pptx` output through the `pptxgenjs` writer adapter.
 - `examples/multi-slide-report.tsx`: a two-slide executive report with metadata, page numbers, grid cards, and repeated data.
 - `examples/layout-patterns.tsx`: absolute, flex/stack, grid, and overlay positioning patterns.
 - `examples/visual-effects.tsx`: background layers, gradients, shadows, image fit/position, and shape stroke effects.
@@ -26,9 +26,9 @@ These files import from `deckjsx` so they are directly usable in package consume
 2. Add slides with `deck.add((context) => <Slide>...</Slide>)`.
 3. Prefer html-like tags for authoring: `div`, `section`, `article`, `main`, `header`, `footer`, `aside`, `nav`, and `figure` are view-like containers; `p` and `h1`-`h6` are text-like; `img` is a leaf image element.
 4. Put layout/container styles on view-like tags and typography styles on text-like tags. For example, put `fontSize` on `<h1>` or `<p>`, not on `<header>` or `<footer>`.
-5. Use `Shape`, and the legacy `View`, `Text`, and `Image` components when they make code clearer or when updating older decks.
-6. Use `deck.render()` when inspecting, testing, or snapshotting the compiler IR.
-7. Use `await deck.output({ backend: "pptxgenjs", output: "deck.pptx" })` to write a `.pptx`.
+5. Use `Shape`, and the capitalized `View`, `Text`, and `Image` components when they make code clearer or when updating older decks.
+6. Use `deck.project()` when inspecting, testing, or snapshotting output-facing computed state.
+7. Use `await deck.render({ output: "deck.pptx" })` to write a `.pptx`.
 8. Validate library changes with `vp check` and `vp test`; for output-specific work, inspect generated PPTX contents or render/open the result when possible.
 
 ## Minimal PPTX Output
@@ -46,13 +46,10 @@ deck.add(() => (
   </Slide>
 ));
 
-await deck.output({
-  backend: "pptxgenjs",
-  output: "sample.pptx",
-});
+await deck.render({ output: "sample.pptx" });
 ```
 
-This pattern is based on `tests/backend-pptxgenjs.test.tsx`.
+This pattern is based on the PPTX writer coverage in `tests/writer-pptxgenjs.test.tsx`.
 
 ## Full Slide Pattern
 
@@ -124,7 +121,7 @@ deck.add(({ composition }) => (
   </Slide>
 ));
 
-await deck.output({ backend: "pptxgenjs", output: "quarterly-review.pptx" });
+await deck.render({ output: "quarterly-review.pptx" });
 ```
 
 ## Tested Sample Patterns
@@ -273,7 +270,7 @@ Based on `tests/background-layers.test.tsx`.
 
 ### Gradients And Shadows
 
-Based on `tests/gradient-values.test.tsx` and `tests/backend-pptxgenjs.test.tsx`.
+Based on `tests/gradient-values.test.tsx` and `tests/writer-pptxgenjs.test.tsx`.
 
 ```tsx
 <Slide
@@ -342,12 +339,12 @@ Based on `tests/typography-values.test.tsx` and `tests/style-values.test.tsx`.
 - `Deck#add()` receives `{ composition }`; use `composition.slideIndex` and `composition.totalSlides`.
 - Geometry numbers default to inches; font-size numbers default to points.
 - View-like tags accept view/layout styles. Text styles belong on `p`, `h1`-`h6`, or `Text`.
-- `span` and rich inline text are intentionally not part of the 0.2.0 surface; model them as separate text nodes for now.
+- Use `span` inside text-like elements for rich inline text runs.
 - Supported length strings include units such as `"in"`, `"pt"`, `"px"`, and `"%"`.
 - Prefer CSS-like aliases where available: `left`, `top`, `display`, `flexDirection`, `objectFit`, `objectPosition`, `background`, `border`, `boxShadow`, `textDecoration`, and grid properties.
 - `img` and `Image` accept `src` for paths and `data` for data URIs. They are leaf elements and do not accept children.
 - `Shape` currently supports `shape="rect"`, `"ellipse"`, or `"line"`.
-- The implemented backend is `"pptxgenjs"`; `"ooxml"` is a future backend name, not the output path to choose today.
+- The implemented writer adapter is `pptxgenjs`; direct OOXML writing is future work, not the output path to choose today.
 
 ## Visual Styling
 
@@ -359,7 +356,8 @@ Based on `tests/typography-values.test.tsx` and `tests/style-values.test.tsx`.
 
 ## Testing And Review
 
-- When changing compiler behavior, add or update tests that assert the IR through `deck.render()`.
-- When changing backend output, create a temporary `.pptx`, unzip/inspect XML when needed, and assert meaningful emitted markup.
+- When changing compiler behavior, add or update tests that assert authoring semantics through
+  `deck.compile()` or output-facing computed state through `deck.project()`.
+- When changing writer output, create a temporary `.pptx`, unzip/inspect XML when needed, and assert meaningful emitted markup.
 - Keep Node-only file writing in output/runtime code, not core compiler normalization.
-- If a generated deck looks wrong, check resolved frames in IR first; most visual bugs are layout or unit normalization issues before backend emission.
+- If a generated deck looks wrong, check resolved frames in `deck.project()` first; most visual bugs are layout or unit normalization issues before writer emission.

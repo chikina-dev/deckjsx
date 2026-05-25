@@ -1,4 +1,4 @@
-import type { EdgeStrokeIR, StrokeIR } from "../ir/index";
+import type { EdgeStrokeIR, StrokeIR } from "../layout/projected";
 import {
   type BorderStyle,
   type DeckLength,

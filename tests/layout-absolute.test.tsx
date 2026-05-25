@@ -37,9 +37,9 @@ describe("absolute layout", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
+    const ir = deck.project().projection!;
 
-    expect(summarizeNodes(ir.slides[0].nodes)).toEqual([
+    expect(summarizeNodes(ir.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -131,9 +131,9 @@ describe("absolute layout", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
+    const ir = deck.project().projection!;
 
-    expect(summarizeNodes(ir.slides[0].nodes)).toEqual([
+    expect(summarizeNodes(ir.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -235,10 +235,10 @@ describe("absolute layout", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
+    const ir = deck.project().projection!;
 
     expect(
-      ir.slides[0].nodes.map((node) => ({
+      ir.slides[0].payload.elements.map((node) => ({
         kind: node.kind,
         zIndex: node.zIndex,
         visibility: node.visibility,
@@ -319,8 +319,8 @@ describe("absolute layout", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
-    const [hiddenGroup, visibleGroup] = ir.slides[0].nodes;
+    const ir = deck.project().projection!;
+    const [hiddenGroup, visibleGroup] = ir.slides[0].payload.elements;
 
     expect(summarizeNodes([hiddenGroup])).toEqual([
       {
@@ -404,8 +404,8 @@ describe("absolute layout", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
-    const [group] = ir.slides[0].nodes;
+    const ir = deck.project().projection!;
+    const [group] = ir.slides[0].payload.elements;
 
     expect(group?.kind).toBe("group");
     if (group?.kind !== "group") {
@@ -476,9 +476,9 @@ describe("absolute layout", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
+    const ir = deck.project().projection!;
 
-    expect(summarizeNodes(ir.slides[0].nodes)).toEqual([
+    expect(summarizeNodes(ir.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {

@@ -51,10 +51,10 @@ describe("gradient-values", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
-    const [viewNode, textNode, shapeNode] = ir.slides[0].nodes;
+    const ir = deck.project().projection!;
+    const [viewNode, textNode, shapeNode] = ir.slides[0].payload.elements;
 
-    expect(ir.slides[0].background).toEqual({
+    expect(ir.slides[0].payload.background).toEqual({
       kind: "radial-gradient",
       shape: "ellipse",
       center: { x: 0.25, y: 0.75 },
@@ -136,9 +136,9 @@ describe("gradient-values", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
-    const background = ir.slides[0].background;
-    const [viewNode] = ir.slides[0].nodes;
+    const ir = deck.project().projection!;
+    const background = ir.slides[0].payload.background;
+    const [viewNode] = ir.slides[0].payload.elements;
 
     if (!background || !("kind" in background) || background.kind !== "linear-gradient") {
       throw new Error("Expected repeating linear gradient background.");
@@ -197,8 +197,8 @@ describe("gradient-values", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
-    const [linearNode, radialNode] = ir.slides[0].nodes;
+    const ir = deck.project().projection!;
+    const [linearNode, radialNode] = ir.slides[0].payload.elements;
 
     expect(linearNode?.kind).toBe("group");
     if (linearNode?.kind !== "group") {
@@ -250,8 +250,8 @@ describe("gradient-values", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
-    const [viewNode] = ir.slides[0].nodes;
+    const ir = deck.project().projection!;
+    const [viewNode] = ir.slides[0].payload.elements;
 
     expect(viewNode?.kind).toBe("group");
     if (viewNode?.kind !== "group") {
@@ -315,10 +315,10 @@ describe("gradient-values", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
-    const [viewNode, textNode, shapeNode] = ir.slides[0].nodes;
+    const ir = deck.project().projection!;
+    const [viewNode, textNode, shapeNode] = ir.slides[0].payload.elements;
 
-    expect(ir.slides[0].background).toEqual({
+    expect(ir.slides[0].payload.background).toEqual({
       kind: "linear-gradient",
       angle: 90,
       stops: [
@@ -386,7 +386,9 @@ describe("gradient-values", () => {
       </Slide>
     ));
 
-    expect(() => deck.render()).toThrowError(
+    const result = deck.project();
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.items[0]?.message).toContain(
       "Unsupported radial-gradient descriptor: circle 10% 20% at center. circle gradients accept only one explicit radius.",
     );
   });

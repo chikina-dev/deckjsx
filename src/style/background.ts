@@ -5,7 +5,7 @@ import type {
   FillIR,
   ImageSourceIR,
   StrokeIR,
-} from "../ir/index";
+} from "../layout/projected";
 import { EMU_PER_INCH } from "../types";
 import { normalizeHue } from "./angle";
 import { alphaToTransparency, parseCssColor } from "./color";

@@ -9,10 +9,17 @@ import type {
   TextNodeProps,
   ViewNodeProps,
 } from "./index";
-import { type AuthorElementNode, type AuthorTreeNode, isAuthorTreeNode } from "./tree";
 import { isIntrinsicTextTag, isIntrinsicViewTag } from "./tags";
+import { type AuthorElementNode, type AuthorTreeNode, isAuthorTreeNode } from "./tree";
 
-type LegacyChild = AuthorNode | string | number | boolean | null | undefined | LegacyChild[];
+type AuthorNodeChild =
+  | AuthorNode
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | AuthorNodeChild[];
 
 function textFromPrimitive(value: string | number): AuthorNode<"text"> | null {
   if (typeof value === "string" && value.trim().length === 0) {
@@ -24,10 +31,10 @@ function textFromPrimitive(value: string | number): AuthorNode<"text"> | null {
     return null;
   }
 
-  return legacyNode("text", {}, [text]);
+  return authorNode("text", {}, [text]);
 }
 
-function legacyNode<K extends AuthorNodeKind>(
+function authorNode<K extends AuthorNodeKind>(
   kind: K,
   props: AuthorNode<K>["props"],
   children: AuthorNode<K>["children"],
@@ -70,8 +77,8 @@ function elementKind(node: AuthorElementNode): AuthorNodeKind {
 function convertChildrenFor(
   kind: AuthorNodeKind,
   children: readonly AuthorTreeNode[],
-): LegacyChild[] {
-  const converted: LegacyChild[] = [];
+): AuthorNodeChild[] {
+  const converted: AuthorNodeChild[] = [];
 
   for (const child of children) {
     if (child.kind === "fragment") {
@@ -92,49 +99,49 @@ function convertChildrenFor(
       continue;
     }
 
-    converted.push(toLegacyAuthorNode(child));
+    converted.push(toAuthorNode(child));
   }
 
   return converted;
 }
 
-export function toLegacyAuthorNode(node: AuthorElementNode): AuthorNode {
+export function toAuthorNode(node: AuthorElementNode): AuthorNode {
   const kind = elementKind(node);
   const props = node.props;
 
   switch (kind) {
     case "slide":
-      return legacyNode(
+      return authorNode(
         "slide",
         props as SlideNodeProps,
         convertChildrenFor(kind, node.children) as ContentJsxChild[],
       );
     case "view":
-      return legacyNode(
+      return authorNode(
         "view",
         props as ViewNodeProps,
         convertChildrenFor(kind, node.children) as ContentJsxChild[],
       );
     case "text":
-      return legacyNode(
+      return authorNode(
         "text",
         props as TextNodeProps,
         convertChildrenFor(kind, node.children) as TextJsxChild[],
       );
     case "image":
-      return legacyNode("image", props as ImageNodeProps, []);
+      return authorNode("image", props as ImageNodeProps, []);
     case "shape":
-      return legacyNode("shape", props as ShapeNodeProps, []);
+      return authorNode("shape", props as ShapeNodeProps, []);
   }
 }
 
-export function toLegacyJsxNode(value: unknown): ContentJsxChild | AuthorNode<"slide"> {
-  if (isLegacyAuthorNode(value)) {
+export function toAuthorJsxNode(value: unknown): ContentJsxChild | AuthorNode<"slide"> {
+  if (isAuthorNodeValue(value)) {
     return value;
   }
 
   if (Array.isArray(value)) {
-    return value.map((item) => toLegacyJsxNode(item)) as ContentJsxChild;
+    return value.map((item) => toAuthorJsxNode(item)) as ContentJsxChild;
   }
 
   if (!isAuthorTreeNode(value)) {
@@ -142,17 +149,17 @@ export function toLegacyJsxNode(value: unknown): ContentJsxChild | AuthorNode<"s
   }
 
   if (value.kind === "fragment") {
-    return value.children.map((child) => toLegacyJsxNode(child)) as ContentJsxChild;
+    return value.children.map((child) => toAuthorJsxNode(child)) as ContentJsxChild;
   }
 
   if (value.kind === "text") {
     return value.value as unknown as ContentJsxChild;
   }
 
-  return toLegacyAuthorNode(value);
+  return toAuthorNode(value);
 }
 
-export function isLegacyAuthorNode(value: unknown): value is AuthorNode {
+export function isAuthorNodeValue(value: unknown): value is AuthorNode {
   return (
     typeof value === "object" &&
     value !== null &&

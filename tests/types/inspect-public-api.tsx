@@ -1,12 +1,12 @@
 import { Deck, Slide, Text, View } from "deckjsx";
 import type {
-  CompileInspectResult,
   GraphNodeId,
   ResolvedStyleMap,
   SemanticAuthorGraph,
   StyleClassRef,
   StyleEntity,
 } from "deckjsx/inspect";
+import type { CompileResult } from "deckjsx";
 
 const styleClassRef = { name: "card", index: 0 } satisfies StyleClassRef;
 const styleEntityWithClassRefs = {
@@ -34,11 +34,11 @@ deck.add(() => (
   </Slide>
 ));
 
-const graph = deck.compile();
+const graph = deck.compile().graph!;
 graph satisfies SemanticAuthorGraph;
 graph.documentId satisfies GraphNodeId;
 
-const inspect = deck.compile({ mode: "inspect" });
-inspect satisfies CompileInspectResult;
+const inspect = deck.compile();
+inspect satisfies CompileResult;
 inspect.graph satisfies SemanticAuthorGraph | undefined;
 inspect.resolvedStyles satisfies ResolvedStyleMap | undefined;

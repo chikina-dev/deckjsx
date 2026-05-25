@@ -88,6 +88,7 @@ export type SemanticImageNode = BaseSemanticNode & {
 
 export type SemanticShapeNode = BaseSemanticNode & {
   readonly kind: "shape";
+  readonly shape: "rect" | "ellipse" | "line";
 };
 
 export type SemanticNode =

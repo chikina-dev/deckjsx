@@ -27,11 +27,11 @@ describe("background layers", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
-    const [viewNode] = ir.slides[0].nodes;
+    const ir = deck.project().projection!;
+    const [viewNode] = ir.slides[0].payload.elements;
 
-    expect(ir.slides[0].background).toBeUndefined();
-    expect(ir.slides[0].backgroundLayers).toEqual([
+    expect(ir.slides[0].payload.background).toBeUndefined();
+    expect(ir.slides[0].payload.backgroundLayers).toEqual([
       {
         kind: "linear-gradient",
         angle: 180,
@@ -131,11 +131,11 @@ describe("background layers", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
-    const [viewNode] = ir.slides[0].nodes;
+    const ir = deck.project().projection!;
+    const [viewNode] = ir.slides[0].payload.elements;
 
-    expect(ir.slides[0].background).toBeUndefined();
-    expect(ir.slides[0].backgroundLayers).toEqual([
+    expect(ir.slides[0].payload.background).toBeUndefined();
+    expect(ir.slides[0].payload.backgroundLayers).toEqual([
       {
         kind: "linear-gradient",
         angle: 180,
@@ -241,7 +241,7 @@ describe("background layers", () => {
       </Slide>
     ));
 
-    const [repeatYNode, repeatXNode] = deck.render().slides[0].nodes;
+    const [repeatYNode, repeatXNode] = deck.project().projection!.slides[0].payload.elements;
 
     expect(repeatYNode?.kind).toBe("group");
     if (repeatYNode?.kind !== "group") {
@@ -342,7 +342,7 @@ describe("background layers", () => {
       </Slide>
     ));
 
-    const [firstNode, secondNode] = deck.render().slides[0].nodes;
+    const [firstNode, secondNode] = deck.project().projection!.slides[0].payload.elements;
 
     expect(firstNode?.kind).toBe("group");
     if (firstNode?.kind !== "group") {
@@ -449,7 +449,7 @@ describe("background layers", () => {
       </Slide>
     ));
 
-    const [firstNode, secondNode] = deck.render().slides[0].nodes;
+    const [firstNode, secondNode] = deck.project().projection!.slides[0].payload.elements;
 
     expect(firstNode?.kind).toBe("group");
     if (firstNode?.kind !== "group") {
@@ -542,7 +542,7 @@ describe("background layers", () => {
       </Slide>
     ));
 
-    const [imageNode] = deck.render().slides[0].nodes;
+    const [imageNode] = deck.project().projection!.slides[0].payload.elements;
 
     expect(imageNode?.kind).toBe("group");
     if (imageNode?.kind !== "group") {
@@ -599,7 +599,7 @@ describe("background layers", () => {
       </Slide>
     ));
 
-    const [imageNode] = deck.render().slides[0].nodes;
+    const [imageNode] = deck.project().projection!.slides[0].payload.elements;
 
     expect(imageNode?.kind).toBe("group");
     if (imageNode?.kind !== "group") {
@@ -653,7 +653,7 @@ describe("background layers", () => {
       </Slide>
     ));
 
-    const [imageNode] = deck.render().slides[0].nodes;
+    const [imageNode] = deck.project().projection!.slides[0].payload.elements;
 
     expect(imageNode?.kind).toBe("group");
     if (imageNode?.kind !== "group") {
@@ -708,7 +708,7 @@ describe("background layers", () => {
       </Slide>
     ));
 
-    const [gradientNode] = deck.render().slides[0].nodes;
+    const [gradientNode] = deck.project().projection!.slides[0].payload.elements;
 
     expect(gradientNode?.kind).toBe("group");
     if (gradientNode?.kind !== "group") {
@@ -757,7 +757,7 @@ describe("background layers", () => {
       </Slide>
     ));
 
-    const [gradientNode] = deck.render().slides[0].nodes;
+    const [gradientNode] = deck.project().projection!.slides[0].payload.elements;
 
     expect(gradientNode?.kind).toBe("group");
     if (gradientNode?.kind !== "group") {
@@ -813,7 +813,7 @@ describe("background layers", () => {
       </Slide>
     ));
 
-    const [gradientNode] = deck.render().slides[0].nodes;
+    const [gradientNode] = deck.project().projection!.slides[0].payload.elements;
 
     expect(gradientNode?.kind).toBe("group");
     if (gradientNode?.kind !== "group") {
@@ -864,7 +864,7 @@ describe("background layers", () => {
       </Slide>
     ));
 
-    const [gradientNode] = deck.render().slides[0].nodes;
+    const [gradientNode] = deck.project().projection!.slides[0].payload.elements;
 
     expect(gradientNode?.kind).toBe("group");
     if (gradientNode?.kind !== "group") {
@@ -925,7 +925,7 @@ describe("background layers", () => {
       </Slide>
     ));
 
-    const [viewNode] = deck.render().slides[0].nodes;
+    const [viewNode] = deck.project().projection!.slides[0].payload.elements;
 
     expect(viewNode?.kind).toBe("group");
     if (viewNode?.kind !== "group") {
@@ -1029,10 +1029,10 @@ describe("background layers", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
-    const [viewNode, textNode, shapeNode] = ir.slides[0].nodes;
+    const ir = deck.project().projection!;
+    const [viewNode, textNode, shapeNode] = ir.slides[0].payload.elements;
 
-    expect(ir.slides[0].background).toEqual({
+    expect(ir.slides[0].payload.background).toEqual({
       kind: "linear-gradient",
       angle: 90,
       stops: [
@@ -1040,7 +1040,7 @@ describe("background layers", () => {
         { color: "00FF00", transparency: undefined, position: 1 },
       ],
     });
-    expect(ir.slides[0].backgroundLayers).toEqual([
+    expect(ir.slides[0].payload.backgroundLayers).toEqual([
       { kind: "solid", color: "111111", transparency: undefined },
       {
         kind: "linear-gradient",

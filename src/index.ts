@@ -16,7 +16,6 @@ export { Fragment, Image, Shape, Slide, Text, View, createElement } from "./jsx"
 export type { JsxKey } from "./jsx-runtime";
 export { EMU_PER_INCH, POINTS_PER_INCH } from "./types";
 export {
-  type BackendName,
   type BorderStyle,
   type ClassNameObject,
   type ClassNameValue,
@@ -58,9 +57,7 @@ export {
   type IntrinsicPProps,
   type IntrinsicTextTag,
   type IntrinsicViewTag,
-  type ImplementedBackendName,
   type LayoutMode,
-  type OutputConfig,
   type ShapeProps,
   type ShapeStyle,
   type SlideContext,
@@ -85,13 +82,23 @@ export {
   type ViewProps,
   type ViewStyle,
 } from "./authoring/index";
+export type {
+  OutputFormat,
+  ProjectionFormat,
+  RenderedArtifact,
+  StageArtifactStatus,
+  StageName,
+  StageSummary,
+  WrittenOutput,
+} from "./pipeline";
 export type { ThemeDefaults } from "./style/defaults";
 export type { SourceSpan } from "./authoring/tree";
 export type {
   BoundSource,
-  CompileInspectResult,
-  CompileMode,
+  CompileResult,
   CompositionContext,
+  ProjectResult,
+  RenderResult,
   SlideFactory,
   SlideFactoryInput,
   SourceContextMapper,

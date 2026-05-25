@@ -34,7 +34,7 @@ describe("image-values", () => {
       </Slide>
     ));
 
-    const [imageNode, viewNode] = deck.render().slides[0].nodes;
+    const [imageNode, viewNode] = deck.project().projection!.slides[0].payload.elements;
 
     expect(imageNode?.kind).toBe("image");
     if (imageNode?.kind !== "image") {

@@ -3,9 +3,9 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import JSZip from "jszip";
-import type { Deck } from "../src/index.ts";
+import type { PptxElement } from "../src/projection/pptx.ts";
 
-export type RenderedNode = ReturnType<Deck["render"]>["slides"][number]["nodes"][number];
+export type RenderedNode = PptxElement;
 
 export type NodeSummary =
   | {
@@ -32,9 +32,7 @@ export const WIDE_SVG_DATA_URI = `data:image/svg+xml;base64,${Buffer.from(
   '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50"><rect width="100" height="50" fill="#2563eb"/></svg>',
 ).toString("base64")}`;
 
-export function summarizeNodes(
-  nodes: ReturnType<Deck["render"]>["slides"][number]["nodes"],
-): NodeSummary[] {
+export function summarizeNodes(nodes: readonly PptxElement[]): NodeSummary[] {
   return nodes.map((node) => {
     if (node.kind === "group") {
       return {

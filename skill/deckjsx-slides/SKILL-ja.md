@@ -1,11 +1,11 @@
 ---
 name: deckjsx-slides-ja
-description: deckjsx ライブラリで PowerPoint スライドや PPTX デッキを作成、編集、レビューするときに使う日本語ガイド。Deck、Slide、html-like lowercase tag、Shape、pptxgenjs backend を使う TSX/JSX スライド制作向け。
+description: deckjsx ライブラリで PowerPoint スライドや PPTX デッキを作成、編集、レビューするときに使う日本語ガイド。Deck、Slide、html-like lowercase tag、Shape、pptxgenjs writer adapter を使う TSX/JSX スライド制作向け。
 ---
 
 # deckjsx Slides 日本語ガイド
 
-`deckjsx` は `pptxgenjs` の薄いラッパーではなく、JSX/TSX で書いたスライドを Presentation IR にコンパイルし、backend で `.pptx` に出力するライブラリとして扱います。0.2 以降は `Slide` をスライドルートにし、lowercase の html-like tag でスライド構造を書くのを基本にします。
+`deckjsx` は `pptxgenjs` の薄いラッパーではなく、JSX/TSX で書いたスライドを Semantic Author Graph と Pptx Package Model に変換し、writer adapter で `.pptx` に出力するライブラリとして扱います。`Slide` をスライドルートにし、lowercase の html-like tag でスライド構造を書くのを基本にします。
 
 英語版の標準 skill は `SKILL.md` です。例や運用ルールを更新するときは、この日本語版も同じ内容に揃えてください。
 
@@ -13,7 +13,7 @@ description: deckjsx ライブラリで PowerPoint スライドや PPTX デッ�
 
 具体的な TSX サンプルは `examples/` に置いてあります。大きな例を本文から書き写すより、目的に合うファイルだけ読んで使ってください。
 
-- `examples/minimal-output.tsx`: `pptxgenjs` backend で最小の `.pptx` を出力する例。
+- `examples/minimal-output.tsx`: `pptxgenjs` writer adapter で最小の `.pptx` を出力する例。
 - `examples/multi-slide-report.tsx`: metadata、ページ番号、grid card、データ繰り返しを含む2枚構成のレポート例。
 - `examples/layout-patterns.tsx`: absolute、flex/stack、grid、overlay positioning の例。
 - `examples/visual-effects.tsx`: 背景レイヤー、グラデーション、影、画像 fit/position、shape stroke の例。
@@ -26,14 +26,14 @@ description: deckjsx ライブラリで PowerPoint スライドや PPTX デッ�
 2. `deck.add((context) => <Slide>...</Slide>)` でスライドを追加する。
 3. 基本は html-like tag を使う。`div`、`section`、`article`、`main`、`header`、`footer`、`aside`、`nav`、`figure` は view-like container、`p` と `h1`-`h6` は text-like、`img` は leaf image。
 4. layout/container の style は view-like tag に、typography の style は text-like tag に置く。たとえば `fontSize` は `<header>` や `<footer>` ではなく `<h1>` や `<p>` に置く。
-5. `Shape`、および既存 deck の更新や明示性が必要な場面では legacy の `View`、`Text`、`Image` component も使ってよい。
-6. IR を確認、テスト、snapshot するときは `deck.render()` を使う。
-7. PPTX を書き出すときは `await deck.output({ backend: "pptxgenjs", output: "deck.pptx" })` を使う。
-8. ライブラリを変更したら `vp check` と `vp test` で検証する。出力 backend を触る場合は、必要に応じて生成した PPTX の XML も確認する。
+5. `Shape`、および既存 deck の更新や明示性が必要な場面では capitalized な `View`、`Text`、`Image` component も使ってよい。
+6. 出力向けの計算結果を確認、テスト、snapshot するときは `deck.project()` を使う。
+7. PPTX を書き出すときは `await deck.render({ output: "deck.pptx" })` を使う。
+8. ライブラリを変更したら `vp check` と `vp test` で検証する。writer output を触る場合は、必要に応じて生成した PPTX の XML も確認する。
 
 ## 最小の PPTX 出力
 
-`tests/backend-pptxgenjs.test.tsx` に近い、最小の出力例です。
+`tests/writer-pptxgenjs.test.tsx` の PPTX writer coverage に近い、最小の出力例です。
 
 ```tsx
 import { Deck, Slide } from "deckjsx";
@@ -48,10 +48,7 @@ deck.add(() => (
   </Slide>
 ));
 
-await deck.output({
-  backend: "pptxgenjs",
-  output: "sample.pptx",
-});
+await deck.render({ output: "sample.pptx" });
 ```
 
 ## 標準的なスライド例
@@ -270,7 +267,7 @@ PowerPoint らしい正確な配置が必要なときに使います。
 
 ### グラデーションと影
 
-`tests/gradient-values.test.tsx` と `tests/backend-pptxgenjs.test.tsx` に基づくパターンです。
+`tests/gradient-values.test.tsx` と `tests/writer-pptxgenjs.test.tsx` に基づくパターンです。
 
 ```tsx
 <Slide
@@ -344,11 +341,12 @@ PowerPoint らしい正確な配置が必要なときに使います。
 - CSS 風 alias は `left`、`top`、`display`、`flexDirection`、`objectFit`、`objectPosition`、`background`、`border`、`boxShadow`、`textDecoration`、grid 系 property を優先する。
 - `img` と `Image` は path 用の `src` と data URI 用の `data` を受け取る。leaf element なので children は受け取らない。
 - `Shape` は現在 `shape="rect"`、`"ellipse"`、`"line"` をサポートする。
-- 実装済み backend は `"pptxgenjs"`。`"ooxml"` は将来の backend 名で、現時点で選ぶ出力先ではない。
+- 実装済み writer adapter は `pptxgenjs`。direct OOXML writing は今後の作業で、現時点で選ぶ出力先ではない。
 
 ## テストとレビュー
 
-- compiler behavior を変えるときは、`deck.render()` の IR を検証するテストを追加または更新する。
-- backend output を変えるときは、一時 `.pptx` を生成し、必要なら unzip して XML の意味ある markup を検証する。
+- compiler behavior を変えるときは、`deck.compile()` の authoring semantics または
+  `deck.project()` の出力向け計算結果を検証するテストを追加または更新する。
+- writer output を変えるときは、一時 `.pptx` を生成し、必要なら unzip して XML の意味ある markup を検証する。
 - Node 専用のファイル書き込みは output/runtime 層に置き、core compiler normalization に混ぜない。
-- 生成デッキの見た目がおかしいときは、まず IR の resolved frame を確認する。多くの見た目の問題は backend emission より前の layout や unit normalization にある。
+- 生成デッキの見た目がおかしいときは、まず `deck.project()` の resolved frame を確認する。多くの見た目の問題は writer emission より前の layout や unit normalization にある。

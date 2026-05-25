@@ -6,8 +6,8 @@ import { describe, expect, test } from "vite-plus/test";
 import { Deck, Image, Shape, Slide, Text, View } from "../src/index.ts";
 import { SAMPLE_SVG_DATA_URI, WIDE_SVG_DATA_URI } from "./helpers.ts";
 
-describe("backend", () => {
-  test("output writes a real pptx file through the backend", async () => {
+describe("pptxgenjs writer", () => {
+  test("render writes a real pptx file through the writer", async () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
     });
@@ -21,10 +21,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const [content, fileStat] = await Promise.all([readFile(output), stat(output)]);
 
@@ -51,10 +48,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -70,7 +64,7 @@ describe("backend", () => {
     }
   });
 
-  test("output emits shadow markup through the pptxgenjs backend", async () => {
+  test("output emits shadow markup through the pptxgenjs writer", async () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
     });
@@ -115,10 +109,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -161,10 +152,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -205,10 +193,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -263,10 +248,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -330,10 +312,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -381,10 +360,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -432,10 +408,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -495,10 +468,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -562,10 +532,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -615,10 +582,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -681,10 +645,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -756,10 +717,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -808,10 +766,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -865,10 +820,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -912,10 +864,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -968,10 +917,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -1011,10 +957,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -1055,10 +998,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -1103,10 +1043,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -1148,10 +1085,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -1194,10 +1128,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -1240,10 +1171,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -1283,10 +1211,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -1327,10 +1252,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -1374,10 +1296,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -1432,10 +1351,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -1488,10 +1404,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -1531,10 +1444,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -1600,10 +1510,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -1654,10 +1561,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -1706,10 +1610,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -1747,10 +1648,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -1795,10 +1693,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -1844,10 +1739,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -1914,10 +1806,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -1978,10 +1867,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -2023,10 +1909,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -2071,10 +1954,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);
@@ -2127,10 +2007,7 @@ describe("backend", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const content = await readFile(output);
       const zip = await JSZip.loadAsync(content);

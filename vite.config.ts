@@ -22,8 +22,8 @@ export default defineConfig({
         replacement: new URL("./src/inspect.ts", import.meta.url).pathname,
       },
       {
-        find: "deckjsx/legacy",
-        replacement: new URL("./src/legacy.ts", import.meta.url).pathname,
+        find: "deckjsx/adapter",
+        replacement: new URL("./src/adapter.ts", import.meta.url).pathname,
       },
       {
         find: "deckjsx",
@@ -37,8 +37,8 @@ export default defineConfig({
   pack: {
     entry: [
       "src/index.ts",
+      "src/adapter.ts",
       "src/inspect.ts",
-      "src/legacy.ts",
       "src/jsx-runtime.ts",
       "src/jsx-dev-runtime.ts",
     ],

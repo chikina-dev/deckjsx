@@ -1,24 +1,19 @@
 import PptxGenJSModule from "pptxgenjs";
-import type {
-  BackendArtifact,
-  CompileBackend,
-  EdgeStrokeIR,
-  FrameIR,
-  GroupIR,
-  HyperlinkIR,
-  ImageIR,
-  NodeIR,
-  PresentationIR,
-  ShadowIR,
-  ShapeIR,
-  TextIR,
-} from "../ir/index";
-import { EMU_PER_INCH } from "../types";
 import {
   expandBackgroundImageLayer,
   isBackgroundImageLayer,
   patchPresentationXml,
 } from "./pptxgenjs-xml-patches";
+import { createDiagnostics, diagnostic, type Diagnostics } from "../diagnostics";
+import type {
+  PptxElement,
+  PptxGroupElement,
+  PptxPackageModel,
+  PptxPictureElement,
+  PptxShapeElement,
+  PptxTextElement,
+} from "../projection/pptx";
+import { EMU_PER_INCH } from "../types";
 
 type PptxSlide = {
   addImage(options: PptxImageOptions): void;
@@ -50,39 +45,12 @@ type PptxLineOptions = {
 };
 
 type PptxShadowOptions = {
-  type: ShadowIR["type"];
+  type: "outer" | "inner";
   color: string;
   opacity?: number;
   blur?: number;
   offset?: number;
   angle?: number;
-};
-
-type PptxHyperlinkOptions = HyperlinkIR;
-
-type PptxBulletOptions =
-  | boolean
-  | {
-      characterCode?: string;
-      indent?: number;
-    }
-  | {
-      type: "number";
-      style?: string;
-      numberStartAt?: number;
-      indent?: number;
-    };
-
-type PptxUnderlineOptions =
-  | boolean
-  | {
-      style?: NonNullable<TextIR["style"]["underlineStyle"]>;
-      color?: string;
-    };
-
-type PptxTabStopOptions = {
-  position: number;
-  alignment?: NonNullable<NonNullable<TextIR["style"]["tabStops"]>[number]["alignment"]>;
 };
 
 type PptxBaseRenderableOptions = {
@@ -101,14 +69,14 @@ type PptxImageOptions = PptxBaseRenderableOptions & {
   transparency?: number;
   rounding?: boolean;
   shadow?: PptxShadowOptions;
-  hyperlink?: PptxHyperlinkOptions;
+  hyperlink?: { url: string; tooltip?: string };
 };
 
 type PptxShapeOptions = PptxBaseRenderableOptions & {
   fill?: PptxFillOptions;
   line?: PptxLineOptions;
   shadow?: PptxShadowOptions;
-  hyperlink?: PptxHyperlinkOptions;
+  hyperlink?: { url: string; tooltip?: string };
   radius?: number;
 };
 
@@ -118,23 +86,23 @@ type PptxTextOptions = PptxShapeOptions & {
   color?: string;
   bold?: boolean;
   italic?: boolean;
-  underline?: PptxUnderlineOptions;
+  underline?: boolean | { style?: string; color?: string };
   strike?: boolean;
-  align?: TextIR["style"]["textAlign"];
-  valign?: TextIR["style"]["verticalAlign"];
-  margin?: TextIR["style"]["paddingPt"];
+  align?: "left" | "center" | "right" | "justify";
+  valign?: string;
+  margin?: readonly [number, number, number, number];
   lineSpacing?: number;
   lineSpacingMultiple?: number;
   paraSpaceBefore?: number;
   paraSpaceAfter?: number;
-  tabStops?: PptxTabStopOptions[];
+  tabStops?: { position: number; alignment?: string }[];
   charSpacing?: number;
-  bullet?: PptxBulletOptions;
+  bullet?: boolean | object;
   rtlMode?: boolean;
-  vert?: TextIR["style"]["textDirection"];
+  vert?: "horz" | "vert" | "vert270";
   superscript?: boolean;
   subscript?: boolean;
-  fit?: TextIR["style"]["fit"];
+  fit?: string;
   wrap?: boolean;
   shape?: string;
   transparency?: number;
@@ -143,27 +111,27 @@ type PptxTextOptions = PptxShapeOptions & {
 
 type PptxTextRun = {
   text: string;
-  options?: PptxTextRunOptions;
+  options?: {
+    fontFace?: string;
+    fontSize?: number;
+    color?: string;
+    bold?: boolean;
+    italic?: boolean;
+    underline?: boolean | { style?: string; color?: string };
+    strike?: boolean;
+    charSpacing?: number;
+    breakLine?: boolean;
+    superscript?: boolean;
+    subscript?: boolean;
+  };
 };
 
-type PptxTextRunOptions = {
-  fontFace?: string;
-  fontSize?: number;
-  color?: string;
-  bold?: boolean;
-  italic?: boolean;
-  underline?: PptxUnderlineOptions;
-  strike?: boolean;
-  charSpacing?: number;
-  breakLine?: boolean;
-  superscript?: boolean;
-  subscript?: boolean;
-};
+export const PPTX_MIME_TYPE =
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
 const TRANSPARENT_FILL: PptxFillOptions = { color: "FFFFFF", transparency: 100 };
 const TRANSPARENT_LINE: PptxLineOptions = { color: "FFFFFF", transparency: 100, width: 0 };
 
-const PPTX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 type PptxGenJSConstructor = { new (): PptxPresentation };
 
 function resolvePptxGenJSConstructor(moduleValue: unknown): PptxGenJSConstructor {
@@ -183,35 +151,6 @@ function resolvePptxGenJSConstructor(moduleValue: unknown): PptxGenJSConstructor
 
 const PptxGenJS = resolvePptxGenJSConstructor(PptxGenJSModule);
 
-function emuToInches(value: number): number {
-  return value / EMU_PER_INCH;
-}
-
-function pointsToEmu(value: number): number {
-  return (value / 72) * EMU_PER_INCH;
-}
-
-function combineTransparency(
-  transparency: number | undefined,
-  opacity: number | undefined,
-): number | undefined {
-  if (transparency === undefined && opacity === undefined) {
-    return undefined;
-  }
-
-  const baseVisibleAlpha = 1 - (transparency ?? 0) / 100;
-  const nodeOpacity = opacity ?? 1;
-  const visibleAlpha = Math.max(0, Math.min(1, baseVisibleAlpha * nodeOpacity));
-
-  return Math.round((1 - visibleAlpha) * 100);
-}
-
-function combineOpacities(parentOpacity: number | undefined, nodeOpacity: number | undefined) {
-  const parent = parentOpacity ?? 1;
-  const node = nodeOpacity ?? 1;
-  return parent * node;
-}
-
 function normalizeBuffer(data: string | ArrayBuffer | Blob | Uint8Array): Uint8Array {
   if (data instanceof Uint8Array) {
     return data;
@@ -224,11 +163,30 @@ function normalizeBuffer(data: string | ArrayBuffer | Blob | Uint8Array): Uint8A
   throw new Error("Unsupported PptxGenJS output type received.");
 }
 
-function assertNever(value: never): never {
-  throw new Error(`Unhandled PptxGenJS backend value: ${String(value)}`);
+function emuToInches(value: number): number {
+  return value / EMU_PER_INCH;
 }
 
-function mapShapeName(shape: ShapeIR["shape"], radiusEmu?: number) {
+function pointsToEmu(value: number): number {
+  return (value / 72) * EMU_PER_INCH;
+}
+
+function combineTransparency(transparency: number | undefined, opacity: number | undefined) {
+  if (transparency === undefined && opacity === undefined) {
+    return undefined;
+  }
+
+  const baseVisibleAlpha = 1 - (transparency ?? 0) / 100;
+  const nodeOpacity = opacity ?? 1;
+  const visibleAlpha = Math.max(0, Math.min(1, baseVisibleAlpha * nodeOpacity));
+  return Math.round((1 - visibleAlpha) * 100);
+}
+
+function combineOpacities(parentOpacity: number | undefined, nodeOpacity: number | undefined) {
+  return (parentOpacity ?? 1) * (nodeOpacity ?? 1);
+}
+
+function mapShapeName(shape: PptxShapeElement["shape"], radiusEmu?: number) {
   if (shape === "rect") {
     return radiusEmu && radiusEmu > 0 ? "roundRect" : "rect";
   }
@@ -240,26 +198,25 @@ function mapShapeName(shape: ShapeIR["shape"], radiusEmu?: number) {
   return "line";
 }
 
-function toPptxFill(fill: GroupIR["fill"], opacity?: number): PptxFillOptions | undefined {
+function toPptxFill(fill: PptxGroupElement["fill"], opacity?: number): PptxFillOptions | undefined {
   if (!fill) {
     return undefined;
   }
 
-  switch (fill.kind) {
-    case "solid":
-      return {
-        color: fill.color,
-        transparency: combineTransparency(fill.transparency, opacity),
-      };
-    case "linear-gradient":
-    case "radial-gradient":
-      return TRANSPARENT_FILL;
-    default:
-      return assertNever(fill);
+  if (fill.kind !== "solid") {
+    return TRANSPARENT_FILL;
   }
+
+  return {
+    color: fill.color,
+    transparency: combineTransparency(fill.transparency, opacity),
+  };
 }
 
-function toPptxLine(stroke: GroupIR["stroke"], opacity?: number): PptxLineOptions | undefined {
+function toPptxLine(
+  stroke: PptxGroupElement["stroke"],
+  opacity?: number,
+): PptxLineOptions | undefined {
   if (!stroke) {
     return undefined;
   }
@@ -273,7 +230,7 @@ function toPptxLine(stroke: GroupIR["stroke"], opacity?: number): PptxLineOption
 }
 
 function toPptxShadow(
-  shadow: ShadowIR | undefined,
+  shadow: PptxGroupElement["shadow"],
   opacity?: number,
 ): PptxShadowOptions | undefined {
   if (!shadow) {
@@ -290,7 +247,24 @@ function toPptxShadow(
   };
 }
 
-function toPptxBullet(list: TextIR["style"]["list"]): PptxBulletOptions | undefined {
+function toPptxUnderline(
+  style: PptxTextElement["style"],
+): PptxTextOptions["underline"] | undefined {
+  if (!style.underline && !style.underlineStyle && !style.underlineColor) {
+    return undefined;
+  }
+
+  if (!style.underlineStyle && !style.underlineColor) {
+    return style.underline;
+  }
+
+  return {
+    ...(style.underlineStyle ? { style: style.underlineStyle } : {}),
+    ...(style.underlineColor ? { color: style.underlineColor } : {}),
+  };
+}
+
+function toPptxBullet(list: PptxTextElement["style"]["list"]): PptxTextOptions["bullet"] {
   if (!list) {
     return undefined;
   }
@@ -318,38 +292,12 @@ function toPptxBullet(list: TextIR["style"]["list"]): PptxBulletOptions | undefi
   };
 }
 
-function toPptxUnderline(style: TextIR["style"]): PptxUnderlineOptions | undefined {
-  if (!style.underline && !style.underlineStyle && !style.underlineColor) {
-    return undefined;
-  }
-
-  if (!style.underlineStyle && !style.underlineColor) {
-    return style.underline;
-  }
-
-  return {
-    ...(style.underlineStyle ? { style: style.underlineStyle } : {}),
-    ...(style.underlineColor ? { color: style.underlineColor } : {}),
-  };
-}
-
-function toPptxTabStops(tabStops: TextIR["style"]["tabStops"]): PptxTabStopOptions[] | undefined {
-  if (!tabStops || tabStops.length === 0) {
-    return undefined;
-  }
-
-  return tabStops.map((tabStop) => ({
-    position: tabStop.positionIn,
-    ...(tabStop.alignment ? { alignment: tabStop.alignment } : {}),
-  }));
-}
-
-function toPptxTextRunOptions(style: TextIR["style"] | undefined): PptxTextRunOptions | undefined {
+function toPptxTextRunOptions(style: PptxTextElement["style"] | undefined): PptxTextRun["options"] {
   if (!style) {
     return undefined;
   }
 
-  const options: PptxTextRunOptions = {
+  const options: PptxTextRun["options"] = {
     fontFace: style.fontFamily,
     fontSize: style.fontSizePt,
     color: style.color,
@@ -365,59 +313,47 @@ function toPptxTextRunOptions(style: TextIR["style"] | undefined): PptxTextRunOp
     breakLine: false,
   };
 
-  if (Object.values(options).every((value) => value === undefined || value === false)) {
-    return undefined;
-  }
-
-  return options;
+  return Object.values(options).every((value) => value === undefined || value === false)
+    ? undefined
+    : options;
 }
 
 function emitOutlineShape(
   slide: PptxSlide,
   shapeName: string,
-  frame: FrameIR,
-  outline: GroupIR["outline"],
-  radiusEmu?: number,
+  node: PptxGroupElement | PptxShapeElement | PptxTextElement,
   effectiveOpacity?: number,
-  rotation?: number,
-  flipH?: boolean,
-  flipV?: boolean,
 ) {
-  if (!outline) {
+  if (!node.outline) {
     return;
   }
 
-  const insetEmu = pointsToEmu(outline.widthPt) / 2;
-
+  const insetEmu = pointsToEmu(node.outline.widthPt) / 2;
   slide.addShape(shapeName, {
-    x: emuToInches(frame.xEmu - insetEmu),
-    y: emuToInches(frame.yEmu - insetEmu),
-    w: emuToInches(frame.widthEmu + insetEmu * 2),
-    h: emuToInches(frame.heightEmu + insetEmu * 2),
+    x: emuToInches(node.frame.xEmu - insetEmu),
+    y: emuToInches(node.frame.yEmu - insetEmu),
+    w: emuToInches(node.frame.widthEmu + insetEmu * 2),
+    h: emuToInches(node.frame.heightEmu + insetEmu * 2),
     fill: TRANSPARENT_FILL,
-    line: toPptxLine(outline, effectiveOpacity),
-    radius: radiusEmu ? emuToInches(radiusEmu + insetEmu) : undefined,
-    rotate: rotation,
-    flipH,
-    flipV,
+    line: toPptxLine(node.outline, effectiveOpacity),
+    radius: node.radiusEmu ? emuToInches(node.radiusEmu + insetEmu) : undefined,
+    rotate: node.rotation,
+    flipH: node.flipH,
+    flipV: node.flipV,
   });
 }
 
 function emitEdgeStrokes(
   slide: PptxSlide,
-  frame: FrameIR,
-  edgeStrokes: EdgeStrokeIR | undefined,
+  node: PptxGroupElement | PptxShapeElement | PptxTextElement,
   effectiveOpacity?: number,
-  rotation?: number,
-  flipH?: boolean,
-  flipV?: boolean,
 ) {
-  if (!edgeStrokes) {
+  if (!node.edgeStrokes) {
     return;
   }
 
   const emitLine = (
-    stroke: GroupIR["stroke"] | undefined,
+    stroke: PptxGroupElement["stroke"] | undefined,
     xEmu: number,
     yEmu: number,
     widthEmu: number,
@@ -433,34 +369,41 @@ function emitEdgeStrokes(
       w: emuToInches(widthEmu),
       h: emuToInches(heightEmu),
       line: toPptxLine(stroke, effectiveOpacity),
-      rotate: rotation,
-      flipH,
-      flipV,
+      rotate: node.rotation,
+      flipH: node.flipH,
+      flipV: node.flipV,
     });
   };
 
-  emitLine(edgeStrokes.top, frame.xEmu, frame.yEmu, frame.widthEmu, 0);
-  emitLine(edgeStrokes.right, frame.xEmu + frame.widthEmu, frame.yEmu, 0, frame.heightEmu);
-  emitLine(edgeStrokes.bottom, frame.xEmu, frame.yEmu + frame.heightEmu, frame.widthEmu, 0);
-  emitLine(edgeStrokes.left, frame.xEmu, frame.yEmu, 0, frame.heightEmu);
+  emitLine(node.edgeStrokes.top, node.frame.xEmu, node.frame.yEmu, node.frame.widthEmu, 0);
+  emitLine(
+    node.edgeStrokes.right,
+    node.frame.xEmu + node.frame.widthEmu,
+    node.frame.yEmu,
+    0,
+    node.frame.heightEmu,
+  );
+  emitLine(
+    node.edgeStrokes.bottom,
+    node.frame.xEmu,
+    node.frame.yEmu + node.frame.heightEmu,
+    node.frame.widthEmu,
+    0,
+  );
+  emitLine(node.edgeStrokes.left, node.frame.xEmu, node.frame.yEmu, 0, node.frame.heightEmu);
 }
 
 function emitBackgroundLayers(
   slide: PptxSlide,
-  frame: FrameIR,
-  backgroundLayers: GroupIR["backgroundLayers"],
+  node: PptxGroupElement | PptxShapeElement | PptxTextElement,
   shapeName: string,
-  radiusEmu?: number,
   effectiveOpacity?: number,
-  rotation?: number,
-  flipH?: boolean,
-  flipV?: boolean,
 ) {
-  if (!backgroundLayers || backgroundLayers.length === 0) {
+  if (!node.backgroundLayers || node.backgroundLayers.length === 0) {
     return;
   }
 
-  for (const layer of backgroundLayers) {
+  for (const layer of node.backgroundLayers) {
     if (isBackgroundImageLayer(layer)) {
       for (const tile of expandBackgroundImageLayer(layer)) {
         slide.addImage({
@@ -471,15 +414,15 @@ function emitBackgroundLayers(
           path: tile.source.kind === "path" ? tile.source.path : undefined,
           data: tile.source.kind === "data" ? tile.source.data : undefined,
           transparency: combineTransparency(layer.transparency, effectiveOpacity),
-          rotate: rotation,
-          flipH,
-          flipV,
+          rotate: node.rotation,
+          flipH: node.flipH,
+          flipV: node.flipV,
         });
       }
       continue;
     }
 
-    const layerFrame = "frame" in layer && layer.frame ? layer.frame : frame;
+    const layerFrame = "frame" in layer && layer.frame ? layer.frame : node.frame;
 
     slide.addShape(shapeName, {
       x: emuToInches(layerFrame.xEmu),
@@ -488,47 +431,20 @@ function emitBackgroundLayers(
       h: emuToInches(layerFrame.heightEmu),
       fill: toPptxFill(layer, effectiveOpacity),
       line: TRANSPARENT_LINE,
-      radius: radiusEmu ? emuToInches(radiusEmu) : undefined,
-      rotate: rotation,
-      flipH,
-      flipV,
+      radius: node.radiusEmu ? emuToInches(node.radiusEmu) : undefined,
+      rotate: node.rotation,
+      flipH: node.flipH,
+      flipV: node.flipV,
     });
   }
 }
 
-function emitText(slide: PptxSlide, node: TextIR, inheritedOpacity?: number) {
+function emitText(slide: PptxSlide, node: PptxTextElement, inheritedOpacity?: number) {
   const effectiveOpacity = combineOpacities(inheritedOpacity, node.opacity);
-  emitOutlineShape(
-    slide,
-    node.radiusEmu && node.radiusEmu > 0 ? "roundRect" : "rect",
-    node.frame,
-    node.outline,
-    node.radiusEmu,
-    effectiveOpacity,
-    node.rotation,
-    node.flipH,
-    node.flipV,
-  );
-  emitEdgeStrokes(
-    slide,
-    node.frame,
-    node.edgeStrokes,
-    effectiveOpacity,
-    node.rotation,
-    node.flipH,
-    node.flipV,
-  );
-  emitBackgroundLayers(
-    slide,
-    node.frame,
-    node.backgroundLayers,
-    node.radiusEmu && node.radiusEmu > 0 ? "roundRect" : "rect",
-    node.radiusEmu,
-    effectiveOpacity,
-    node.rotation,
-    node.flipH,
-    node.flipV,
-  );
+  const shapeName = node.radiusEmu && node.radiusEmu > 0 ? "roundRect" : "rect";
+  emitOutlineShape(slide, shapeName, node, effectiveOpacity);
+  emitEdgeStrokes(slide, node, effectiveOpacity);
+  emitBackgroundLayers(slide, node, shapeName, effectiveOpacity);
 
   const textContent: string | PptxTextRun[] = node.content.runs
     ? node.content.runs.map((run) => {
@@ -561,7 +477,10 @@ function emitText(slide: PptxSlide, node: TextIR, inheritedOpacity?: number) {
     lineSpacingMultiple: node.style.lineSpacingMultiple,
     paraSpaceBefore: node.style.paragraphSpacingBefore,
     paraSpaceAfter: node.style.paragraphSpacingAfter,
-    tabStops: toPptxTabStops(node.style.tabStops),
+    tabStops: node.style.tabStops?.map((tabStop) => ({
+      position: tabStop.positionIn,
+      ...(tabStop.alignment ? { alignment: tabStop.alignment } : {}),
+    })),
     charSpacing: node.style.charSpacing,
     bullet: toPptxBullet(node.style.list),
     rtlMode: node.style.rtlMode,
@@ -570,7 +489,7 @@ function emitText(slide: PptxSlide, node: TextIR, inheritedOpacity?: number) {
     subscript: node.style.subscript,
     fit: node.style.fit,
     wrap: node.style.wrap,
-    shape: node.radiusEmu && node.radiusEmu > 0 ? "roundRect" : "rect",
+    shape: shapeName,
     fill: toPptxFill(node.fill, effectiveOpacity),
     line: toPptxLine(node.stroke, effectiveOpacity),
     shadow: toPptxShadow(node.shadow, effectiveOpacity),
@@ -583,7 +502,7 @@ function emitText(slide: PptxSlide, node: TextIR, inheritedOpacity?: number) {
   });
 }
 
-function emitImage(slide: PptxSlide, node: ImageIR, inheritedOpacity?: number) {
+function emitImage(slide: PptxSlide, node: PptxPictureElement, inheritedOpacity?: number) {
   const effectiveOpacity = combineOpacities(inheritedOpacity, node.opacity);
   slide.addImage({
     x: emuToInches(node.frame.xEmu),
@@ -602,41 +521,13 @@ function emitImage(slide: PptxSlide, node: ImageIR, inheritedOpacity?: number) {
   });
 }
 
-function emitShape(slide: PptxSlide, node: ShapeIR, inheritedOpacity?: number) {
+function emitShape(slide: PptxSlide, node: PptxShapeElement, inheritedOpacity?: number) {
   const effectiveOpacity = combineOpacities(inheritedOpacity, node.opacity);
-  emitOutlineShape(
-    slide,
-    mapShapeName(node.shape, node.radiusEmu),
-    node.frame,
-    node.outline,
-    node.radiusEmu,
-    effectiveOpacity,
-    node.rotation,
-    node.flipH,
-    node.flipV,
-  );
-  emitEdgeStrokes(
-    slide,
-    node.frame,
-    node.edgeStrokes,
-    effectiveOpacity,
-    node.rotation,
-    node.flipH,
-    node.flipV,
-  );
-  emitBackgroundLayers(
-    slide,
-    node.frame,
-    node.backgroundLayers,
-    mapShapeName(node.shape, node.radiusEmu),
-    node.radiusEmu,
-    effectiveOpacity,
-    node.rotation,
-    node.flipH,
-    node.flipV,
-  );
-
-  slide.addShape(mapShapeName(node.shape, node.radiusEmu), {
+  const shapeName = mapShapeName(node.shape, node.radiusEmu);
+  emitOutlineShape(slide, shapeName, node, effectiveOpacity);
+  emitEdgeStrokes(slide, node, effectiveOpacity);
+  emitBackgroundLayers(slide, node, shapeName, effectiveOpacity);
+  slide.addShape(shapeName, {
     x: emuToInches(node.frame.xEmu),
     y: emuToInches(node.frame.yEmu),
     w: emuToInches(node.frame.widthEmu),
@@ -651,42 +542,15 @@ function emitShape(slide: PptxSlide, node: ShapeIR, inheritedOpacity?: number) {
   });
 }
 
-function emitGroup(slide: PptxSlide, node: GroupIR, inheritedOpacity?: number) {
+function emitGroup(slide: PptxSlide, node: PptxGroupElement, inheritedOpacity?: number) {
   const effectiveOpacity = combineOpacities(inheritedOpacity, node.opacity);
-  emitOutlineShape(
-    slide,
-    mapShapeName("rect", node.radiusEmu),
-    node.frame,
-    node.outline,
-    node.radiusEmu,
-    effectiveOpacity,
-    node.rotation,
-    node.flipH,
-    node.flipV,
-  );
-  emitEdgeStrokes(
-    slide,
-    node.frame,
-    node.edgeStrokes,
-    effectiveOpacity,
-    node.rotation,
-    node.flipH,
-    node.flipV,
-  );
-  emitBackgroundLayers(
-    slide,
-    node.frame,
-    node.backgroundLayers,
-    mapShapeName("rect", node.radiusEmu),
-    node.radiusEmu,
-    effectiveOpacity,
-    node.rotation,
-    node.flipH,
-    node.flipV,
-  );
+  const shapeName = mapShapeName("rect", node.radiusEmu);
+  emitOutlineShape(slide, shapeName, node, effectiveOpacity);
+  emitEdgeStrokes(slide, node, effectiveOpacity);
+  emitBackgroundLayers(slide, node, shapeName, effectiveOpacity);
 
   if (node.fill || node.stroke || node.shadow) {
-    slide.addShape(mapShapeName("rect", node.radiusEmu), {
+    slide.addShape(shapeName, {
       x: emuToInches(node.frame.xEmu),
       y: emuToInches(node.frame.yEmu),
       w: emuToInches(node.frame.widthEmu),
@@ -701,11 +565,11 @@ function emitGroup(slide: PptxSlide, node: GroupIR, inheritedOpacity?: number) {
   }
 
   for (const child of node.children) {
-    emitNode(slide, child, effectiveOpacity);
+    emitElement(slide, child, effectiveOpacity);
   }
 }
 
-function emitNode(slide: PptxSlide, node: NodeIR, inheritedOpacity?: number) {
+function emitElement(slide: PptxSlide, node: PptxElement, inheritedOpacity?: number) {
   if (node.visibility === "hidden") {
     return;
   }
@@ -714,81 +578,131 @@ function emitNode(slide: PptxSlide, node: NodeIR, inheritedOpacity?: number) {
     case "group":
       emitGroup(slide, node, inheritedOpacity);
       return;
-    case "text":
-      emitText(slide, node, inheritedOpacity);
-      return;
     case "image":
       emitImage(slide, node, inheritedOpacity);
       return;
     case "shape":
       emitShape(slide, node, inheritedOpacity);
       return;
-    default:
-      assertNever(node);
+    case "text":
+      emitText(slide, node, inheritedOpacity);
+      return;
   }
 }
 
-export function pptxgenjsBackend(): CompileBackend {
-  return {
-    name: "pptxgenjs",
-    async emit(ir: PresentationIR): Promise<BackendArtifact> {
-      const pptx = new PptxGenJS();
-      const layoutName = "DECKJSX_CUSTOM";
+function emitSlideBackgroundLayers(
+  slide: PptxSlide,
+  projection: PptxPackageModel,
+  backgroundLayers: PptxPackageModel["slides"][number]["payload"]["backgroundLayers"],
+) {
+  if (!backgroundLayers || backgroundLayers.length === 0) {
+    return;
+  }
 
-      pptx.defineLayout({
-        name: layoutName,
-        width: ir.size.widthEmu / EMU_PER_INCH,
-        height: ir.size.heightEmu / EMU_PER_INCH,
-      });
-      pptx.layout = layoutName;
-
-      if (ir.meta?.author) {
-        pptx.author = ir.meta.author;
+  for (const layer of backgroundLayers) {
+    if (isBackgroundImageLayer(layer)) {
+      for (const tile of expandBackgroundImageLayer(layer)) {
+        slide.addImage({
+          x: emuToInches(tile.frame.xEmu),
+          y: emuToInches(tile.frame.yEmu),
+          w: emuToInches(tile.frame.widthEmu),
+          h: emuToInches(tile.frame.heightEmu),
+          path: tile.source.kind === "path" ? tile.source.path : undefined,
+          data: tile.source.kind === "data" ? tile.source.data : undefined,
+          transparency: layer.transparency,
+        });
       }
-      if (ir.meta?.title) {
-        pptx.title = ir.meta.title;
-      }
-      if (ir.meta?.subject) {
-        pptx.subject = ir.meta.subject;
-      }
+      continue;
+    }
 
-      for (const slideIR of ir.slides) {
-        const slide = pptx.addSlide();
-
-        if (slideIR.background) {
-          slide.background = toPptxFill(slideIR.background);
-        }
-
-        emitBackgroundLayers(
-          slide,
-          {
+    const layerFrame =
+      "frame" in layer && layer.frame
+        ? layer.frame
+        : {
             xEmu: 0,
             yEmu: 0,
-            widthEmu: ir.size.widthEmu,
-            heightEmu: ir.size.heightEmu,
-          },
-          slideIR.backgroundLayers,
-          "rect",
-        );
+            widthEmu: projection.size.widthEmu,
+            heightEmu: projection.size.heightEmu,
+          };
 
-        for (const node of slideIR.nodes) {
-          emitNode(slide, node);
-        }
-      }
+    slide.addShape("rect", {
+      x: emuToInches(layerFrame.xEmu),
+      y: emuToInches(layerFrame.yEmu),
+      w: emuToInches(layerFrame.widthEmu),
+      h: emuToInches(layerFrame.heightEmu),
+      fill: toPptxFill(layer),
+      line: TRANSPARENT_LINE,
+    });
+  }
+}
 
-      const data = await pptx.write({
-        outputType: "uint8array",
-      });
-      const normalized = normalizeBuffer(data);
+function adapterDiagnostics(): Diagnostics {
+  return createDiagnostics([
+    diagnostic({
+      severity: "warning",
+      code: "W_PPTXGENJS_TEMPORARY_ADAPTER",
+      title: "pptxgenjs adapter is temporary",
+      message:
+        "The pptxgenjs adapter consumes the Pptx Package Model directly, but it cannot serialize every projected package-part detail yet.",
+      labels: [{ path: "render.adapter", message: "Some package metadata is adapter-limited." }],
+    }),
+  ]);
+}
 
-      return {
-        kind: "buffer",
-        mimeType: PPTX_MIME_TYPE,
-        data: await patchPresentationXml(normalized, ir),
-        extension: "pptx",
-      };
+export async function renderPptxPackageWithPptxGenjs(projection: PptxPackageModel): Promise<{
+  readonly diagnostics: Diagnostics;
+  readonly artifact: {
+    readonly format: "pptx";
+    readonly mediaType: string;
+    readonly extension: "pptx";
+    readonly bytes: Uint8Array;
+  };
+}> {
+  const pptx = new PptxGenJS();
+  const layoutName = "DECKJSX_CUSTOM";
+
+  pptx.defineLayout({
+    name: layoutName,
+    width: projection.size.widthEmu / EMU_PER_INCH,
+    height: projection.size.heightEmu / EMU_PER_INCH,
+  });
+  pptx.layout = layoutName;
+
+  if (projection.meta?.author) {
+    pptx.author = projection.meta.author;
+  }
+  if (projection.meta?.title) {
+    pptx.title = projection.meta.title;
+  }
+  if (projection.meta?.subject) {
+    pptx.subject = projection.meta.subject;
+  }
+
+  for (const slidePart of projection.slides) {
+    const slide = pptx.addSlide();
+
+    if (slidePart.payload.background) {
+      slide.background = toPptxFill(slidePart.payload.background);
+    }
+
+    emitSlideBackgroundLayers(slide, projection, slidePart.payload.backgroundLayers);
+
+    for (const element of slidePart.payload.elements) {
+      emitElement(slide, element);
+    }
+  }
+
+  const data = await pptx.write({ outputType: "uint8array" });
+  const normalized = normalizeBuffer(data);
+  const bytes = await patchPresentationXml(normalized, projection);
+
+  return {
+    diagnostics: adapterDiagnostics(),
+    artifact: {
+      format: "pptx",
+      mediaType: PPTX_MIME_TYPE,
+      extension: "pptx",
+      bytes,
     },
   };
 }
-
-export { PPTX_MIME_TYPE };

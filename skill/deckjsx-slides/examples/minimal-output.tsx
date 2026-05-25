@@ -12,8 +12,5 @@ export async function writeMinimalDeck(output = "sample.pptx"): Promise<void> {
     </Slide>
   ));
 
-  await deck.output({
-    backend: "pptxgenjs",
-    output,
-  });
+  await deck.render({ output });
 }

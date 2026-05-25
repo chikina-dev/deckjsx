@@ -43,7 +43,7 @@ describe("shadow-values", () => {
       </Slide>
     ));
 
-    const [view, text, shape] = deck.render().slides[0].nodes;
+    const [view, text, shape] = deck.project().projection!.slides[0].payload.elements;
 
     expect(view?.kind).toBe("group");
     if (!view || view.kind !== "group") {
@@ -97,7 +97,9 @@ describe("shadow-values", () => {
       </Slide>
     ));
 
-    expect(() => deck.render()).toThrowError(
+    const result = deck.project();
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.items[0]?.message).toContain(
       "Only a single shadow layer is currently supported: 1px 1px 2px red, 2px 2px 4px blue",
     );
   });

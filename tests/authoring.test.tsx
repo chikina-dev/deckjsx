@@ -66,8 +66,8 @@ describe("authoring and JSX runtime", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
-    const [group] = ir.slides[0]?.nodes ?? [];
+    const ir = deck.project().projection!;
+    const [group] = ir.slides[0]?.payload.elements ?? [];
     if (!group || group.kind !== "group") {
       throw new Error("Expected intrinsic div to compile to a group.");
     }
@@ -93,8 +93,8 @@ describe("authoring and JSX runtime", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
-    const [group] = ir.slides[0]?.nodes ?? [];
+    const ir = deck.project().projection!;
+    const [group] = ir.slides[0]?.payload.elements ?? [];
     if (!group || group.kind !== "group") {
       throw new Error("Expected intrinsic div to compile to a group.");
     }
@@ -123,8 +123,8 @@ describe("authoring and JSX runtime", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
-    const [main] = ir.slides[0]?.nodes ?? [];
+    const ir = deck.project().projection!;
+    const [main] = ir.slides[0]?.payload.elements ?? [];
     if (!main || main.kind !== "group") {
       throw new Error("Expected main to compile to a group.");
     }
@@ -153,8 +153,8 @@ describe("authoring and JSX runtime", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
-    const [text] = ir.slides[0]?.nodes ?? [];
+    const ir = deck.project().projection!;
+    const [text] = ir.slides[0]?.payload.elements ?? [];
     if (!text || text.kind !== "text") {
       throw new Error("Expected rich paragraph to compile to a text node.");
     }
@@ -170,19 +170,21 @@ describe("authoring and JSX runtime", () => {
     ]);
   });
 
-  test("render rejects slide factories that do not return a Slide root", () => {
+  test("project reports slide factories that do not return a Slide root", () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
     deck.add(() => <Text style={{ x: 1, y: 1, width: 3, height: 1, fontSize: 20 }}>Invalid</Text>);
 
-    expect(() => deck.render()).toThrowError(
-      "Slide factory at index 0 must return a <Slide /> root.",
+    const result = deck.project();
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.items[0]?.message).toContain(
+      "Slide factory returned an author tree node that is not a <Slide /> root.",
     );
   });
 
-  test("render rejects nested slides inside views", () => {
+  test("project reports nested slides inside views", () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
     });
@@ -195,7 +197,9 @@ describe("authoring and JSX runtime", () => {
       </Slide>
     ));
 
-    expect(() => deck.render()).toThrowError(
+    const result = deck.project();
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.items[0]?.message).toContain(
       "Slide cannot be nested inside another slide or view.",
     );
   });

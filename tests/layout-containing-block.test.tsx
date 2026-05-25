@@ -93,9 +93,9 @@ describe("View containing blocks", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
+    const ir = deck.project().projection!;
 
-    expect(summarizeNodes(ir.slides[0].nodes)).toEqual([
+    expect(summarizeNodes(ir.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -175,7 +175,7 @@ describe("View containing blocks", () => {
       },
     ]);
 
-    expect(summarizeNodes(ir.slides[1].nodes)).toEqual([
+    expect(summarizeNodes(ir.slides[1].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {

@@ -1,14 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import {
-  Deck,
-  Image,
-  Slide,
-  StyleDiagnosticError,
-  StyleSheet,
-  Text,
-  Theme,
-  View,
-} from "../src/index.ts";
+import { Deck, Image, Slide, StyleSheet, Text, Theme, View } from "../src/index.ts";
 import type { ThemeInput } from "../src/index.ts";
 
 function values<T>(map: ReadonlyMap<unknown, T>): T[] {
@@ -54,7 +45,7 @@ describe("style", () => {
       </Slide>
     ));
 
-    const graph = deck.compile();
+    const graph = deck.compile().graph!;
     const view = values(graph.nodes).find(
       (node) => node.kind === "container" && node.authoredComponent === "View",
     );
@@ -87,7 +78,7 @@ describe("style", () => {
     expect(graph.styles.get(view?.styleRef ?? ("" as never))).not.toHaveProperty("resolved");
   });
 
-  test("normalizes legacy direct style props into authored style for graph inspection", () => {
+  test("normalizes direct style props into authored style for graph inspection", () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
     });
@@ -102,7 +93,7 @@ describe("style", () => {
       </Slide>
     ));
 
-    const graph = deck.compile();
+    const graph = deck.compile().graph!;
     const view = values(graph.nodes).find(
       (node) => node.kind === "container" && node.authoredComponent === "View",
     );
@@ -141,7 +132,7 @@ describe("style", () => {
       </Slide>
     ));
 
-    const result = deck.compile({ mode: "inspect" });
+    const result = deck.compile();
     const text = values(result.graph?.nodes ?? new Map()).find(
       (node) => node.kind === "text" && node.authoredTag === "p",
     );
@@ -190,7 +181,7 @@ describe("style", () => {
       </Slide>
     ));
 
-    const result = deck.compile({ mode: "inspect" });
+    const result = deck.compile();
     const nodes = values(result.graph?.nodes ?? new Map());
     const container = nodes.find((node) => node.kind === "container" && node.authoredTag === "div");
     const text = nodes.find((node) => node.kind === "text" && node.authoredTag === "p");
@@ -239,13 +230,13 @@ describe("style", () => {
     ));
     parent.mount("child", child);
 
-    const mounted = parent.compile({ mode: "inspect" });
+    const mounted = parent.compile();
     const mountedTexts = values(mounted.graph?.nodes ?? new Map()).filter(
       (node) => node.kind === "text" && node.authoredTag === "p",
     );
     const parentText = mountedTexts.find((node) => node.origin.source?.kind === "root");
     const childText = mountedTexts.find((node) => node.origin.source?.kind === "mounted");
-    const standalone = child.compile({ mode: "inspect" });
+    const standalone = child.compile();
     const standaloneText = values(standalone.graph?.nodes ?? new Map()).find(
       (node) => node.kind === "text" && node.authoredTag === "p",
     );
@@ -324,13 +315,13 @@ describe("style", () => {
       </Slide>
     ));
 
-    const result = deck.compile({ mode: "inspect" });
+    const result = deck.compile();
 
     expect(result.diagnostics.items.map((item) => item.code)).toEqual([
       "E_THEME_INVALID_DEFAULT_KEY",
       "E_THEME_INVALID_DEFAULT_STYLE",
     ]);
-    expect(() => deck.compile()).toThrowError(StyleDiagnosticError);
+    expect(result.ok).toBe(false);
   });
 
   test("stylesheet source order wins over className token order", () => {
@@ -352,7 +343,7 @@ describe("style", () => {
       </Slide>
     ));
 
-    const result = deck.compile({ mode: "inspect" });
+    const result = deck.compile();
     const text = values(result.graph?.nodes ?? new Map()).find(
       (node) => node.kind === "text" && node.authoredTag === "p",
     );
@@ -389,7 +380,7 @@ describe("style", () => {
       </Slide>
     ));
 
-    const result = deck.compile({ mode: "inspect" });
+    const result = deck.compile();
     const text = values(result.graph?.nodes ?? new Map()).find(
       (node) => node.kind === "text" && node.authoredTag === "p",
     );
@@ -427,7 +418,7 @@ describe("style", () => {
       </Slide>
     ));
 
-    const result = deck.compile({ mode: "inspect" });
+    const result = deck.compile();
     const header = values(result.graph?.nodes ?? new Map()).find(
       (node) => node.kind === "container" && node.authoredTag === "header",
     );
@@ -474,7 +465,7 @@ describe("style", () => {
     ));
     parent.mount("child", child);
 
-    const result = parent.compile({ mode: "inspect" });
+    const result = parent.compile();
     const texts = values(result.graph?.nodes ?? new Map()).filter(
       (node) => node.kind === "text" && node.authoredTag === "p",
     );
@@ -500,13 +491,13 @@ describe("style", () => {
       </Slide>
     ));
 
-    const result = deck.compile({ mode: "inspect" });
+    const result = deck.compile();
 
     expect(result.diagnostics.items[0]).toMatchObject({
       code: "E_STYLE_UNKNOWN_CLASS",
       severity: "warning",
     });
-    expect(() => deck.compile()).not.toThrow();
+    expect(result.ok).toBe(true);
   });
 
   test("selector condition classes do not require style class definitions", () => {
@@ -529,7 +520,7 @@ describe("style", () => {
       </Slide>
     ));
 
-    const result = deck.compile({ mode: "inspect" });
+    const result = deck.compile();
 
     expect(result.diagnostics.items).toHaveLength(0);
   });
@@ -547,13 +538,13 @@ describe("style", () => {
     );
     deck.add(() => <Slide />);
 
-    const result = deck.compile({ mode: "inspect" });
+    const result = deck.compile();
 
     expect(result.diagnostics.items[0]).toMatchObject({
       code: "E_STYLE_INVALID_CLASS_NAME",
       severity: "error",
     });
-    expect(() => deck.compile()).toThrowError(StyleDiagnosticError);
+    expect(result.ok).toBe(false);
   });
 
   test("slash-separated style class names resolve through CSS-escaped selectors", () => {
@@ -573,7 +564,7 @@ describe("style", () => {
       </Slide>
     ));
 
-    const result = deck.compile({ mode: "inspect" });
+    const result = deck.compile();
     const text = values(result.graph?.nodes ?? new Map()).find(
       (node) => node.kind === "text" && node.authoredTag === "p",
     );
@@ -604,7 +595,7 @@ describe("style", () => {
       </Slide>
     ));
 
-    const result = deck.compile({ mode: "inspect" });
+    const result = deck.compile();
     const text = values(result.graph?.nodes ?? new Map()).find(
       (node) => node.kind === "text" && node.authoredTag === "p",
     );
@@ -637,14 +628,14 @@ describe("style", () => {
     );
     deck.add(() => <Slide />);
 
-    const result = deck.compile({ mode: "inspect" });
+    const result = deck.compile();
 
     expect(result.diagnostics.items.map((item) => item.code)).toEqual([
       "E_STYLE_INVALID_CLASS_TARGET",
       "E_STYLE_INVALID_CLASS_TARGET",
       "E_STYLE_INVALID_CLASS_TARGET",
     ]);
-    expect(() => deck.compile()).toThrowError(StyleDiagnosticError);
+    expect(result.ok).toBe(false);
   });
 
   test("unsupported selector features are stylesheet diagnostics", () => {
@@ -663,7 +654,7 @@ describe("style", () => {
     );
     deck.add(() => <Slide />);
 
-    const result = deck.compile({ mode: "inspect" });
+    const result = deck.compile();
 
     expect(result.diagnostics.items.map((item) => item.code)).toEqual([
       "E_STYLE_UNSUPPORTED_SELECTOR",
@@ -691,13 +682,13 @@ describe("style", () => {
       </Slide>
     ));
 
-    const result = deck.compile({ mode: "inspect" });
+    const result = deck.compile();
 
     expect(result.diagnostics.items[0]).toMatchObject({
       code: "E_STYLE_TARGET_MISMATCH",
       severity: "error",
     });
-    expect(() => deck.compile()).toThrowError(StyleDiagnosticError);
+    expect(result.ok).toBe(false);
   });
 
   test("empty target arrays match no elements", () => {
@@ -718,7 +709,7 @@ describe("style", () => {
       </Slide>
     ));
 
-    const result = deck.compile({ mode: "inspect" });
+    const result = deck.compile();
 
     expect(result.diagnostics.items[0]).toMatchObject({
       code: "E_STYLE_TARGET_MISMATCH",

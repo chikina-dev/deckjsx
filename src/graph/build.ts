@@ -549,6 +549,16 @@ function buildNode(
     return { id, kind: "image" };
   }
 
+  if (kind === "shape") {
+    state.nodes.set(id, {
+      ...semanticBase(state, node, id, "shape", path, material, nodeContext),
+      kind: "shape",
+      shape:
+        node.props.shape === "ellipse" || node.props.shape === "line" ? node.props.shape : "rect",
+    });
+    return { id, kind: "shape" };
+  }
+
   const childIds = buildChildren(state, node.children, {
     parentId: id,
     parentMaterial: material,
@@ -561,6 +571,7 @@ function buildNode(
   state.nodes.set(id, {
     ...semanticBase(state, node, id, kind, path, material, nodeContext),
     kind,
+    ...(kind === "slide" && typeof node.props.name === "string" ? { name: node.props.name } : {}),
     children: childIds,
   } as SemanticNode);
   return { id, kind };

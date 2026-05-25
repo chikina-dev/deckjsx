@@ -46,128 +46,46 @@ describe("stroke-values", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
+    const ir = deck.project().projection!;
 
-    expect(ir).toMatchInlineSnapshot(`
-    	{
-    	  "meta": undefined,
-    	  "size": {
-    	    "heightEmu": 5143500,
-    	    "widthEmu": 9144000,
-    	  },
-    	  "slides": [
-    	    {
-    	      "background": {
-    	        "color": "112233",
-    	        "kind": "solid",
-    	        "transparency": 50,
-    	      },
-    	      "id": "slide-1",
-    	      "name": "Border and color",
-    	      "nodes": [
-    	        {
-    	          "children": [
-    	            {
-    	              "content": {
-    	                "text": "Color",
-    	              },
-    	              "fill": undefined,
-    	              "flipH": undefined,
-    	              "flipV": undefined,
-    	              "frame": {
-    	                "heightEmu": 457200,
-    	                "widthEmu": 1828800,
-    	                "xEmu": 1371600,
-    	                "yEmu": 1371600,
-    	              },
-    	              "id": "node-2",
-    	              "kind": "text",
-    	              "opacity": undefined,
-    	              "radiusEmu": 0,
-    	              "rotation": undefined,
-    	              "stroke": {
-    	                "color": "00FF00",
-    	                "style": "solid",
-    	                "transparency": 50,
-    	                "widthPt": 2,
-    	              },
-    	              "style": {
-    	                "charSpacing": undefined,
-    	                "color": "0F172A",
-    	                "fit": undefined,
-    	                "fontFamily": undefined,
-    	                "fontSizePt": 18,
-    	                "fontWeight": undefined,
-    	                "italic": undefined,
-    	                "lineSpacing": undefined,
-    	                "lineSpacingMultiple": undefined,
-    	                "paddingPt": undefined,
-    	                "paragraphSpacingAfter": undefined,
-    	                "paragraphSpacingBefore": undefined,
-    	                "strike": undefined,
-    	                "textAlign": undefined,
-    	                "underline": undefined,
-    	                "verticalAlign": undefined,
-    	                "wrap": undefined,
-    	              },
-    	              "zIndex": undefined,
-    	            },
-    	            {
-    	              "fill": {
-    	                "color": "008000",
-    	                "kind": "solid",
-    	                "transparency": 60,
-    	              },
-    	              "flipH": undefined,
-    	              "flipV": undefined,
-    	              "frame": {
-    	                "heightEmu": 685800,
-    	                "widthEmu": 685800,
-    	                "xEmu": 3429000,
-    	                "yEmu": 1371600,
-    	              },
-    	              "id": "node-3",
-    	              "kind": "shape",
-    	              "opacity": undefined,
-    	              "radiusEmu": 0,
-    	              "rotation": undefined,
-    	              "shape": "rect",
-    	              "stroke": undefined,
-    	              "zIndex": undefined,
-    	            },
-    	          ],
-    	          "fill": {
-    	            "color": "FF0000",
-    	            "kind": "solid",
-    	            "transparency": 75,
-    	          },
-    	          "flipH": undefined,
-    	          "flipV": undefined,
-    	          "frame": {
-    	            "heightEmu": 1828800,
-    	            "widthEmu": 3657600,
-    	            "xEmu": 914400,
-    	            "yEmu": 914400,
-    	          },
-    	          "id": "node-1",
-    	          "kind": "group",
-    	          "opacity": undefined,
-    	          "radiusEmu": 0,
-    	          "rotation": undefined,
-    	          "stroke": {
-    	            "color": "0080FF",
-    	            "style": "dash",
-    	            "transparency": undefined,
-    	            "widthPt": 5,
-    	          },
-    	          "zIndex": undefined,
-    	        },
-    	      ],
-    	    },
-    	  ],
-    	  "version": "0.1",
-    	}
-    `);
+    const slide = ir.slides[0]?.payload;
+    const group = slide?.elements[0];
+
+    expect(ir.version).toBe("0.6");
+    expect(slide?.background).toEqual({
+      kind: "solid",
+      color: "112233",
+      transparency: 50,
+    });
+    expect(group?.kind).toBe("group");
+    if (!group || group.kind !== "group") {
+      throw new Error("Expected group element.");
+    }
+
+    const [text, shape] = group.children;
+    expect(group.fill).toEqual({ kind: "solid", color: "FF0000", transparency: 75 });
+    expect(group.stroke).toEqual({
+      color: "0080FF",
+      style: "dash",
+      transparency: undefined,
+      widthPt: 5,
+    });
+    expect(text?.kind).toBe("text");
+    if (!text || text.kind !== "text") {
+      throw new Error("Expected text element.");
+    }
+    expect(text.stroke).toEqual({
+      color: "00FF00",
+      style: "solid",
+      transparency: 50,
+      widthPt: 2,
+    });
+    expect(text.style.color).toBe("0F172A");
+    expect(shape?.kind).toBe("shape");
+    if (!shape || shape.kind !== "shape") {
+      throw new Error("Expected shape element.");
+    }
+    expect(shape.fill).toEqual({ kind: "solid", color: "008000", transparency: 60 });
   });
 
   test("render supports shape strokeDasharray", () => {
@@ -193,56 +111,25 @@ describe("stroke-values", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
+    const ir = deck.project().projection!;
+    const shape = ir.slides[0]?.payload.elements[0];
 
-    expect(ir).toMatchInlineSnapshot(`
-    	{
-    	  "meta": undefined,
-    	  "size": {
-    	    "heightEmu": 5143500,
-    	    "widthEmu": 9144000,
-    	  },
-    	  "slides": [
-    	    {
-    	      "background": undefined,
-    	      "id": "slide-1",
-    	      "name": "Shape stroke dasharray",
-    	      "nodes": [
-    	        {
-    	          "fill": {
-    	            "color": "F97316",
-    	            "kind": "solid",
-    	            "transparency": undefined,
-    	          },
-    	          "flipH": undefined,
-    	          "flipV": undefined,
-    	          "frame": {
-    	            "heightEmu": 685800,
-    	            "widthEmu": 1371600,
-    	            "xEmu": 914400,
-    	            "yEmu": 914400,
-    	          },
-    	          "id": "node-1",
-    	          "kind": "shape",
-    	          "opacity": undefined,
-    	          "radiusEmu": 0,
-    	          "rotation": undefined,
-    	          "shape": "rect",
-    	          "stroke": {
-    	            "color": "1E90FF",
-    	            "dashType": "sysDot",
-    	            "style": undefined,
-    	            "transparency": undefined,
-    	            "widthPt": 3,
-    	          },
-    	          "zIndex": undefined,
-    	        },
-    	      ],
-    	    },
-    	  ],
-    	  "version": "0.1",
-    	}
-    `);
+    expect(shape?.kind).toBe("shape");
+    if (!shape || shape.kind !== "shape") {
+      throw new Error("Expected shape element.");
+    }
+    expect(shape.fill).toEqual({
+      color: "F97316",
+      kind: "solid",
+      transparency: undefined,
+    });
+    expect(shape.stroke).toEqual({
+      color: "1E90FF",
+      dashType: "sysDot",
+      style: undefined,
+      transparency: undefined,
+      widthPt: 3,
+    });
   });
 
   test("render supports strokeLinecap and strokeLinejoin", () => {
@@ -269,56 +156,20 @@ describe("stroke-values", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
+    const ir = deck.project().projection!;
+    const shape = ir.slides[0]?.payload.elements[0];
 
-    expect(ir).toMatchInlineSnapshot(`
-    	{
-    	  "meta": undefined,
-    	  "size": {
-    	    "heightEmu": 5143500,
-    	    "widthEmu": 9144000,
-    	  },
-    	  "slides": [
-    	    {
-    	      "background": undefined,
-    	      "id": "slide-1",
-    	      "name": "Stroke cap and join",
-    	      "nodes": [
-    	        {
-    	          "fill": {
-    	            "color": "F97316",
-    	            "kind": "solid",
-    	            "transparency": undefined,
-    	          },
-    	          "flipH": undefined,
-    	          "flipV": undefined,
-    	          "frame": {
-    	            "heightEmu": 685800,
-    	            "widthEmu": 1371600,
-    	            "xEmu": 914400,
-    	            "yEmu": 914400,
-    	          },
-    	          "id": "node-1",
-    	          "kind": "shape",
-    	          "opacity": undefined,
-    	          "radiusEmu": 0,
-    	          "rotation": undefined,
-    	          "shape": "rect",
-    	          "stroke": {
-    	            "color": "1E90FF",
-    	            "lineCap": "square",
-    	            "lineJoin": "bevel",
-    	            "style": undefined,
-    	            "transparency": undefined,
-    	            "widthPt": 3,
-    	          },
-    	          "zIndex": undefined,
-    	        },
-    	      ],
-    	    },
-    	  ],
-    	  "version": "0.1",
-    	}
-    `);
+    expect(shape?.kind).toBe("shape");
+    if (!shape || shape.kind !== "shape") {
+      throw new Error("Expected shape element.");
+    }
+    expect(shape.stroke).toEqual({
+      color: "1E90FF",
+      lineCap: "square",
+      lineJoin: "bevel",
+      style: undefined,
+      transparency: undefined,
+      widthPt: 3,
+    });
   });
 });

@@ -16,7 +16,7 @@ import {
   type IntrinsicTextTag,
   type IntrinsicViewTag,
 } from "./authoring/tags";
-import { isLegacyAuthorNode } from "./authoring/legacy";
+import { isAuthorNodeValue } from "./authoring/author-node";
 import type {
   AuthorNode,
   AuthorNodeKind,
@@ -165,7 +165,7 @@ function isAuthorNodeKind(value: unknown): value is AuthorNodeKind {
 }
 
 export function isAuthorNode(value: unknown): value is AuthorNode {
-  if (!isLegacyAuthorNode(value)) {
+  if (!isAuthorNodeValue(value)) {
     return false;
   }
 

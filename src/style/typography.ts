@@ -1,5 +1,5 @@
 import { isAuthorNode } from "../jsx";
-import type { TextStyleIR } from "../ir/index";
+import type { TextStyleIR } from "../layout/projected";
 import type { JsxNode, TextProps } from "../authoring/index";
 import { POINTS_PER_INCH } from "../types";
 import { DEFAULT_FONT_SIZE_PT, parsePointValue, type LengthResolutionContext } from "./length";

@@ -1,30 +1,11 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vite-plus/test";
 import { Deck, Slide, Text } from "../src/index.ts";
-import { outputPresentation } from "../src/node.ts";
-import type { PresentationIR } from "../src/legacy.ts";
-
-function emptyPresentation(): PresentationIR {
-  return {
-    version: "0.1",
-    size: {
-      widthEmu: 10 * 914_400,
-      heightEmu: 5.625 * 914_400,
-    },
-    slides: [
-      {
-        id: "slide-1",
-        name: "Runtime boundary",
-        nodes: [],
-      },
-    ],
-  };
-}
 
 describe("runtime boundary", () => {
-  test("Deck output delegates rendered IR to the runtime output adapter", async () => {
+  test("Deck render writes a Rendered Artifact through the Output Writer", async () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
     });
@@ -38,10 +19,7 @@ describe("runtime boundary", () => {
     ));
 
     try {
-      await deck.output({
-        backend: "pptxgenjs",
-        output,
-      });
+      await deck.render({ output });
 
       const [content, fileStat] = await Promise.all([readFile(output), stat(output)]);
 
@@ -52,37 +30,41 @@ describe("runtime boundary", () => {
     }
   });
 
-  test("runtime output adapter writes an explicit PresentationIR through a backend", async () => {
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-runtime-"));
-    const output = join(tempDir, "explicit-ir.pptx");
+  test("render returns artifact bytes without writing", async () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
 
-    try {
-      await outputPresentation(emptyPresentation(), {
-        backend: "pptxgenjs",
-        output,
-      });
+    deck.add(() => <Slide name="Runtime output" />);
 
-      const content = await readFile(output);
+    const result = await deck.render();
 
-      expect(content.subarray(0, 2).toString("utf8")).toBe("PK");
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(result.ok).toBe(true);
+    expect(result.artifact?.format).toBe("pptx");
+    expect(result.artifact?.extension).toBe("pptx");
+    expect(result.artifact?.bytes.subarray(0, 2).toString()).toBe("80,75");
   });
 
-  test("runtime output adapter rejects unsupported backend names before writing", async () => {
+  test("render preserves artifact bytes when file writing fails", async () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-runtime-"));
-    const output = join(tempDir, "unsupported.pptx");
-    const config = {
-      backend: "ooxml",
-      output,
-    } as never;
+    const blocker = join(tempDir, "blocker");
+    const output = join(blocker, "deck.pptx");
+
+    deck.add(() => <Slide name="Runtime output" />);
 
     try {
-      await expect(outputPresentation(emptyPresentation(), config)).rejects.toThrow(
-        'Backend "ooxml" is not implemented yet.',
+      await writeFile(blocker, "not a directory");
+      const result = await deck.render({ output });
+
+      expect(result.ok).toBe(false);
+      expect(result.artifact?.bytes.byteLength).toBeGreaterThan(0);
+      expect(result.output).toBeUndefined();
+      expect(result.diagnostics.items.some((item) => item.code === "E_RENDER_WRITE_FAILED")).toBe(
+        true,
       );
-      await expect(stat(output)).rejects.toThrow();
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { CompositionDiagnosticError, Deck, Slide, Text, View } from "../src/index.ts";
+import { Deck, Slide, Text, View } from "../src/index.ts";
 import type { ContentJsxChild, TextJsxChild } from "../src/index.ts";
 
 function values<T>(map: ReadonlyMap<unknown, T>): T[] {
@@ -14,7 +14,7 @@ describe("composition", () => {
 
     deck.add(() => "not a slide");
 
-    const result = deck.compile({ mode: "inspect" });
+    const result = deck.compile();
 
     expect(result.graph).toBeUndefined();
     expect(result.diagnostics).toMatchObject({
@@ -26,7 +26,7 @@ describe("composition", () => {
         },
       ],
     });
-    expect(() => deck.compile()).toThrowError(CompositionDiagnosticError);
+    expect(result.ok).toBe(false);
   });
 
   test("composes mounted sources in registration order with source-aware origins", () => {
@@ -57,7 +57,7 @@ describe("composition", () => {
       </Slide>
     ));
 
-    const graph = deck.compile();
+    const graph = deck.compile().graph!;
     const runs = values(graph.nodes).filter((node) => node.kind === "textRun");
     const peerRun = runs.find((node) => node.text.includes("Peer"));
 
@@ -98,7 +98,7 @@ describe("composition", () => {
     });
     deck.mount("company-a", company, { company: { id: "c-a", name: "Company A" } });
 
-    const graph = deck.compile();
+    const graph = deck.compile().graph!;
     const allText = values(graph.nodes)
       .filter((node) => node.kind === "textRun")
       .map((node) => node.text)
@@ -125,14 +125,14 @@ describe("composition", () => {
     deck.mount("duplicate", child);
     deck.mount("invalid/key", child);
 
-    const result = deck.compile({ mode: "inspect" });
+    const result = deck.compile();
 
     expect(result.graph).toBeUndefined();
     expect(result.diagnostics.items.map((item) => item.code)).toEqual([
       "E_COMPOSITION_DUPLICATE_SOURCE_KEY",
       "E_COMPOSITION_INVALID_SOURCE_KEY",
     ]);
-    expect(() => deck.compile()).toThrowError(CompositionDiagnosticError);
+    expect(result.ok).toBe(false);
   });
 
   test("composition detects mapper failures, async mappers, and cycles", () => {
@@ -154,12 +154,13 @@ describe("composition", () => {
     });
     mapperFailures.mount("async", child, () => Promise.resolve({ value: "later" }) as never);
 
-    expect(cycle.compile({ mode: "inspect" }).diagnostics.items[0]).toMatchObject({
+    expect(cycle.compile().diagnostics.items[0]).toMatchObject({
       code: "E_COMPOSITION_CYCLE",
     });
-    expect(
-      mapperFailures.compile({ mode: "inspect" }).diagnostics.items.map((item) => item.code),
-    ).toEqual(["E_COMPOSITION_CONTEXT_MAPPER_FAILED", "E_COMPOSITION_CONTEXT_MAPPER_ASYNC"]);
+    expect(mapperFailures.compile().diagnostics.items.map((item) => item.code)).toEqual([
+      "E_COMPOSITION_CONTEXT_MAPPER_FAILED",
+      "E_COMPOSITION_CONTEXT_MAPPER_ASYNC",
+    ]);
   });
 
   test("source slot origin keeps caller source while identity includes slot field", () => {
@@ -180,7 +181,7 @@ describe("composition", () => {
       note: <Text key="caller-note">Caller note</Text>,
     });
 
-    const graph = deck.compile();
+    const graph = deck.compile().graph!;
     const noteRun = values(graph.nodes).find(
       (node) => node.kind === "textRun" && node.text === "Caller note",
     );
@@ -208,7 +209,7 @@ describe("composition", () => {
       ),
     });
 
-    const graph = deck.compile();
+    const graph = deck.compile().graph!;
     const callerRun = values(graph.nodes).find(
       (node) => node.kind === "textRun" && node.text === "Caller ",
     );
@@ -222,16 +223,19 @@ describe("composition", () => {
     expect(String(spanRun?.id)).toContain("slot:note");
   });
 
-  test("legacy render and output reject decks with mounted sources", async () => {
+  test("project and render support decks with mounted sources", async () => {
     const child = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     child.add(() => <Slide name="Child" />);
 
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.mount("child", child);
 
-    expect(() => deck.render()).toThrowError("Mounted sources are supported by compile() only");
-    await expect(deck.output({ backend: "pptxgenjs", output: "unused.pptx" })).rejects.toThrow(
-      "Mounted sources are supported by compile() only",
-    );
+    const project = deck.project();
+    expect(project.ok).toBe(true);
+    expect(project.projection?.slides).toHaveLength(1);
+
+    const render = await deck.render();
+    expect(render.ok).toBe(true);
+    expect(render.artifact?.bytes.byteLength).toBeGreaterThan(0);
   });
 });
