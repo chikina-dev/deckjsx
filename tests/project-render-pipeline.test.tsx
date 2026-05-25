@@ -333,6 +333,43 @@ describe("project/render pipeline", () => {
     expect(render.artifact).toBeUndefined();
   });
 
+  test("project validates duplicate package paths and relationship target path mismatches", () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.add(() => <Slide name="Broken package paths" />);
+
+    const projection = deck.project().projection!;
+    const firstPart = projection.parts[0]!;
+    const rootRelationships = projection.parts.find((part) => part.path === "_rels/.rels")!;
+    deck.defineProjection({
+      ...projection,
+      parts: [
+        ...projection.parts.map((part) =>
+          part.id === rootRelationships.id
+            ? {
+                ...part,
+                relationships: part.relationships?.map((relationship, index) =>
+                  index === 0
+                    ? { ...relationship, targetPath: "ppt/incorrect-presentation.xml" }
+                    : relationship,
+                ),
+              }
+            : part,
+        ),
+        { ...firstPart, id: `${firstPart.id}:duplicate-path` as never },
+      ],
+    });
+
+    const project = deck.project();
+
+    expect(project.ok).toBe(false);
+    expect(project.diagnostics.items).toContainEqual(
+      expect.objectContaining({ code: "E_PPTX_PACKAGE_DUPLICATE_PART_PATH" }),
+    );
+    expect(project.diagnostics.items).toContainEqual(
+      expect.objectContaining({ code: "E_PPTX_PACKAGE_RELATIONSHIP_TARGET_PATH_MISMATCH" }),
+    );
+  });
+
   test("project summary exposes default adapter limitations", () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.add(() => <Slide name="Adapter limitations" />);

@@ -37,10 +37,12 @@ export function validatePptxPackageModel(projection: PptxPackageModel): Diagnost
   const issues = [];
   const parts = packagePartsFor(projection);
   const partsById = new Map<PackagePartId, PptxPackagePart>();
+  const partsByPath = new Map<string, PptxPackagePart>();
   const partIds = new Set<PackagePartId>();
-  const partPaths = new Set(parts.map((part) => normalizedPartPath(part.path)));
 
   for (const part of parts) {
+    const partPath = normalizedPartPath(part.path);
+
     if (partIds.has(part.id)) {
       issues.push(
         diagnostic({
@@ -56,10 +58,25 @@ export function validatePptxPackageModel(projection: PptxPackageModel): Diagnost
 
     partIds.add(part.id);
     partsById.set(part.id, part);
+
+    if (partsByPath.has(partPath)) {
+      issues.push(
+        diagnostic({
+          severity: "error",
+          code: "E_PPTX_PACKAGE_DUPLICATE_PART_PATH",
+          title: "pptx package part path is duplicated",
+          message: "Pptx Package Model parts must have unique normalized package paths.",
+          labels: [{ path: `projection.parts.${partPath}`, message: "duplicate part path" }],
+        }),
+      );
+      continue;
+    }
+
+    partsByPath.set(partPath, part);
   }
 
   for (const requiredPath of REQUIRED_PACKAGE_PATHS) {
-    if (!partPaths.has(requiredPath)) {
+    if (!partsByPath.has(requiredPath)) {
       issues.push(
         diagnostic({
           severity: "error",
@@ -74,7 +91,8 @@ export function validatePptxPackageModel(projection: PptxPackageModel): Diagnost
 
   for (const part of parts) {
     part.relationships?.forEach((relationship) => {
-      if (!partsById.has(relationship.targetPartId)) {
+      const targetPart = partsById.get(relationship.targetPartId);
+      if (!targetPart) {
         issues.push(
           diagnostic({
             severity: "error",
@@ -89,6 +107,24 @@ export function validatePptxPackageModel(projection: PptxPackageModel): Diagnost
             ],
           }),
         );
+        return;
+      }
+
+      if (normalizedPartPath(relationship.targetPath) !== normalizedPartPath(targetPart.path)) {
+        issues.push(
+          diagnostic({
+            severity: "error",
+            code: "E_PPTX_PACKAGE_RELATIONSHIP_TARGET_PATH_MISMATCH",
+            title: "pptx package relationship target path does not match target part",
+            message: `Relationship ${relationship.id} targetPath does not match its target package part path.`,
+            labels: [
+              {
+                path: `projection.parts.${part.id}.relationships.${relationship.id}.targetPath`,
+                message: `expected ${targetPart.path}, received ${relationship.targetPath}`,
+              },
+            ],
+          }),
+        );
       }
     });
 
@@ -98,7 +134,7 @@ export function validatePptxPackageModel(projection: PptxPackageModel): Diagnost
 
     part.payload.overrides.forEach((override) => {
       const targetPath = normalizedPartPath(override.partName);
-      if (!partPaths.has(targetPath)) {
+      if (!partsByPath.has(targetPath)) {
         issues.push(
           diagnostic({
             severity: "error",
