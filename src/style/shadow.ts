@@ -1,4 +1,4 @@
-import type { ShadowIR } from "../ir/index";
+import type { ShadowIR } from "../layout/projected";
 import { parseCssColor } from "./color";
 import { isDeckPointLengthString, parsePointToken } from "./length";
 

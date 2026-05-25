@@ -1,25 +1,24 @@
 import { Buffer } from "node:buffer";
 import { imageSize } from "image-size";
 import JSZip from "jszip";
+import type { BackgroundImageLayerIR, BackgroundLayerIR, FrameIR } from "../layout/projected";
 import type {
-  BackgroundImageLayerIR,
-  BackgroundLayerIR,
-  FrameIR,
-  GroupIR,
-  ImageIR,
-  NodeIR,
-  PresentationIR,
-  TextIR,
-} from "../ir/index";
+  PptxElement,
+  PptxGroupElement,
+  PptxPackageModel,
+  PptxPictureElement,
+  PptxSlidePart,
+  PptxTextElement,
+} from "../projection/pptx";
 import { EMU_PER_INCH } from "../types";
 
 export type SrcRectImageLike = {
-  frame: ImageIR["frame"];
-  sourceFrame: ImageIR["sourceFrame"];
-  source: ImageIR["source"];
-  fit: ImageIR["fit"] | BackgroundImageLayerIR["fit"];
-  objectPosition?: ImageIR["objectPosition"];
-  crop?: ImageIR["crop"];
+  frame: PptxPictureElement["frame"];
+  sourceFrame: PptxPictureElement["sourceFrame"];
+  source: PptxPictureElement["source"];
+  fit: PptxPictureElement["fit"] | BackgroundImageLayerIR["fit"];
+  objectPosition?: PptxPictureElement["objectPosition"];
+  crop?: PptxPictureElement["crop"];
   size?: BackgroundImageLayerIR["size"];
 };
 
@@ -51,8 +50,8 @@ export type SlideXmlPatchPlan = {
 
 // PptxGenJS can emit most presentation nodes directly, but a few features are
 // only available by patching the generated slide XML. Keep those approximations
-// in backend-local categories so compiler IR remains independent of OOXML shape
-// ordering details.
+// inside the writer so compiler and projection models remain independent of
+// OOXML shape ordering details.
 
 function emuToInches(value: number): number {
   return value / EMU_PER_INCH;
@@ -83,7 +82,7 @@ function combineOpacities(parentOpacity: number | undefined, nodeOpacity: number
   return parent * node;
 }
 
-function buildGradientFillXml(fill: GroupIR["fill"], opacity?: number) {
+function buildGradientFillXml(fill: PptxGroupElement["fill"], opacity?: number) {
   if (!fill || fill.kind === "solid") {
     return undefined;
   }
@@ -120,7 +119,7 @@ function buildBackgroundLayerFillXml(layer: BackgroundLayerIR | undefined, opaci
   return isBackgroundImageLayer(layer) ? undefined : buildGradientFillXml(layer, opacity);
 }
 
-function buildShapeLinePatch(stroke: GroupIR["stroke"]): ShapeLinePatch | undefined {
+function buildShapeLinePatch(stroke: PptxGroupElement["stroke"]): ShapeLinePatch | undefined {
   if (!stroke) {
     return undefined;
   }
@@ -501,7 +500,7 @@ function patchShapeLineBlock(block: string, patch: ShapeLinePatch) {
 }
 
 function collectShapeFillPatches(
-  nodes: ReadonlyArray<NodeIR>,
+  nodes: ReadonlyArray<PptxElement>,
   inheritedOpacity?: number,
 ): Array<string | undefined> {
   const patches: Array<string | undefined> = [];
@@ -571,7 +570,7 @@ function collectShapeFillPatches(
 }
 
 function collectShapeLinePatches(
-  nodes: ReadonlyArray<NodeIR>,
+  nodes: ReadonlyArray<PptxElement>,
   inheritedOpacity?: number,
 ): Array<ShapeLinePatch | undefined> {
   const patches: Array<ShapeLinePatch | undefined> = [];
@@ -681,7 +680,7 @@ function collectBackgroundLayerImages(
   );
 }
 
-function collectRenderableImages(nodes: ReadonlyArray<NodeIR>): SrcRectImageLike[] {
+function collectRenderableImages(nodes: ReadonlyArray<PptxElement>): SrcRectImageLike[] {
   const images: SrcRectImageLike[] = [];
 
   for (const node of nodes) {
@@ -707,8 +706,8 @@ function collectRenderableImages(nodes: ReadonlyArray<NodeIR>): SrcRectImageLike
   return images;
 }
 
-function collectRenderableTextNodes(nodes: ReadonlyArray<NodeIR>): TextIR[] {
-  const texts: TextIR[] = [];
+function collectRenderableTextNodes(nodes: ReadonlyArray<PptxElement>): PptxTextElement[] {
+  const texts: PptxTextElement[] = [];
 
   for (const node of nodes) {
     if (node.visibility === "hidden") {
@@ -751,23 +750,22 @@ function patchSlideBlocks<TPatch>(xml: string, patch: SlideXmlPatch<TPatch>) {
   return patchedXml;
 }
 
-export function buildSlideXmlPatchPlan(
-  slideIR: PresentationIR["slides"][number],
-): SlideXmlPatchPlan {
+export function buildSlideXmlPatchPlan(slidePart: PptxSlidePart): SlideXmlPatchPlan {
+  const slide = slidePart.payload;
   const images = [
-    ...collectBackgroundLayerImages(slideIR.backgroundLayers),
-    ...collectRenderableImages(slideIR.nodes),
+    ...collectBackgroundLayerImages(slide.backgroundLayers),
+    ...collectRenderableImages(slide.elements),
   ];
-  const texts = collectRenderableTextNodes(slideIR.nodes);
+  const texts = collectRenderableTextNodes(slide.elements);
 
   return {
     pictureSrcRects: images.map((image) => resolveImageSrcRect(image)),
     shapeFills: [
-      ...(slideIR.backgroundLayers?.map((layer) => buildBackgroundLayerFillXml(layer)) ?? []),
-      ...collectShapeFillPatches(slideIR.nodes),
+      ...(slide.backgroundLayers?.map((layer) => buildBackgroundLayerFillXml(layer)) ?? []),
+      ...collectShapeFillPatches(slide.elements),
     ],
-    shapeLines: collectShapeLinePatches(slideIR.nodes),
-    slideBackgroundFill: buildGradientFillXml(slideIR.background),
+    shapeLines: collectShapeLinePatches(slide.elements),
+    slideBackgroundFill: buildGradientFillXml(slide.background),
     textIndentsEmu: texts.map((text) =>
       text.style.textIndentPt === undefined ? undefined : pointsToEmu(text.style.textIndentPt),
     ),
@@ -826,11 +824,11 @@ function applySlideXmlPatchPlan(slideXml: string, plan: SlideXmlPatchPlan) {
   });
 }
 
-export async function patchPresentationXml(data: Uint8Array, ir: PresentationIR) {
+export async function patchPresentationXml(data: Uint8Array, projection: PptxPackageModel) {
   const zip = await JSZip.loadAsync(data);
 
-  for (const [slideIndex, slideIR] of ir.slides.entries()) {
-    const patchPlan = buildSlideXmlPatchPlan(slideIR);
+  for (const [slideIndex, slide] of projection.slides.entries()) {
+    const patchPlan = buildSlideXmlPatchPlan(slide);
 
     if (!hasSlideXmlPatchPlan(patchPlan)) {
       continue;

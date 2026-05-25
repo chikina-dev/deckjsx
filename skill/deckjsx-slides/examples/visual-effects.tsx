@@ -78,5 +78,5 @@ export async function writeVisualEffects(output = "visual-effects.pptx"): Promis
     </Slide>
   ));
 
-  await deck.output({ backend: "pptxgenjs", output });
+  await deck.render({ output });
 }

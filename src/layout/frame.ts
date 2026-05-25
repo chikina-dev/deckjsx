@@ -1,4 +1,4 @@
-import type { FrameIR } from "../ir/index";
+import type { FrameIR } from "../layout/projected";
 
 export type Frame = FrameIR;
 

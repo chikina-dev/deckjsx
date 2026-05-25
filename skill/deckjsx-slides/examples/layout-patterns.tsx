@@ -70,5 +70,5 @@ export async function writeLayoutPatterns(output = "layout-patterns.pptx"): Prom
     </Slide>
   ));
 
-  await deck.output({ backend: "pptxgenjs", output });
+  await deck.render({ output });
 }

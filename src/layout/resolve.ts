@@ -1,5 +1,5 @@
-import { isContentNode, isSlideNode } from "./jsx";
-import { toLegacyJsxNode } from "./authoring/legacy";
+import { isContentNode, isSlideNode } from "../jsx";
+import { toAuthorJsxNode, toAuthorNode } from "../authoring/author-node";
 import {
   normalizeImageProps,
   normalizeShapeProps,
@@ -13,21 +13,29 @@ import {
   type NormalizedShapeProps,
   type NormalizedTextProps,
   type NormalizedViewProps,
-} from "./compiler/normalization";
-import { frameFromProps, inflateSpecifiedBoxSize, parseAspectRatio } from "./layout/absolute";
-import { intersectClipRect, type ClipRect, type Frame, type Placement } from "./layout/frame";
+} from "../compiler/normalization";
+import { frameFromProps, inflateSpecifiedBoxSize, parseAspectRatio } from "./absolute";
+import { intersectClipRect, type ClipRect, type Frame, type Placement } from "./frame";
 import type {
-  GroupIR,
+  ProjectedLayoutGroup,
   ImageSourceIR,
-  NodeIR,
-  PresentationIR,
-  ShapeIR,
-  SlideIR,
-  TextIR,
+  ProjectedLayoutNode,
+  ProjectedLayoutDocument,
+  ProjectedLayoutOrigin,
+  ProjectedLayoutShape,
+  ProjectedLayoutSlide,
+  ProjectedLayoutText,
   TextRunIR,
   TextStyleIR,
-} from "./ir/index";
-import type { AuthorNode, DeckOptions, ImageProps, JsxNode, SlideFactory } from "./authoring/index";
+} from "./projected";
+import type {
+  AuthorNode,
+  ContentAuthorNode,
+  DeckOptions,
+  ImageProps,
+  JsxNode,
+  SlideFactory,
+} from "../authoring/index";
 import type {
   CssAlignContent,
   CssAlignSelf,
@@ -36,7 +44,8 @@ import type {
   StackAlignment,
   StackAxis,
   ViewStyle,
-} from "./style/types";
+} from "../style/types";
+import type { ComposedAuthorRoot } from "../composition/types";
 import {
   advanceGridAutoPlacementCursor,
   markGridItem,
@@ -56,8 +65,8 @@ import {
   type GridPlacement,
   type GridTemplateResolution,
   type NamedGridArea,
-} from "./layout/grid";
-import { parseSpacing, parseSpacingInPoints } from "./layout/spacing";
+} from "./grid";
+import { parseSpacing, parseSpacingInPoints } from "./spacing";
 import {
   buildStackLines,
   resolveCrossGap,
@@ -68,22 +77,22 @@ import {
   resolveMainGap,
   type StackEntry,
   type StackMetrics,
-} from "./layout/stack";
+} from "./stack";
 import {
   normalizeTransparency,
   parseObjectPosition,
   resolveBackgroundBoxFrames,
   resolveBackgroundLayers,
-} from "./style/background";
-import { normalizeColor } from "./style/color";
-import { parseLength, parsePointValue, type LengthResolutionContext } from "./style/length";
+} from "../style/background";
+import { normalizeColor } from "../style/color";
+import { parseLength, parsePointValue, type LengthResolutionContext } from "../style/length";
 import {
   parseStrokeLineCap,
   parseStrokeLineJoin,
   resolveNodeStrokes,
   toStroke,
-} from "./style/stroke";
-import { parseShadowShorthand } from "./style/shadow";
+} from "../style/stroke";
+import { parseShadowShorthand } from "../style/shadow";
 import {
   extractText,
   getTextLengthContext,
@@ -92,12 +101,16 @@ import {
   resolveTabStops,
   resolveTextDirection,
   resolveUnderlineStyle,
-} from "./style/typography";
-import { EMU_PER_INCH, POINTS_PER_INCH } from "./types";
+} from "../style/typography";
+import { EMU_PER_INCH, POINTS_PER_INCH } from "../types";
 
 type IdGenerator = {
   nextSlide(): string;
   nextNode(): string;
+};
+
+export type ProjectedLayoutResolutionOptions = {
+  readonly origins?: WeakMap<object, ProjectedLayoutOrigin>;
 };
 
 type LayoutChildNode =
@@ -105,21 +118,25 @@ type LayoutChildNode =
       kind: "view";
       source: AuthorNode<"view">;
       props: NormalizedViewProps;
+      origin?: ProjectedLayoutOrigin;
     }
   | {
       kind: "text";
       source: AuthorNode<"text">;
       props: NormalizedTextProps;
+      origin?: ProjectedLayoutOrigin;
     }
   | {
       kind: "image";
       source: AuthorNode<"image">;
       props: NormalizedImageProps;
+      origin?: ProjectedLayoutOrigin;
     }
   | {
       kind: "shape";
       source: AuthorNode<"shape">;
       props: NormalizedShapeProps;
+      origin?: ProjectedLayoutOrigin;
     };
 type ResolvedGridContainerSpec = {
   contentX: number;
@@ -172,6 +189,52 @@ function imageSourceFromProps(props: NormalizedImageProps): ImageSourceIR {
   throw new Error("Image requires either src or data.");
 }
 
+function originForNode(
+  node: ContentAuthorNode,
+  options?: ProjectedLayoutResolutionOptions,
+): ProjectedLayoutOrigin | undefined {
+  return options?.origins?.get(node);
+}
+
+function layoutChildFromNode(
+  child: ContentAuthorNode,
+  context?: LengthResolutionContext,
+  options?: ProjectedLayoutResolutionOptions,
+): LayoutChildNode {
+  const origin = originForNode(child, options);
+
+  switch (child.kind) {
+    case "view":
+      return {
+        kind: "view",
+        source: child,
+        props: normalizeViewProps(child.props),
+        ...(origin ? { origin } : {}),
+      };
+    case "text":
+      return {
+        kind: "text",
+        source: child,
+        props: normalizeTextProps(child.props),
+        ...(origin ? { origin } : {}),
+      };
+    case "image":
+      return {
+        kind: "image",
+        source: child,
+        props: normalizeImageProps(child.props, context),
+        ...(origin ? { origin } : {}),
+      };
+    case "shape":
+      return {
+        kind: "shape",
+        source: child,
+        props: normalizeShapeProps(child.props),
+        ...(origin ? { origin } : {}),
+      };
+  }
+}
+
 function parseCropValue(value: number | `${number}%` | undefined): number {
   if (value === undefined) {
     return 0;
@@ -222,7 +285,7 @@ function parseImageCrop(
 
   return normalized;
 }
-function sortNodesForPaint(nodes: ReadonlyArray<NodeIR>): NodeIR[] {
+function sortNodesForPaint(nodes: ReadonlyArray<ProjectedLayoutNode>): ProjectedLayoutNode[] {
   return [...nodes]
     .map((node) =>
       node.kind === "group"
@@ -581,7 +644,8 @@ function compileGridChildren(
   >,
   clipRect?: ClipRect,
   context?: LengthResolutionContext,
-): NodeIR[] {
+  resolutionOptions?: ProjectedLayoutResolutionOptions,
+): ProjectedLayoutNode[] {
   const spec = resolveGridContainerSpec(parentFrame, options, context);
   const orderedChildren = authorChildren
     .map((child, sourceIndex) => ({
@@ -851,9 +915,17 @@ function compileGridChildren(
           placementOverride.yEmu = innerFrame.yEmu + yOffset;
         }
 
-        return compileNode(child, innerFrame, idGenerator, placementOverride, clipRect, context);
+        return compileNode(
+          child,
+          innerFrame,
+          idGenerator,
+          placementOverride,
+          clipRect,
+          context,
+          resolutionOptions,
+        );
       })
-      .filter((node): node is NodeIR => node !== null),
+      .filter((node): node is ProjectedLayoutNode => node !== null),
   );
 }
 
@@ -885,7 +957,8 @@ function compileChildren(
   >,
   clipRect?: ClipRect,
   context?: LengthResolutionContext,
-): NodeIR[] {
+  resolutionOptions?: ProjectedLayoutResolutionOptions,
+): ProjectedLayoutNode[] {
   const normalized = children.filter(
     (child) => child !== null && child !== undefined && child !== false && child !== true,
   );
@@ -900,32 +973,7 @@ function compileChildren(
         throw new Error("Only deckjsx components can be children of View in structured layout.");
       }
 
-      switch (child.kind) {
-        case "view":
-          return {
-            kind: "view",
-            source: child,
-            props: normalizeViewProps(child.props),
-          };
-        case "text":
-          return {
-            kind: "text",
-            source: child,
-            props: normalizeTextProps(child.props),
-          };
-        case "image":
-          return {
-            kind: "image",
-            source: child,
-            props: normalizeImageProps(child.props, context),
-          };
-        case "shape":
-          return {
-            kind: "shape",
-            source: child,
-            props: normalizeShapeProps(child.props),
-          };
-      }
+      return layoutChildFromNode(child, context, resolutionOptions);
     })
     .filter((child) => child.props.display !== "none");
 
@@ -953,14 +1001,25 @@ function compileChildren(
       },
       clipRect,
       context,
+      resolutionOptions,
     );
   }
 
   if (layout !== "stack") {
     return sortNodesForPaint(
       authorChildren
-        .map((child) => compileNode(child, parentFrame, idGenerator, undefined, clipRect, context))
-        .filter((node): node is NodeIR => node !== null),
+        .map((child) =>
+          compileNode(
+            child,
+            parentFrame,
+            idGenerator,
+            undefined,
+            clipRect,
+            context,
+            resolutionOptions,
+          ),
+        )
+        .filter((node): node is ProjectedLayoutNode => node !== null),
     );
   }
 
@@ -1034,7 +1093,7 @@ function compileChildren(
     lines.length,
   );
   let crossCursor = contentPacking.offsetEmu;
-  const flowNodes: NodeIR[] = [];
+  const flowNodes: ProjectedLayoutNode[] = [];
 
   for (const [lineIndex, line] of lines.entries()) {
     const mainAllocations = resolveFlexMainAllocations(
@@ -1124,6 +1183,7 @@ function compileChildren(
         placement,
         clipRect,
         context,
+        resolutionOptions,
       );
       if (compiledNode) {
         flowNodes.push(compiledNode);
@@ -1138,9 +1198,17 @@ function compileChildren(
 
   const absoluteNodes = absoluteEntries
     .map((entry) =>
-      compileNode(entry.child, contentFrame, idGenerator, undefined, clipRect, context),
+      compileNode(
+        entry.child,
+        contentFrame,
+        idGenerator,
+        undefined,
+        clipRect,
+        context,
+        resolutionOptions,
+      ),
     )
-    .filter((node): node is NodeIR => node !== null);
+    .filter((node): node is ProjectedLayoutNode => node !== null);
 
   return sortNodesForPaint([...flowNodes, ...absoluteNodes]);
 }
@@ -1152,7 +1220,8 @@ function compileGroupNode(
   placement?: Placement,
   clipRect?: ClipRect,
   context?: LengthResolutionContext,
-): GroupIR | null {
+  resolutionOptions?: ProjectedLayoutResolutionOptions,
+): ProjectedLayoutGroup | null {
   const { props } = node;
   const resolved = frameFromProps(props, parentFrame, placement, context);
   const strokes = resolveNodeStrokes(props, context);
@@ -1196,6 +1265,7 @@ function compileGroupNode(
   return {
     id: idGenerator.nextNode(),
     kind: "group",
+    ...(node.origin ? { origin: node.origin } : {}),
     frame: visibleFrame,
     opacity: resolved.opacity,
     rotation: resolved.rotation,
@@ -1261,6 +1331,7 @@ function compileGroupNode(
       },
       childClipRect,
       context,
+      resolutionOptions,
     ),
   };
 }
@@ -1372,7 +1443,7 @@ function compileTextNode(
   placement?: Placement,
   clipRect?: ClipRect,
   context?: LengthResolutionContext,
-): TextIR | null {
+): ProjectedLayoutText | null {
   const { props } = node;
   const textLengthContext = getTextLengthContext(props, context);
   const resolved = frameFromProps(props, parentFrame, placement, textLengthContext);
@@ -1430,6 +1501,7 @@ function compileTextNode(
   return {
     id: idGenerator.nextNode(),
     kind: "text",
+    ...(node.origin ? { origin: node.origin } : {}),
     frame: visibleFrame,
     opacity: resolved.opacity,
     rotation: resolved.rotation,
@@ -1484,7 +1556,7 @@ function compileImageNode(
   placement?: Placement,
   clipRect?: ClipRect,
   context?: LengthResolutionContext,
-): NodeIR | null {
+): ProjectedLayoutNode | null {
   const { props } = node;
   const resolved = frameFromProps(props, parentFrame, placement, context);
   const shadow = parseShadowShorthand(props.boxShadow);
@@ -1521,6 +1593,7 @@ function compileImageNode(
   return {
     id: idGenerator.nextNode(),
     kind: "image",
+    ...(node.origin ? { origin: node.origin } : {}),
     frame: visibleFrame,
     sourceFrame: {
       xEmu: resolved.xEmu,
@@ -1552,7 +1625,7 @@ function compileShapeNode(
   placement?: Placement,
   clipRect?: ClipRect,
   context?: LengthResolutionContext,
-): ShapeIR | null {
+): ProjectedLayoutShape | null {
   const { props } = node;
   const resolved = frameFromProps(props, parentFrame, placement, context);
   const strokes = resolveNodeStrokes(props, context);
@@ -1602,6 +1675,7 @@ function compileShapeNode(
   return {
     id: idGenerator.nextNode(),
     kind: "shape",
+    ...(node.origin ? { origin: node.origin } : {}),
     shape: props.shape,
     frame: visibleFrame,
     opacity: resolved.opacity,
@@ -1650,10 +1724,19 @@ function compileNode(
   placement?: Placement,
   clipRect?: ClipRect,
   context?: LengthResolutionContext,
-): NodeIR | null {
+  resolutionOptions?: ProjectedLayoutResolutionOptions,
+): ProjectedLayoutNode | null {
   switch (child.kind) {
     case "view":
-      return compileGroupNode(child, parentFrame, idGenerator, placement, clipRect, context);
+      return compileGroupNode(
+        child,
+        parentFrame,
+        idGenerator,
+        placement,
+        clipRect,
+        context,
+        resolutionOptions,
+      );
     case "text":
       return compileTextNode(child, parentFrame, idGenerator, placement, clipRect, context);
     case "image":
@@ -1669,7 +1752,8 @@ function compileSlide(
   slideFrame: Frame,
   idGenerator: IdGenerator,
   lengthContext?: LengthResolutionContext,
-): SlideIR {
+  resolutionOptions?: ProjectedLayoutResolutionOptions,
+): ProjectedLayoutSlide {
   if (!isSlideNode(root)) {
     throw new Error(`Slide factory at index ${context.slideIndex} must return a <Slide /> root.`);
   }
@@ -1694,39 +1778,20 @@ function compileSlide(
   const nodes = root.children
     .filter((child) => child !== null && child !== undefined && child !== false && child !== true)
     .filter(isContentNode)
-    .map((child): LayoutChildNode => {
-      switch (child.kind) {
-        case "view":
-          return {
-            kind: "view",
-            source: child,
-            props: normalizeViewProps(child.props),
-          };
-        case "text":
-          return {
-            kind: "text",
-            source: child,
-            props: normalizeTextProps(child.props),
-          };
-        case "image":
-          return {
-            kind: "image",
-            source: child,
-            props: normalizeImageProps(child.props, lengthContext),
-          };
-        case "shape":
-          return {
-            kind: "shape",
-            source: child,
-            props: normalizeShapeProps(child.props),
-          };
-      }
-    })
+    .map((child): LayoutChildNode => layoutChildFromNode(child, lengthContext, resolutionOptions))
     .filter((child) => child.props.display !== "none")
     .map((child) =>
-      compileNode(child, slideFrame, idGenerator, undefined, undefined, lengthContext),
+      compileNode(
+        child,
+        slideFrame,
+        idGenerator,
+        undefined,
+        undefined,
+        lengthContext,
+        resolutionOptions,
+      ),
     )
-    .filter((node): node is NodeIR => node !== null);
+    .filter((node): node is ProjectedLayoutNode => node !== null);
 
   return {
     id: idGenerator.nextSlide(),
@@ -1739,10 +1804,11 @@ function compileSlide(
   };
 }
 
-export function renderPresentation(
+export function resolveProjectedLayout(
   options: DeckOptions,
   slides: ReadonlyArray<SlideFactory<void>>,
-): PresentationIR {
+  resolutionOptions: ProjectedLayoutResolutionOptions = {},
+): ProjectedLayoutDocument {
   const idGenerator = createIdGenerator();
   const slideSize =
     options.layout.unit === "in"
@@ -1766,12 +1832,12 @@ export function renderPresentation(
   };
 
   return {
-    version: "0.1",
+    version: "layout-snapshot/0.6",
     meta: options.meta,
     size: slideSize,
     slides: slides.map((factory, slideIndex) => {
       return compileSlide(
-        toLegacyJsxNode(
+        toAuthorJsxNode(
           factory({
             composition: {
               slideIndex,
@@ -1787,7 +1853,54 @@ export function renderPresentation(
         slideFrame,
         idGenerator,
         lengthContext,
+        resolutionOptions,
       );
     }),
+  };
+}
+
+export function resolveProjectedLayoutFromRoots(
+  options: DeckOptions,
+  roots: readonly ComposedAuthorRoot[],
+  resolutionOptions: ProjectedLayoutResolutionOptions = {},
+): ProjectedLayoutDocument {
+  const idGenerator = createIdGenerator();
+  const slideSize =
+    options.layout.unit === "in"
+      ? {
+          widthEmu: options.layout.width * EMU_PER_INCH,
+          heightEmu: options.layout.height * EMU_PER_INCH,
+        }
+      : {
+          widthEmu: (options.layout.width / POINTS_PER_INCH) * EMU_PER_INCH,
+          heightEmu: (options.layout.height / POINTS_PER_INCH) * EMU_PER_INCH,
+        };
+  const slideFrame: Frame = {
+    xEmu: 0,
+    yEmu: 0,
+    widthEmu: slideSize.widthEmu,
+    heightEmu: slideSize.heightEmu,
+  };
+  const lengthContext: LengthResolutionContext = {
+    viewportWidthEmu: slideFrame.widthEmu,
+    viewportHeightEmu: slideFrame.heightEmu,
+  };
+
+  return {
+    version: "layout-snapshot/0.6",
+    meta: options.meta,
+    size: slideSize,
+    slides: roots.map((root, slideIndex) =>
+      compileSlide(
+        toAuthorNode(root.root),
+        {
+          slideIndex,
+        },
+        slideFrame,
+        idGenerator,
+        lengthContext,
+        resolutionOptions,
+      ),
+    ),
   };
 }

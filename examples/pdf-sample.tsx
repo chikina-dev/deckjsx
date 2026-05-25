@@ -42,7 +42,7 @@ export async function writeSampleDeck(output = "examples/output/deckjsx-sample.p
         deckjsx Sample Report
       </Text>
       <Text style={{ x: 1.03, y: 1.8, width: 8.7, height: 0.5, fontSize: 18, color: "#475569" }}>
-        JSX authoring, compiler IR, and PPTX output in one small example.
+        JSX authoring, projected document inspection, and PPTX output in one small example.
       </Text>
       <View
         style={{
@@ -181,7 +181,7 @@ export async function writeSampleDeck(output = "examples/output/deckjsx-sample.p
     </Slide>
   ));
 
-  await deck.output({ backend: "pptxgenjs", output });
+  await deck.render({ output });
 }
 
 type PdfPage = {
@@ -241,7 +241,7 @@ function buildSamplePdfPages(): PdfPage[] {
         text(
           74,
           top(2.18),
-          "JSX authoring, compiler IR, and PPTX output in one small example.",
+          "JSX authoring, projected document inspection, and PPTX output in one small example.",
           18,
           "#475569",
         ),

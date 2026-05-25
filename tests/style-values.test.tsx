@@ -40,7 +40,7 @@ describe("style value normalization", () => {
       </Slide>
     ));
 
-    const nodes = deck.render().slides[0].nodes;
+    const nodes = deck.project().projection!.slides[0].payload.elements;
     const box = nodes[0];
     const text = nodes[1];
 
@@ -112,7 +112,7 @@ describe("style value normalization", () => {
       </Slide>
     ));
 
-    const group = deck.render().slides[0].nodes[0];
+    const group = deck.project().projection!.slides[0].payload.elements[0];
 
     expect(group?.kind).toBe("group");
     if (!group || group.kind !== "group") {
@@ -169,7 +169,7 @@ describe("style value normalization", () => {
       </Slide>
     ));
 
-    const group = deck.render().slides[0].nodes[0];
+    const group = deck.project().projection!.slides[0].payload.elements[0];
 
     expect(group?.kind).toBe("group");
     if (!group || group.kind !== "group") {
@@ -234,10 +234,10 @@ describe("style value normalization", () => {
       </Slide>
     ));
 
-    const slide = deck.render().slides[0];
-    const view = slide.nodes[0];
+    const slide = deck.project().projection!.slides[0];
+    const view = slide.payload.elements[0];
 
-    expect(slide.background).toEqual({ kind: "solid", color: "112233", transparency: 50 });
+    expect(slide.payload.background).toEqual({ kind: "solid", color: "112233", transparency: 50 });
     expect(view?.kind).toBe("group");
     if (!view || view.kind !== "group") {
       throw new Error("Expected group node.");
@@ -317,10 +317,14 @@ describe("style value normalization", () => {
       </Slide>
     ));
 
-    const slide = deck.render().slides[0];
-    const view = slide.nodes[0];
+    const slide = deck.project().projection!.slides[0];
+    const view = slide.payload.elements[0];
 
-    expect(slide.background).toEqual({ kind: "solid", color: "FFEFD5", transparency: undefined });
+    expect(slide.payload.background).toEqual({
+      kind: "solid",
+      color: "FFEFD5",
+      transparency: undefined,
+    });
     expect(view?.kind).toBe("group");
     if (!view || view.kind !== "group") {
       throw new Error("Expected group node.");
@@ -394,10 +398,10 @@ describe("style value normalization", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
-    const [view, text, shape] = ir.slides[0].nodes;
+    const ir = deck.project().projection!;
+    const [view, text, shape] = ir.slides[0].payload.elements;
 
-    expect(ir.slides[0].background).toEqual({
+    expect(ir.slides[0].payload.background).toEqual({
       kind: "solid",
       color: "112233",
       transparency: 60,
@@ -491,10 +495,10 @@ describe("style value normalization", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
-    const [view, text, shape, override] = ir.slides[0].nodes;
+    const ir = deck.project().projection!;
+    const [view, text, shape, override] = ir.slides[0].payload.elements;
 
-    expect(ir.slides[0].background).toEqual({
+    expect(ir.slides[0].payload.background).toEqual({
       kind: "linear-gradient",
       angle: 90,
       stops: [
@@ -502,7 +506,7 @@ describe("style value normalization", () => {
         { color: "F97316", transparency: undefined, position: 1 },
       ],
     });
-    expect(ir.slides[0].backgroundLayers).toEqual([
+    expect(ir.slides[0].payload.backgroundLayers).toEqual([
       {
         kind: "linear-gradient",
         angle: 180,
@@ -599,7 +603,7 @@ describe("style value normalization", () => {
       </Slide>
     ));
 
-    const [clipped, shorthand] = deck.render().slides[0].nodes;
+    const [clipped, shorthand] = deck.project().projection!.slides[0].payload.elements;
 
     expect(clipped?.kind).toBe("group");
     if (!clipped || clipped.kind !== "group") {
@@ -710,7 +714,7 @@ describe("style value normalization", () => {
       </Slide>
     ));
 
-    const [insetBox, stack] = deck.render().slides[0].nodes;
+    const [insetBox, stack] = deck.project().projection!.slides[0].payload.elements;
 
     expect(insetBox?.kind).toBe("group");
     if (!insetBox || insetBox.kind !== "group") {
@@ -793,7 +797,7 @@ describe("style value normalization", () => {
       </Slide>
     ));
 
-    const [view, text, shape] = deck.render().slides[0].nodes;
+    const [view, text, shape] = deck.project().projection!.slides[0].payload.elements;
 
     expect(view?.kind).toBe("group");
     if (!view || view.kind !== "group") {
@@ -844,7 +848,11 @@ describe("style value normalization", () => {
         <View style={{ x: "1qu" as never, y: 1, width: 2, height: 1 }} />
       </Slide>
     ));
-    expect(() => unsupportedLength.render()).toThrowError("Unsupported length value: 1qu");
+    const unsupportedLengthResult = unsupportedLength.project();
+    expect(unsupportedLengthResult.ok).toBe(false);
+    expect(unsupportedLengthResult.diagnostics.items[0]?.message).toContain(
+      "Unsupported length value: 1qu",
+    );
 
     const unsupportedRepeat = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
@@ -863,7 +871,9 @@ describe("style value normalization", () => {
         />
       </Slide>
     ));
-    expect(() => unsupportedRepeat.render()).toThrowError(
+    const unsupportedRepeatResult = unsupportedRepeat.project();
+    expect(unsupportedRepeatResult.ok).toBe(false);
+    expect(unsupportedRepeatResult.diagnostics.items[0]?.message).toContain(
       "Unsupported backgroundRepeat value: space. Supported values are no-repeat, repeat-x, repeat-y, and repeat.",
     );
 
@@ -883,7 +893,9 @@ describe("style value normalization", () => {
         />
       </Slide>
     ));
-    expect(() => unsupportedGradient.render()).toThrowError(
+    const unsupportedGradientResult = unsupportedGradient.project();
+    expect(unsupportedGradientResult.ok).toBe(false);
+    expect(unsupportedGradientResult.diagnostics.items[0]?.message).toContain(
       "repeating-linear-gradient() requires a positive repeat span.",
     );
 
@@ -903,7 +915,9 @@ describe("style value normalization", () => {
         />
       </Slide>
     ));
-    expect(() => invalidGrid.render()).toThrowError(
+    const invalidGridResult = invalidGrid.project();
+    expect(invalidGridResult.ok).toBe(false);
+    expect(invalidGridResult.diagnostics.items[0]?.message).toContain(
       'grid shorthand cannot contain "auto-flow" on both sides of "/".',
     );
 
@@ -917,7 +931,9 @@ describe("style value normalization", () => {
         </Text>
       </Slide>
     ));
-    expect(() => invalidScript.render()).toThrowError(
+    const invalidScriptResult = invalidScript.project();
+    expect(invalidScriptResult.ok).toBe(false);
+    expect(invalidScriptResult.diagnostics.items[0]?.message).toContain(
       "Text cannot be both superscript and subscript.",
     );
   });
@@ -965,7 +981,7 @@ describe("style value normalization", () => {
       </Slide>
     ));
 
-    const [decorated, wrapping] = deck.render().slides[0].nodes;
+    const [decorated, wrapping] = deck.project().projection!.slides[0].payload.elements;
 
     expect(decorated?.kind).toBe("text");
     if (!decorated || decorated.kind !== "text") {
@@ -1017,7 +1033,7 @@ describe("style value normalization", () => {
       </Slide>
     ));
 
-    const image = deck.render().slides[0].nodes[0];
+    const image = deck.project().projection!.slides[0].payload.elements[0];
 
     expect(image?.kind).toBe("image");
     if (!image || image.kind !== "image") {

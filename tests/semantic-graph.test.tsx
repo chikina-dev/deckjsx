@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, SemanticGraphDiagnosticError, Slide, Text, View } from "../src/index.ts";
+import { Deck, Slide, Text, View } from "../src/index.ts";
 
 function values<T>(map: ReadonlyMap<unknown, T>): T[] {
   return [...map.values()];
@@ -24,7 +24,7 @@ describe("Semantic Author Graph", () => {
       </Slide>
     ));
 
-    const graph = deck.compile();
+    const graph = deck.compile().graph!;
     const nodes = values(graph.nodes);
     const heading = nodes.find((node) => node.kind === "text" && node.role?.kind === "heading");
     const image = nodes.find((node) => node.kind === "image");
@@ -60,7 +60,7 @@ describe("Semantic Author Graph", () => {
       </Slide>
     ));
 
-    const result = deck.compile({ mode: "inspect" });
+    const result = deck.compile();
 
     expect(result.graph).toBeDefined();
     expect(result.diagnostics.hasErrors).toBe(true);
@@ -69,7 +69,7 @@ describe("Semantic Author Graph", () => {
       code: "E_SEMANTIC_STRUCTURE",
       title: "span cannot appear here",
     });
-    expect(() => deck.compile()).toThrowError(SemanticGraphDiagnosticError);
+    expect(result.ok).toBe(false);
   });
 
   test("fragments are transparent and preserve multiple graph children", () => {
@@ -88,7 +88,7 @@ describe("Semantic Author Graph", () => {
       </Slide>
     ));
 
-    const graph = deck.compile();
+    const graph = deck.compile().graph!;
     const view = values(graph.nodes).find(
       (node) => node.kind === "container" && node.authoredComponent === "View",
     );

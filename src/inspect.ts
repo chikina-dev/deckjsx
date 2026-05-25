@@ -1,4 +1,34 @@
-export type { CompileInspectResult, CompileMode } from "./deck";
+export type {
+  PackagePartId,
+  PptxContentTypesPart,
+  ProjectInspectionAdapterLimitation,
+  ProjectInspectionDiagnosticSummary,
+  ProjectInspectionElementSummary,
+  ProjectInspectionMediaSummary,
+  ProjectInspectionPartSummary,
+  ProjectInspectionResolvedValues,
+  ProjectInspectionSummary,
+  PptxElement,
+  PptxElementId,
+  PptxElementKind,
+  PptxElementOrigin,
+  PptxPackageModel,
+  PptxPackagePart,
+  PptxPackagePartCategory,
+  PptxPackagePartKind,
+  PptxRelationship,
+  PptxRelationshipsPart,
+  PptxSerializedIdentities,
+  PptxSerializedIdentity,
+  PptxSlidePart,
+  PptxSupportPartPayload,
+} from "./projection/pptx";
+export type {
+  PptxContentTypeDefault,
+  PptxContentTypeOverride,
+  PptxContentTypesPayload,
+  PptxRelationshipsPayload,
+} from "./projection/pptx-manifest";
 export type {
   ResolvedStyle,
   ResolvedStyleLayer,

@@ -7,18 +7,19 @@ The intended architecture is:
 
 ```text
 JSX
-  -> Presentation IR
-  -> Backend
-       |- PptxGenJS backend
-       `- OOXML direct backend (future)
+  -> Author Tree
+  -> Semantic Author Graph
+  -> Output Projection
+  -> Output Writer
 ```
 
 This project is being designed as a compiler, not as a thin `PptxGenJS` wrapper.
-The API uses a class-based compiler with callback-based `.add()`, `.render()`, and `.output()`.
-Authoring uses typed JSX elements with a `style` object prop.
+The API uses a class-based compiler with callback-based `.add()`, `.compile()`, `.project()`, and
+`.render()`. Authoring uses typed JSX elements with CSS-like style and class semantics.
 
 The implementation preserves the compiler model with explicit module boundaries for authoring,
-style normalization, layout, IR, backend emission, and Node runtime output.
+semantic graph construction, style resolution, output projection, writer adapters, and runtime
+output.
 
 ## Install
 
@@ -26,7 +27,7 @@ style normalization, layout, IR, backend emission, and Node runtime output.
 npm install deckjsx
 ```
 
-The package currently targets Node.js output and ships a `pptxgenjs` backend.
+The package currently targets PPTX output and ships a temporary `pptxgenjs` writer adapter.
 
 ## Usage
 
@@ -59,8 +60,7 @@ deck.add(({ composition }) => (
 
       <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 0.35 }}>
         <p style={{ fontSize: 18, color: "#334155", fit: "shrink" }}>
-          Author slides with typed JSX, inspect the generated IR, and emit PPTX files through the
-          backend boundary.
+          Author slides with typed JSX, inspect the projected document model, and render PPTX files.
         </p>
         <figure style={{ backgroundColor: "#E0F2FE", borderRadius: 0.15, padding: 0.25 }}>
           <img src="chart.png" style={{ width: "100%", height: "100%", fit: "contain" }} />
@@ -78,12 +78,12 @@ deck.add(({ composition }) => (
   </Slide>
 ));
 
-const ir = deck.render();
-await deck.output({ backend: "pptxgenjs", output: "quarterly-review.pptx" });
+const project = deck.project();
+await deck.render({ output: "quarterly-review.pptx" });
 ```
 
-Use `deck.render()` for tests, snapshots, and backend-independent inspection. Use
-`deck.output({ backend: "pptxgenjs", output })` when writing a PowerPoint file.
+Use `deck.compile()` for authoring semantics, `deck.project()` for output-facing inspection, and
+`deck.render({ output })` when writing a PowerPoint file.
 
 ## JSX elements
 
@@ -118,7 +118,13 @@ Image elements compile to images and require either `src` or `data`:
 ```
 
 Primitive string and number children inside view-like elements are normalized to implicit text
-nodes. Inline rich text with `span` is intentionally reserved for a later release.
+nodes. Inline rich text uses `span` inside text-like elements:
+
+```tsx
+<p>
+  Revenue grew <span style={{ color: "#16A34A", fontWeight: 700 }}>12%</span>.
+</p>
+```
 
 ## View Layout Semantics
 

@@ -1,4 +1,3 @@
-import type { BackendName } from "../authoring/index";
 import type {
   BorderStyle,
   CssVisibility,
@@ -8,16 +7,24 @@ import type {
   TextFit,
   VerticalAlign,
 } from "../style/types";
+import type { AssetEntityId, GraphNodeId, SourceOrigin, StyleEntityId } from "../graph";
 
-export type PresentationIR = {
-  version: "0.1";
+export type ProjectedLayoutOrigin = {
+  readonly graphNodeIds?: readonly GraphNodeId[];
+  readonly styleEntityIds?: readonly StyleEntityId[];
+  readonly assetEntityIds?: readonly AssetEntityId[];
+  readonly source?: SourceOrigin;
+};
+
+export type ProjectedLayoutDocument = {
+  version: "layout-snapshot/0.6";
   meta?: {
     title?: string;
     author?: string;
     subject?: string;
   };
   size: SizeIR;
-  slides: ReadonlyArray<SlideIR>;
+  slides: ReadonlyArray<ProjectedLayoutSlide>;
 };
 
 export type SizeIR = {
@@ -30,18 +37,23 @@ export type FrameIR = SizeIR & {
   yEmu: number;
 };
 
-export type SlideIR = {
+export type ProjectedLayoutSlide = {
   id: string;
   name?: string;
   background?: FillIR;
   backgroundLayers?: ReadonlyArray<BackgroundLayerIR>;
-  nodes: ReadonlyArray<NodeIR>;
+  nodes: ReadonlyArray<ProjectedLayoutNode>;
 };
 
-export type NodeIR = GroupIR | TextIR | ImageIR | ShapeIR;
+export type ProjectedLayoutNode =
+  | ProjectedLayoutGroup
+  | ProjectedLayoutText
+  | ProjectedLayoutImage
+  | ProjectedLayoutShape;
 
-export type BaseNodeIR = {
+export type ProjectedLayoutBaseNode = {
   id: string;
+  origin?: ProjectedLayoutOrigin;
   frame: FrameIR;
   opacity?: number;
   rotation?: number;
@@ -77,9 +89,9 @@ export type ImageCropIR = {
   left: number;
 };
 
-export type GroupIR = BaseNodeIR & {
+export type ProjectedLayoutGroup = ProjectedLayoutBaseNode & {
   kind: "group";
-  children: ReadonlyArray<NodeIR>;
+  children: ReadonlyArray<ProjectedLayoutNode>;
   fill?: FillIR;
   backgroundLayers?: ReadonlyArray<BackgroundLayerIR>;
   stroke?: StrokeIR;
@@ -89,7 +101,7 @@ export type GroupIR = BaseNodeIR & {
   radiusEmu?: number;
 };
 
-export type TextIR = BaseNodeIR & {
+export type ProjectedLayoutText = ProjectedLayoutBaseNode & {
   kind: "text";
   content: TextContentIR;
   style: TextStyleIR;
@@ -103,7 +115,7 @@ export type TextIR = BaseNodeIR & {
   radiusEmu?: number;
 };
 
-export type ImageIR = BaseNodeIR & {
+export type ProjectedLayoutImage = ProjectedLayoutBaseNode & {
   kind: "image";
   sourceFrame: FrameIR;
   source: ImageSourceIR;
@@ -116,7 +128,7 @@ export type ImageIR = BaseNodeIR & {
   hyperlink?: HyperlinkIR;
 };
 
-export type ShapeIR = BaseNodeIR & {
+export type ProjectedLayoutShape = ProjectedLayoutBaseNode & {
   kind: "shape";
   shape: "rect" | "ellipse" | "line";
   fill?: FillIR;
@@ -271,15 +283,3 @@ export type ImageSourceIR =
       kind: "data";
       data: string;
     };
-
-export type BackendArtifact = {
-  kind: "buffer";
-  mimeType: string;
-  data: Uint8Array;
-  extension: string;
-};
-
-export type CompileBackend = {
-  name: BackendName;
-  emit(ir: PresentationIR): Promise<BackendArtifact>;
-};

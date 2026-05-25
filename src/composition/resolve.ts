@@ -1,4 +1,4 @@
-import { isLegacyAuthorNode } from "../authoring/legacy";
+import { isAuthorNodeValue } from "../authoring/author-node";
 import { isAuthorTreeNode, type AuthorElementNode, type AuthorTreeNode } from "../authoring/tree";
 import { createDiagnostics, diagnostic, type Diagnostic } from "../diagnostics";
 import type { SourceOrigin } from "../graph/types";
@@ -108,8 +108,8 @@ function validateSourceKey(sourceKey: string): string | undefined {
 }
 
 function describeInvalidRoot(value: unknown): string {
-  if (isLegacyAuthorNode(value)) {
-    return "Slide factory returned a legacy author node.";
+  if (isAuthorNodeValue(value)) {
+    return "Slide factory returned an AuthorNode value instead of an Author Tree node.";
   }
 
   if (isAuthorTreeNode(value)) {

@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { stat } from "node:fs/promises";
-import { Deck, Shape, Slide, type SlideContext } from "deckjsx";
+import { Deck, Shape, Slide } from "deckjsx";
 
 const deck = new Deck({
   layout: { width: 10, height: 5.625, unit: "in" },
   meta: { title: "deckjsx 0.2 html-like TSX smoke test", author: "deckjsx" },
 });
 
-deck.add(({ slideIndex, totalSlides }: SlideContext) => (
+deck.add(({ composition }) => (
   <Slide name="npm tsx html-like smoke" style={{ backgroundColor: "#F8FAFC" }}>
     <header
       style={{
@@ -36,7 +36,7 @@ deck.add(({ slideIndex, totalSlides }: SlideContext) => (
       }}
     >
       <p style={{ fontSize: 16, color: "#334155", fit: "shrink" }}>
-        Published package generated slide {slideIndex + 1} / {totalSlides}.
+        Published package generated slide {composition.slideIndex + 1} / {composition.totalSlides}.
       </p>
       <Shape
         shape="rect"
@@ -53,20 +53,17 @@ deck.add(({ slideIndex, totalSlides }: SlideContext) => (
   </Slide>
 ));
 
-const ir = deck.render();
-assert.equal(ir.slides.length, 1);
-assert.equal(ir.slides[0]?.name, "npm tsx html-like smoke");
+const projection = deck.project().projection!;
+assert.equal(projection.slides.length, 1);
+assert.equal(projection.slides[0]?.payload.name, "npm tsx html-like smoke");
 
-const [header, main, footer] = ir.slides[0]?.nodes ?? [];
+const [header, main, footer] = projection.slides[0]?.payload.elements ?? [];
 assert.equal(header?.kind, "group");
 assert.equal(main?.kind, "group");
 assert.equal(footer?.kind, "group");
 assert.equal(footer.children[0]?.kind, "text");
 
-await deck.output({
-  backend: "pptxgenjs",
-  output: "output-tsx.pptx",
-});
+await deck.render({ output: "output-tsx.pptx" });
 
 const output = await stat("output-tsx.pptx");
 assert(output.size > 0);

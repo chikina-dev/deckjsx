@@ -39,7 +39,7 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(deck.render().slides[0].nodes)).toEqual([
+    expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -129,7 +129,7 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(deck.render().slides[0].nodes)).toEqual([
+    expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -192,7 +192,7 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(deck.render().slides[0].nodes)).toEqual([
+    expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -257,7 +257,7 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(deck.render().slides[0].nodes)).toEqual([
+    expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -327,7 +327,7 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(deck.render().slides[0].nodes)).toEqual([
+    expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -402,7 +402,7 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(deck.render().slides[0].nodes)).toEqual([
+    expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -475,7 +475,7 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(deck.render().slides[0].nodes)).toEqual([
+    expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -547,7 +547,7 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(deck.render().slides[0].nodes)).toEqual([
+    expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -611,7 +611,7 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(deck.render().slides[0].nodes)).toEqual([
+    expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -693,7 +693,7 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(deck.render().slides[0].nodes)).toEqual([
+    expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -774,7 +774,7 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(deck.render().slides[0].nodes)).toEqual([
+    expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -855,7 +855,7 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(deck.render().slides[0].nodes)).toEqual([
+    expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -924,7 +924,7 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(deck.render().slides[0].nodes)).toEqual([
+    expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -999,7 +999,7 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(deck.render().slides[0].nodes)).toEqual([
+    expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -1065,7 +1065,7 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(deck.render().slides[0].nodes)).toEqual([
+    expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -1114,7 +1114,7 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(deck.render().slides[0].nodes)).toEqual([
+    expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -1182,7 +1182,7 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(deck.render().slides[0].nodes)).toEqual([
+    expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -1250,7 +1250,7 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(deck.render().slides[0].nodes)).toEqual([
+    expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -1318,7 +1318,7 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(deck.render().slides[0].nodes)).toEqual([
+    expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -1385,7 +1385,7 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(gridOverride.render().slides[0].nodes)).toEqual([
+    expect(summarizeNodes(gridOverride.project().projection!.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -1443,7 +1443,9 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(autoFlowOverride.render().slides[0].nodes)).toEqual([
+    expect(
+      summarizeNodes(autoFlowOverride.project().projection!.slides[0].payload.elements),
+    ).toEqual([
       {
         kind: "group",
         frame: {
@@ -1519,7 +1521,9 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    expect(summarizeNodes(templateOverride.render().slides[0].nodes)).toEqual([
+    expect(
+      summarizeNodes(templateOverride.project().projection!.slides[0].payload.elements),
+    ).toEqual([
       {
         kind: "group",
         frame: {
@@ -1594,9 +1598,9 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
+    const ir = deck.project().projection!;
 
-    expect(summarizeNodes(ir.slides[0].nodes)).toEqual([
+    expect(summarizeNodes(ir.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -1675,9 +1679,9 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
+    const ir = deck.project().projection!;
 
-    expect(summarizeNodes(ir.slides[0].nodes)).toEqual([
+    expect(summarizeNodes(ir.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -1739,9 +1743,9 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
+    const ir = deck.project().projection!;
 
-    expect(summarizeNodes(ir.slides[0].nodes)).toEqual([
+    expect(summarizeNodes(ir.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {
@@ -1812,9 +1816,9 @@ describe("grid layout", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
+    const ir = deck.project().projection!;
 
-    expect(summarizeNodes(ir.slides[0].nodes)).toEqual([
+    expect(summarizeNodes(ir.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {

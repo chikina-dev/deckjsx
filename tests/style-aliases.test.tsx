@@ -47,99 +47,52 @@ describe("style-aliases", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
-    const group = ir.slides[0].nodes[0];
+    const ir = deck.project().projection!;
+    const group = ir.slides[0].payload.elements[0];
 
-    expect(group).toMatchInlineSnapshot(`
-    	{
-    	  "children": [
-    	    {
-    	      "content": {
-    	        "text": "Alias text",
-    	      },
-    	      "fill": undefined,
-    	      "flipH": undefined,
-    	      "flipV": undefined,
-    	      "frame": {
-    	        "heightEmu": 381000,
-    	        "widthEmu": 3657600,
-    	        "xEmu": 1371600,
-    	        "yEmu": 1371600,
-    	      },
-    	      "id": "node-2",
-    	      "kind": "text",
-    	      "opacity": undefined,
-    	      "radiusEmu": 0,
-    	      "rotation": undefined,
-    	      "stroke": undefined,
-    	      "style": {
-    	        "charSpacing": 1.5,
-    	        "color": undefined,
-    	        "fit": undefined,
-    	        "fontFamily": undefined,
-    	        "fontSizePt": 24,
-    	        "fontWeight": undefined,
-    	        "italic": true,
-    	        "lineSpacing": 21,
-    	        "lineSpacingMultiple": undefined,
-    	        "paddingPt": undefined,
-    	        "paragraphSpacingAfter": undefined,
-    	        "paragraphSpacingBefore": undefined,
-    	        "strike": true,
-    	        "textAlign": undefined,
-    	        "underline": true,
-    	        "verticalAlign": undefined,
-    	        "wrap": undefined,
-    	      },
-    	      "zIndex": undefined,
-    	    },
-    	    {
-    	      "fit": "cover",
-    	      "flipH": undefined,
-    	      "flipV": undefined,
-    	      "frame": {
-    	        "heightEmu": 762000,
-    	        "widthEmu": 914400,
-    	        "xEmu": 1371600,
-    	        "yEmu": 1981200,
-    	      },
-    	      "id": "node-3",
-    	      "kind": "image",
-    	      "opacity": undefined,
-    	      "rotation": undefined,
-    	      "rounding": undefined,
-    	      "source": {
-    	        "kind": "path",
-    	        "path": "/tmp/alias.png",
-    	      },
-    	      "sourceFrame": {
-    	        "heightEmu": 762000,
-    	        "widthEmu": 914400,
-    	        "xEmu": 1371600,
-    	        "yEmu": 1981200,
-    	      },
-    	      "transparency": undefined,
-    	      "zIndex": undefined,
-    	    },
-    	  ],
-    	  "fill": undefined,
-    	  "flipH": undefined,
-    	  "flipV": undefined,
-    	  "frame": {
-    	    "heightEmu": 2286000,
-    	    "widthEmu": 4572000,
-    	    "xEmu": 914400,
-    	    "yEmu": 914400,
-    	  },
-    	  "id": "node-1",
-    	  "kind": "group",
-    	  "opacity": undefined,
-    	  "radiusEmu": 0,
-    	  "rotation": undefined,
-    	  "stroke": undefined,
-    	  "zIndex": undefined,
-    	}
-    `);
+    expect(group?.kind).toBe("group");
+    if (!group || group.kind !== "group") {
+      throw new Error("Expected group element.");
+    }
+    expect(group.frame).toEqual({
+      xEmu: 914400,
+      yEmu: 914400,
+      widthEmu: 4572000,
+      heightEmu: 2286000,
+    });
+
+    const [text, image] = group.children;
+    expect(text?.kind).toBe("text");
+    if (!text || text.kind !== "text") {
+      throw new Error("Expected text element.");
+    }
+    expect(text.frame).toEqual({
+      xEmu: 1371600,
+      yEmu: 1371600,
+      widthEmu: 3657600,
+      heightEmu: 381000,
+    });
+    expect(text.style).toMatchObject({
+      charSpacing: 1.5,
+      fontSizePt: 24,
+      italic: true,
+      lineSpacing: 21,
+      strike: true,
+      underline: true,
+    });
+
+    expect(image?.kind).toBe("image");
+    if (!image || image.kind !== "image") {
+      throw new Error("Expected image element.");
+    }
+    expect(image.fit).toBe("cover");
+    expect(image.source).toEqual({ kind: "path", path: "/tmp/alias.png" });
+    expect(image.frame).toEqual({
+      xEmu: 1371600,
+      yEmu: 1981200,
+      widthEmu: 914400,
+      heightEmu: 762000,
+    });
   });
 
   test("render keeps key css aliases equivalent to deck-native props", () => {
@@ -252,7 +205,7 @@ describe("style-aliases", () => {
       </Slide>
     ));
 
-    const nodes = deck.render().slides[0].nodes;
+    const nodes = deck.project().projection!.slides[0].payload.elements;
     const [nativeStack, aliasStack, nativeAbsolute, aliasAbsolute] = nodes.slice(0, 4);
 
     expect(summarizeNodes([nativeStack])).toEqual(summarizeNodes([aliasStack]));
@@ -321,9 +274,9 @@ describe("style-aliases", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
+    const ir = deck.project().projection!;
 
-    expect(summarizeNodes(ir.slides[0].nodes)).toEqual([
+    expect(summarizeNodes(ir.slides[0].payload.elements)).toEqual([
       {
         kind: "group",
         frame: {

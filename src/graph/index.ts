@@ -3,6 +3,7 @@ export type {
   AssetEntity,
   AssetEntityId,
   BaseSemanticNode,
+  Brand,
   GraphNodeId,
   SemanticAuthorGraph,
   SemanticContainerNode,

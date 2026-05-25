@@ -9,9 +9,6 @@ import type {
   ViewStyle,
 } from "../style/types";
 
-export type BackendName = "pptxgenjs" | "ooxml";
-export type ImplementedBackendName = "pptxgenjs";
-
 export type {
   BorderStyle,
   CssAlignContent,
@@ -124,6 +121,9 @@ export type DeckOptions = {
     subject?: string;
   };
   theme?: Theme;
+  output?: {
+    format?: "pptx";
+  };
 };
 
 export type SlideContext = {
@@ -132,11 +132,6 @@ export type SlideContext = {
 
 export type SlideFactory<TSourceContext = void> =
   import("../composition/types").SlideFactory<TSourceContext>;
-
-export type OutputConfig = {
-  backend: ImplementedBackendName;
-  output: string;
-};
 
 export type SlideNodeProps = {
   name?: string;

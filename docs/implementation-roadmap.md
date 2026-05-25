@@ -14,12 +14,12 @@ JSX authoring
 
 The Semantic Author Graph is the canonical internal model. Output-specific models such as a PPTX
 package model should be projected from the graph rather than reading the Author Tree directly.
-`PresentationIR` is part of the current rendering path, but it should not be treated as the
-long-term center of the architecture.
+As of `0.6`, the current output path is `Semantic Author Graph -> Output Projection -> Output
+Writer`; the earlier Presentation IR path is not part of the active architecture.
 
 ## Versioning Strategy
 
-The current package is `0.3.1`. Until the API is stable enough for `1.0`, each new feature family
+The current package is `0.6.0`. Until the API is stable enough for `1.0`, each new feature family
 should land as a separate minor version:
 
 - `0.2`: HTML-like authoring syntax, followed by the first Semantic Author Graph work
@@ -27,7 +27,7 @@ should land as a separate minor version:
 - `0.3.1`: inspect, diagnostics, documentation, and Semantic Author Graph readiness review
 - `0.4`: class-like style reuse
 - `0.5`: theme support
-- `0.6`: Output Projection boundary and build/project/write API shape
+- `0.6`: Project/Render pipeline, result-first stage APIs, and Pptx Package Model
 - `0.7`: layout templates
 - `0.8`: direct PPTX output projection and writer, replacing the required `pptxgenjs` path
 - `0.9`: HMR-oriented compilation/runtime
@@ -885,9 +885,9 @@ Supported names:
 
 ### Semantics
 
-`0.4` should make class resolution part of the Semantic Author Graph / `compile()` path only.
-Legacy `render()` and `output()` should continue to ignore `className`; `0.4` should not expand the
-legacy `PresentationIR` path or make class-like styles observable through legacy output.
+`0.4` should make class resolution part of the Semantic Author Graph / `compile()` path only. It
+should not expand the pre-`0.6` renderer-command path or make class-like styles observable through
+the old output API.
 
 `StyleEntity.authored` should remain the source-of-truth for what the user wrote: inline `style` and
 ordered `classRefs`. Resolved class output should live in a separate resolved style view or lookup
@@ -1602,16 +1602,18 @@ deck.useStyles(styles);
 - Snapshot tests showing graph/resolved inspection values and Output Projection values contain
   resolved values where appropriate.
 
-## 0.6 Output Projection And Build Pipeline
+## 0.6 Project/Render Pipeline And Pptx Package Model
 
 ### Goal
 
 Introduce the output boundary that turns the Semantic Author Graph into an explicit
-output-format-specific projection, without making the graph output-specific. This milestone should
-shape the user-facing pipeline API before direct PPTX OOXML ownership expands in a later release.
+output-format-specific Projected Document Model, without making the graph output-specific. This
+milestone should establish Project and Render as the user-facing pipeline stages and introduce an
+HMR-friendly Pptx Package Model before direct PPTX OOXML ownership expands in a later release.
 
-`Deck` should own pipeline configuration and authoring inputs, but it should not hide compiled or
-projected results as implicit mutable state.
+`Deck` should own pipeline configuration, authoring inputs, and explicitly defined Pipeline
+Artifacts. Stage operations should materialize pending work rather than hide compiled or projected
+results as implicit mutable cache.
 
 Paged Media / Print CSS support should be considered near this boundary, not inside `0.4` element
 style classes. `@page`-like rules, page size, page margins, bleed, page counters, and
@@ -1627,48 +1629,197 @@ const deck = new Deck({
   output: { format: "pptx" },
 });
 
-const graph = deck.compile();
-const build = deck.build();
+const compileResult = deck.compile();
+compileResult.ok;
+compileResult.graph;
+compileResult.diagnostics;
+compileResult.stages.compile;
 
-build.graph;
-build.diagnostics;
-build.projection; // PptxPackageModel when output.format is "pptx"
+const projectResult = deck.project();
+projectResult.ok;
+projectResult.projection; // Pptx Package Model when output.format is "pptx"
+projectResult.summary;
+projectResult.diagnostics;
+projectResult.stages.compile;
+projectResult.stages.project;
 
-await build.write({ output: "deck.pptx" });
-await deck.output({ output: "deck.pptx" });
+const renderResult = await deck.render({ output: "deck.pptx" });
+renderResult.ok;
+renderResult.artifact;
+renderResult.diagnostics;
+renderResult.stages.render;
+```
+
+Advanced/sandbox flow:
+
+```ts
+const compileResult = deck.compile();
+const graph = editGraph(compileResult.graph);
+deck.defineGraph(graph);
+
+const projectResult = deck.project();
+const projection = editProjection(projectResult.projection);
+deck.defineProjection(projection);
+
+await deck.render(pptxgenjs({ output: "deck.pptx" }));
+```
+
+Render without a file write:
+
+```ts
+const result = await deck.render();
+
+if (result.ok && result.artifact) {
+  result.artifact.bytes; // Uint8Array
+  result.artifact.mediaType;
+  result.artifact.extension;
+}
 ```
 
 Recommended API shape:
 
-- `compile()` returns the Semantic Author Graph.
-- `build()` returns an explicit Build object with the graph, diagnostics, and the configured Output
-  Projection.
-- `output.format` defaults to `"pptx"`.
-- `Build` is typed by Output Format, so a PPTX build exposes a PPTX projection and writer.
-- `output()` remains the convenience API for `compile -> project -> write`.
-- `project()` and `write()` may exist as lower-level operations, but their core implementations
-  should be independent functions so tests, HMR, and tooling can reuse them.
-- The first projection may adapt through the existing rendering path where necessary, but the API
-  boundary should not require Output Projections to read the Author Tree.
+- `compile()` returns `CompileResult`, not a raw `SemanticAuthorGraph`.
+- `project()` returns `ProjectResult`, not a raw projection.
+- `render()` returns `RenderResult`, not `void` or a raw artifact.
+- Stage options may change detail or policy, but should not change the top-level result shape.
+- Stage results expose `ok`, flat diagnostics, stage-grouped summaries, and artifact presence
+  (`available`, `partial`, or `missing`) where relevant.
+- `ok` is derived from error diagnostics; warning diagnostics do not make a result unsuccessful.
+- `project()` and `render()` may materialize earlier unresolved stages, but their results should keep
+  the prior-stage diagnostics visible.
+- `output.format` defaults to `"pptx"` and drives `project()` when no explicit format or Writer
+  Adapter is provided.
+- `build()` and `output()` are not part of the primary `0.6` API.
+- `project(graph)` and `render(projection, ...)` should be avoided; edited Pipeline Artifacts should
+  be supplied with `defineGraph()` or `defineProjection()`.
+- `deckjsx/adapter` exposes Writer Adapters such as `pptxgenjs`.
+- `render({ output })` uses the default Writer Adapter for the Deck output format.
+- `render(pptxgenjs({ output }))` uses the explicit Writer Adapter and warns if its required format
+  differs from the Deck default Output Format.
+- Writer Adapters declare the Projection Format they consume separately from the Output Format they
+  return, so a future adapter can produce a different artifact format without redefining the
+  Projected Document Model.
+- `render(adapter, options)` should not be added in `0.6`; adapter-specific options belong to the
+  adapter factory.
+- `render()` without `output` still returns a `RenderResult` with `artifact.bytes` when rendering
+  succeeds.
+- `render({ output })` accepts a string path only in `0.6`; streams, blobs, and browser filesystem
+  handles should consume `RenderedArtifact.bytes` outside the core API.
 
 ### Implementation Notes
 
 - Add Output Format configuration to `DeckOptions`, defaulting to PPTX.
-- Add the typed Build result and explicit graph/projection/diagnostics fields.
+- Add `CompileResult`, `ProjectResult`, `RenderResult`, `RenderedArtifact`, and `OutputFormat` to the
+  Authoring Interface.
+- Add detailed Pptx Package Model and project inspection summary types to the Inspection Interface.
+  In `0.6`, expose read-only data model types rather than mutation helpers or builders.
+- Add `deckjsx/adapter` as the Adapter Interface.
+- Remove `deckjsx/legacy`, old `Deck.render(): PresentationIR`, and `Deck.output()`.
+- Add `defineGraph()` and `defineProjection()` as whole-artifact public APIs.
+- Treat `defineGraph()` and `defineProjection()` as explicit artifact redefinition, while
+  `compile()`, `project()`, and `render()` materialize pending stage work.
+- Let `defineProjection()` perform only lightweight artifact-shape checks. Deeper package consistency
+  checks belong to project or pre-render validation.
 - Keep Output Projection separate from Output Writer.
+- Make the Pptx Package Model a structured package-part graph keyed by Package Part Identity rather
+  than raw XML bytes or package paths.
+- Project the smallest useful complete PPTX package skeleton before Render, including required
+  manifest parts, support parts, authored-content parts, and relationships.
+- Project image media relationships into slide relationship parts, and attach the deterministic
+  relationship identity to the corresponding projected image element.
+- Project content type entries, root relationships, and presentation relationships as structured
+  manifest payloads rather than leaving those parts as path-only placeholders.
+- Distinguish manifest parts, support parts, and authored-content parts. Root/presentation
+  relationships are manifest parts, slide relationships are authored-content parts, and
+  layout/master/notes relationships are support parts.
+- Give support parts thin structured payloads in `0.6` when the real OOXML domain is not modeled
+  yet. Placeholder support payloads should still communicate their package role and editable intent
+  instead of leaving support parts as path-only entries.
+- Allow PPTX slide payloads to be close to OOXML/XML structure, while preserving structured data,
+  deckjsx-readable element kinds, and provenance instead of raw XML strings.
+- Add Pptx Element Identity distinct from Graph Identity and OOXML object identifiers.
+- Assign deterministic PPTX serialized identities, such as relationship ids and shape object ids,
+  during Project so inspection and future HMR are not dependent on writer-local counters.
+- Include origin/dependency links from package parts back to Graph Identity and Source Origin where
+  relevant.
+- Let projected PPTX elements carry writer-needed concrete values and provenance links to graph
+  nodes, style entities, resolved styles, assets, and source origins where relevant.
+- Include project-time layout and measurement results needed for inspection, such as resolved frames,
+  text fitting, overflow, and constraint results. Values only known after a writer runs remain Render
+  concerns.
+- Allow `ProjectResult` to contain a partial Pptx Package Model when projection produced error
+  diagnostics. Render must not write or return a rendered artifact when project has error
+  diagnostics.
+- Add a thin derived project summary for sandbox/debug use. It should show package parts, slides,
+  projected elements, origins, basic resolved values, diagnostics, and known default-adapter
+  limitations. The summary is derived from the projection, not an independent Pipeline Artifact.
+- Let stage operations materialize source, graph, projection, and package-part snapshots into the
+  Pipeline Artifact Collection. Public `defineGraph()` and `defineProjection()` remain whole-artifact
+  APIs in `0.6`.
+- Materialized source and graph artifacts should include mounted Source Identity keys, not only a
+  root whole-deck slot. Projection artifacts should include Package Part Identity indexes and
+  source/graph-origin indexes for future HMR invalidation.
+- Treat `0.6` as incremental-ready rather than fully incremental. Stage operations should use
+  explicit stage invalidation vocabulary, but authoring mutations may still rematerialize whole
+  snapshots. Source-entry dirty tracking and package-part incremental projection belong to the HMR
+  milestone.
+- Keep Deck as the public authoring owner, but move stage execution policy into an internal Pipeline
+  Runner module.
+- Keep `deckjsx/adapter` focused on author-facing adapter factories and types; default writer lookup,
+  known default-adapter limitations, and runtime adapter detection belong to an internal Adapter
+  Registry.
+- Add `RenderedArtifact` metadata: `format`, `mediaType`, `extension`, and `bytes: Uint8Array`.
+- If artifact generation succeeds but writing to `output` fails, return the artifact bytes and report
+  the write failure in diagnostics.
+- In `0.6`, the pptxgenjs Writer Adapter may be the default adapter, but it must adapt to the Pptx
+  Package Model instead of shaping the model around pptxgenjs.
+- Temporary Writer Adapter limitations should be diagnostics. Nonbreaking unsupported details are
+  warnings; model inconsistencies or adapter gaps that would produce a broken artifact are
+  render-blocking errors.
 - Keep Graph Identity distinct from output object ids, relationship ids, package paths, and other
   Output Identity.
 - Keep the Semantic Author Graph output-agnostic. Projection-specific resolved values should belong
   to the projection or an explicit resolved inspection view.
+- Preserve enough asset identity and media-part references for HMR and inspection, but defer deep
+  image processing, conversion, compression, and deduplication to the direct OOXML writer milestone.
+- Keep Project's Projection Format vocabulary aligned with implemented Projected Document Models.
+  Custom Writer Adapters may return broader Rendered Artifact formats before those formats have a
+  first-class projection.
+- Keep direct OOXML serialization out of `0.6`; it remains a later version concern.
 - Reserve a future extension point for output-surface style rules and pagination semantics without
   mixing them into element-level class resolution.
 
 ### Validation
 
-- Tests that `build()` return types follow `output.format`.
-- Tests that output convenience APIs do not depend on hidden mutable compile/project state.
-- Tests that Projection and Writer boundaries are independently callable.
-- Tests that Output Projection consumes the Semantic Author Graph rather than Author Tree nodes.
+- Tests that `compile()`, `project()`, and `render()` return stable result shapes.
+- Tests that `ok` is false only when error diagnostics exist and remains true for warning-only
+  diagnostics.
+- Tests that flat diagnostics and stage-grouped diagnostics agree.
+- Tests that stage summaries report artifact availability, partial artifacts, and missing artifacts.
+- Tests that `project()` materializes Pptx Package Model parts from compiled graph artifacts.
+- Tests that `project()` can return a partial Pptx Package Model with error diagnostics for
+  inspection.
+- Tests that Pptx Package Model parts use Package Part Identity distinct from package paths.
+- Tests that Pptx Element Identity is distinct from Graph Identity and deterministic serialized PPTX
+  ids.
+- Tests that projected relationship ids and shape object ids are stable across equivalent projects.
+- Tests that projected media parts are connected through slide relationships before Render.
+- Tests that content types, root relationships, and presentation relationships are visible in the
+  projected package model before Render.
+- Tests that `defineGraph()` and `defineProjection()` supply the next stage's artifact source.
+- Tests that `defineProjection()` performs lightweight definition checks and leaves deeper
+  relationship/package errors to project or pre-render validation.
+- Tests that `render()` accepts default options and explicit Writer Adapters.
+- Tests that `render()` without `output` returns a `RenderedArtifact` with `Uint8Array` bytes,
+  media type, extension, and format.
+- Tests that file write failures preserve artifact bytes and report diagnostics.
+- Tests that render does not write or return an artifact when project has error diagnostics.
+- Tests that explicit Writer Adapter format mismatches produce warnings.
+- Tests that project summaries expose known default-adapter limitations, and temporary Writer Adapter
+  limitations produce warnings or render-blocking errors
+  according to whether the artifact would be broken.
+- Tests that the pptxgenjs Writer Adapter consumes the Pptx Package Model rather than reading the
+  Author Tree.
 
 ## 0.7 Layout Templates
 
@@ -1768,7 +1919,7 @@ paths, and is a prerequisite for fast save-to-output feedback during development
 Add PPTX as the default output format:
 
 ```ts
-await deck.output({ output: "deck.pptx" });
+await deck.render({ output: "deck.pptx" });
 ```
 
 Then transition package dependencies:
@@ -1915,8 +2066,8 @@ preview UI if needed.
    output projection.
 3. `0.5` should add Theme Support before projection work so token and default resolution stay in
    graph/style semantics rather than leaking into PPTX or PDF projection code.
-4. `0.6` should establish Output Projection and build/project/write boundaries while keeping the
-   Semantic Author Graph output-agnostic.
+4. `0.6` should establish Project/Render boundaries, result-first stage APIs, and the Pptx Package
+   Model while keeping the Semantic Author Graph output-agnostic.
 5. `0.7` should follow the output boundary because template relationships need clear inspection and
    projection behavior.
 6. `0.8` should add the direct PPTX projection and writer after the public output pipeline shape is
@@ -1929,9 +2080,9 @@ preview UI if needed.
 - Prefer correcting core model boundaries early over preserving APIs that make the wrong internal
   model hard to remove.
 - Keep existing `Slide`, `View`, `Text`, `Image`, and `Shape` authoring components working where
-  practical, but do not keep `render()` or `PresentationIR` as primary API commitments.
+  practical, but do not keep pre-`0.6` render/output architecture as API commitments.
 - Prefer additive changes when they do not preserve the wrong architecture.
 - Document migration examples when introducing intrinsic JSX tags, classes, themes, and the OOXML
   writer path.
-- Make `compile()` the primary inspection API and let `build()` expose graph, diagnostics, and
-  configured Output Projection results.
+- Make `compile()` and `project()` the primary inspection APIs for authoring semantics and
+  output-facing computed state, with render reserved for Writer Adapter execution.

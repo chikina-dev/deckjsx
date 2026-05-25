@@ -1,12 +1,19 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "strict": true,
     "jsx": "react-jsx",
     "jsxImportSource": "deckjsx",
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "deckjsx": ["../src/index.ts"],
+      "deckjsx/jsx-runtime": ["../src/jsx-runtime.ts"],
+      "deckjsx/jsx-dev-runtime": ["../src/jsx-dev-runtime.ts"],
+      "deckjsx/inspect": ["../src/inspect.ts"],
+      "deckjsx/adapter": ["../src/adapter.ts"]
+    }
   },
   "include": ["*.ts", "*.tsx"]
 }

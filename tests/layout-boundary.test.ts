@@ -110,7 +110,7 @@ describe("layout boundary primitives", () => {
     ]);
   });
 
-  test("grid tracks and auto placement resolve without compiler or backend state", () => {
+  test("grid tracks and auto placement resolve without compiler or writer state", () => {
     const parentFrame = {
       xEmu: 0,
       yEmu: 0,

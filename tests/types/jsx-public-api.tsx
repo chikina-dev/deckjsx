@@ -5,12 +5,10 @@ import type {
   CssGridTemplate,
   CssGridTemplateAreas,
   ClassNameValue,
-  CompileInspectResult,
+  CompileResult,
   DeckJsxIntrinsicElements,
   Diagnostics,
-  ImplementedBackendName,
   JsxKey,
-  OutputConfig,
   Spacing,
   TextRunStyle,
   TextTabStopAuthoring,
@@ -27,7 +25,6 @@ const regressionTypeAssertions = {
   spanRejectsBoxStyle: true,
   imgRequiresSourceOrData: true,
   imgRejectsChildren: true,
-  ooxmlBackendIsNotImplemented: true,
 } satisfies {
   supportedSpan: Assert<IsAssignable<"span", keyof DeckJsxIntrinsicElements>>;
   spanRejectsBoxStyle: Assert<
@@ -45,9 +42,6 @@ const regressionTypeAssertions = {
     > extends true
       ? false
       : true
-  >;
-  ooxmlBackendIsNotImplemented: Assert<
-    IsAssignable<"ooxml", ImplementedBackendName> extends true ? false : true
   >;
 };
 void regressionTypeAssertions;
@@ -302,15 +296,14 @@ void (
 void (<img data="data:image/png;base64,AAAA" />);
 
 const pptxOutput = {
-  backend: "pptxgenjs",
   output: "deck.pptx",
-} satisfies OutputConfig;
+};
 void pptxOutput;
 
 const typedDeck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 typedDeck.useStyles(reportStyles).add(() => <Slide />);
-const typedGraph = typedDeck.compile();
+const typedGraph = typedDeck.compile().graph!;
 typedGraph.documentId satisfies string;
-const typedInspect = typedDeck.compile({ mode: "inspect" });
-typedInspect satisfies CompileInspectResult;
+const typedInspect = typedDeck.compile();
+typedInspect satisfies CompileResult;
 typedInspect.diagnostics satisfies Diagnostics;

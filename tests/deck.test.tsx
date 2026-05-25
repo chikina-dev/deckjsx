@@ -24,14 +24,16 @@ describe("Deck", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
+    const ir = deck.project().projection!;
 
     expect({
       version: ir.version,
       meta: ir.meta,
-      slideNames: ir.slides.map((slide) => slide.name),
+      slideNames: ir.slides.map((slide) => slide.payload.name),
       textValues: ir.slides.map((slide) =>
-        slide.nodes.filter((node) => node.kind === "text").map((node) => node.content.text),
+        slide.payload.elements
+          .filter((node) => node.kind === "text")
+          .map((node) => node.content.text),
       ),
     }).toMatchInlineSnapshot(`
       {
@@ -51,7 +53,7 @@ describe("Deck", () => {
             "2 / 2",
           ],
         ],
-        "version": "0.1",
+        "version": "0.6",
       }
     `);
   });
@@ -146,169 +148,90 @@ describe("Deck", () => {
       </Slide>
     ));
 
-    const ir = deck.render();
+    const ir = deck.project().projection!;
+    const slide = ir.slides[0]?.payload;
+    const group = slide?.elements[0];
 
-    expect(ir).toMatchInlineSnapshot(`
-    	{
-    	  "meta": undefined,
-    	  "size": {
-    	    "heightEmu": 5143500,
-    	    "widthEmu": 9144000,
-    	  },
-    	  "slides": [
-    	    {
-    	      "background": {
-    	        "color": "112233",
-    	        "kind": "solid",
-    	        "transparency": 12,
-    	      },
-    	      "id": "slide-1",
-    	      "name": "Design",
-    	      "nodes": [
-    	        {
-    	          "children": [
-    	            {
-    	              "content": {
-    	                "text": "Styled",
-    	              },
-    	              "fill": {
-    	                "color": "FFFFFF",
-    	                "kind": "solid",
-    	                "transparency": 25,
-    	              },
-    	              "flipH": undefined,
-    	              "flipV": undefined,
-    	              "frame": {
-    	                "heightEmu": 822960,
-    	                "widthEmu": 3657600,
-    	                "xEmu": 1371600,
-    	                "yEmu": 1371600,
-    	              },
-    	              "id": "node-2",
-    	              "kind": "text",
-    	              "opacity": undefined,
-    	              "radiusEmu": 91440,
-    	              "rotation": undefined,
-    	              "stroke": {
-    	                "color": "DC2626",
-    	                "style": "solid",
-    	                "transparency": 10,
-    	                "widthPt": 1,
-    	              },
-    	              "style": {
-    	                "charSpacing": 1,
-    	                "color": "0F172A",
-    	                "fit": "shrink",
-    	                "fontFamily": "Aptos",
-    	                "fontSizePt": 22,
-    	                "fontWeight": 700,
-    	                "italic": true,
-    	                "lineSpacing": 24,
-    	                "lineSpacingMultiple": 1.2,
-    	                "paddingPt": [
-    	                  4,
-    	                  8,
-    	                  4,
-    	                  8,
-    	                ],
-    	                "paragraphSpacingAfter": 3,
-    	                "paragraphSpacingBefore": 2,
-    	                "strike": true,
-    	                "textAlign": "center",
-    	                "underline": true,
-    	                "verticalAlign": "middle",
-    	                "wrap": false,
-    	              },
-    	              "zIndex": undefined,
-    	            },
-    	            {
-    	              "fill": {
-    	                "color": "2563EB",
-    	                "kind": "solid",
-    	                "transparency": 30,
-    	              },
-    	              "flipH": undefined,
-    	              "flipV": undefined,
-    	              "frame": {
-    	                "heightEmu": 685800,
-    	                "widthEmu": 1371600,
-    	                "xEmu": 1371600,
-    	                "yEmu": 2560320,
-    	              },
-    	              "id": "node-3",
-    	              "kind": "shape",
-    	              "opacity": undefined,
-    	              "radiusEmu": 137160,
-    	              "rotation": undefined,
-    	              "shape": "rect",
-    	              "stroke": {
-    	                "color": "1D4ED8",
-    	                "style": "dash",
-    	                "transparency": 5,
-    	                "widthPt": 2,
-    	              },
-    	              "zIndex": undefined,
-    	            },
-    	            {
-    	              "fit": "contain",
-    	              "flipH": undefined,
-    	              "flipV": true,
-    	              "frame": {
-    	                "heightEmu": 914400,
-    	                "widthEmu": 914400,
-    	                "xEmu": 3200400,
-    	                "yEmu": 2560320,
-    	              },
-    	              "id": "node-4",
-    	              "kind": "image",
-    	              "opacity": undefined,
-    	              "rotation": undefined,
-    	              "rounding": true,
-    	              "source": {
-    	                "kind": "path",
-    	                "path": "/tmp/demo.png",
-    	              },
-    	              "sourceFrame": {
-    	                "heightEmu": 914400,
-    	                "widthEmu": 914400,
-    	                "xEmu": 3200400,
-    	                "yEmu": 2560320,
-    	              },
-    	              "transparency": 35,
-    	              "zIndex": undefined,
-    	            },
-    	          ],
-    	          "fill": {
-    	            "color": "F8E16C",
-    	            "kind": "solid",
-    	            "transparency": 15,
-    	          },
-    	          "flipH": true,
-    	          "flipV": undefined,
-    	          "frame": {
-    	            "heightEmu": 2743200,
-    	            "widthEmu": 4572000,
-    	            "xEmu": 914400,
-    	            "yEmu": 914400,
-    	          },
-    	          "id": "node-1",
-    	          "kind": "group",
-    	          "opacity": undefined,
-    	          "radiusEmu": 182880,
-    	          "rotation": 5,
-    	          "stroke": {
-    	            "color": "1F2937",
-    	            "style": "dash",
-    	            "transparency": 20,
-    	            "widthPt": 2,
-    	          },
-    	          "zIndex": undefined,
-    	        },
-    	      ],
-    	    },
-    	  ],
-    	  "version": "0.1",
-    	}
-    `);
+    expect(ir.version).toBe("0.6");
+    expect(ir.size).toEqual({ widthEmu: 9144000, heightEmu: 5143500 });
+    expect(slide?.name).toBe("Design");
+    expect(slide?.background).toEqual({ kind: "solid", color: "112233", transparency: 12 });
+
+    expect(group?.kind).toBe("group");
+    if (!group || group.kind !== "group") {
+      throw new Error("Expected group element.");
+    }
+    expect(group.frame).toEqual({
+      xEmu: 914400,
+      yEmu: 914400,
+      widthEmu: 4572000,
+      heightEmu: 2743200,
+    });
+    expect(group.fill).toEqual({ kind: "solid", color: "F8E16C", transparency: 15 });
+    expect(group.stroke).toEqual({
+      color: "1F2937",
+      style: "dash",
+      transparency: 20,
+      widthPt: 2,
+    });
+    expect(group.radiusEmu).toBe(182880);
+    expect(group.rotation).toBe(5);
+    expect(group.flipH).toBe(true);
+
+    const [text, shape, image] = group.children;
+    expect(text?.kind).toBe("text");
+    if (!text || text.kind !== "text") {
+      throw new Error("Expected text element.");
+    }
+    expect(text.content.text).toBe("Styled");
+    expect(text.fill).toEqual({ kind: "solid", color: "FFFFFF", transparency: 25 });
+    expect(text.stroke).toEqual({
+      color: "DC2626",
+      style: "solid",
+      transparency: 10,
+      widthPt: 1,
+    });
+    expect(text.radiusEmu).toBe(91440);
+    expect(text.style).toMatchObject({
+      charSpacing: 1,
+      color: "0F172A",
+      fit: "shrink",
+      fontFamily: "Aptos",
+      fontSizePt: 22,
+      fontWeight: 700,
+      italic: true,
+      lineSpacing: 24,
+      lineSpacingMultiple: 1.2,
+      paddingPt: [4, 8, 4, 8],
+      paragraphSpacingAfter: 3,
+      paragraphSpacingBefore: 2,
+      strike: true,
+      textAlign: "center",
+      underline: true,
+      verticalAlign: "middle",
+      wrap: false,
+    });
+
+    expect(shape?.kind).toBe("shape");
+    if (!shape || shape.kind !== "shape") {
+      throw new Error("Expected shape element.");
+    }
+    expect(shape.fill).toEqual({ kind: "solid", color: "2563EB", transparency: 30 });
+    expect(shape.stroke).toEqual({
+      color: "1D4ED8",
+      style: "dash",
+      transparency: 5,
+      widthPt: 2,
+    });
+    expect(shape.radiusEmu).toBe(137160);
+
+    expect(image?.kind).toBe("image");
+    if (!image || image.kind !== "image") {
+      throw new Error("Expected image element.");
+    }
+    expect(image.source).toEqual({ kind: "path", path: "/tmp/demo.png" });
+    expect(image.transparency).toBe(35);
+    expect(image.rounding).toBe(true);
+    expect(image.flipV).toBe(true);
   });
 });
