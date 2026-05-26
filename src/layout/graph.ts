@@ -42,6 +42,39 @@ function resolvedPropsFor(node: SemanticNode, resolvedStyles: ResolvedStyleMap) 
   );
 }
 
+function sourceKeyFor(node: SemanticNode): string {
+  const source = node.origin.source;
+  return !source || source.kind === "root" ? "root" : source.sourceIdentity;
+}
+
+function propsWithTemplateAreaFrame(
+  graph: SemanticAuthorGraph,
+  resolvedStyles: ResolvedStyleMap,
+  node: SemanticNode,
+) {
+  const props = resolvedPropsFor(node, resolvedStyles);
+  const ref = node.templateAreaRef;
+  if (!ref) {
+    return props;
+  }
+
+  const frame = graph.templates.get(sourceKeyFor(node))?.[ref.template]?.areas?.[ref.area]?.frame;
+  if (!frame) {
+    return props;
+  }
+
+  const resolved = resolvedStyles.get(node.id);
+  const merged = { ...props };
+  (["x", "y", "width", "height"] as const).forEach((key) => {
+    if (resolved?.properties[key]?.source.layer === "style") {
+      return;
+    }
+
+    merged[key] = frame[key];
+  });
+  return merged;
+}
+
 function pushDefined<T>(values: T[], value: T | undefined): void {
   if (value !== undefined) {
     values.push(value);
@@ -163,7 +196,7 @@ function layoutAuthorNodeFromGraph(
   node: SemanticNode,
   origins: WeakMap<object, ProjectedLayoutOrigin>,
 ): AuthorNode | undefined {
-  const props = resolvedPropsFor(node, resolvedStyles);
+  const props = propsWithTemplateAreaFrame(graph, resolvedStyles, node);
 
   switch (node.kind) {
     case "slide":

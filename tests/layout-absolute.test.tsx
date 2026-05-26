@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, EMU_PER_INCH, Image, Slide, Text, View } from "../src/index.ts";
+import { Deck, EMU_PER_INCH, Image, Text, View } from "../src/index.ts";
 import { WIDE_SVG_DATA_URI, summarizeNodes } from "./helpers.ts";
 
 describe("absolute layout", () => {
@@ -8,8 +8,8 @@ describe("absolute layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Aspect ratio">
+    deck.slide({ name: "Aspect ratio" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -34,7 +34,7 @@ describe("absolute layout", () => {
           <View style={{ width: 2, aspectRatio: 2, backgroundColor: "#D1D5DB" }} />
           <View style={{ height: 1, aspectRatio: 0.5, backgroundColor: "#CBD5E1" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -89,8 +89,8 @@ describe("absolute layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Box sizing">
+    deck.slide({ name: "Box sizing" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -128,7 +128,7 @@ describe("absolute layout", () => {
           />
           <View style={{ width: 1, height: 0.5, backgroundColor: "#CBD5E1" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -195,8 +195,8 @@ describe("absolute layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Visibility and zIndex">
+    deck.slide({ name: "Visibility and zIndex" }, () => (
+      <>
         <Text
           style={{
             x: 1,
@@ -232,7 +232,7 @@ describe("absolute layout", () => {
         >
           Middle
         </Text>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -290,8 +290,8 @@ describe("absolute layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Overflow hidden">
+    deck.slide({ name: "Overflow hidden" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -316,7 +316,7 @@ describe("absolute layout", () => {
         >
           <Text style={{ x: 0.5, y: 0.5, width: 4, height: 0.75, fontSize: 18 }}>Visible</Text>
         </View>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -378,8 +378,8 @@ describe("absolute layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Overflow hidden image">
+    deck.slide({ name: "Overflow hidden image" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -401,7 +401,7 @@ describe("absolute layout", () => {
             }}
           />
         </View>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -437,8 +437,8 @@ describe("absolute layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Inset and constraints">
+    deck.slide({ name: "Inset and constraints" }, () => (
+      <>
         <View
           style={{
             inset: [1, 2, "144px", "96px"],
@@ -473,7 +473,7 @@ describe("absolute layout", () => {
         >
           <View style={{ width: 1, maxHeight: 1.5, backgroundColor: "#D1D5DB" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;

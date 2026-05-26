@@ -1,4 +1,4 @@
-import { Fragment, Image, Shape, Slide, Text, View, StyleSheet, Theme } from "deckjsx";
+import { Fragment, Image, Shape, Text, View, StyleSheet, Theme } from "deckjsx";
 import { jsx } from "deckjsx/jsx-runtime";
 import type {
   CssAlignContent,
@@ -45,9 +45,6 @@ const regressionTypeAssertions = {
   >;
 };
 void regressionTypeAssertions;
-
-const runtimeSlide = jsx(Slide, { name: "Runtime slide" }, "slide-key");
-runtimeSlide.kind satisfies "element";
 
 const runtimeText = jsx(Text, { children: "Runtime text" });
 runtimeText.kind satisfies "element";
@@ -190,14 +187,14 @@ new Theme({
 });
 
 void (
-  <Slide name="Valid slide">
+  <>
     <View className={clsxLikeClassName} style={{ x: 1, y: 1, width: 4, height: 2 }}>
       <Text className={{ title: true }}>Hello</Text>
       <Text tabStops={readonlyTabStops}>Tabs</Text>
       <Image src="image.png" className="image" />
       <Shape shape="rect" className={["shape", { active: true }]} />
     </View>
-  </Slide>
+  </>
 );
 
 void (
@@ -223,7 +220,7 @@ void (
 );
 
 void (
-  <Slide name="Recursive child probe">
+  <>
     <View style={{ x: 1, y: 1, width: 6, height: 3 }}>
       <Text style={{ x: "10%", y: "20%", width: "50%", height: "25%" }}>percent child</Text>
       {[
@@ -233,7 +230,7 @@ void (
         <Text>array child</Text>,
       ]}
     </View>
-  </Slide>
+  </>
 );
 
 void (
@@ -301,7 +298,7 @@ const pptxOutput = {
 void pptxOutput;
 
 const typedDeck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-typedDeck.useStyles(reportStyles).add(() => <Slide />);
+typedDeck.useStyles(reportStyles).slide(() => <></>);
 const typedGraph = typedDeck.compile().graph!;
 typedGraph.documentId satisfies string;
 const typedInspect = typedDeck.compile();

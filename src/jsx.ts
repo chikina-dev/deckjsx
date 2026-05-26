@@ -1,4 +1,4 @@
-import { Image, Shape, Slide, Text, View } from "./authoring/components";
+import { Image, Shape, Text, View } from "./authoring/components";
 import {
   createAuthorElement,
   createAuthorFragment,
@@ -180,5 +180,5 @@ export function isContentNode(value: unknown): value is ContentAuthorNode {
   return isAuthorNode(value) && value.kind !== "slide";
 }
 
-export { Image, Shape, Slide, Text, View };
+export { Image, Shape, Text, View };
 export type { AuthorTreeNode, JsxKey, SourceSpan };

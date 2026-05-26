@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, Fragment, Slide, Text, View } from "../src/index.ts";
+import { Deck, Fragment, Text, View } from "../src/index.ts";
 import { isAuthorTreeNode } from "../src/authoring/tree.ts";
 
 describe("authoring and JSX runtime", () => {
@@ -55,15 +55,15 @@ describe("authoring and JSX runtime", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Intrinsic content">
+    deck.slide({ name: "Intrinsic content" }, () => (
+      <>
         <div style={{ x: 1, y: 1, width: 6, height: 3 }}>
           Title
           <p style={{ x: 0, y: 0.5, width: 4, height: 0.5 }}>Paragraph</p>
           <img src="/tmp/demo.png" style={{ x: 0, y: 1.1, width: 1, height: 1 }} />
           42
         </div>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -83,14 +83,14 @@ describe("authoring and JSX runtime", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Explicit spaces">
+    deck.slide({ name: "Explicit spaces" }, () => (
+      <>
         <div style={{ x: 1, y: 1, width: 6, height: 3 }}>
           {"Hello "}
           <p>there</p>
           {" again"}
         </div>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -109,8 +109,8 @@ describe("authoring and JSX runtime", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Semantic intrinsics">
+    deck.slide({ name: "Semantic intrinsics" }, () => (
+      <>
         <main style={{ x: 0.5, y: 0.5, width: 9, height: 4 }}>
           <header style={{ x: 0, y: 0, width: 9, height: 1 }}>
             <h1 style={{ x: 0, y: 0, width: 8, height: 0.6 }}>Report</h1>
@@ -120,7 +120,7 @@ describe("authoring and JSX runtime", () => {
           </section>
           <footer style={{ x: 0, y: 3.4, width: 9, height: 0.5 }}>Footer</footer>
         </main>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -145,12 +145,12 @@ describe("authoring and JSX runtime", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Rich text">
+    deck.slide({ name: "Rich text" }, () => (
+      <>
         <p style={{ x: 1, y: 1, width: 6, height: 1, fontSize: 20 }}>
           Sales <span style={{ color: "#DC2626", fontWeight: 700 }}>grew</span> YoY
         </p>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -170,37 +170,17 @@ describe("authoring and JSX runtime", () => {
     ]);
   });
 
-  test("project reports slide factories that do not return a Slide root", () => {
+  test("slide factories return slide content without a public Slide root", () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => <Text style={{ x: 1, y: 1, width: 3, height: 1, fontSize: 20 }}>Invalid</Text>);
-
-    const result = deck.project();
-    expect(result.ok).toBe(false);
-    expect(result.diagnostics.items[0]?.message).toContain(
-      "Slide factory returned an author tree node that is not a <Slide /> root.",
-    );
-  });
-
-  test("project reports nested slides inside views", () => {
-    const deck = new Deck({
-      layout: { width: 10, height: 5.625, unit: "in" },
-    });
-
-    deck.add(() => (
-      <Slide name="Nested slide">
-        <View style={{ x: 1, y: 1, width: 3, height: 2 }}>
-          <Slide name="Invalid nested slide" />
-        </View>
-      </Slide>
+    deck.slide({ name: "Content slide" }, () => (
+      <Text style={{ x: 1, y: 1, width: 3, height: 1, fontSize: 20 }}>Valid</Text>
     ));
 
     const result = deck.project();
-    expect(result.ok).toBe(false);
-    expect(result.diagnostics.items[0]?.message).toContain(
-      "Slide cannot be nested inside another slide or view.",
-    );
+    expect(result.ok).toBe(true);
+    expect(result.projection?.slides[0]?.payload.name).toBe("Content slide");
   });
 });

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import JSZip from "jszip";
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, Image, Shape, Slide, Text, View } from "../src/index.ts";
+import { Deck, Image, Shape, Text, View } from "../src/index.ts";
 import { SAMPLE_SVG_DATA_URI, WIDE_SVG_DATA_URI } from "./helpers.ts";
 
 describe("pptxgenjs writer", () => {
@@ -14,10 +14,10 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "sample.pptx");
 
-    deck.add(() => (
-      <Slide name="File output">
+    deck.slide({ name: "File output" }, () => (
+      <>
         <Text style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>Hello PPTX</Text>
-      </Slide>
+      </>
     ));
 
     try {
@@ -39,12 +39,12 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "rich-text.pptx");
 
-    deck.add(() => (
-      <Slide name="Rich text">
+    deck.slide({ name: "Rich text" }, () => (
+      <>
         <p style={{ x: 1, y: 1, width: 6, height: 1, fontSize: 20 }}>
           Sales <span style={{ color: "#DC2626", fontWeight: 700 }}>grew</span> YoY
         </p>
-      </Slide>
+      </>
     ));
 
     try {
@@ -71,8 +71,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "shadow.pptx");
 
-    deck.add(() => (
-      <Slide name="Shadow output">
+    deck.slide({ name: "Shadow output" }, () => (
+      <>
         <Text
           style={{
             x: 1,
@@ -105,7 +105,7 @@ describe("pptxgenjs writer", () => {
             boxShadow: "3px 3px 6px rebeccapurple",
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -133,8 +133,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "shape-stroke-dasharray.pptx");
 
-    deck.add(() => (
-      <Slide name="Shape stroke dasharray output">
+    deck.slide({ name: "Shape stroke dasharray output" }, () => (
+      <>
         <Shape
           shape="rect"
           style={{
@@ -148,7 +148,7 @@ describe("pptxgenjs writer", () => {
             strokeDasharray: "1 4",
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -173,8 +173,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "shape-stroke-cap-join.pptx");
 
-    deck.add(() => (
-      <Slide name="Shape stroke cap and join output">
+    deck.slide({ name: "Shape stroke cap and join output" }, () => (
+      <>
         <Shape
           shape="rect"
           style={{
@@ -189,7 +189,7 @@ describe("pptxgenjs writer", () => {
             strokeLinejoin: "bevel",
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -214,8 +214,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "xml-patch-order.pptx");
 
-    deck.add(() => (
-      <Slide name="Patch order output">
+    deck.slide({ name: "Patch order output" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -244,7 +244,7 @@ describe("pptxgenjs writer", () => {
             }}
           />
         </View>
-      </Slide>
+      </>
     ));
 
     try {
@@ -290,8 +290,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "visual-controls.pptx");
 
-    deck.add(() => (
-      <Slide name="Visual controls">
+    deck.slide({ name: "Visual controls" }, () => (
+      <>
         <Text style={{ x: 1, y: 1, width: 2, height: 0.5, zIndex: 10 }}>Front</Text>
         <Text style={{ x: 1, y: 1.6, width: 2, height: 0.5, zIndex: -1 }}>Back</Text>
         <Text style={{ x: 1, y: 2.2, width: 2, height: 0.5, zIndex: 1 }}>Middle</Text>
@@ -308,7 +308,7 @@ describe("pptxgenjs writer", () => {
             opacity: 0.25,
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -341,8 +341,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "overflow-hidden.pptx");
 
-    deck.add(() => (
-      <Slide name="Overflow hidden output">
+    deck.slide({ name: "Overflow hidden output" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -356,7 +356,7 @@ describe("pptxgenjs writer", () => {
           <Text style={{ x: 0.5, y: 0.5, width: 4, height: 0.75, fontSize: 18 }}>Clip me</Text>
           <Text style={{ x: 3.5, y: 0.5, width: 1, height: 0.5, fontSize: 18 }}>Drop me</Text>
         </View>
-      </Slide>
+      </>
     ));
 
     try {
@@ -381,8 +381,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "overflow-hidden-image.pptx");
 
-    deck.add(() => (
-      <Slide name="Overflow hidden image output">
+    deck.slide({ name: "Overflow hidden image output" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -404,7 +404,7 @@ describe("pptxgenjs writer", () => {
             }}
           />
         </View>
-      </Slide>
+      </>
     ));
 
     try {
@@ -428,8 +428,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "opacity-cascade.pptx");
 
-    deck.add(() => (
-      <Slide name="Opacity cascade">
+    deck.slide({ name: "Opacity cascade" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -464,7 +464,7 @@ describe("pptxgenjs writer", () => {
             }}
           />
         </View>
-      </Slide>
+      </>
     ));
 
     try {
@@ -490,8 +490,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "image-controls.pptx");
 
-    deck.add(() => (
-      <Slide name="Image controls output">
+    deck.slide({ name: "Image controls output" }, () => (
+      <>
         <Image
           data={WIDE_SVG_DATA_URI}
           style={{
@@ -528,7 +528,7 @@ describe("pptxgenjs writer", () => {
             },
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -554,8 +554,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "image-position-offsets.pptx");
 
-    deck.add(() => (
-      <Slide name="Image position offsets output">
+    deck.slide({ name: "Image position offsets output" }, () => (
+      <>
         <Image
           data={WIDE_SVG_DATA_URI}
           style={{
@@ -578,7 +578,7 @@ describe("pptxgenjs writer", () => {
             objectPosition: "left 25% bottom 0.25in",
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -603,46 +603,49 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "gradient-fill.pptx");
 
-    deck.add(() => (
-      <Slide
-        name="Gradient output"
-        style={{
+    deck.slide(
+      {
+        name: "Gradient output",
+        style: {
           background: "linear-gradient(90deg, rgba(37, 99, 235, 0.4) 0%, #F97316 100%)",
-        }}
-      >
-        <View
-          style={{
-            x: 1,
-            y: 1,
-            width: 3,
-            height: 1.5,
-            background: "linear-gradient(to bottom, #22C55E 0%, rgba(14, 165, 233, 0.5) 100%)",
-          }}
-        />
-        <Text
-          style={{
-            x: 1,
-            y: 3,
-            width: 3,
-            height: 0.75,
-            fontSize: 18,
-            background: "linear-gradient(180deg, #FFFFFF 0%, rgba(15, 23, 42, 0.25) 100%)",
-          }}
-        >
-          Gradient text
-        </Text>
-        <Shape
-          shape="rect"
-          style={{
-            x: 5,
-            y: 1,
-            width: 2,
-            height: 2,
-            fill: "linear-gradient(45deg, #EF4444 0%, #F59E0B 100%)",
-          }}
-        />
-      </Slide>
-    ));
+        },
+      },
+      () => (
+        <>
+          <View
+            style={{
+              x: 1,
+              y: 1,
+              width: 3,
+              height: 1.5,
+              background: "linear-gradient(to bottom, #22C55E 0%, rgba(14, 165, 233, 0.5) 100%)",
+            }}
+          />
+          <Text
+            style={{
+              x: 1,
+              y: 3,
+              width: 3,
+              height: 0.75,
+              fontSize: 18,
+              background: "linear-gradient(180deg, #FFFFFF 0%, rgba(15, 23, 42, 0.25) 100%)",
+            }}
+          >
+            Gradient text
+          </Text>
+          <Shape
+            shape="rect"
+            style={{
+              x: 5,
+              y: 1,
+              width: 2,
+              height: 2,
+              fill: "linear-gradient(45deg, #EF4444 0%, #F59E0B 100%)",
+            }}
+          />
+        </>
+      ),
+    );
 
     try {
       await deck.render({ output });
@@ -675,46 +678,50 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "background-image-gradient.pptx");
 
-    deck.add(() => (
-      <Slide
-        name="Background image output"
-        style={{
+    deck.slide(
+      {
+        name: "Background image output",
+        style: {
           backgroundImage: "linear-gradient(90deg, rgba(37, 99, 235, 0.4) 0%, #F97316 100%)",
-        }}
-      >
-        <View
-          style={{
-            x: 1,
-            y: 1,
-            width: 3,
-            height: 1.5,
-            backgroundImage: "linear-gradient(to bottom, #22C55E 0%, rgba(14, 165, 233, 0.5) 100%)",
-          }}
-        />
-        <Text
-          style={{
-            x: 1,
-            y: 3,
-            width: 3,
-            height: 0.75,
-            fontSize: 18,
-            backgroundImage: "linear-gradient(180deg, #FFFFFF 0%, rgba(15, 23, 42, 0.25) 100%)",
-          }}
-        >
-          Background image text
-        </Text>
-        <Shape
-          shape="rect"
-          style={{
-            x: 5,
-            y: 1,
-            width: 2,
-            height: 2,
-            backgroundImage: "linear-gradient(45deg, #EF4444 0%, #F59E0B 100%)",
-          }}
-        />
-      </Slide>
-    ));
+        },
+      },
+      () => (
+        <>
+          <View
+            style={{
+              x: 1,
+              y: 1,
+              width: 3,
+              height: 1.5,
+              backgroundImage:
+                "linear-gradient(to bottom, #22C55E 0%, rgba(14, 165, 233, 0.5) 100%)",
+            }}
+          />
+          <Text
+            style={{
+              x: 1,
+              y: 3,
+              width: 3,
+              height: 0.75,
+              fontSize: 18,
+              backgroundImage: "linear-gradient(180deg, #FFFFFF 0%, rgba(15, 23, 42, 0.25) 100%)",
+            }}
+          >
+            Background image text
+          </Text>
+          <Shape
+            shape="rect"
+            style={{
+              x: 5,
+              y: 1,
+              width: 2,
+              height: 2,
+              backgroundImage: "linear-gradient(45deg, #EF4444 0%, #F59E0B 100%)",
+            }}
+          />
+        </>
+      ),
+    );
 
     try {
       await deck.render({ output });
@@ -742,28 +749,31 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "background-image-layers.pptx");
 
-    deck.add(() => (
-      <Slide
-        name="Background image layer output"
-        style={{
+    deck.slide(
+      {
+        name: "Background image layer output",
+        style: {
           backgroundImage: `url("${WIDE_SVG_DATA_URI}"), linear-gradient(180deg, #111111 0%, #333333 100%)`,
           backgroundSize: "contain, 100% 100%",
           backgroundPosition: "right bottom, center",
-        }}
-      >
-        <View
-          style={{
-            x: 1,
-            y: 1,
-            width: 2,
-            height: 2,
-            backgroundImage: `url("${WIDE_SVG_DATA_URI}")`,
-            backgroundSize: "cover",
-            backgroundPosition: "right center",
-          }}
-        />
-      </Slide>
-    ));
+        },
+      },
+      () => (
+        <>
+          <View
+            style={{
+              x: 1,
+              y: 1,
+              width: 2,
+              height: 2,
+              backgroundImage: `url("${WIDE_SVG_DATA_URI}")`,
+              backgroundSize: "cover",
+              backgroundPosition: "right center",
+            }}
+          />
+        </>
+      ),
+    );
 
     try {
       await deck.render({ output });
@@ -790,8 +800,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "background-repeat-layers.pptx");
 
-    deck.add(() => (
-      <Slide name="Background repeat output">
+    deck.slide({ name: "Background repeat output" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -816,7 +826,7 @@ describe("pptxgenjs writer", () => {
             backgroundRepeat: "repeat-x",
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -844,24 +854,27 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "background-shorthand-image-layers.pptx");
 
-    deck.add(() => (
-      <Slide
-        name="Background shorthand image layer output"
-        style={{
+    deck.slide(
+      {
+        name: "Background shorthand image layer output",
+        style: {
           background: `url("${WIDE_SVG_DATA_URI}") no-repeat right bottom / contain, linear-gradient(180deg, #111111 0%, #333333 100%)`,
-        }}
-      >
-        <View
-          style={{
-            x: 1,
-            y: 1,
-            width: 2,
-            height: 1,
-            background: `url("${SAMPLE_SVG_DATA_URI}") repeat-x left top / contain`,
-          }}
-        />
-      </Slide>
-    ));
+        },
+      },
+      () => (
+        <>
+          <View
+            style={{
+              x: 1,
+              y: 1,
+              width: 2,
+              height: 1,
+              background: `url("${SAMPLE_SVG_DATA_URI}") repeat-x left top / contain`,
+            }}
+          />
+        </>
+      ),
+    );
 
     try {
       await deck.render({ output });
@@ -889,8 +902,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "background-explicit-size.pptx");
 
-    deck.add(() => (
-      <Slide name="Explicit background size output">
+    deck.slide({ name: "Explicit background size output" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -913,7 +926,7 @@ describe("pptxgenjs writer", () => {
             backgroundPosition: "left top",
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -940,8 +953,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "background-auto-size.pptx");
 
-    deck.add(() => (
-      <Slide name="Auto background size output">
+    deck.slide({ name: "Auto background size output" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -953,7 +966,7 @@ describe("pptxgenjs writer", () => {
             backgroundPosition: "right bottom",
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -978,8 +991,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "background-clip-image.pptx");
 
-    deck.add(() => (
-      <Slide name="Background clip output">
+    deck.slide({ name: "Background clip output" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -994,7 +1007,7 @@ describe("pptxgenjs writer", () => {
             backgroundClip: "content-box",
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -1022,8 +1035,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "background-origin-image.pptx");
 
-    deck.add(() => (
-      <Slide name="Background origin output">
+    deck.slide({ name: "Background origin output" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1039,7 +1052,7 @@ describe("pptxgenjs writer", () => {
             backgroundOrigin: "padding-box",
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -1067,8 +1080,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "background-shorthand-boxes-image.pptx");
 
-    deck.add(() => (
-      <Slide name="Background shorthand boxes output">
+    deck.slide({ name: "Background shorthand boxes output" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1081,7 +1094,7 @@ describe("pptxgenjs writer", () => {
             background: `url("${WIDE_SVG_DATA_URI}") no-repeat padding-box content-box / 100% 100%`,
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -1109,8 +1122,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "background-clip-gradient-fill.pptx");
 
-    deck.add(() => (
-      <Slide name="Background clip gradient output">
+    deck.slide({ name: "Background clip gradient output" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1124,7 +1137,7 @@ describe("pptxgenjs writer", () => {
             backgroundClip: "content-box",
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -1151,8 +1164,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "background-origin-gradient-fill.pptx");
 
-    deck.add(() => (
-      <Slide name="Background origin gradient output">
+    deck.slide({ name: "Background origin gradient output" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1167,7 +1180,7 @@ describe("pptxgenjs writer", () => {
             backgroundOrigin: "padding-box",
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -1193,8 +1206,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "background-shorthand-gradient-boxes.pptx");
 
-    deck.add(() => (
-      <Slide name="Background shorthand gradient boxes output">
+    deck.slide({ name: "Background shorthand gradient boxes output" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1207,7 +1220,7 @@ describe("pptxgenjs writer", () => {
             background: "linear-gradient(180deg, #111111 0in, #333333 1in) padding-box content-box",
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -1233,8 +1246,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "background-shorthand-gradient-fallback.pptx");
 
-    deck.add(() => (
-      <Slide name="Background shorthand gradient fallback output">
+    deck.slide({ name: "Background shorthand gradient fallback output" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1248,7 +1261,7 @@ describe("pptxgenjs writer", () => {
               "linear-gradient(180deg, #111111 0in, #333333 1in) #AAAAAA padding-box content-box",
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -1275,8 +1288,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "background-layer-boxes.pptx");
 
-    deck.add(() => (
-      <Slide name="Background layer boxes output">
+    deck.slide({ name: "Background layer boxes output" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1292,7 +1305,7 @@ describe("pptxgenjs writer", () => {
             backgroundClip: "content-box, padding-box",
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -1322,8 +1335,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "transform-origin.pptx");
 
-    deck.add(() => (
-      <Slide name="Transform origin output">
+    deck.slide({ name: "Transform origin output" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1347,7 +1360,7 @@ describe("pptxgenjs writer", () => {
             transform: "rotate(90deg)",
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -1375,8 +1388,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "transform-skew.pptx");
 
-    deck.add(() => (
-      <Slide name="Skew output">
+    deck.slide({ name: "Skew output" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1400,7 +1413,7 @@ describe("pptxgenjs writer", () => {
             transform: "skewY(45deg)",
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -1427,8 +1440,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "transform-matrix.pptx");
 
-    deck.add(() => (
-      <Slide name="Matrix output">
+    deck.slide({ name: "Matrix output" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1440,7 +1453,7 @@ describe("pptxgenjs writer", () => {
             transform: "matrix(1, 0.5, 0.25, 1, 96, 48)",
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -1465,49 +1478,52 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "radial-gradient-fill.pptx");
 
-    deck.add(() => (
-      <Slide
-        name="Radial output"
-        style={{
+    deck.slide(
+      {
+        name: "Radial output",
+        style: {
           backgroundImage:
             "radial-gradient(ellipse 20% 30% at 25% 75%, rgba(37, 99, 235, 0.4) 0%, #F97316 100%)",
-        }}
-      >
-        <View
-          style={{
-            x: 1,
-            y: 1,
-            width: 2,
-            height: 2,
-            background:
-              "radial-gradient(circle closest-side at 75% 25%, #22C55E 0%, rgba(14, 165, 233, 0.5) 100%)",
-          }}
-        />
-        <Text
-          style={{
-            x: 1,
-            y: 3,
-            width: 3,
-            height: 0.75,
-            fontSize: 18,
-            backgroundImage:
-              "radial-gradient(ellipse farthest-side at center, #FFFFFF 0%, rgba(15, 23, 42, 0.25) 100%)",
-          }}
-        >
-          Radial text
-        </Text>
-        <Shape
-          shape="rect"
-          style={{
-            x: 5,
-            y: 1,
-            width: 2,
-            height: 2,
-            backgroundImage: "radial-gradient(circle 40% at 20% 30%, #EF4444 0%, #F59E0B 100%)",
-          }}
-        />
-      </Slide>
-    ));
+        },
+      },
+      () => (
+        <>
+          <View
+            style={{
+              x: 1,
+              y: 1,
+              width: 2,
+              height: 2,
+              background:
+                "radial-gradient(circle closest-side at 75% 25%, #22C55E 0%, rgba(14, 165, 233, 0.5) 100%)",
+            }}
+          />
+          <Text
+            style={{
+              x: 1,
+              y: 3,
+              width: 3,
+              height: 0.75,
+              fontSize: 18,
+              backgroundImage:
+                "radial-gradient(ellipse farthest-side at center, #FFFFFF 0%, rgba(15, 23, 42, 0.25) 100%)",
+            }}
+          >
+            Radial text
+          </Text>
+          <Shape
+            shape="rect"
+            style={{
+              x: 5,
+              y: 1,
+              width: 2,
+              height: 2,
+              backgroundImage: "radial-gradient(circle 40% at 20% 30%, #EF4444 0%, #F59E0B 100%)",
+            }}
+          />
+        </>
+      ),
+    );
 
     try {
       await deck.render({ output });
@@ -1540,25 +1556,28 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "repeating-gradient-fill.pptx");
 
-    deck.add(() => (
-      <Slide
-        name="Repeating output"
-        style={{
+    deck.slide(
+      {
+        name: "Repeating output",
+        style: {
           backgroundImage: "repeating-linear-gradient(90deg, #111111 0%, #EEEEEE 25%, #111111 50%)",
-        }}
-      >
-        <View
-          style={{
-            x: 1,
-            y: 1,
-            width: 2,
-            height: 2,
-            backgroundImage:
-              "repeating-radial-gradient(circle 40% at center, #EF4444 0%, #F59E0B 20%, #EF4444 40%)",
-          }}
-        />
-      </Slide>
-    ));
+        },
+      },
+      () => (
+        <>
+          <View
+            style={{
+              x: 1,
+              y: 1,
+              width: 2,
+              height: 2,
+              backgroundImage:
+                "repeating-radial-gradient(circle 40% at center, #EF4444 0%, #F59E0B 20%, #EF4444 40%)",
+            }}
+          />
+        </>
+      ),
+    );
 
     try {
       await deck.render({ output });
@@ -1585,8 +1604,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "gradient-length-stops.pptx");
 
-    deck.add(() => (
-      <Slide name="Length stop output">
+    deck.slide({ name: "Length stop output" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1606,7 +1625,7 @@ describe("pptxgenjs writer", () => {
               "radial-gradient(circle 40% at center, #EF4444 0in, #F59E0B 0.4in, #FDE68A 0.8in)",
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -1633,8 +1652,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "gradient-hints.pptx");
 
-    deck.add(() => (
-      <Slide name="Gradient hints output">
+    deck.slide({ name: "Gradient hints output" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1644,7 +1663,7 @@ describe("pptxgenjs writer", () => {
             backgroundImage: "linear-gradient(90deg, #FF0000 0 50%, 75%, #0000FF 100%)",
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -1671,26 +1690,29 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "multiple-background-layers.pptx");
 
-    deck.add(() => (
-      <Slide
-        name="Multiple background output"
-        style={{
+    deck.slide(
+      {
+        name: "Multiple background output",
+        style: {
           backgroundImage:
             "linear-gradient(90deg, #FF0000 0%, #00FF00 100%), linear-gradient(180deg, #0000FF 0%, #FFFFFF 100%)",
-        }}
-      >
-        <View
-          style={{
-            x: 1,
-            y: 1,
-            width: 2,
-            height: 1.25,
-            backgroundImage:
-              "linear-gradient(45deg, #123456 0%, #654321 100%), linear-gradient(180deg, #ABCDEF 0%, #FEDCBA 100%)",
-          }}
-        />
-      </Slide>
-    ));
+        },
+      },
+      () => (
+        <>
+          <View
+            style={{
+              x: 1,
+              y: 1,
+              width: 2,
+              height: 1.25,
+              backgroundImage:
+                "linear-gradient(45deg, #123456 0%, #654321 100%), linear-gradient(180deg, #ABCDEF 0%, #FEDCBA 100%)",
+            }}
+          />
+        </>
+      ),
+    );
 
     try {
       await deck.render({ output });
@@ -1722,8 +1744,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "transform-aliases.pptx");
 
-    deck.add(() => (
-      <Slide name="Transform output">
+    deck.slide({ name: "Transform output" }, () => (
+      <>
         <Shape
           shape="rect"
           style={{
@@ -1735,7 +1757,7 @@ describe("pptxgenjs writer", () => {
             transform: "translate(1in, 0.5in) rotate(15deg) scale(2, 1.5) scale(-1, -1)",
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -1763,8 +1785,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "text-semantics.pptx");
 
-    deck.add(() => (
-      <Slide name="Text semantics output">
+    deck.slide({ name: "Text semantics output" }, () => (
+      <>
         <Text
           style={{
             x: 1,
@@ -1802,7 +1824,7 @@ describe("pptxgenjs writer", () => {
             href: "https://example.com/shape",
           }}
         />
-      </Slide>
+      </>
     ));
 
     try {
@@ -1837,8 +1859,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "lists.pptx");
 
-    deck.add(() => (
-      <Slide name="List output">
+    deck.slide({ name: "List output" }, () => (
+      <>
         <Text
           style={{
             x: 1,
@@ -1863,7 +1885,7 @@ describe("pptxgenjs writer", () => {
         >
           Number item
         </Text>
-      </Slide>
+      </>
     ));
 
     try {
@@ -1889,8 +1911,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "typography-aliases.pptx");
 
-    deck.add(() => (
-      <Slide name="Typography aliases output">
+    deck.slide({ name: "Typography aliases output" }, () => (
+      <>
         <Text
           style={{
             x: 1,
@@ -1905,7 +1927,7 @@ describe("pptxgenjs writer", () => {
         >
           Decorated
         </Text>
-      </Slide>
+      </>
     ));
 
     try {
@@ -1933,8 +1955,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "tab-stops.pptx");
 
-    deck.add(() => (
-      <Slide name="Tab stops output">
+    deck.slide({ name: "Tab stops output" }, () => (
+      <>
         <Text
           style={{
             x: 1,
@@ -1950,7 +1972,7 @@ describe("pptxgenjs writer", () => {
         >
           Alpha\tBeta\tGamma
         </Text>
-      </Slide>
+      </>
     ));
 
     try {
@@ -1977,8 +1999,8 @@ describe("pptxgenjs writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "text-indent.pptx");
 
-    deck.add(() => (
-      <Slide name="Text indent output">
+    deck.slide({ name: "Text indent output" }, () => (
+      <>
         <Text
           style={{
             x: 1,
@@ -2003,7 +2025,7 @@ describe("pptxgenjs writer", () => {
         >
           List indent
         </Text>
-      </Slide>
+      </>
     ));
 
     try {

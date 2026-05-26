@@ -1,4 +1,4 @@
-import { Deck, Slide, Text } from "deckjsx";
+import { Deck, Text } from "deckjsx";
 import type {
   BoundSource,
   CompositionContext,
@@ -24,30 +24,30 @@ const compositionTypeAssertions = {
 void compositionTypeAssertions;
 
 const root = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-root.add(({ composition }) => (
-  <Slide>
+root.slide(({ composition }) => (
+  <>
     <Text>{composition.slideIndex}</Text>
-  </Slide>
+  </>
 ));
 
-root.add((input) => {
+root.slide((input) => {
   input.composition satisfies CompositionContext;
-  return <Slide />;
+  return <></>;
 });
 
 // @ts-expect-error Root slide factories do not receive Source Context.
-root.add(({ context }) => <Slide>{context}</Slide>);
+root.slide(({ context }) => <>{context}</>);
 
 const section = new Deck<{ sectionTitle: string }>({
   layout: { width: 10, height: 5.625, unit: "in" },
 });
 
-section.add(({ context, composition }) => (
-  <Slide name={context.sectionTitle}>
+section.slide(({ context, composition }) => (
+  <>
     <Text>
       {context.sectionTitle}:{composition.slideIndex}
     </Text>
-  </Slide>
+  </>
 ));
 
 // @ts-expect-error A Deck with required Source Context cannot compile as a root.
@@ -61,7 +61,7 @@ bound satisfies BoundSource<{ sectionTitle: string }>;
 void bound.compile().graph!;
 
 // @ts-expect-error Bound Source is not an authoring registration API.
-bound.add(() => <Slide />);
+bound.slide(() => <></>);
 
 // @ts-expect-error Bound Source is not an authoring registration API.
 bound.mount("child", root);
@@ -93,7 +93,5 @@ const mapper = ((context) => ({ source: context.sectionTitle })) satisfies Sourc
 >;
 void mapper;
 
-const factory = (({ composition }) => (
-  <Slide name={`Slide ${composition.slideIndex + 1}`} />
-)) satisfies SlideFactory;
+const factory = (({ composition }) => <Text>{composition.slideIndex}</Text>) satisfies SlideFactory;
 void factory;

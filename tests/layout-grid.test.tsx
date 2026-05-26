@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, EMU_PER_INCH, Slide, Text, View } from "../src/index.ts";
+import { Deck, EMU_PER_INCH, Text, View } from "../src/index.ts";
 import { summarizeNodes } from "./helpers.ts";
 
 describe("grid layout", () => {
@@ -8,8 +8,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid">
+    deck.slide({ name: "Grid" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -36,7 +36,7 @@ describe("grid layout", () => {
           />
           <Text style={{ fontSize: 18 }}>Auto</Text>
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -91,8 +91,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid span">
+    deck.slide({ name: "Grid span" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -126,7 +126,7 @@ describe("grid layout", () => {
             }}
           />
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -169,8 +169,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid repeat">
+    deck.slide({ name: "Grid repeat" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -189,7 +189,7 @@ describe("grid layout", () => {
           <View style={{ backgroundColor: "#D1D5DB" }} />
           <View style={{ backgroundColor: "#CBD5E1" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -232,8 +232,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid auto flow column">
+    deck.slide({ name: "Grid auto flow column" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -254,7 +254,7 @@ describe("grid layout", () => {
           <View style={{ width: 0.5, height: 0.5, backgroundColor: "#CBD5E1" }} />
           <View style={{ width: 0.5, height: 0.5, backgroundColor: "#BFDBFE" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -307,8 +307,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid minmax">
+    deck.slide({ name: "Grid minmax" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -324,7 +324,7 @@ describe("grid layout", () => {
           <Text style={{ width: 0.5, height: 0.5 }}>B</Text>
           <Text style={{ width: 0.5, height: 0.5 }}>C</Text>
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -380,8 +380,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid auto minmax">
+    deck.slide({ name: "Grid auto minmax" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -399,7 +399,7 @@ describe("grid layout", () => {
           <Text style={{ width: 0.5, height: 0.5 }}>B</Text>
           <Text style={{ width: 0.5, height: 0.5 }}>C</Text>
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -455,8 +455,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid auto fill">
+    deck.slide({ name: "Grid auto fill" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -472,7 +472,7 @@ describe("grid layout", () => {
           <Text style={{ width: 0.5, height: 0.5 }}>B</Text>
           <Text style={{ width: 0.5, height: 0.5 }}>C</Text>
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -528,8 +528,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid auto fit">
+    deck.slide({ name: "Grid auto fit" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -544,7 +544,7 @@ describe("grid layout", () => {
           <Text style={{ width: 0.5, height: 0.5 }}>A</Text>
           <Text style={{ width: 0.5, height: 0.5 }}>B</Text>
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -589,8 +589,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid placeContent stretch">
+    deck.slide({ name: "Grid placeContent stretch" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -608,7 +608,7 @@ describe("grid layout", () => {
           <View style={{ backgroundColor: "#BFDBFE" }} />
           <View style={{ backgroundColor: "#FDE68A" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -671,8 +671,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid dense row">
+    deck.slide({ name: "Grid dense row" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -690,7 +690,7 @@ describe("grid layout", () => {
           <View style={{ backgroundColor: "#BFDBFE" }} />
           <View style={{ backgroundColor: "#FDE68A" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -753,8 +753,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid sparse row">
+    deck.slide({ name: "Grid sparse row" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -771,7 +771,7 @@ describe("grid layout", () => {
           <View style={{ backgroundColor: "#BFDBFE" }} />
           <View style={{ backgroundColor: "#FDE68A" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -834,8 +834,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid template areas">
+    deck.slide({ name: "Grid template areas" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -852,7 +852,7 @@ describe("grid layout", () => {
           <View style={{ gridArea: "aside", backgroundColor: "#CBD5E1" }} />
           <View style={{ gridArea: "footer", backgroundColor: "#BFDBFE" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -905,8 +905,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid area shorthand">
+    deck.slide({ name: "Grid area shorthand" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -921,7 +921,7 @@ describe("grid layout", () => {
           <View style={{ gridArea: "1 / 2 / 3 / 4", backgroundColor: "#D1D5DB" }} />
           <View style={{ gridArea: "3 / 1 / 4 / 2", backgroundColor: "#CBD5E1" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -964,8 +964,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid line longhands">
+    deck.slide({ name: "Grid line longhands" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -996,7 +996,7 @@ describe("grid layout", () => {
             }}
           />
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -1039,8 +1039,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid line spans">
+    deck.slide({ name: "Grid line spans" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1062,7 +1062,7 @@ describe("grid layout", () => {
             }}
           />
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -1095,8 +1095,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid template shorthand">
+    deck.slide({ name: "Grid template shorthand" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1111,7 +1111,7 @@ describe("grid layout", () => {
           <View style={{ gridArea: "aside", backgroundColor: "#CBD5E1" }} />
           <View style={{ gridArea: "footer", backgroundColor: "#BFDBFE" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -1164,8 +1164,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid shorthand template">
+    deck.slide({ name: "Grid shorthand template" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1179,7 +1179,7 @@ describe("grid layout", () => {
           <View style={{ gridArea: "aside", backgroundColor: "#CBD5E1" }} />
           <View style={{ gridArea: "footer", backgroundColor: "#BFDBFE" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -1232,8 +1232,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid shorthand auto-flow rows">
+    deck.slide({ name: "Grid shorthand auto-flow rows" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1247,7 +1247,7 @@ describe("grid layout", () => {
           <View style={{ backgroundColor: "#CBD5E1" }} />
           <View style={{ backgroundColor: "#BFDBFE" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -1300,8 +1300,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid shorthand auto-flow dense columns">
+    deck.slide({ name: "Grid shorthand auto-flow dense columns" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1315,7 +1315,7 @@ describe("grid layout", () => {
           <View style={{ gridRow: 2, backgroundColor: "#CBD5E1" }} />
           <View style={{ backgroundColor: "#BFDBFE" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -1367,8 +1367,8 @@ describe("grid layout", () => {
     const gridOverride = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
     });
-    gridOverride.add(() => (
-      <Slide name="Grid shorthand columns override">
+    gridOverride.slide({ name: "Grid shorthand columns override" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1382,7 +1382,7 @@ describe("grid layout", () => {
           <View style={{ gridArea: "main", backgroundColor: "#D1D5DB" }} />
           <View style={{ gridArea: "side", backgroundColor: "#CBD5E1" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(gridOverride.project().projection!.slides[0].payload.elements)).toEqual([
@@ -1422,8 +1422,8 @@ describe("grid layout", () => {
     const autoFlowOverride = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
     });
-    autoFlowOverride.add(() => (
-      <Slide name="Grid shorthand auto-flow override">
+    autoFlowOverride.slide({ name: "Grid shorthand auto-flow override" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1440,7 +1440,7 @@ describe("grid layout", () => {
           <View style={{ backgroundColor: "#BFDBFE" }} />
           <View style={{ backgroundColor: "#FDE68A" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     expect(
@@ -1502,8 +1502,8 @@ describe("grid layout", () => {
     const templateOverride = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
     });
-    templateOverride.add(() => (
-      <Slide name="Grid template override">
+    templateOverride.slide({ name: "Grid template override" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1518,7 +1518,7 @@ describe("grid layout", () => {
           <View style={{ gridArea: "main", backgroundColor: "#D1D5DB" }} />
           <View style={{ gridArea: "side", backgroundColor: "#CBD5E1" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     expect(
@@ -1563,8 +1563,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid auto tracks">
+    deck.slide({ name: "Grid auto tracks" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1595,7 +1595,7 @@ describe("grid layout", () => {
           <View style={{ width: 1, height: 0.5, backgroundColor: "#BFDBFE" }} />
           <View style={{ width: 1, height: 0.5, backgroundColor: "#93C5FD" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -1660,8 +1660,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid auto min content">
+    deck.slide({ name: "Grid auto min content" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1676,7 +1676,7 @@ describe("grid layout", () => {
           <View style={{ width: 3, height: 0.5, backgroundColor: "#D1D5DB" }} />
           <View style={{ width: 0.5, height: 0.5, backgroundColor: "#CBD5E1" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -1721,8 +1721,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid implicit auto min content">
+    deck.slide({ name: "Grid implicit auto min content" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1740,7 +1740,7 @@ describe("grid layout", () => {
           <View style={{ width: 3, height: 0.5, backgroundColor: "#CBD5E1" }} />
           <View style={{ width: 0.5, height: 0.5, backgroundColor: "#BFDBFE" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -1795,8 +1795,8 @@ describe("grid layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid multi-span auto min content">
+    deck.slide({ name: "Grid multi-span auto min content" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -1813,7 +1813,7 @@ describe("grid layout", () => {
           />
           <View style={{ width: 0.5, height: 0.5, backgroundColor: "#CBD5E1" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;

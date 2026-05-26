@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, Shape, Slide, Text, View } from "../src/index.ts";
+import { Deck, Shape, Text, View } from "../src/index.ts";
 
 describe("stroke-values", () => {
   test("render supports border shorthand and css color functions", () => {
@@ -7,8 +7,8 @@ describe("stroke-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Border and color" style={{ backgroundColor: "#11223380" }}>
+    deck.slide({ name: "Border and color", style: { backgroundColor: "#11223380" } }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -43,7 +43,7 @@ describe("stroke-values", () => {
             }}
           />
         </View>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -93,8 +93,8 @@ describe("stroke-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Shape stroke dasharray">
+    deck.slide({ name: "Shape stroke dasharray" }, () => (
+      <>
         <Shape
           shape="rect"
           style={{
@@ -108,7 +108,7 @@ describe("stroke-values", () => {
             strokeDasharray: "1 4",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -137,8 +137,8 @@ describe("stroke-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Stroke cap and join">
+    deck.slide({ name: "Stroke cap and join" }, () => (
+      <>
         <Shape
           shape="rect"
           style={{
@@ -153,7 +153,7 @@ describe("stroke-values", () => {
             strokeLinejoin: "bevel",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;

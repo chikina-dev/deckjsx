@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, Shape, Slide, Text, View } from "../src/index.ts";
+import { Deck, Shape, Text, View } from "../src/index.ts";
 
 describe("gradient-values", () => {
   test("render supports radial-gradient fills", () => {
@@ -7,49 +7,52 @@ describe("gradient-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide
-        name="Radial gradient"
-        style={{
+    deck.slide(
+      {
+        name: "Radial gradient",
+        style: {
           backgroundImage:
             "radial-gradient(ellipse 20% 30% at 25% 75%, rgba(37, 99, 235, 0.4) 0%, #F97316 100%)",
-        }}
-      >
-        <View
-          style={{
-            x: 1,
-            y: 1,
-            width: 2,
-            height: 2,
-            background:
-              "radial-gradient(circle closest-side at 75% 25%, #22C55E 0%, rgba(14, 165, 233, 0.5) 100%)",
-          }}
-        />
-        <Text
-          style={{
-            x: 1,
-            y: 3,
-            width: 3,
-            height: 0.75,
-            fontSize: 18,
-            backgroundImage:
-              "radial-gradient(ellipse farthest-side at center, #FFFFFF 0%, rgba(15, 23, 42, 0.25) 100%)",
-          }}
-        >
-          Radial text
-        </Text>
-        <Shape
-          shape="rect"
-          style={{
-            x: 5,
-            y: 1,
-            width: 2,
-            height: 2,
-            backgroundImage: "radial-gradient(circle 40% at 20% 30%, #EF4444 0%, #F59E0B 100%)",
-          }}
-        />
-      </Slide>
-    ));
+        },
+      },
+      () => (
+        <>
+          <View
+            style={{
+              x: 1,
+              y: 1,
+              width: 2,
+              height: 2,
+              background:
+                "radial-gradient(circle closest-side at 75% 25%, #22C55E 0%, rgba(14, 165, 233, 0.5) 100%)",
+            }}
+          />
+          <Text
+            style={{
+              x: 1,
+              y: 3,
+              width: 3,
+              height: 0.75,
+              fontSize: 18,
+              backgroundImage:
+                "radial-gradient(ellipse farthest-side at center, #FFFFFF 0%, rgba(15, 23, 42, 0.25) 100%)",
+            }}
+          >
+            Radial text
+          </Text>
+          <Shape
+            shape="rect"
+            style={{
+              x: 5,
+              y: 1,
+              width: 2,
+              height: 2,
+              backgroundImage: "radial-gradient(circle 40% at 20% 30%, #EF4444 0%, #F59E0B 100%)",
+            }}
+          />
+        </>
+      ),
+    );
 
     const ir = deck.project().projection!;
     const [viewNode, textNode, shapeNode] = ir.slides[0].payload.elements;
@@ -116,25 +119,28 @@ describe("gradient-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide
-        name="Repeating gradients"
-        style={{
+    deck.slide(
+      {
+        name: "Repeating gradients",
+        style: {
           backgroundImage: "repeating-linear-gradient(90deg, #111111 0%, #EEEEEE 25%, #111111 50%)",
-        }}
-      >
-        <View
-          style={{
-            x: 1,
-            y: 1,
-            width: 2,
-            height: 2,
-            backgroundImage:
-              "repeating-radial-gradient(circle 40% at center, #EF4444 0%, #F59E0B 20%, #EF4444 40%)",
-          }}
-        />
-      </Slide>
-    ));
+        },
+      },
+      () => (
+        <>
+          <View
+            style={{
+              x: 1,
+              y: 1,
+              width: 2,
+              height: 2,
+              backgroundImage:
+                "repeating-radial-gradient(circle 40% at center, #EF4444 0%, #F59E0B 20%, #EF4444 40%)",
+            }}
+          />
+        </>
+      ),
+    );
 
     const ir = deck.project().projection!;
     const background = ir.slides[0].payload.background;
@@ -173,8 +179,8 @@ describe("gradient-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Length stops">
+    deck.slide({ name: "Length stops" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -194,7 +200,7 @@ describe("gradient-values", () => {
               "radial-gradient(circle 40% at center, #EF4444 0in, #F59E0B 0.4in, #FDE68A 0.8in)",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -236,8 +242,8 @@ describe("gradient-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Gradient hints">
+    deck.slide({ name: "Gradient hints" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -247,7 +253,7 @@ describe("gradient-values", () => {
             backgroundImage: "linear-gradient(90deg, #FF0000 0 50%, 75%, #0000FF 100%)",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -274,46 +280,49 @@ describe("gradient-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide
-        name="Gradient"
-        style={{
+    deck.slide(
+      {
+        name: "Gradient",
+        style: {
           background: "linear-gradient(90deg, rgba(37, 99, 235, 0.4) 0%, #F97316 100%)",
-        }}
-      >
-        <View
-          style={{
-            x: 1,
-            y: 1,
-            width: 3,
-            height: 1.5,
-            background: "linear-gradient(to bottom, #22C55E 0%, rgba(14, 165, 233, 0.5) 100%)",
-          }}
-        />
-        <Text
-          style={{
-            x: 1,
-            y: 3,
-            width: 3,
-            height: 0.75,
-            fontSize: 18,
-            background: "linear-gradient(180deg, #FFFFFF 0%, rgba(15, 23, 42, 0.25) 100%)",
-          }}
-        >
-          Gradient text
-        </Text>
-        <Shape
-          shape="rect"
-          style={{
-            x: 5,
-            y: 1,
-            width: 2,
-            height: 2,
-            fill: "linear-gradient(45deg, #EF4444 0%, #F59E0B 100%)",
-          }}
-        />
-      </Slide>
-    ));
+        },
+      },
+      () => (
+        <>
+          <View
+            style={{
+              x: 1,
+              y: 1,
+              width: 3,
+              height: 1.5,
+              background: "linear-gradient(to bottom, #22C55E 0%, rgba(14, 165, 233, 0.5) 100%)",
+            }}
+          />
+          <Text
+            style={{
+              x: 1,
+              y: 3,
+              width: 3,
+              height: 0.75,
+              fontSize: 18,
+              background: "linear-gradient(180deg, #FFFFFF 0%, rgba(15, 23, 42, 0.25) 100%)",
+            }}
+          >
+            Gradient text
+          </Text>
+          <Shape
+            shape="rect"
+            style={{
+              x: 5,
+              y: 1,
+              width: 2,
+              height: 2,
+              fill: "linear-gradient(45deg, #EF4444 0%, #F59E0B 100%)",
+            }}
+          />
+        </>
+      ),
+    );
 
     const ir = deck.project().projection!;
     const [viewNode, textNode, shapeNode] = ir.slides[0].payload.elements;
@@ -372,8 +381,8 @@ describe("gradient-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Unsupported radial">
+    deck.slide({ name: "Unsupported radial" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -383,7 +392,7 @@ describe("gradient-values", () => {
             backgroundImage: "radial-gradient(circle 10% 20% at center, #FFFFFF 0%, #000000 100%)",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const result = deck.project();

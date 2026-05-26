@@ -1,4 +1,5 @@
 import type { AuthorTreeNode } from "./tree";
+import type { EmptySlideTemplateSet, SlideTemplateSet, TemplateAreaRef } from "../templates";
 import type { Theme } from "../style/theme";
 import type {
   ImageStyle,
@@ -109,12 +110,17 @@ type ClassNameAuthorProps = {
   className?: ClassNameValue;
 };
 
-export type DeckOptions = {
+type TemplateAreaAuthorProps = {
+  area?: TemplateAreaRef;
+};
+
+export type DeckOptions<TTemplates extends SlideTemplateSet = EmptySlideTemplateSet> = {
   layout: {
     width: number;
     height: number;
     unit: "in" | "pt";
   };
+  templates?: TTemplates;
   meta?: {
     title?: string;
     author?: string;
@@ -135,6 +141,7 @@ export type SlideFactory<TSourceContext = void> =
 
 export type SlideNodeProps = {
   name?: string;
+  template?: string;
   className?: ClassNameValue;
   style?: SlideStyle;
   background?: string;
@@ -155,6 +162,7 @@ export type SlideProps = SlideNodeProps & {
 export type ViewNodeProps = {
   style?: ViewStyle;
 } & ClassNameAuthorProps &
+  TemplateAreaAuthorProps &
   ViewStyle;
 
 export type ViewProps = ViewNodeProps & {
@@ -164,6 +172,7 @@ export type ViewProps = ViewNodeProps & {
 export type TextNodeProps = {
   style?: TextStyle;
 } & ClassNameAuthorProps &
+  TemplateAreaAuthorProps &
   TextStyle;
 
 export type TextProps = TextNodeProps & {
@@ -178,6 +187,7 @@ export type TextRunNodeProps = {
 export type ImageNodeProps = {
   style?: ImageStyle;
 } & ClassNameAuthorProps &
+  TemplateAreaAuthorProps &
   ImageStyle &
   (
     | {
@@ -198,6 +208,7 @@ export type ShapeNodeProps = {
   style?: ShapeStyle;
   shape: "rect" | "ellipse" | "line";
 } & ClassNameAuthorProps &
+  TemplateAreaAuthorProps &
   ShapeStyle;
 
 export type ShapeProps = ShapeNodeProps & {

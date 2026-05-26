@@ -43,6 +43,15 @@ export type SemanticOrigin = {
   readonly reason?: "primitive-text-in-container";
 };
 
+export type SemanticTemplateRef = {
+  readonly name: string;
+};
+
+export type SemanticTemplateAreaRef = {
+  readonly template: string;
+  readonly area: string;
+};
+
 export type BaseSemanticNode = {
   readonly id: GraphNodeId;
   readonly kind: SemanticNodeKind;
@@ -52,6 +61,7 @@ export type BaseSemanticNode = {
   readonly role?: SemanticRole;
   readonly key?: JsxKey;
   readonly styleRef?: StyleEntityId;
+  readonly templateAreaRef?: SemanticTemplateAreaRef;
 };
 
 export type SemanticDocumentNode = BaseSemanticNode & {
@@ -62,6 +72,7 @@ export type SemanticDocumentNode = BaseSemanticNode & {
 export type SemanticSlideNode = BaseSemanticNode & {
   readonly kind: "slide";
   readonly name?: string;
+  readonly templateRef?: SemanticTemplateRef;
   readonly children: readonly GraphNodeId[];
 };
 
@@ -135,4 +146,5 @@ export type SemanticAuthorGraph = {
   readonly nodes: ReadonlyMap<GraphNodeId, SemanticNode>;
   readonly styles: ReadonlyMap<StyleEntityId, StyleEntity>;
   readonly assets: ReadonlyMap<AssetEntityId, AssetEntity>;
+  readonly templates: ReadonlyMap<string, import("../templates").SlideTemplateSet>;
 };

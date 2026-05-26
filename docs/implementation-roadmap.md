@@ -28,7 +28,7 @@ should land as a separate minor version:
 - `0.4`: class-like style reuse
 - `0.5`: theme support
 - `0.6`: Project/Render pipeline, result-first stage APIs, and Pptx Package Model
-- `0.7`: layout templates
+- `0.7`: slide declarations and Deck templates
 - `0.8`: direct PPTX output projection and writer, replacing the required `pptxgenjs` path
 - `0.9`: HMR-oriented compilation/runtime
 
@@ -100,14 +100,15 @@ fail at type-check time whenever practical, with runtime validation as a seconda
 Keep current components available while lower-case JSX intrinsics provide the HTML-like authoring
 surface:
 
+Historical `0.2.x` examples used `deck.add()` and a public `<Slide>` root. These are superseded by
+the `0.7` Slide Declaration API; current authoring examples should use `deck.slide(...)` instead.
+
 ```tsx
-deck.add(() => (
-  <Slide name="Intro">
-    <div className="hero">
-      Hello
-      <img src="./logo.png" />
-    </div>
-  </Slide>
+deck.slide({ name: "Intro" }, () => (
+  <div className="hero">
+    Hello
+    <img src="./logo.png" />
+  </div>
 ));
 ```
 
@@ -518,13 +519,13 @@ through `composition`:
 ```tsx
 const section = new Deck<{ sectionTitle: string }>({ layout });
 
-section.add(({ context, composition }) => (
-  <Slide name={context.sectionTitle}>
+section.slide(({ context, composition }) => (
+  <>
     <h1>{context.sectionTitle}</h1>
     <p>
       {composition.deckSlideIndex + 1} / {composition.deckTotalSlides}
     </p>
-  </Slide>
+  </>
 ));
 ```
 
@@ -533,10 +534,10 @@ Root Deck slide factories have no `context` field:
 ```tsx
 const root = new Deck({ layout });
 
-root.add(({ composition }) => (
-  <Slide>
+root.slide(({ composition }) => (
+  <>
     <p>{composition.slideIndex + 1}</p>
-  </Slide>
+  </>
 ));
 ```
 
@@ -1821,28 +1822,30 @@ Recommended API shape:
 - Tests that the pptxgenjs Writer Adapter consumes the Pptx Package Model rather than reading the
   Author Tree.
 
-## 0.7 Layout Templates
+## 0.7 Slide Declarations and Deck Templates
 
 ### Goal
 
-Provide reusable layout definitions that can be applied to slides or views. Templates should reduce
-manual `x`, `y`, `width`, and `height` repetition while keeping semantic layout relationships
-visible in the graph.
+Make `deck.slide()` the single author-facing way to declare a slide, and add Deck-owned Slide
+Templates for reusable page structure. This milestone should remove the split between `deck.add()`
+and a public `<Slide>` root while keeping slide identity, template selection, and Template Area
+relationships visible before output projection.
 
-By this milestone, the output pipeline boundary should already exist. Layout templates should add
-semantic layout relationships and resolved layout inspection data without redefining the
-build/project/write API.
+By this milestone, the output pipeline boundary already exists. Slide Templates should add
+output-agnostic page-structure relationships to the Semantic Author Graph, then let layout/project
+resolve concrete frames for PPTX or future outputs.
 
 ### Proposed API
 
 ```ts
 const deck = new Deck({
   layout,
+  theme,
   templates: {
     titleSlide: {
       areas: {
-        title: { x: 0.7, y: 0.6, width: 12, height: 0.8 },
-        body: { x: 0.7, y: 1.7, width: 12, height: 4.8 },
+        title: { frame: { x: 0.7, y: 0.6, width: 12, height: 0.8 } },
+        body: { frame: { x: 0.7, y: 1.7, width: 12, height: 4.8 } },
       },
     },
   },
@@ -1850,36 +1853,99 @@ const deck = new Deck({
 ```
 
 ```tsx
-<Slide template="titleSlide">
-  <Text area="title">Quarterly Review</Text>
-  <View area="body">...</View>
-</Slide>
+deck.slide({ name: "title", template: "titleSlide" }, ({ composition, template }) => (
+  <>
+    <h1 area={template.title}>Quarterly Review</h1>
+    <section area={template.body}>
+      <p>Slide {composition.deckSlideIndex + 1}</p>
+    </section>
+  </>
+));
+```
+
+```tsx
+deck.slide(() => <h1>Untemplated slide</h1>);
 ```
 
 ### Semantics
 
-- A template defines named areas.
-- A child with `area` links to a template area in the Semantic Author Graph.
-- Inline `style` can still override dimensions if needed.
-- Templates should work independently from CSS grid. They are named layout slots, not full layout
-  engines.
-- Template areas are semantic relationships first. Concrete coordinates are resolved before or
-  during Output Projection, depending on which inspection view is needed.
+- `deck.slide(factory)` and `deck.slide(options, factory)` are the only public slide declaration
+  APIs. `deck.add()` is removed.
+- A slide factory returns the slide content JSX, not a public `<Slide>` root. Slide-level `name`,
+  `template`, `className`, and `style` live in `SlideOptions`.
+- Public `<Slide>` is removed from the Authoring Interface. Internal slide nodes may remain as the
+  bridge from Slide Declaration to the Semantic Author Graph.
+- `templates` belongs to `DeckOptions`, not to `Theme`. Theme remains the visual vocabulary;
+  Deck-owned templates are page-structure vocabulary.
+- Child Decks do not inherit parent templates. Template names are Deck/source-local, so parent and
+  child Decks may use the same template name with different definitions.
+- A Slide Template defines named Template Areas under `areas`. Each Template Area has a complete
+  `frame` using the same frame value system as inline positional style.
+- `area` takes a Template Area Reference object, not a string. Authors obtain references from the
+  typed slide factory `template` handle, such as `area={template.title}`.
+- The slide factory receives `template` as a top-level field only when a `template` option is used.
+  `composition` remains top-level and always available; `context` remains Source Context only.
+- The template handle includes a public `$name` discriminant so template unions can be narrowed
+  without reserving ordinary area names.
+- Template names and Template Area names starting with `$` are invalid; `$` is reserved for
+  deckjsx-owned handle metadata.
+- Template Area names and Style Class names are separate namespaces.
+- `area` is allowed on style/layout capable authored nodes, but an effective Template Area Reference
+  must appear on a direct slide child. Nested area references are compile errors.
+- One Template Area may be referenced by at most one direct authored node in a slide. Multiple
+  elements in the same area should be wrapped in a container carrying the area reference.
+- Nodes with `area` are placed by the Template Area frame and removed from the normal sibling layout
+  flow. Nodes without `area` continue to use normal layout flow even on templated slides.
+- Template Area frame values override default, theme-default, and stylesheet positional values for
+  that placement. Inline positional style remains the author escape hatch and overrides
+  corresponding Template Area frame properties.
+- Template relationships are graph semantics first. Concrete coordinates are resolved in
+  layout/project artifacts, with enough inspection data to explain area-derived values and inline
+  overrides when possible.
 
 ### Implementation Notes
 
-- Add `templates` to `DeckOptions`.
-- Add `template` to `SlideStyle` or `SlideProps`.
-- Add `area` to content node props.
-- Represent template-area relationships in the Semantic Author Graph.
-- Add resolved layout/style inspection data without making PPTX-specific values part of the graph.
+- Replace the public slide authoring path with `deck.slide(...)`; remove `Deck.add()` and remove
+  `Slide` from root JSX exports and public JSX authoring types.
+- Keep `SlideDeclaration` as the public concept and continue using internal slide author nodes or
+  graph nodes where they make the pipeline simpler.
+- Add `SlideOptions` with `name`, `template`, `className`, and `style`.
+- Add `SlideTemplateSet`, `SlideTemplate`, `TemplateArea`, and `TemplateAreaRef` as root authoring
+  type exports. Do not export a public constructor or helper for creating Template Area References.
+- Type `Deck` so literal `templates` are preserved. `deck.slide({ template })` should complete and
+  constrain template names from the Deck template set.
+- Type the slide factory `template` handle from the selected template. Literal selections should
+  expose exact areas; union selections should produce a discriminated union via `$name`.
+- Preserve the existing `new Deck<TSourceContext>(...)` source-context authoring experience as much
+  as TypeScript allows. If inference cannot cover every case, support explicit template generics and
+  external `as const satisfies SlideTemplateSet` definitions.
+- Build Template Area References with an internal runtime brand plus a readable tag string for
+  diagnostics/inspection. Public code should only receive them from the factory template handle.
+- Add runtime validation for the whole Deck template set, including complete `frame` values and
+  reserved `$` prefixes. Templates may be defined without a layout; final frame interpretation follows
+  the same stage as existing positional layout/style values.
+- Add graph fields for slide template references and node Template Area References without turning
+  the graph into a resolved layout model.
+- Resolve Template Area frame placement in layout/project artifacts. Keep PPTX-specific values out of
+  the Semantic Author Graph.
 
 ### Validation
 
-- Tests for slide templates.
-- Tests for missing template and missing area errors.
-- Tests for inline overrides.
-- Tests that `compile()` exposes graph relationships before output projection.
+- Type tests that `template` names are completed from `new Deck({ templates })`.
+- Type tests that `area={template.title}` is accepted and unknown areas are rejected for literal
+  templates.
+- Type tests for `$name` narrowing when the template option is a union.
+- Type tests that `template` is not available in the factory input for untemplated slides.
+- Runtime diagnostics for missing templates, area references without an active template, mismatched
+  Template Area Reference objects, unknown areas, nested area references, duplicate direct area use,
+  incomplete frames, and reserved `$` prefixes.
+- Tests that `deck.add()` and public `<Slide>` are removed from the public API.
+- Tests that same-named parent and child Deck templates are source-local and do not conflict.
+- Tests that area-bound direct children are removed from normal flow while unbound children remain in
+  normal flow.
+- Tests that Template Area frame values override class/default positional values and inline
+  positional style overrides corresponding area frame values.
+- Tests that `compile()` exposes template and area graph relationships before output projection.
 
 ## Future Paged Media And Print CSS
 

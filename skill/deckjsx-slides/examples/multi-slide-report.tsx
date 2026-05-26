@@ -1,4 +1,4 @@
-import { Deck, Shape, Slide } from "deckjsx";
+import { Deck, Shape } from "deckjsx";
 
 type Metric = {
   label: string;
@@ -19,8 +19,8 @@ export async function writeMultiSlideReport(output = "multi-slide-report.pptx"):
     meta: { title: "Quarterly Review", author: "deckjsx" },
   });
 
-  deck.add(({ composition }) => (
-    <Slide name="Title" style={{ backgroundColor: "#F8FAFC" }}>
+  deck.slide({ name: "Title", style: { backgroundColor: "#F8FAFC" } }, ({ composition }) => (
+    <>
       <h1
         style={{
           x: 0.8,
@@ -43,11 +43,11 @@ export async function writeMultiSlideReport(output = "multi-slide-report.pptx"):
           {composition.slideIndex + 1} / {composition.totalSlides}
         </p>
       </footer>
-    </Slide>
+    </>
   ));
 
-  deck.add(({ composition }) => (
-    <Slide name="Metrics" style={{ backgroundColor: "#FFFFFF" }}>
+  deck.slide({ name: "Metrics", style: { backgroundColor: "#FFFFFF" } }, ({ composition }) => (
+    <>
       <h1 style={{ x: 0.7, y: 0.5, width: 8, height: 0.45, fontSize: 24, fontWeight: 700 }}>
         Business metrics
       </h1>
@@ -101,7 +101,7 @@ export async function writeMultiSlideReport(output = "multi-slide-report.pptx"):
           {composition.slideIndex + 1} / {composition.totalSlides}
         </p>
       </footer>
-    </Slide>
+    </>
   ));
 
   await deck.render({ output });

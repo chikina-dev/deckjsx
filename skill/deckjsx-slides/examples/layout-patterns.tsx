@@ -1,4 +1,4 @@
-import { Deck, Slide } from "deckjsx";
+import { Deck } from "deckjsx";
 
 export async function writeLayoutPatterns(output = "layout-patterns.pptx"): Promise<void> {
   const deck = new Deck({
@@ -6,8 +6,8 @@ export async function writeLayoutPatterns(output = "layout-patterns.pptx"): Prom
     meta: { title: "Layout patterns", author: "deckjsx" },
   });
 
-  deck.add(() => (
-    <Slide name="Stack and grid" style={{ backgroundColor: "#F8FAFC" }}>
+  deck.slide({ name: "Stack and grid", style: { backgroundColor: "#F8FAFC" } }, () => (
+    <>
       <section
         style={{
           x: 0.5,
@@ -67,7 +67,7 @@ export async function writeLayoutPatterns(output = "layout-patterns.pptx"): Prom
         <div style={{ backgroundColor: "#DCFCE7", borderRadius: 0.08 }} />
         <div style={{ gridColumn: "span 2", backgroundColor: "#FEF3C7", borderRadius: 0.08 }} />
       </section>
-    </Slide>
+    </>
   ));
 
   await deck.render({ output });

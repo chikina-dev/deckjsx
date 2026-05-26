@@ -2,6 +2,12 @@ import type { AuthoredComponent, AuthoredTag } from "../authoring/tags";
 import type { AuthorElementNode, AuthorTextLeaf, AuthorTreeNode, JsxKey } from "../authoring/tree";
 import type { ComposedAuthorRoot, SourceSlotOrigin } from "../composition/types";
 import { createDiagnostics, diagnostic, type Diagnostic, type Diagnostics } from "../diagnostics";
+import {
+  isTemplateAreaRef,
+  templateRefValue,
+  type SlideTemplateSet,
+  type TemplateAreaRef,
+} from "../templates";
 import { assetEntityId, graphNodeId, styleEntityId } from "./identity";
 import {
   semanticKindForComponent,
@@ -21,12 +27,14 @@ import type {
   StyleClassRef,
   StyleEntity,
   StyleEntityId,
+  SemanticTemplateAreaRef,
 } from "./types";
 
 type BuildState = {
   nodes: Map<GraphNodeId, SemanticNode>;
   styles: Map<StyleEntityId, StyleEntity>;
   assets: Map<AssetEntityId, AssetEntity>;
+  templates: Map<string, SlideTemplateSet>;
   diagnostics: Diagnostic[];
 };
 
@@ -38,6 +46,10 @@ type BuildContext = {
   source: SourceOrigin;
   slotOrigins: WeakMap<AuthorTreeNode, SourceSlotOrigin>;
   activeSlot?: SourceSlotOrigin;
+  activeSlideTemplate?: string;
+  activeSlideTemplates?: SlideTemplateSet;
+  directSlideChild?: boolean;
+  usedTemplateAreas?: Map<string, string>;
 };
 
 type BuildChild = {
@@ -136,14 +148,20 @@ function directStyleProps(props: Record<string, unknown>): Record<string, unknow
     children: _children,
     className: _className,
     data: _data,
+    area: _area,
     name: _name,
     shape: _shape,
     src: _src,
     style: _style,
+    template: _template,
     ...directStyle
   } = props;
 
   return Object.keys(directStyle).length === 0 ? undefined : directStyle;
+}
+
+function sourceKeyFor(source: SourceOrigin | undefined): string {
+  return !source || source.kind === "root" ? "root" : source.sourceIdentity;
 }
 
 function mergedAuthoredStyle(props: Record<string, unknown>): unknown {
@@ -256,6 +274,7 @@ function semanticBase(
   context: BuildContext,
 ) {
   const styleRef = styleRefFor(state, material, kind, node.props);
+  const templateAreaRef = templateAreaRefFor(state, node.props.area, path, context);
   return {
     id,
     kind,
@@ -267,7 +286,126 @@ function semanticBase(
     ...(node.key !== undefined ? { key: node.key } : {}),
     ...(nodeRole(node) ? { role: nodeRole(node) } : {}),
     ...(styleRef ? { styleRef } : {}),
+    ...(templateAreaRef ? { templateAreaRef } : {}),
   };
+}
+
+function templateAreaDiagnostic(input: {
+  code: string;
+  title: string;
+  path: string;
+  message: string;
+  help?: readonly string[];
+}): Diagnostic {
+  return diagnostic({
+    severity: "error",
+    code: input.code,
+    title: input.title,
+    message: input.message,
+    labels: [{ path: input.path, message: input.message }],
+    ...(input.help ? { help: input.help } : {}),
+  });
+}
+
+function templateAreaRefFor(
+  state: BuildState,
+  value: unknown,
+  path: string,
+  context: BuildContext,
+): SemanticTemplateAreaRef | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!isTemplateAreaRef(value)) {
+    addDiagnostic(
+      state,
+      templateAreaDiagnostic({
+        code: "E_TEMPLATE_AREA_REF_INVALID",
+        title: "template area reference is invalid",
+        path,
+        message: "The area prop must receive a Template Area Reference from the slide factory.",
+        help: ["Use area={template.areaName} inside deck.slide({ template }, ...)."],
+      }),
+    );
+    return undefined;
+  }
+
+  const ref = templateRefValue(value as TemplateAreaRef);
+  if (!context.activeSlideTemplate) {
+    addDiagnostic(
+      state,
+      templateAreaDiagnostic({
+        code: "E_TEMPLATE_AREA_WITHOUT_TEMPLATE",
+        title: "template area used without active template",
+        path,
+        message: `Template area "${ref.area}" was used on a slide without an active Slide Template.`,
+      }),
+    );
+    return undefined;
+  }
+
+  if (ref.template !== context.activeSlideTemplate) {
+    addDiagnostic(
+      state,
+      templateAreaDiagnostic({
+        code: "E_TEMPLATE_AREA_REF_MISMATCH",
+        title: "template area belongs to another template",
+        path,
+        message: `Template area "${ref.area}" belongs to Slide Template "${ref.template}", but the active Slide Template is "${context.activeSlideTemplate}".`,
+        help: ["Use the template handle passed to this slide factory."],
+      }),
+    );
+    return undefined;
+  }
+
+  if (!context.directSlideChild) {
+    addDiagnostic(
+      state,
+      templateAreaDiagnostic({
+        code: "E_TEMPLATE_AREA_NESTED",
+        title: "template area is nested",
+        path,
+        message: `Template area "${ref.area}" must be attached to a direct slide child.`,
+        help: [
+          "Place the area prop on a slide direct child, or wrap nested content in a container.",
+        ],
+      }),
+    );
+    return undefined;
+  }
+
+  const template = context.activeSlideTemplates?.[ref.template];
+  if (!template?.areas?.[ref.area]) {
+    addDiagnostic(
+      state,
+      templateAreaDiagnostic({
+        code: "E_TEMPLATE_AREA_NOT_FOUND",
+        title: "template area was not found",
+        path,
+        message: `Template area "${ref.area}" does not exist in Slide Template "${ref.template}".`,
+      }),
+    );
+    return undefined;
+  }
+
+  const existing = context.usedTemplateAreas?.get(ref.area);
+  if (existing) {
+    addDiagnostic(
+      state,
+      templateAreaDiagnostic({
+        code: "E_TEMPLATE_AREA_DUPLICATE",
+        title: "template area is used more than once",
+        path,
+        message: `Template area "${ref.area}" is already used by ${existing}.`,
+        help: ["Wrap multiple elements in a single container that carries the area prop."],
+      }),
+    );
+    return undefined;
+  }
+
+  context.usedTemplateAreas?.set(ref.area, path);
+  return ref;
 }
 
 function buildTextRunFromLeaf(
@@ -378,7 +516,14 @@ function buildTextLikeNode(
       const run = buildTextRunFromLeaf(
         state,
         child,
-        { ...context, parentId: id, parentMaterial: material, path, inline: true },
+        {
+          ...context,
+          parentId: id,
+          parentMaterial: material,
+          path,
+          inline: true,
+          directSlideChild: false,
+        },
         index,
       );
       if (run) {
@@ -394,6 +539,7 @@ function buildTextLikeNode(
         parentMaterial: material,
         path,
         inline: true,
+        directSlideChild: false,
       });
       const segment = `fragment:${keySegment(child.key, index)}`;
       inlineChildren.push(
@@ -410,7 +556,14 @@ function buildTextLikeNode(
       const built = buildNode(
         state,
         child,
-        { ...context, parentId: id, parentMaterial: material, path, inline: true },
+        {
+          ...context,
+          parentId: id,
+          parentMaterial: material,
+          path,
+          inline: true,
+          directSlideChild: false,
+        },
         index,
       );
       if (built) {
@@ -559,6 +712,22 @@ function buildNode(
     return { id, kind: "shape" };
   }
 
+  const slideTemplateName =
+    kind === "slide" && typeof node.props.template === "string" ? node.props.template : undefined;
+  const slideTemplates =
+    kind === "slide" ? state.templates.get(sourceKeyFor(sourceFor(nodeContext))) : undefined;
+  if (kind === "slide" && slideTemplateName && !slideTemplates?.[slideTemplateName]) {
+    addDiagnostic(
+      state,
+      templateAreaDiagnostic({
+        code: "E_TEMPLATE_NOT_FOUND",
+        title: "slide template was not found",
+        path,
+        message: `Slide Template "${slideTemplateName}" is not defined for this Deck source.`,
+      }),
+    );
+  }
+
   const childIds = buildChildren(state, node.children, {
     parentId: id,
     parentMaterial: material,
@@ -567,11 +736,16 @@ function buildNode(
     source: sourceFor(nodeContext),
     slotOrigins: nodeContext.slotOrigins,
     activeSlot: nodeContext.activeSlot,
+    activeSlideTemplate: slideTemplateName ?? nodeContext.activeSlideTemplate,
+    activeSlideTemplates: kind === "slide" ? slideTemplates : nodeContext.activeSlideTemplates,
+    directSlideChild: kind === "slide",
+    usedTemplateAreas: kind === "slide" ? new Map() : nodeContext.usedTemplateAreas,
   });
   state.nodes.set(id, {
     ...semanticBase(state, node, id, kind, path, material, nodeContext),
     kind,
     ...(kind === "slide" && typeof node.props.name === "string" ? { name: node.props.name } : {}),
+    ...(kind === "slide" && slideTemplateName ? { templateRef: { name: slideTemplateName } } : {}),
     children: childIds,
   } as SemanticNode);
   return { id, kind };
@@ -611,12 +785,16 @@ export function buildSemanticAuthorGraph(roots: readonly (AuthorTreeNode | Compo
     nodes: new Map(),
     styles: new Map(),
     assets: new Map(),
+    templates: new Map(),
     diagnostics: [],
   };
 
   const slideIds: GraphNodeId[] = [];
   roots.forEach((root, index) => {
     const composed = "root" in root ? root : asComposedRoot(root, index);
+    if (composed.templates) {
+      state.templates.set(sourceKeyFor(composed.source), composed.templates);
+    }
     const built = buildNode(
       state,
       composed.root,
@@ -627,6 +805,9 @@ export function buildSemanticAuthorGraph(roots: readonly (AuthorTreeNode | Compo
         inline: false,
         source: composed.source,
         slotOrigins: composed.slotOrigins,
+        activeSlideTemplate: undefined,
+        activeSlideTemplates: undefined,
+        directSlideChild: false,
       },
       composed.composition.slideIndex,
     );
@@ -652,6 +833,7 @@ export function buildSemanticAuthorGraph(roots: readonly (AuthorTreeNode | Compo
       nodes: state.nodes,
       styles: state.styles,
       assets: state.assets,
+      templates: state.templates,
     },
     diagnostics,
   };

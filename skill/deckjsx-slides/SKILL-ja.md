@@ -1,11 +1,11 @@
 ---
 name: deckjsx-slides-ja
-description: deckjsx ライブラリで PowerPoint スライドや PPTX デッキを作成、編集、レビューするときに使う日本語ガイド。Deck、Slide、html-like lowercase tag、Shape、pptxgenjs writer adapter を使う TSX/JSX スライド制作向け。
+description: deckjsx ライブラリで PowerPoint スライドや PPTX デッキを作成、編集、レビューするときに使う日本語ガイド。Deck、deck.slide()、html-like lowercase tag、Shape、pptxgenjs writer adapter を使う TSX/JSX スライド制作向け。
 ---
 
 # deckjsx Slides 日本語ガイド
 
-`deckjsx` は `pptxgenjs` の薄いラッパーではなく、JSX/TSX で書いたスライドを Semantic Author Graph と Pptx Package Model に変換し、writer adapter で `.pptx` に出力するライブラリとして扱います。`Slide` をスライドルートにし、lowercase の html-like tag でスライド構造を書くのを基本にします。
+`deckjsx` は `pptxgenjs` の薄いラッパーではなく、JSX/TSX で書いたスライドを Semantic Author Graph と Pptx Package Model に変換し、writer adapter で `.pptx` に出力するライブラリとして扱います。`deck.slide()` でスライドを宣言し、lowercase の html-like tag でスライド内容を書くのを基本にします。
 
 英語版の標準 skill は `SKILL.md` です。例や運用ルールを更新するときは、この日本語版も同じ内容に揃えてください。
 
@@ -23,7 +23,7 @@ description: deckjsx ライブラリで PowerPoint スライドや PPTX デッ�
 ## 基本ワークフロー
 
 1. `Deck` を作り、スライドサイズを明示する。
-2. `deck.add((context) => <Slide>...</Slide>)` でスライドを追加する。
+2. `deck.slide((context) => <>...</>)` でスライドを追加する。
 3. 基本は html-like tag を使う。`div`、`section`、`article`、`main`、`header`、`footer`、`aside`、`nav`、`figure` は view-like container、`p` と `h1`-`h6` は text-like、`img` は leaf image。
 4. layout/container の style は view-like tag に、typography の style は text-like tag に置く。たとえば `fontSize` は `<header>` や `<footer>` ではなく `<h1>` や `<p>` に置く。
 5. `Shape`、および既存 deck の更新や明示性が必要な場面では capitalized な `View`、`Text`、`Image` component も使ってよい。
@@ -36,16 +36,16 @@ description: deckjsx ライブラリで PowerPoint スライドや PPTX デッ�
 `tests/writer-pptxgenjs.test.tsx` の PPTX writer coverage に近い、最小の出力例です。
 
 ```tsx
-import { Deck, Slide } from "deckjsx";
+import { Deck } from "deckjsx";
 
 const deck = new Deck({
   layout: { width: 10, height: 5.625, unit: "in" },
 });
 
-deck.add(() => (
-  <Slide name="File output">
+deck.slide({ name: "File output" }, () => (
+  <>
     <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>Hello PPTX</p>
-  </Slide>
+  </>
 ));
 
 await deck.render({ output: "sample.pptx" });
@@ -54,71 +54,74 @@ await deck.render({ output: "sample.pptx" });
 ## 標準的なスライド例
 
 ```tsx
-import { Deck, Shape, Slide } from "deckjsx";
+import { Deck, Shape } from "deckjsx";
 
 const deck = new Deck({
   layout: { width: 13.333, height: 7.5, unit: "in" },
   meta: { title: "Quarterly Review", author: "deckjsx" },
 });
 
-deck.add(({ composition }) => (
-  <Slide name={`Slide ${composition.slideIndex + 1}`} style={{ backgroundColor: "#F8FAFC" }}>
-    <header
-      style={{
-        x: 0.7,
-        y: 0.5,
-        width: 8.5,
-        height: 0.6,
-      }}
-    >
-      <h1
+deck.slide(
+  { name: "Quarterly Review", style: { backgroundColor: "#F8FAFC" } },
+  ({ composition }) => (
+    <>
+      <header
         style={{
-          fontFamily: "Aptos Display",
-          fontSize: 28,
-          fontWeight: 700,
-          color: "#0F172A",
+          x: 0.7,
+          y: 0.5,
+          width: 8.5,
+          height: 0.6,
         }}
       >
-        Quarterly Review
-      </h1>
-    </header>
-    <main
-      style={{
-        x: 0.7,
-        y: 1.4,
-        width: 11.9,
-        height: 5.2,
-        display: "grid",
-        gridTemplateColumns: "1.1fr 1fr",
-        columnGap: 0.35,
-      }}
-    >
-      <p style={{ fontSize: 18, color: "#334155", fit: "shrink" }}>
-        1枚のスライドには1つの主張を置き、階層はサイズ、余白、色、配置で表現する。
-      </p>
-      <Shape
-        shape="rect"
+        <h1
+          style={{
+            fontFamily: "Aptos Display",
+            fontSize: 28,
+            fontWeight: 700,
+            color: "#0F172A",
+          }}
+        >
+          Quarterly Review
+        </h1>
+      </header>
+      <main
         style={{
-          fill: "#2563EB",
-          borderRadius: 0.16,
-          boxShadow: "3px 3px 8px rgba(15, 23, 42, 0.22)",
+          x: 0.7,
+          y: 1.4,
+          width: 11.9,
+          height: 5.2,
+          display: "grid",
+          gridTemplateColumns: "1.1fr 1fr",
+          columnGap: 0.35,
         }}
-      />
-    </main>
-    <footer
-      style={{
-        x: 11.2,
-        y: 7,
-        width: 1.4,
-        height: 0.25,
-      }}
-    >
-      <p style={{ fontSize: 9, color: "#64748B", textAlign: "right" }}>
-        {composition.slideIndex + 1} / {composition.totalSlides}
-      </p>
-    </footer>
-  </Slide>
-));
+      >
+        <p style={{ fontSize: 18, color: "#334155", fit: "shrink" }}>
+          1枚のスライドには1つの主張を置き、階層はサイズ、余白、色、配置で表現する。
+        </p>
+        <Shape
+          shape="rect"
+          style={{
+            fill: "#2563EB",
+            borderRadius: 0.16,
+            boxShadow: "3px 3px 8px rgba(15, 23, 42, 0.22)",
+          }}
+        />
+      </main>
+      <footer
+        style={{
+          x: 11.2,
+          y: 7,
+          width: 1.4,
+          height: 0.25,
+        }}
+      >
+        <p style={{ fontSize: 9, color: "#64748B", textAlign: "right" }}>
+          {composition.slideIndex + 1} / {composition.totalSlides}
+        </p>
+      </footer>
+    </>
+  ),
+);
 ```
 
 ## テスト由来のサンプルパターン
@@ -135,12 +138,12 @@ const deck = new Deck({
   meta: { title: "Spec test", author: "deckjsx" },
 });
 
-deck.add(({ composition }) => (
-  <Slide name={`Slide ${composition.slideIndex + 1}`}>
+deck.slide({ name: "Report slide" }, ({ composition }) => (
+  <>
     <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>
       {composition.slideIndex + 1} / {composition.totalSlides}
     </p>
-  </Slide>
+  </>
 ));
 ```
 
@@ -149,19 +152,21 @@ deck.add(({ composition }) => (
 PowerPoint らしい正確な配置が必要なときに使います。
 
 ```tsx
-<Slide name="Absolute">
-  <h1 style={{ x: 0.75, y: 0.6, width: 8, height: 0.55, fontSize: 26 }}>Executive Summary</h1>
-  <section
-    style={{
-      x: 0.75,
-      y: 1.4,
-      width: 5.5,
-      height: 4.5,
-      backgroundColor: "#E0F2FE",
-      borderRadius: 0.12,
-    }}
-  />
-</Slide>
+deck.slide({ name: "Absolute" }, () => (
+  <>
+    <h1 style={{ x: 0.75, y: 0.6, width: 8, height: 0.55, fontSize: 26 }}>Executive Summary</h1>
+    <section
+      style={{
+        x: 0.75,
+        y: 1.4,
+        width: 5.5,
+        height: 4.5,
+        backgroundColor: "#E0F2FE",
+        borderRadius: 0.12,
+      }}
+    />
+  </>
+));
 ```
 
 ### stack / flex レイアウト
@@ -245,24 +250,29 @@ PowerPoint らしい正確な配置が必要なときに使います。
 `tests/background-layers.test.tsx` に基づくパターンです。
 
 ```tsx
-<Slide
-  name="Background"
-  style={{
-    background:
-      `url("${WIDE_SVG_DATA_URI}") no-repeat right bottom / contain, ` +
-      "linear-gradient(180deg, #111111 0%, #333333 100%)",
-  }}
->
-  <div
-    style={{
-      x: 1,
-      y: 1,
-      width: 2,
-      height: 1,
-      background: `url("${SAMPLE_SVG_DATA_URI}") repeat-x left top / contain`,
-    }}
-  />
-</Slide>
+deck.slide(
+  {
+    name: "Background",
+    style: {
+      background:
+        `url("${WIDE_SVG_DATA_URI}") no-repeat right bottom / contain, ` +
+        "linear-gradient(180deg, #111111 0%, #333333 100%)",
+    },
+  },
+  () => (
+    <>
+      <div
+        style={{
+          x: 1,
+          y: 1,
+          width: 2,
+          height: 1,
+          background: `url("${SAMPLE_SVG_DATA_URI}") repeat-x left top / contain`,
+        }}
+      />
+    </>
+  ),
+);
 ```
 
 ### グラデーションと影
@@ -270,28 +280,33 @@ PowerPoint らしい正確な配置が必要なときに使います。
 `tests/gradient-values.test.tsx` と `tests/writer-pptxgenjs.test.tsx` に基づくパターンです。
 
 ```tsx
-<Slide
-  name="Effects"
-  style={{
-    backgroundImage:
-      "radial-gradient(ellipse 20% 30% at 25% 75%, rgba(37, 99, 235, 0.4) 0%, #F97316 100%)",
-  }}
->
-  <Shape
-    shape="rect"
-    style={{
-      x: 1,
-      y: 1,
-      width: 2,
-      height: 1,
-      fill: "#F97316",
-      boxShadow: "6px 6px 10px rgba(15, 23, 42, 0.35)",
-      stroke: "dodgerblue",
-      strokeWidth: "3pt",
-      strokeDasharray: "1 4",
-    }}
-  />
-</Slide>
+deck.slide(
+  {
+    name: "Effects",
+    style: {
+      backgroundImage:
+        "radial-gradient(ellipse 20% 30% at 25% 75%, rgba(37, 99, 235, 0.4) 0%, #F97316 100%)",
+    },
+  },
+  () => (
+    <>
+      <Shape
+        shape="rect"
+        style={{
+          x: 1,
+          y: 1,
+          width: 2,
+          height: 1,
+          fill: "#F97316",
+          boxShadow: "6px 6px 10px rgba(15, 23, 42, 0.35)",
+          stroke: "dodgerblue",
+          strokeWidth: "3pt",
+          strokeDasharray: "1 4",
+        }}
+      />
+    </>
+  ),
+);
 ```
 
 ### タイポグラフィ、リンク、リスト
@@ -331,9 +346,9 @@ PowerPoint らしい正確な配置が必要なときに使います。
 
 ## API メモ
 
-- 推奨の authoring surface は `Slide` と lowercase html-like tag。view-like tag は `div`、`section`、`article`、`main`、`header`、`footer`、`aside`、`nav`、`figure`。text-like tag は `p` と `h1`-`h6`。image tag は `img`。
+- 推奨の authoring surface は `deck.slide()` と lowercase html-like tag。view-like tag は `div`、`section`、`article`、`main`、`header`、`footer`、`aside`、`nav`、`figure`。text-like tag は `p` と `h1`-`h6`。image tag は `img`。
 - fallback として `View`、`Text`、`Image`、`Shape` component も使える。
-- `Deck#add()` の callback には `{ composition }` が渡る。`composition.slideIndex` と `composition.totalSlides` を使う。
+- `Deck#slide()` の callback には `{ composition }` が渡る。`composition.slideIndex` と `composition.totalSlides` を使う。
 - 幾何値の number は inch、font size の number は point として扱う。
 - view-like tag は view/layout style を受け取る。text style は `p`、`h1`-`h6`、または `Text` に置く。
 - `span` と rich inline text は 0.2.0 の surface にはまだ含めない。現時点では必要に応じて別の text node として表現する。

@@ -1,11 +1,11 @@
 ---
 name: deckjsx-slides
-description: Use this skill when creating, editing, or reviewing PowerPoint slide decks with the deckjsx library, especially html-like TSX/JSX slides that compile to PPTX through Deck, Slide, semantic lowercase tags, Shape, and the pptxgenjs writer adapter.
+description: Use this skill when creating, editing, or reviewing PowerPoint slide decks with the deckjsx library, especially html-like TSX/JSX slides that compile to PPTX through Deck, semantic lowercase tags, Shape, and the pptxgenjs writer adapter.
 ---
 
 # deckjsx Slides
 
-Use `deckjsx` as a compiler for presentation documents, not as a direct `pptxgenjs` wrapper. Prefer html-like TSX/JSX authoring: `Slide` stays the slide root, while lowercase semantic tags describe slide structure. Inspect authoring semantics with `Deck#compile()`, inspect output-facing state with `Deck#project()`, and emit PowerPoint files with `Deck#render({ output })`.
+Use `deckjsx` as a compiler for presentation documents, not as a direct `pptxgenjs` wrapper. Prefer html-like TSX/JSX authoring: `deck.slide()` declares each slide, while lowercase semantic tags describe slide content. Inspect authoring semantics with `Deck#compile()`, inspect output-facing state with `Deck#project()`, and emit PowerPoint files with `Deck#render({ output })`.
 
 For Japanese guidance, read `SKILL-ja.md` in this skill folder. Keep both files aligned when updating examples or workflow.
 
@@ -23,7 +23,7 @@ These files import from `deckjsx` so they are directly usable in package consume
 ## Core Workflow
 
 1. Create a `Deck` with an explicit slide layout.
-2. Add slides with `deck.add((context) => <Slide>...</Slide>)`.
+2. Add slides with `deck.slide((context) => <>...</>)`.
 3. Prefer html-like tags for authoring: `div`, `section`, `article`, `main`, `header`, `footer`, `aside`, `nav`, and `figure` are view-like containers; `p` and `h1`-`h6` are text-like; `img` is a leaf image element.
 4. Put layout/container styles on view-like tags and typography styles on text-like tags. For example, put `fontSize` on `<h1>` or `<p>`, not on `<header>` or `<footer>`.
 5. Use `Shape`, and the capitalized `View`, `Text`, and `Image` components when they make code clearer or when updating older decks.
@@ -34,16 +34,16 @@ These files import from `deckjsx` so they are directly usable in package consume
 ## Minimal PPTX Output
 
 ```tsx
-import { Deck, Slide } from "deckjsx";
+import { Deck } from "deckjsx";
 
 const deck = new Deck({
   layout: { width: 10, height: 5.625, unit: "in" },
 });
 
-deck.add(() => (
-  <Slide name="File output">
+deck.slide({ name: "File output" }, () => (
+  <>
     <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>Hello PPTX</p>
-  </Slide>
+  </>
 ));
 
 await deck.render({ output: "sample.pptx" });
@@ -54,72 +54,75 @@ This pattern is based on the PPTX writer coverage in `tests/writer-pptxgenjs.tes
 ## Full Slide Pattern
 
 ```tsx
-import { Deck, Shape, Slide } from "deckjsx";
+import { Deck, Shape } from "deckjsx";
 
 const deck = new Deck({
   layout: { width: 13.333, height: 7.5, unit: "in" },
   meta: { title: "Quarterly Review", author: "deckjsx" },
 });
 
-deck.add(({ composition }) => (
-  <Slide name={`Slide ${composition.slideIndex + 1}`} style={{ backgroundColor: "#F8FAFC" }}>
-    <header
-      style={{
-        x: 0.7,
-        y: 0.5,
-        width: 8.5,
-        height: 0.6,
-      }}
-    >
-      <h1
+deck.slide(
+  { name: "Quarterly Review", style: { backgroundColor: "#F8FAFC" } },
+  ({ composition }) => (
+    <>
+      <header
         style={{
-          fontFamily: "Aptos Display",
-          fontSize: 28,
-          fontWeight: 700,
-          color: "#0F172A",
+          x: 0.7,
+          y: 0.5,
+          width: 8.5,
+          height: 0.6,
         }}
       >
-        Quarterly Review
-      </h1>
-    </header>
-    <main
-      style={{
-        x: 0.7,
-        y: 1.4,
-        width: 11.9,
-        height: 5.2,
-        display: "grid",
-        gridTemplateColumns: "1.1fr 1fr",
-        columnGap: 0.35,
-      }}
-    >
-      <p style={{ fontSize: 18, color: "#334155", fit: "shrink" }}>
-        Keep each slide focused on one message. Use the layout primitives to make the hierarchy
-        explicit.
-      </p>
-      <Shape
-        shape="rect"
+        <h1
+          style={{
+            fontFamily: "Aptos Display",
+            fontSize: 28,
+            fontWeight: 700,
+            color: "#0F172A",
+          }}
+        >
+          Quarterly Review
+        </h1>
+      </header>
+      <main
         style={{
-          fill: "#2563EB",
-          borderRadius: 0.16,
-          boxShadow: "3px 3px 8px rgba(15, 23, 42, 0.22)",
+          x: 0.7,
+          y: 1.4,
+          width: 11.9,
+          height: 5.2,
+          display: "grid",
+          gridTemplateColumns: "1.1fr 1fr",
+          columnGap: 0.35,
         }}
-      />
-    </main>
-    <footer
-      style={{
-        x: 11.2,
-        y: 7,
-        width: 1.4,
-        height: 0.25,
-      }}
-    >
-      <p style={{ fontSize: 9, color: "#64748B", textAlign: "right" }}>
-        {composition.slideIndex + 1} / {composition.totalSlides}
-      </p>
-    </footer>
-  </Slide>
-));
+      >
+        <p style={{ fontSize: 18, color: "#334155", fit: "shrink" }}>
+          Keep each slide focused on one message. Use the layout primitives to make the hierarchy
+          explicit.
+        </p>
+        <Shape
+          shape="rect"
+          style={{
+            fill: "#2563EB",
+            borderRadius: 0.16,
+            boxShadow: "3px 3px 8px rgba(15, 23, 42, 0.22)",
+          }}
+        />
+      </main>
+      <footer
+        style={{
+          x: 11.2,
+          y: 7,
+          width: 1.4,
+          height: 0.25,
+        }}
+      >
+        <p style={{ fontSize: 9, color: "#64748B", textAlign: "right" }}>
+          {composition.slideIndex + 1} / {composition.totalSlides}
+        </p>
+      </footer>
+    </>
+  ),
+);
 
 await deck.render({ output: "quarterly-review.pptx" });
 ```
@@ -138,12 +141,12 @@ const deck = new Deck({
   meta: { title: "Spec test", author: "deckjsx" },
 });
 
-deck.add(({ composition }) => (
-  <Slide name={`Slide ${composition.slideIndex + 1}`}>
+deck.slide({ name: "Report slide" }, ({ composition }) => (
+  <>
     <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>
       {composition.slideIndex + 1} / {composition.totalSlides}
     </p>
-  </Slide>
+  </>
 ));
 ```
 
@@ -152,19 +155,21 @@ deck.add(({ composition }) => (
 Use for polished PowerPoint composition where placement must be predictable.
 
 ```tsx
-<Slide name="Absolute">
-  <h1 style={{ x: 0.75, y: 0.6, width: 8, height: 0.55, fontSize: 26 }}>Executive Summary</h1>
-  <section
-    style={{
-      x: 0.75,
-      y: 1.4,
-      width: 5.5,
-      height: 4.5,
-      backgroundColor: "#E0F2FE",
-      borderRadius: 0.12,
-    }}
-  />
-</Slide>
+deck.slide({ name: "Absolute" }, () => (
+  <>
+    <h1 style={{ x: 0.75, y: 0.6, width: 8, height: 0.55, fontSize: 26 }}>Executive Summary</h1>
+    <section
+      style={{
+        x: 0.75,
+        y: 1.4,
+        width: 5.5,
+        height: 4.5,
+        backgroundColor: "#E0F2FE",
+        borderRadius: 0.12,
+      }}
+    />
+  </>
+));
 ```
 
 ### Stack Or Flex Layout
@@ -248,24 +253,29 @@ Based on `tests/image-values.test.tsx`.
 Based on `tests/background-layers.test.tsx`.
 
 ```tsx
-<Slide
-  name="Background"
-  style={{
-    background:
-      `url("${WIDE_SVG_DATA_URI}") no-repeat right bottom / contain, ` +
-      "linear-gradient(180deg, #111111 0%, #333333 100%)",
-  }}
->
-  <div
-    style={{
-      x: 1,
-      y: 1,
-      width: 2,
-      height: 1,
-      background: `url("${SAMPLE_SVG_DATA_URI}") repeat-x left top / contain`,
-    }}
-  />
-</Slide>
+deck.slide(
+  {
+    name: "Background",
+    style: {
+      background:
+        `url("${WIDE_SVG_DATA_URI}") no-repeat right bottom / contain, ` +
+        "linear-gradient(180deg, #111111 0%, #333333 100%)",
+    },
+  },
+  () => (
+    <>
+      <div
+        style={{
+          x: 1,
+          y: 1,
+          width: 2,
+          height: 1,
+          background: `url("${SAMPLE_SVG_DATA_URI}") repeat-x left top / contain`,
+        }}
+      />
+    </>
+  ),
+);
 ```
 
 ### Gradients And Shadows
@@ -273,28 +283,33 @@ Based on `tests/background-layers.test.tsx`.
 Based on `tests/gradient-values.test.tsx` and `tests/writer-pptxgenjs.test.tsx`.
 
 ```tsx
-<Slide
-  name="Effects"
-  style={{
-    backgroundImage:
-      "radial-gradient(ellipse 20% 30% at 25% 75%, rgba(37, 99, 235, 0.4) 0%, #F97316 100%)",
-  }}
->
-  <Shape
-    shape="rect"
-    style={{
-      x: 1,
-      y: 1,
-      width: 2,
-      height: 1,
-      fill: "#F97316",
-      boxShadow: "6px 6px 10px rgba(15, 23, 42, 0.35)",
-      stroke: "dodgerblue",
-      strokeWidth: "3pt",
-      strokeDasharray: "1 4",
-    }}
-  />
-</Slide>
+deck.slide(
+  {
+    name: "Effects",
+    style: {
+      backgroundImage:
+        "radial-gradient(ellipse 20% 30% at 25% 75%, rgba(37, 99, 235, 0.4) 0%, #F97316 100%)",
+    },
+  },
+  () => (
+    <>
+      <Shape
+        shape="rect"
+        style={{
+          x: 1,
+          y: 1,
+          width: 2,
+          height: 1,
+          fill: "#F97316",
+          boxShadow: "6px 6px 10px rgba(15, 23, 42, 0.35)",
+          stroke: "dodgerblue",
+          strokeWidth: "3pt",
+          strokeDasharray: "1 4",
+        }}
+      />
+    </>
+  ),
+);
 ```
 
 ### Typography, Links, And Lists
@@ -334,9 +349,9 @@ Based on `tests/typography-values.test.tsx` and `tests/style-values.test.tsx`.
 
 ## deckjsx API Notes
 
-- Preferred authoring surface: `Slide` plus lowercase html-like tags. View-like tags are `div`, `section`, `article`, `main`, `header`, `footer`, `aside`, `nav`, and `figure`; text-like tags are `p` and `h1`-`h6`; image tags are `img`.
+- Preferred authoring surface: `deck.slide()` plus lowercase html-like tags. View-like tags are `div`, `section`, `article`, `main`, `header`, `footer`, `aside`, `nav`, and `figure`; text-like tags are `p` and `h1`-`h6`; image tags are `img`.
 - Public component fallbacks remain available: `View`, `Text`, `Image`, and `Shape`.
-- `Deck#add()` receives `{ composition }`; use `composition.slideIndex` and `composition.totalSlides`.
+- `Deck#slide()` receives `{ composition }`; use `composition.slideIndex` and `composition.totalSlides`.
 - Geometry numbers default to inches; font-size numbers default to points.
 - View-like tags accept view/layout styles. Text styles belong on `p`, `h1`-`h6`, or `Text`.
 - Use `span` inside text-like elements for rich inline text runs.

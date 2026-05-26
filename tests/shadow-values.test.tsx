@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, Shape, Slide, Text, View } from "../src/index.ts";
+import { Deck, Shape, Text, View } from "../src/index.ts";
 
 describe("shadow-values", () => {
   test("render normalizes boxShadow and textShadow shorthands", () => {
@@ -7,8 +7,8 @@ describe("shadow-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Shadow values">
+    deck.slide({ name: "Shadow values" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -40,7 +40,7 @@ describe("shadow-values", () => {
             boxShadow: "3px 3px 6px rebeccapurple",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const [view, text, shape] = deck.project().projection!.slides[0].payload.elements;
@@ -83,8 +83,8 @@ describe("shadow-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Invalid shadow">
+    deck.slide({ name: "Invalid shadow" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -94,7 +94,7 @@ describe("shadow-values", () => {
             boxShadow: "1px 1px 2px red, 2px 2px 4px blue",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const result = deck.project();

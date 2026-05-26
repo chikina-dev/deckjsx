@@ -1,9 +1,20 @@
 import { isAuthorNodeValue } from "../authoring/author-node";
-import { isAuthorTreeNode, type AuthorElementNode, type AuthorTreeNode } from "../authoring/tree";
+import {
+  createAuthorElement,
+  isAuthorTreeNode,
+  type AuthorTreeChild,
+  type AuthorTreeNode,
+} from "../authoring/tree";
 import { createDiagnostics, diagnostic, type Diagnostic } from "../diagnostics";
 import type { SourceOrigin } from "../graph/types";
 import type { StyleSheet } from "../style/stylesheet";
 import type { Theme } from "../style/theme";
+import {
+  createTemplateHandle,
+  validateSlideTemplates,
+  type SlideTemplateSet,
+  type TemplateName,
+} from "../templates";
 import {
   sourceIdentity,
   COMPOSITION_SOURCE,
@@ -23,6 +34,7 @@ type SourcePlan = {
   readonly sourceIdentityMaterial: readonly string[];
   readonly stylesheets: readonly StyleSheet[];
   readonly theme?: Theme;
+  readonly templates?: SlideTemplateSet;
   readonly context: SourceContextBinding<unknown>;
   readonly entries: readonly PlanEntry[];
   readonly slideCount: number;
@@ -33,6 +45,7 @@ type PlanEntry =
   | {
       readonly kind: "slide";
       readonly factory: (input: unknown) => unknown;
+      readonly options?: Record<string, unknown>;
       readonly path: string;
     }
   | {
@@ -113,7 +126,7 @@ function describeInvalidRoot(value: unknown): string {
   }
 
   if (isAuthorTreeNode(value)) {
-    return "Slide factory returned an author tree node that is not a <Slide /> root.";
+    return "Slide factory returned an Author Tree node that cannot be used as slide content.";
   }
 
   if (value === null) {
@@ -121,14 +134,6 @@ function describeInvalidRoot(value: unknown): string {
   }
 
   return `Slide factory returned ${typeof value}.`;
-}
-
-function isSlideRoot(value: AuthorTreeNode): value is AuthorElementNode {
-  return (
-    value.kind === "element" &&
-    value.source.kind === "component" &&
-    value.source.component === "Slide"
-  );
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
@@ -290,6 +295,9 @@ function resolveSource(
   let slideCount = 0;
   const sourceKeys = new Set<string>();
   const slotOrigins = collectSourceSlots(effectiveContext, context);
+  validateSlideTemplates(sourceState.templates, `${context.sourcePath} > templates`).forEach(
+    (item) => addDiagnostic(context, item),
+  );
 
   const nextContextBase = {
     diagnostics: context.diagnostics,
@@ -302,6 +310,7 @@ function resolveSource(
       entries.push({
         kind: "slide",
         factory: entry.factory as (input: unknown) => unknown,
+        ...(entry.options ? { options: entry.options as Record<string, unknown> } : {}),
         path: `${context.sourcePath} > slideFactory[${index}]`,
       });
       slideCount += 1;
@@ -367,6 +376,7 @@ function resolveSource(
     sourceIdentityMaterial: context.sourceIdentityMaterial,
     stylesheets: sourceState.stylesheets,
     ...(activeTheme ? { theme: activeTheme } : {}),
+    ...(sourceState.templates ? { templates: sourceState.templates } : {}),
     context: effectiveContext,
     entries,
     slideCount,
@@ -407,16 +417,40 @@ function flattenPlan(
     const input = plan.context.present
       ? { context: plan.context.value, composition }
       : { composition };
-    const root = entry.factory(input);
+    const slideTemplate = entry.options?.template;
+    const factoryInput =
+      typeof slideTemplate === "string" && plan.templates
+        ? {
+            ...input,
+            template: createTemplateHandle(
+              plan.templates,
+              slideTemplate as TemplateName<typeof plan.templates>,
+            ),
+          }
+        : input;
+    const content = entry.factory(factoryInput);
+    const root =
+      content === null ||
+      content === undefined ||
+      typeof content === "boolean" ||
+      isAuthorTreeNode(content) ||
+      Array.isArray(content) ||
+      typeof content !== "object"
+        ? createAuthorElement({
+            source: { kind: "component", component: "Slide" },
+            props: entry.options ?? {},
+            children: [content as AuthorTreeChild],
+          })
+        : content;
 
-    if (!isAuthorTreeNode(root) || !isSlideRoot(root)) {
+    if (!isAuthorTreeNode(root) || root.kind !== "element") {
       diagnostics.push(
         compositionDiagnostic({
           code: "E_COMPOSITION_INVALID_ROOT",
-          title: "slide factory must return a <Slide /> root",
+          title: "slide factory must return slide content",
           path: entry.path,
           message: describeInvalidRoot(root),
-          help: ["Return <Slide>...</Slide> from the slide factory passed to deck.add()."],
+          help: ["Return JSX content from the factory passed to deck.slide()."],
         }),
       );
     } else {
@@ -426,6 +460,7 @@ function flattenPlan(
         sourceIdentityMaterial: plan.sourceIdentityMaterial,
         stylesheets: plan.stylesheets,
         ...(plan.theme ? { theme: plan.theme } : {}),
+        ...(plan.templates ? { templates: plan.templates } : {}),
         path: entry.path,
         composition,
         slotOrigins: plan.slotOrigins,
