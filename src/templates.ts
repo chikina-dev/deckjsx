@@ -1,5 +1,6 @@
 import type { Diagnostic } from "./diagnostics";
 import { diagnostic } from "./diagnostics";
+import { isDeckLengthString } from "./style/length";
 import type { DeckLength } from "./style/types";
 
 const TEMPLATE_AREA_REF = Symbol("deckjsx.templateAreaRef");
@@ -252,7 +253,10 @@ function invalidName(value: string): boolean {
 }
 
 function validLength(value: unknown): boolean {
-  return typeof value === "number" || typeof value === "string";
+  return (
+    (typeof value === "number" && Number.isFinite(value)) ||
+    (typeof value === "string" && isDeckLengthString(value))
+  );
 }
 
 function isRecord(value: unknown): value is Record<PropertyKey, unknown> {

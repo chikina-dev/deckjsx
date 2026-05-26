@@ -254,16 +254,16 @@ export class Deck<
    * @param context - Required child Source Context value or synchronous mapper when the child needs context.
    * @returns This Deck, for fluent authoring.
    */
-  mount<TChildContext>(
+  mount<TChildContext, TChildTemplates extends SlideTemplateSet>(
     sourceKey: string,
-    child: Deck<TChildContext, SlideTemplateSet>,
+    child: Deck<TChildContext, TChildTemplates>,
     ...context: [TChildContext] extends [void]
       ? []
       : [sourceContext: SourceContextInput<TSourceContext, TChildContext>]
   ): this;
-  mount<TChildContext>(
+  mount<TChildContext, TChildTemplates extends SlideTemplateSet>(
     sourceKey: string,
-    child: BoundSource<TChildContext, SlideTemplateSet>,
+    child: BoundSource<TChildContext, TChildTemplates>,
   ): this;
   mount(
     sourceKey: string,

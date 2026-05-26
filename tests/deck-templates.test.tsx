@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 import { Deck, EMU_PER_INCH, StyleSheet, Text } from "../src/index.ts";
+import type { ContentJsxChild } from "../src/index.ts";
+import { createTemplateAreaRef } from "../src/templates.ts";
 
 const layout = { width: 10, height: 5.625, unit: "in" as const };
 
@@ -70,6 +72,34 @@ describe("Deck slide templates", () => {
     expect(title?.frame.heightEmu).toBeCloseTo(0.8 * EMU_PER_INCH);
   });
 
+  test("project resolves template area frames from the enclosing slide scope", () => {
+    const childTemplates = {
+      report: {
+        areas: {
+          title: { frame: { x: 1.25, y: 0.75, width: 7, height: 1 } },
+        },
+      },
+    } as const;
+    const child = new Deck<{ title: ContentJsxChild }, typeof childTemplates>({
+      layout,
+      templates: childTemplates,
+    });
+
+    child.slide({ template: "report" }, ({ context }) => <>{context.title}</>);
+
+    const deck = new Deck({ layout });
+    deck.mount("child", child, {
+      title: <h1 area={createTemplateAreaRef("report", "title")}>Slotted Title</h1>,
+    });
+
+    const [title] = deck.project().projection!.slides[0]?.payload.elements ?? [];
+
+    expect(title?.frame.xEmu).toBeCloseTo(1.25 * EMU_PER_INCH);
+    expect(title?.frame.yEmu).toBeCloseTo(0.75 * EMU_PER_INCH);
+    expect(title?.frame.widthEmu).toBeCloseTo(7 * EMU_PER_INCH);
+    expect(title?.frame.heightEmu).toBeCloseTo(1 * EMU_PER_INCH);
+  });
+
   test("compile reports invalid template area relationships", () => {
     const deck = new Deck({
       layout,
@@ -137,6 +167,25 @@ describe("Deck slide templates", () => {
     expect(deck.compile().diagnostics.items.map((item) => item.code)).toEqual([
       "E_TEMPLATE_RESERVED_NAME",
       "E_TEMPLATE_AREA_RESERVED_NAME",
+      "E_TEMPLATE_AREA_FRAME_INCOMPLETE",
+    ]);
+  });
+
+  test("compile reports unsupported template frame length strings", () => {
+    const deck = new Deck({
+      layout,
+      templates: {
+        broken: {
+          areas: {
+            title: { frame: { x: "oops", y: 0, width: "50%", height: "1in" } as never },
+          },
+        },
+      },
+    });
+
+    deck.slide(() => <Text>Validation</Text>);
+
+    expect(deck.compile().diagnostics.items.map((item) => item.code)).toEqual([
       "E_TEMPLATE_AREA_FRAME_INCOMPLETE",
     ]);
   });
