@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, EMU_PER_INCH, Shape, Slide, Text, View } from "../src/index.ts";
+import { Deck, EMU_PER_INCH, Shape, Text, View } from "../src/index.ts";
 import { SAMPLE_SVG_DATA_URI, WIDE_SVG_DATA_URI } from "./helpers.ts";
 
 describe("background layers", () => {
@@ -8,24 +8,27 @@ describe("background layers", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide
-        name="Background shorthand image layers"
-        style={{
+    deck.slide(
+      {
+        name: "Background shorthand image layers",
+        style: {
           background: `url("${WIDE_SVG_DATA_URI}") no-repeat right bottom / contain, linear-gradient(180deg, #111111 0%, #333333 100%)`,
-        }}
-      >
-        <View
-          style={{
-            x: 1,
-            y: 1,
-            width: 2,
-            height: 1,
-            background: `url("${SAMPLE_SVG_DATA_URI}") repeat-x left top / contain`,
-          }}
-        />
-      </Slide>
-    ));
+        },
+      },
+      () => (
+        <>
+          <View
+            style={{
+              x: 1,
+              y: 1,
+              width: 2,
+              height: 1,
+              background: `url("${SAMPLE_SVG_DATA_URI}") repeat-x left top / contain`,
+            }}
+          />
+        </>
+      ),
+    );
 
     const ir = deck.project().projection!;
     const [viewNode] = ir.slides[0].payload.elements;
@@ -108,28 +111,31 @@ describe("background layers", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide
-        name="Background image layers"
-        style={{
+    deck.slide(
+      {
+        name: "Background image layers",
+        style: {
           backgroundImage: `url("${WIDE_SVG_DATA_URI}"), linear-gradient(180deg, #111111 0%, #333333 100%)`,
           backgroundSize: "contain, 100% 100%",
           backgroundPosition: "right bottom, center",
-        }}
-      >
-        <View
-          style={{
-            x: 1,
-            y: 1,
-            width: 2,
-            height: 2,
-            backgroundImage: `url("${WIDE_SVG_DATA_URI}")`,
-            backgroundSize: "cover",
-            backgroundPosition: "right center",
-          }}
-        />
-      </Slide>
-    ));
+        },
+      },
+      () => (
+        <>
+          <View
+            style={{
+              x: 1,
+              y: 1,
+              width: 2,
+              height: 2,
+              backgroundImage: `url("${WIDE_SVG_DATA_URI}")`,
+              backgroundSize: "cover",
+              backgroundPosition: "right center",
+            }}
+          />
+        </>
+      ),
+    );
 
     const ir = deck.project().projection!;
     const [viewNode] = ir.slides[0].payload.elements;
@@ -212,8 +218,8 @@ describe("background layers", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Background repeat">
+    deck.slide({ name: "Background repeat" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -238,7 +244,7 @@ describe("background layers", () => {
             backgroundRepeat: "repeat-x",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const [repeatYNode, repeatXNode] = deck.project().projection!.slides[0].payload.elements;
@@ -315,8 +321,8 @@ describe("background layers", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Explicit background size">
+    deck.slide({ name: "Explicit background size" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -339,7 +345,7 @@ describe("background layers", () => {
             backgroundPosition: "left top",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const [firstNode, secondNode] = deck.project().projection!.slides[0].payload.elements;
@@ -422,8 +428,8 @@ describe("background layers", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Auto background size">
+    deck.slide({ name: "Auto background size" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -446,7 +452,7 @@ describe("background layers", () => {
             backgroundPosition: "left top",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const [firstNode, secondNode] = deck.project().projection!.slides[0].payload.elements;
@@ -523,8 +529,8 @@ describe("background layers", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Background clip">
+    deck.slide({ name: "Background clip" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -539,7 +545,7 @@ describe("background layers", () => {
             backgroundClip: "content-box",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const [imageNode] = deck.project().projection!.slides[0].payload.elements;
@@ -579,8 +585,8 @@ describe("background layers", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Background origin">
+    deck.slide({ name: "Background origin" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -596,7 +602,7 @@ describe("background layers", () => {
             backgroundOrigin: "padding-box",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const [imageNode] = deck.project().projection!.slides[0].payload.elements;
@@ -636,8 +642,8 @@ describe("background layers", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Background shorthand boxes">
+    deck.slide({ name: "Background shorthand boxes" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -650,7 +656,7 @@ describe("background layers", () => {
             background: `url("${WIDE_SVG_DATA_URI}") no-repeat padding-box content-box / 100% 100%`,
           }}
         />
-      </Slide>
+      </>
     ));
 
     const [imageNode] = deck.project().projection!.slides[0].payload.elements;
@@ -690,8 +696,8 @@ describe("background layers", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Background clip gradient">
+    deck.slide({ name: "Background clip gradient" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -705,7 +711,7 @@ describe("background layers", () => {
             backgroundClip: "content-box",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const [gradientNode] = deck.project().projection!.slides[0].payload.elements;
@@ -738,8 +744,8 @@ describe("background layers", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Background origin gradient">
+    deck.slide({ name: "Background origin gradient" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -754,7 +760,7 @@ describe("background layers", () => {
             backgroundOrigin: "padding-box",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const [gradientNode] = deck.project().projection!.slides[0].payload.elements;
@@ -796,8 +802,8 @@ describe("background layers", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Background shorthand gradient boxes">
+    deck.slide({ name: "Background shorthand gradient boxes" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -810,7 +816,7 @@ describe("background layers", () => {
             background: "linear-gradient(180deg, #111111 0in, #333333 1in) padding-box content-box",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const [gradientNode] = deck.project().projection!.slides[0].payload.elements;
@@ -846,8 +852,8 @@ describe("background layers", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Background shorthand gradient fallback">
+    deck.slide({ name: "Background shorthand gradient fallback" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -861,7 +867,7 @@ describe("background layers", () => {
               "linear-gradient(180deg, #111111 0in, #333333 1in) #AAAAAA padding-box content-box",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const [gradientNode] = deck.project().projection!.slides[0].payload.elements;
@@ -905,8 +911,8 @@ describe("background layers", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Background layer boxes">
+    deck.slide({ name: "Background layer boxes" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -922,7 +928,7 @@ describe("background layers", () => {
             backgroundClip: "content-box, padding-box",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const [viewNode] = deck.project().projection!.slides[0].payload.elements;
@@ -985,49 +991,52 @@ describe("background layers", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide
-        name="Multiple backgrounds"
-        style={{
+    deck.slide(
+      {
+        name: "Multiple backgrounds",
+        style: {
           backgroundImage:
             "linear-gradient(90deg, #FF0000 0%, #00FF00 100%), linear-gradient(180deg, #0000FF 0%, #FFFFFF 100%), #111111",
-        }}
-      >
-        <View
-          style={{
-            x: 1,
-            y: 1,
-            width: 2,
-            height: 1,
-            backgroundImage:
-              "linear-gradient(45deg, #123456 0%, #654321 100%), linear-gradient(180deg, #ABCDEF 0%, #FEDCBA 100%)",
-          }}
-        />
-        <Text
-          style={{
-            x: 1,
-            y: 2.5,
-            width: 3,
-            height: 0.75,
-            fontSize: 18,
-            background:
-              "linear-gradient(180deg, #FFEEDD 0%, #221100 100%), linear-gradient(90deg, #00AAFF 0%, #AA00FF 100%)",
-          }}
-        >
-          Layered text
-        </Text>
-        <Shape
-          shape="rect"
-          style={{
-            x: 5,
-            y: 1,
-            width: 2,
-            height: 1.5,
-            backgroundImage: "linear-gradient(30deg, #EF4444 0%, #F59E0B 100%), #222222",
-          }}
-        />
-      </Slide>
-    ));
+        },
+      },
+      () => (
+        <>
+          <View
+            style={{
+              x: 1,
+              y: 1,
+              width: 2,
+              height: 1,
+              backgroundImage:
+                "linear-gradient(45deg, #123456 0%, #654321 100%), linear-gradient(180deg, #ABCDEF 0%, #FEDCBA 100%)",
+            }}
+          />
+          <Text
+            style={{
+              x: 1,
+              y: 2.5,
+              width: 3,
+              height: 0.75,
+              fontSize: 18,
+              background:
+                "linear-gradient(180deg, #FFEEDD 0%, #221100 100%), linear-gradient(90deg, #00AAFF 0%, #AA00FF 100%)",
+            }}
+          >
+            Layered text
+          </Text>
+          <Shape
+            shape="rect"
+            style={{
+              x: 5,
+              y: 1,
+              width: 2,
+              height: 1.5,
+              backgroundImage: "linear-gradient(30deg, #EF4444 0%, #F59E0B 100%), #222222",
+            }}
+          />
+        </>
+      ),
+    );
 
     const ir = deck.project().projection!;
     const [viewNode, textNode, shapeNode] = ir.slides[0].payload.elements;

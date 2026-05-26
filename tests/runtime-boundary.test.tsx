@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, Slide, Text } from "../src/index.ts";
+import { Deck, Text } from "../src/index.ts";
 
 describe("runtime boundary", () => {
   test("Deck render writes a Rendered Artifact through the Output Writer", async () => {
@@ -12,10 +12,10 @@ describe("runtime boundary", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-runtime-"));
     const output = join(tempDir, "nested", "deck.pptx");
 
-    deck.add(() => (
-      <Slide name="Runtime output">
+    deck.slide({ name: "Runtime output" }, () => (
+      <>
         <Text style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>Runtime</Text>
-      </Slide>
+      </>
     ));
 
     try {
@@ -35,7 +35,7 @@ describe("runtime boundary", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => <Slide name="Runtime output" />);
+    deck.slide({ name: "Runtime output" }, () => <></>);
 
     const result = await deck.render();
 
@@ -53,7 +53,7 @@ describe("runtime boundary", () => {
     const blocker = join(tempDir, "blocker");
     const output = join(blocker, "deck.pptx");
 
-    deck.add(() => <Slide name="Runtime output" />);
+    deck.slide({ name: "Runtime output" }, () => <></>);
 
     try {
       await writeFile(blocker, "not a directory");

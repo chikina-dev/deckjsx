@@ -12,7 +12,7 @@ export {
   formatDiagnostic,
   formatDiagnostics,
 } from "./diagnostics";
-export { Fragment, Image, Shape, Slide, Text, View, createElement } from "./jsx";
+export { Fragment, Image, Shape, Text, View, createElement } from "./jsx";
 export type { JsxKey } from "./jsx-runtime";
 export { EMU_PER_INCH, POINTS_PER_INCH } from "./types";
 export {
@@ -60,8 +60,6 @@ export {
   type LayoutMode,
   type ShapeProps,
   type ShapeStyle,
-  type SlideContext,
-  type SlideProps,
   type SlideStyle,
   type Spacing,
   type StackAlignment,
@@ -101,9 +99,19 @@ export type {
   RenderResult,
   SlideFactory,
   SlideFactoryInput,
+  SlideFactoryInputWithTemplate,
+  SlideOptions,
   SourceContextMapper,
 } from "./deck";
 export type { Diagnostic, DiagnosticLabel, DiagnosticSeverity, Diagnostics } from "./diagnostics";
+export type {
+  SlideTemplate,
+  SlideTemplateSet,
+  TemplateArea,
+  TemplateAreaRef,
+  TemplateFrame,
+  TemplateHandle,
+} from "./templates";
 
 declare global {
   namespace JSX {

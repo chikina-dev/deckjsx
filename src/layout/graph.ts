@@ -15,6 +15,7 @@ import type {
 import type { ProjectedLayoutDocument, ProjectedLayoutOrigin } from "./projected";
 import { resolveProjectedLayout } from "./resolve";
 import type { ResolvedStyleMap } from "../style/resolve";
+import type { SlideTemplateSet } from "../templates";
 
 function layoutNode<K extends AuthorNode["kind"]>(
   kind: K,
@@ -40,6 +41,38 @@ function resolvedPropsFor(node: SemanticNode, resolvedStyles: ResolvedStyleMap) 
       .filter(([, property]) => property.source.layer !== "default")
       .map(([key, property]) => [key, property.value]),
   );
+}
+
+function sourceKeyForOrigin(source: SemanticNode["origin"]["source"]): string {
+  return !source || source.kind === "root" ? "root" : source.sourceIdentity;
+}
+
+function propsWithTemplateAreaFrame(
+  resolvedStyles: ResolvedStyleMap,
+  node: SemanticNode,
+  templates: SlideTemplateSet | undefined,
+) {
+  const props = resolvedPropsFor(node, resolvedStyles);
+  const ref = node.templateAreaRef;
+  if (!ref) {
+    return props;
+  }
+
+  const frame = templates?.[ref.template]?.areas?.[ref.area]?.frame;
+  if (!frame) {
+    return props;
+  }
+
+  const resolved = resolvedStyles.get(node.id);
+  const merged = { ...props };
+  (["x", "y", "width", "height"] as const).forEach((key) => {
+    if (resolved?.properties[key]?.source.layer === "style") {
+      return;
+    }
+
+    merged[key] = frame[key];
+  });
+  return merged;
 }
 
 function pushDefined<T>(values: T[], value: T | undefined): void {
@@ -145,6 +178,7 @@ function contentChildrenFromGraph(
   resolvedStyles: ResolvedStyleMap,
   childIds: readonly GraphNodeId[],
   origins: WeakMap<object, ProjectedLayoutOrigin>,
+  templates: SlideTemplateSet | undefined,
 ): ContentJsxChild[] {
   return childIds.flatMap((childId): ContentJsxChild[] => {
     const child = graph.nodes.get(childId);
@@ -152,7 +186,7 @@ function contentChildrenFromGraph(
       return [];
     }
 
-    const node = layoutAuthorNodeFromGraph(graph, resolvedStyles, child, origins);
+    const node = layoutAuthorNodeFromGraph(graph, resolvedStyles, child, origins, templates);
     return node ? [node as ContentJsxChild] : [];
   });
 }
@@ -162,26 +196,29 @@ function layoutAuthorNodeFromGraph(
   resolvedStyles: ResolvedStyleMap,
   node: SemanticNode,
   origins: WeakMap<object, ProjectedLayoutOrigin>,
+  templates?: SlideTemplateSet,
 ): AuthorNode | undefined {
-  const props = resolvedPropsFor(node, resolvedStyles);
+  const props = propsWithTemplateAreaFrame(resolvedStyles, node, templates);
 
   switch (node.kind) {
-    case "slide":
+    case "slide": {
+      const slideTemplates = graph.templates.get(sourceKeyForOrigin(node.origin.source));
       return rememberOrigin(
         layoutNode(
           "slide",
           { ...props, name: node.name } as Extract<AuthorNode, { kind: "slide" }>["props"],
-          contentChildrenFromGraph(graph, resolvedStyles, node.children, origins),
+          contentChildrenFromGraph(graph, resolvedStyles, node.children, origins, slideTemplates),
         ),
         layoutOriginFor(graph, node),
         origins,
       );
+    }
     case "container":
       return rememberOrigin(
         layoutNode(
           "view",
           props as Extract<AuthorNode, { kind: "view" }>["props"],
-          contentChildrenFromGraph(graph, resolvedStyles, node.children, origins),
+          contentChildrenFromGraph(graph, resolvedStyles, node.children, origins, templates),
         ),
         layoutOriginFor(graph, node),
         origins,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, Image, Slide, View } from "../src/index.ts";
+import { Deck, Image, View } from "../src/index.ts";
 import { WIDE_SVG_DATA_URI } from "./helpers.ts";
 
 describe("image-values", () => {
@@ -8,8 +8,8 @@ describe("image-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Position offsets">
+    deck.slide({ name: "Position offsets" }, () => (
+      <>
         <Image
           data={WIDE_SVG_DATA_URI}
           style={{
@@ -31,7 +31,7 @@ describe("image-values", () => {
               "radial-gradient(circle 40% at right 0.5in bottom 0.25in, #EF4444 0%, #F59E0B 100%)",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const [imageNode, viewNode] = deck.project().projection!.slides[0].payload.elements;

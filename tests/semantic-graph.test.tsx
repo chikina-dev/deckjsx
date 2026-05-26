@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, Slide, Text, View } from "../src/index.ts";
+import { Deck, Text, View } from "../src/index.ts";
 
 function values<T>(map: ReadonlyMap<unknown, T>): T[] {
   return [...map.values()];
@@ -11,8 +11,8 @@ describe("Semantic Author Graph", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Graph">
+    deck.slide({ name: "Graph" }, () => (
+      <>
         <main style={{ x: 1, y: 1, width: 8, height: 4 }}>
           <h1 style={{ fontSize: 28 }}>
             Sales <span style={{ color: "red" }}>grew</span>
@@ -21,7 +21,7 @@ describe("Semantic Author Graph", () => {
             <img src="chart.png" />
           </figure>
         </main>
-      </Slide>
+      </>
     ));
 
     const graph = deck.compile().graph!;
@@ -52,12 +52,12 @@ describe("Semantic Author Graph", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Invalid">
+    deck.slide({ name: "Invalid" }, () => (
+      <>
         <div>
           <span>orphan inline</span>
         </div>
-      </Slide>
+      </>
     ));
 
     const result = deck.compile();
@@ -77,15 +77,15 @@ describe("Semantic Author Graph", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Fragment children">
+    deck.slide({ name: "Fragment children" }, () => (
+      <>
         <View>
           <>
             <Text>First</Text>
             <Text>Second</Text>
           </>
         </View>
-      </Slide>
+      </>
     ));
 
     const graph = deck.compile().graph!;

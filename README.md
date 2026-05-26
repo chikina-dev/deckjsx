@@ -14,7 +14,7 @@ JSX
 ```
 
 This project is being designed as a compiler, not as a thin `PptxGenJS` wrapper.
-The API uses a class-based compiler with callback-based `.add()`, `.compile()`, `.project()`, and
+The API uses a class-based compiler with callback-based `.slide()`, `.compile()`, `.project()`, and
 `.render()`. Authoring uses typed JSX elements with CSS-like style and class semantics.
 
 The implementation preserves the compiler model with explicit module boundaries for authoring,
@@ -32,51 +32,63 @@ The package currently targets PPTX output and ships a temporary `pptxgenjs` writ
 ## Usage
 
 ```tsx
-import { Deck, Slide } from "deckjsx";
+import { Deck } from "deckjsx";
 
 const deck = new Deck({
   layout: { width: 13.333, height: 7.5, unit: "in" },
   meta: { title: "Quarterly Review", author: "deckjsx" },
 });
 
-deck.add(({ composition }) => (
-  <Slide name={`Slide ${composition.slideIndex + 1}`} style={{ backgroundColor: "#F8FAFC" }}>
-    <main
-      style={{
-        x: 0.7,
-        y: 0.5,
-        width: 11.9,
-        height: 6.3,
-        display: "grid",
-        gridTemplateRows: ["0.9in", "1fr", "0.4in"],
-        rowGap: 0.25,
-      }}
-    >
-      <header>
-        <h1 style={{ width: "100%", height: 0.6, fontSize: 28, fontWeight: 700, color: "#0F172A" }}>
-          Quarterly Review
-        </h1>
-      </header>
+deck.slide(
+  { name: "Quarterly Review", style: { backgroundColor: "#F8FAFC" } },
+  ({ composition }) => (
+    <>
+      <main
+        style={{
+          x: 0.7,
+          y: 0.5,
+          width: 11.9,
+          height: 6.3,
+          display: "grid",
+          gridTemplateRows: ["0.9in", "1fr", "0.4in"],
+          rowGap: 0.25,
+        }}
+      >
+        <header>
+          <h1
+            style={{ width: "100%", height: 0.6, fontSize: 28, fontWeight: 700, color: "#0F172A" }}
+          >
+            Quarterly Review
+          </h1>
+        </header>
 
-      <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 0.35 }}>
-        <p style={{ fontSize: 18, color: "#334155", fit: "shrink" }}>
-          Author slides with typed JSX, inspect the projected document model, and render PPTX files.
-        </p>
-        <figure style={{ backgroundColor: "#E0F2FE", borderRadius: 0.15, padding: 0.25 }}>
-          <img src="chart.png" style={{ width: "100%", height: "100%", fit: "contain" }} />
-        </figure>
-      </section>
+        <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 0.35 }}>
+          <p style={{ fontSize: 18, color: "#334155", fit: "shrink" }}>
+            Author slides with typed JSX, inspect the projected document model, and render PPTX
+            files.
+          </p>
+          <figure style={{ backgroundColor: "#E0F2FE", borderRadius: 0.15, padding: 0.25 }}>
+            <img src="chart.png" style={{ width: "100%", height: "100%", fit: "contain" }} />
+          </figure>
+        </section>
 
-      <footer>
-        <p
-          style={{ width: "100%", height: 0.3, fontSize: 11, color: "#64748B", textAlign: "right" }}
-        >
-          {composition.slideIndex + 1} / {composition.totalSlides}
-        </p>
-      </footer>
-    </main>
-  </Slide>
-));
+        <footer>
+          <p
+            style={{
+              width: "100%",
+              height: 0.3,
+              fontSize: 11,
+              color: "#64748B",
+              textAlign: "right",
+            }}
+          >
+            {composition.slideIndex + 1} / {composition.totalSlides}
+          </p>
+        </footer>
+      </main>
+    </>
+  ),
+);
 
 const project = deck.project();
 await deck.render({ output: "quarterly-review.pptx" });

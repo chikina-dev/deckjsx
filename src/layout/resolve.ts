@@ -1755,7 +1755,7 @@ function compileSlide(
   resolutionOptions?: ProjectedLayoutResolutionOptions,
 ): ProjectedLayoutSlide {
   if (!isSlideNode(root)) {
-    throw new Error(`Slide factory at index ${context.slideIndex} must return a <Slide /> root.`);
+    throw new Error(`Slide factory at index ${context.slideIndex} must resolve to a slide node.`);
   }
 
   const slideProps = normalizeSlideProps(root.props);

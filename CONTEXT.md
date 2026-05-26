@@ -18,6 +18,10 @@ The user-facing vocabulary for writing decks with deckjsx, including Deck, JSX a
 It is not a public surface for directly constructing or inspecting Author Tree nodes.
 _Avoid_: root export as every public type, graph inspection surface, legacy output surface
 
+**Slide Declaration**:
+The author-facing page boundary created by a Deck when an author declares one slide and supplies its content factory. Slide identity, slide-level metadata, and active Slide Template selection belong to the Slide Declaration rather than to a public JSX `Slide` root element.
+_Avoid_: Deck.add, public Slide component, slide root wrapper
+
 **Authored Tag**:
 The original JSX tag preserved in the Author Tree, such as `h1`, `p`, `section`, or `figure`. It is the input for semantic interpretation and should not be erased by early aliasing.
 _Avoid_: sourceTag as incidental metadata
@@ -76,6 +80,20 @@ _Avoid_: live theme object, token resolver, theme provenance graph
 A Theme-provided style baseline that applies to authored elements before StyleSheet classes and inline styles. Theme Defaults are active only when a Theme is attached to a Deck, and they are distinct from StyleSheet rules because they express the deck's design vocabulary rather than selector-authored local overrides.
 Theme Defaults should use authored tag vocabulary and should not expose graph-only semantic kinds, roles, or component names.
 _Avoid_: DeckOptions.defaults, global style rule, semantic kind default, component default
+
+**Slide Template**:
+A Deck-owned named slide structure that defines reusable Template Areas for placing authored slide content. Slide Templates belong to a Deck's page-structure vocabulary and may coexist with Theme-driven visual vocabulary without being stored inside Theme.
+Slide Template references should be type-guided by the active Deck template set when possible; authoring a template reference without a matching Deck template set is a type-level mismatch rather than an ordinary unresolved reference.
+_Avoid_: Theme.templates, layout utility, PowerPoint slide master
+
+**Template Area**:
+A named frame inside a Slide Template that describes where authored content belongs on a slide. Template Areas are referenced by authored content before layout/projection resolves concrete output coordinates.
+_Avoid_: CSS grid area, arbitrary coordinate alias, output placeholder
+
+**Template Area Reference**:
+An authored relationship object from content to a Template Area in the active Slide Template. Authors should obtain Template Area References from the slide factory's typed template handle rather than spelling area names as strings.
+It should preserve author intent for inspection and diagnostics instead of becoming only resolved coordinates.
+_Avoid_: string area name, direct x/y replacement, style property, output placeholder id
 
 **Resolved Style Inspection View**:
 An inspectable view of style values after deckjsx has applied CSS-like style resolution rules such as element defaults, Theme defaults, registered StyleSheet rules, and inline style. It exists to show what output projections will consume without turning the Semantic Author Graph itself into a PPTX- or PDF-specific model. It may expose theme application trace, stylesheet source order, specificity, and property-level winner provenance, but Theme itself remains Deck-level configuration.

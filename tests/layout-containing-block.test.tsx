@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, EMU_PER_INCH, Shape, Slide, Text, View } from "../src/index.ts";
+import { Deck, EMU_PER_INCH, Shape, Text, View } from "../src/index.ts";
 import { summarizeNodes } from "./helpers.ts";
 
 const toEmu = (inches: number) => inches * EMU_PER_INCH;
@@ -11,8 +11,8 @@ describe("View containing blocks", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Relative layout">
+    deck.slide({ name: "Relative layout" }, () => (
+      <>
         <View style={{ x: 1, y: 1, width: 6, height: 3 }}>
           <Text style={{ x: "10%", y: "20%", width: "50%", height: "25%", fontSize: 12 }}>
             percent child
@@ -45,11 +45,11 @@ describe("View containing blocks", () => {
           <Text style={{ flexGrow: 1, height: 0.32, fontSize: 12 }}>grow</Text>
           <Text style={{ width: 1.1, height: 0.32, fontSize: 12 }}>fixed</Text>
         </View>
-      </Slide>
+      </>
     ));
 
-    deck.add(() => (
-      <Slide name="Grid layout">
+    deck.slide({ name: "Grid layout" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -90,7 +90,7 @@ describe("View containing blocks", () => {
             absolute inside flex content frame
           </Text>
         </View>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;

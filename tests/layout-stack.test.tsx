@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, EMU_PER_INCH, Shape, Slide, Text, View } from "../src/index.ts";
+import { Deck, EMU_PER_INCH, Shape, Text, View } from "../src/index.ts";
 import { summarizeNodes } from "./helpers.ts";
 
 describe("stack layout", () => {
@@ -8,8 +8,8 @@ describe("stack layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Stack">
+    deck.slide({ name: "Stack" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -25,7 +25,7 @@ describe("stack layout", () => {
           <Text style={{ width: 4, height: 0.5, fontSize: 20 }}>First</Text>
           <Text style={{ width: 4, height: 0.75, fontSize: 20 }}>Second</Text>
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -70,8 +70,8 @@ describe("stack layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Order and absolute">
+    deck.slide({ name: "Order and absolute" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -100,7 +100,7 @@ describe("stack layout", () => {
           </Text>
           <Text style={{ width: 2, height: 0.5, fontSize: 18 }}>Second</Text>
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -167,8 +167,8 @@ describe("stack layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Wrap">
+    deck.slide({ name: "Wrap" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -189,7 +189,7 @@ describe("stack layout", () => {
           <Text style={{ width: 2, height: 0.5, fontSize: 18 }}>Two</Text>
           <Text style={{ width: 2, height: 0.5, fontSize: 18 }}>Three</Text>
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -245,8 +245,8 @@ describe("stack layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Flex sizing">
+    deck.slide({ name: "Flex sizing" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -297,7 +297,7 @@ describe("stack layout", () => {
           <Text style={{ flexBasis: 2, flexShrink: 1, height: 0.5, fontSize: 18 }}>Shrink A</Text>
           <Text style={{ flexBasis: 2, flexShrink: 1, height: 0.5, fontSize: 18 }}>Shrink B</Text>
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -375,8 +375,8 @@ describe("stack layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Display none">
+    deck.slide({ name: "Display none" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -392,7 +392,7 @@ describe("stack layout", () => {
           <Text style={{ display: "none", width: 2, height: 0.75, fontSize: 18 }}>Hidden</Text>
           <Text style={{ width: 2, height: 0.5, fontSize: 18 }}>B</Text>
         </View>
-      </Slide>
+      </>
     ));
 
     expect(summarizeNodes(deck.project().projection!.slides[0].payload.elements)).toEqual([
@@ -437,8 +437,8 @@ describe("stack layout", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Flex alignment">
+    deck.slide({ name: "Flex alignment" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -456,7 +456,7 @@ describe("stack layout", () => {
           <View style={{ width: 1, backgroundColor: "#EEEEEE" }} />
           <Shape shape="rect" style={{ width: 1, height: 1, fill: "#2563EB" }} />
         </View>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;

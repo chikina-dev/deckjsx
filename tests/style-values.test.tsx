@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, EMU_PER_INCH, Image, Shape, Slide, Text, View } from "../src/index.ts";
+import { Deck, EMU_PER_INCH, Image, Shape, Text, View } from "../src/index.ts";
 
 const BACKGROUND_IMAGE_PATH = "/tmp/deckjsx-background.png";
 
@@ -9,8 +9,8 @@ describe("style value normalization", () => {
       layout: { width: 10, height: 5, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Relative units">
+    deck.slide({ name: "Relative units" }, () => (
+      <>
         <View
           style={{
             left: "1rem",
@@ -37,7 +37,7 @@ describe("style value normalization", () => {
         >
           Units
         </Text>
-      </Slide>
+      </>
     ));
 
     const nodes = deck.project().projection!.slides[0].payload.elements;
@@ -84,8 +84,8 @@ describe("style value normalization", () => {
       layout: { width: 10, height: 5, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Stack viewport units">
+    deck.slide({ name: "Stack viewport units" }, () => (
+      <>
         <View
           style={{
             x: 0,
@@ -109,7 +109,7 @@ describe("style value normalization", () => {
             Stack viewport
           </Text>
         </View>
-      </Slide>
+      </>
     ));
 
     const group = deck.project().projection!.slides[0].payload.elements[0];
@@ -138,8 +138,8 @@ describe("style value normalization", () => {
       layout: { width: 10, height: 5, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Grid viewport units">
+    deck.slide({ name: "Grid viewport units" }, () => (
+      <>
         <View
           style={{
             x: 0,
@@ -166,7 +166,7 @@ describe("style value normalization", () => {
             Grid viewport
           </Text>
         </View>
-      </Slide>
+      </>
     ));
 
     const group = deck.project().projection!.slides[0].payload.elements[0];
@@ -195,8 +195,8 @@ describe("style value normalization", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Color functions" style={{ backgroundColor: "#11223380" }}>
+    deck.slide({ name: "Color functions", style: { backgroundColor: "#11223380" } }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -231,7 +231,7 @@ describe("style value normalization", () => {
             }}
           />
         </View>
-      </Slide>
+      </>
     ));
 
     const slide = deck.project().projection!.slides[0];
@@ -278,8 +278,8 @@ describe("style value normalization", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Named colors" style={{ backgroundColor: "papayawhip" }}>
+    deck.slide({ name: "Named colors", style: { backgroundColor: "papayawhip" } }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -314,7 +314,7 @@ describe("style value normalization", () => {
             }}
           />
         </View>
-      </Slide>
+      </>
     ));
 
     const slide = deck.project().projection!.slides[0];
@@ -360,43 +360,46 @@ describe("style value normalization", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Background precedence" style={{ background: "rgba(17, 34, 51, 0.4)" }}>
-        <View
-          style={{
-            x: 1,
-            y: 1,
-            width: 3,
-            height: 1,
-            background: "hsl(210, 100%, 50%)",
-            backgroundColor: "#00FF00",
-          }}
-        />
-        <Text
-          style={{
-            x: 1,
-            y: 2.25,
-            width: 3,
-            height: 0.75,
-            fontSize: 18,
-            background: "#FF000080",
-          }}
-        >
-          Background
-        </Text>
-        <Shape
-          shape="rect"
-          style={{
-            x: 5,
-            y: 1,
-            width: 2,
-            height: 1,
-            fill: "rgba(239, 68, 68, 0.25)",
-            backgroundColor: "#111111",
-          }}
-        />
-      </Slide>
-    ));
+    deck.slide(
+      { name: "Background precedence", style: { background: "rgba(17, 34, 51, 0.4)" } },
+      () => (
+        <>
+          <View
+            style={{
+              x: 1,
+              y: 1,
+              width: 3,
+              height: 1,
+              background: "hsl(210, 100%, 50%)",
+              backgroundColor: "#00FF00",
+            }}
+          />
+          <Text
+            style={{
+              x: 1,
+              y: 2.25,
+              width: 3,
+              height: 0.75,
+              fontSize: 18,
+              background: "#FF000080",
+            }}
+          >
+            Background
+          </Text>
+          <Shape
+            shape="rect"
+            style={{
+              x: 5,
+              y: 1,
+              width: 2,
+              height: 1,
+              fill: "rgba(239, 68, 68, 0.25)",
+              backgroundColor: "#111111",
+            }}
+          />
+        </>
+      ),
+    );
 
     const ir = deck.project().projection!;
     const [view, text, shape] = ir.slides[0].payload.elements;
@@ -443,57 +446,61 @@ describe("style value normalization", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide
-        name="Gradient backgrounds"
-        style={{
+    deck.slide(
+      {
+        name: "Gradient backgrounds",
+        style: {
           backgroundImage:
             "linear-gradient(90deg, rgba(37, 99, 235, 0.4) 0%, #F97316 100%), linear-gradient(180deg, #111111 0%, #333333 100%)",
-        }}
-      >
-        <View
-          style={{
-            x: 1,
-            y: 1,
-            width: 3,
-            height: 1,
-            backgroundImage: "linear-gradient(to bottom, #22C55E 0%, rgba(14, 165, 233, 0.5) 100%)",
-          }}
-        />
-        <Text
-          style={{
-            x: 1,
-            y: 2.25,
-            width: 3,
-            height: 0.75,
-            fontSize: 18,
-            backgroundImage: "linear-gradient(180deg, #FFFFFF 0%, rgba(15, 23, 42, 0.25) 100%)",
-          }}
-        >
-          Gradient
-        </Text>
-        <Shape
-          shape="rect"
-          style={{
-            x: 5,
-            y: 1,
-            width: 2,
-            height: 1,
-            backgroundImage: "linear-gradient(45deg, #EF4444 0%, #F59E0B 100%)",
-          }}
-        />
-        <View
-          style={{
-            x: 5,
-            y: 2.5,
-            width: 2,
-            height: 0.75,
-            backgroundColor: "#10B981",
-            backgroundImage: "linear-gradient(90deg, #111111 0%, #222222 100%)",
-          }}
-        />
-      </Slide>
-    ));
+        },
+      },
+      () => (
+        <>
+          <View
+            style={{
+              x: 1,
+              y: 1,
+              width: 3,
+              height: 1,
+              backgroundImage:
+                "linear-gradient(to bottom, #22C55E 0%, rgba(14, 165, 233, 0.5) 100%)",
+            }}
+          />
+          <Text
+            style={{
+              x: 1,
+              y: 2.25,
+              width: 3,
+              height: 0.75,
+              fontSize: 18,
+              backgroundImage: "linear-gradient(180deg, #FFFFFF 0%, rgba(15, 23, 42, 0.25) 100%)",
+            }}
+          >
+            Gradient
+          </Text>
+          <Shape
+            shape="rect"
+            style={{
+              x: 5,
+              y: 1,
+              width: 2,
+              height: 1,
+              backgroundImage: "linear-gradient(45deg, #EF4444 0%, #F59E0B 100%)",
+            }}
+          />
+          <View
+            style={{
+              x: 5,
+              y: 2.5,
+              width: 2,
+              height: 0.75,
+              backgroundColor: "#10B981",
+              backgroundImage: "linear-gradient(90deg, #111111 0%, #222222 100%)",
+            }}
+          />
+        </>
+      ),
+    );
 
     const ir = deck.project().projection!;
     const [view, text, shape, override] = ir.slides[0].payload.elements;
@@ -572,8 +579,8 @@ describe("style value normalization", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Background image controls">
+    deck.slide({ name: "Background image controls" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -600,7 +607,7 @@ describe("style value normalization", () => {
             background: `url("${BACKGROUND_IMAGE_PATH}") no-repeat right bottom / contain`,
           }}
         />
-      </Slide>
+      </>
     ));
 
     const [clipped, shorthand] = deck.project().projection!.slides[0].payload.elements;
@@ -678,8 +685,8 @@ describe("style value normalization", () => {
       layout: { width: 10, height: 5, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Spacing values">
+    deck.slide({ name: "Spacing values" }, () => (
+      <>
         <View
           style={{
             inset: [1, 2, 1.5, 3],
@@ -711,7 +718,7 @@ describe("style value normalization", () => {
             Spacing
           </Text>
         </View>
-      </Slide>
+      </>
     ));
 
     const [insetBox, stack] = deck.project().projection!.slides[0].payload.elements;
@@ -751,8 +758,8 @@ describe("style value normalization", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Stroke values">
+    deck.slide({ name: "Stroke values" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -794,7 +801,7 @@ describe("style value normalization", () => {
             strokeLinejoin: "bevel",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const [view, text, shape] = deck.project().projection!.slides[0].payload.elements;
@@ -843,10 +850,10 @@ describe("style value normalization", () => {
     const unsupportedLength = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
     });
-    unsupportedLength.add(() => (
-      <Slide name="Unsupported length">
+    unsupportedLength.slide({ name: "Unsupported length" }, () => (
+      <>
         <View style={{ x: "1qu" as never, y: 1, width: 2, height: 1 }} />
-      </Slide>
+      </>
     ));
     const unsupportedLengthResult = unsupportedLength.project();
     expect(unsupportedLengthResult.ok).toBe(false);
@@ -857,8 +864,8 @@ describe("style value normalization", () => {
     const unsupportedRepeat = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
     });
-    unsupportedRepeat.add(() => (
-      <Slide name="Unsupported repeat">
+    unsupportedRepeat.slide({ name: "Unsupported repeat" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -869,7 +876,7 @@ describe("style value normalization", () => {
             backgroundRepeat: "space",
           }}
         />
-      </Slide>
+      </>
     ));
     const unsupportedRepeatResult = unsupportedRepeat.project();
     expect(unsupportedRepeatResult.ok).toBe(false);
@@ -880,8 +887,8 @@ describe("style value normalization", () => {
     const unsupportedGradient = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
     });
-    unsupportedGradient.add(() => (
-      <Slide name="Unsupported gradient">
+    unsupportedGradient.slide({ name: "Unsupported gradient" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -891,7 +898,7 @@ describe("style value normalization", () => {
             backgroundImage: "repeating-linear-gradient(90deg, #FFFFFF 0%, #000000 0%)",
           }}
         />
-      </Slide>
+      </>
     ));
     const unsupportedGradientResult = unsupportedGradient.project();
     expect(unsupportedGradientResult.ok).toBe(false);
@@ -902,8 +909,8 @@ describe("style value normalization", () => {
     const invalidGrid = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
     });
-    invalidGrid.add(() => (
-      <Slide name="Invalid grid shorthand">
+    invalidGrid.slide({ name: "Invalid grid shorthand" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -913,7 +920,7 @@ describe("style value normalization", () => {
             grid: "auto-flow 1in / auto-flow 2in",
           }}
         />
-      </Slide>
+      </>
     ));
     const invalidGridResult = invalidGrid.project();
     expect(invalidGridResult.ok).toBe(false);
@@ -924,12 +931,12 @@ describe("style value normalization", () => {
     const invalidScript = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
     });
-    invalidScript.add(() => (
-      <Slide name="Invalid text script">
+    invalidScript.slide({ name: "Invalid text script" }, () => (
+      <>
         <Text style={{ x: 1, y: 1, width: 3, height: 1, superscript: true, subscript: true }}>
           Script
         </Text>
-      </Slide>
+      </>
     ));
     const invalidScriptResult = invalidScript.project();
     expect(invalidScriptResult.ok).toBe(false);
@@ -943,8 +950,8 @@ describe("style value normalization", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Typography aliases">
+    deck.slide({ name: "Typography aliases" }, () => (
+      <>
         <Text
           style={{
             x: 1,
@@ -978,7 +985,7 @@ describe("style value normalization", () => {
         >
           Wrap
         </Text>
-      </Slide>
+      </>
     ));
 
     const [decorated, wrapping] = deck.project().projection!.slides[0].payload.elements;
@@ -1013,8 +1020,8 @@ describe("style value normalization", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Image aliases">
+    deck.slide({ name: "Image aliases" }, () => (
+      <>
         <Image
           src="/tmp/demo.png"
           style={{
@@ -1030,7 +1037,7 @@ describe("style value normalization", () => {
             transparency: 25,
           }}
         />
-      </Slide>
+      </>
     ));
 
     const image = deck.project().projection!.slides[0].payload.elements[0];

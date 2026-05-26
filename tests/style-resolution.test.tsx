@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, Image, Slide, StyleSheet, Text, Theme, View } from "../src/index.ts";
+import { Deck, Image, StyleSheet, Text, Theme, View } from "../src/index.ts";
 import type { ThemeInput } from "../src/index.ts";
 
 function values<T>(map: ReadonlyMap<unknown, T>): T[] {
@@ -26,8 +26,8 @@ describe("style", () => {
       }),
     );
 
-    deck.add(() => (
-      <Slide name="Classes" className="deck-slide">
+    deck.slide({ name: "Classes", className: "deck-slide" }, () => (
+      <>
         <View
           className={[
             "card",
@@ -42,7 +42,7 @@ describe("style", () => {
           </Text>
           <Image src="chart.png" className="chart-image" />
         </View>
-      </Slide>
+      </>
     ));
 
     const graph = deck.compile().graph!;
@@ -83,14 +83,14 @@ describe("style", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide>
+    deck.slide(() => (
+      <>
         <View x={1} y={2} style={{ y: 3, width: 4 }}>
           <Text>
             Hello <span color="red">world</span>
           </Text>
         </View>
-      </Slide>
+      </>
     ));
 
     const graph = deck.compile().graph!;
@@ -124,12 +124,12 @@ describe("style", () => {
       }),
     );
 
-    deck.add(() => (
-      <Slide>
+    deck.slide(() => (
+      <>
         <p className={["override", "title"]} style={{ color: "blue" }}>
           Revenue
         </p>
-      </Slide>
+      </>
     ));
 
     const result = deck.compile();
@@ -171,14 +171,14 @@ describe("style", () => {
       }),
     );
 
-    deck.add(() => (
-      <Slide>
+    deck.slide(() => (
+      <>
         <div>
           <p className="title" style={{ color: "blue" }}>
             Revenue <span>delta</span>
           </p>
         </div>
-      </Slide>
+      </>
     ));
 
     const result = deck.compile();
@@ -218,15 +218,15 @@ describe("style", () => {
       theme: new Theme({ defaults: { p: { color: "blue" } } }),
     });
 
-    parent.add(() => (
-      <Slide>
+    parent.slide(() => (
+      <>
         <p>Parent</p>
-      </Slide>
+      </>
     ));
-    child.add(() => (
-      <Slide>
+    child.slide(() => (
+      <>
         <p>Child</p>
-      </Slide>
+      </>
     ));
     parent.mount("child", child);
 
@@ -309,10 +309,10 @@ describe("style", () => {
         },
       } as unknown as ThemeInput),
     });
-    deck.add(() => (
-      <Slide>
+    deck.slide(() => (
+      <>
         <p>Revenue</p>
-      </Slide>
+      </>
     ));
 
     const result = deck.compile();
@@ -337,10 +337,10 @@ describe("style", () => {
       }),
     );
 
-    deck.add(() => (
-      <Slide>
+    deck.slide(() => (
+      <>
         <p className="b a">Revenue</p>
-      </Slide>
+      </>
     ));
 
     const result = deck.compile();
@@ -372,12 +372,12 @@ describe("style", () => {
       }),
     );
 
-    deck.add(() => (
-      <Slide>
+    deck.slide(() => (
+      <>
         <div className="card">
           <p className="caption">Revenue</p>
         </div>
-      </Slide>
+      </>
     ));
 
     const result = deck.compile();
@@ -408,14 +408,14 @@ describe("style", () => {
       }),
     );
 
-    deck.add(() => (
-      <Slide>
+    deck.slide(() => (
+      <>
         <header className="title">
           <div className="card">
             <p className={["caption", "report/title"]}>Revenue</p>
           </div>
         </header>
-      </Slide>
+      </>
     ));
 
     const result = deck.compile();
@@ -453,15 +453,15 @@ describe("style", () => {
     parent.useStyles(new StyleSheet({ classes: { note: { color: "red" } } }));
     child.useStyles(new StyleSheet({ classes: { note: { color: "blue" } } }));
 
-    parent.add(() => (
-      <Slide>
+    parent.slide(() => (
+      <>
         <p className="note">Parent</p>
-      </Slide>
+      </>
     ));
-    child.add(() => (
-      <Slide>
+    child.slide(() => (
+      <>
         <p className="note">Child</p>
-      </Slide>
+      </>
     ));
     parent.mount("child", child);
 
@@ -485,10 +485,10 @@ describe("style", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide>
+    deck.slide(() => (
+      <>
         <p className="missing">Revenue</p>
-      </Slide>
+      </>
     ));
 
     const result = deck.compile();
@@ -512,12 +512,12 @@ describe("style", () => {
       }),
     );
 
-    deck.add(() => (
-      <Slide>
+    deck.slide(() => (
+      <>
         <div className="card">
           <p className="caption">Revenue</p>
         </div>
-      </Slide>
+      </>
     ));
 
     const result = deck.compile();
@@ -536,7 +536,7 @@ describe("style", () => {
         },
       }),
     );
-    deck.add(() => <Slide />);
+    deck.slide(() => <></>);
 
     const result = deck.compile();
 
@@ -558,10 +558,10 @@ describe("style", () => {
         },
       }),
     );
-    deck.add(() => (
-      <Slide>
+    deck.slide(() => (
+      <>
         <p className="report/title">Revenue</p>
-      </Slide>
+      </>
     ));
 
     const result = deck.compile();
@@ -589,10 +589,10 @@ describe("style", () => {
         },
       }),
     );
-    deck.add(() => (
-      <Slide>
+    deck.slide(() => (
+      <>
         <p className={["123", "-1", "foo:bar", "😀"]}>Revenue</p>
-      </Slide>
+      </>
     ));
 
     const result = deck.compile();
@@ -626,7 +626,7 @@ describe("style", () => {
         },
       }),
     );
-    deck.add(() => <Slide />);
+    deck.slide(() => <></>);
 
     const result = deck.compile();
 
@@ -652,7 +652,7 @@ describe("style", () => {
         },
       }),
     );
-    deck.add(() => <Slide />);
+    deck.slide(() => <></>);
 
     const result = deck.compile();
 
@@ -676,10 +676,10 @@ describe("style", () => {
       }),
     );
 
-    deck.add(() => (
-      <Slide>
+    deck.slide(() => (
+      <>
         <p className="title">Revenue</p>
-      </Slide>
+      </>
     ));
 
     const result = deck.compile();
@@ -703,10 +703,10 @@ describe("style", () => {
       }),
     );
 
-    deck.add(() => (
-      <Slide>
+    deck.slide(() => (
+      <>
         <p className="title">Revenue</p>
-      </Slide>
+      </>
     ));
 
     const result = deck.compile();

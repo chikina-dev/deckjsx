@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 import { pptxgenjs, type WriterAdapter } from "../src/adapter.ts";
 import { createDiagnostics } from "../src/diagnostics/index.ts";
-import { Deck, Image, Slide, StyleSheet, Text, View } from "../src/index.ts";
+import { Deck, Image, StyleSheet, Text, View } from "../src/index.ts";
 import { PipelineArtifactCollection } from "../src/pipeline-artifacts.ts";
 import { compileSource, projectSource } from "../src/pipeline-runner.ts";
 import type { GraphNodeId, PptxPackageModel, SemanticAuthorGraph } from "../src/inspect.ts";
@@ -33,12 +33,12 @@ describe("project/render pipeline", () => {
       output: { format: "pptx" },
     });
 
-    deck.add(() => (
-      <Slide name="Pipeline">
+    deck.slide({ name: "Pipeline" }, () => (
+      <>
         <View style={{ x: 1, y: 1, width: 4, height: 2 }}>
           <Text style={{ width: "100%", height: 0.5, fontSize: 24 }}>Hello pipeline</Text>
         </View>
-      </Slide>
+      </>
     ));
 
     const compile = deck.compile();
@@ -80,7 +80,7 @@ describe("project/render pipeline", () => {
 
   test("explicit pptxgenjs adapter renders the current projection", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.add(() => <Slide name="Adapter" />);
+    deck.slide({ name: "Adapter" }, () => <></>);
 
     const result = await deck.render(pptxgenjs());
 
@@ -90,7 +90,7 @@ describe("project/render pipeline", () => {
 
   test("defineProjection supplies the next project/render source", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.add(() => <Slide name="Original" />);
+    deck.slide({ name: "Original" }, () => <></>);
 
     const projection = deck.project().projection!;
     const renamedProjection = {
@@ -113,7 +113,7 @@ describe("project/render pipeline", () => {
 
   test("defineGraph supplies a graph-resolved package skeleton", () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.add(() => <Slide name="Graph source" />);
+    deck.slide({ name: "Graph source" }, () => <></>);
 
     const graph = deck.compile().graph!;
     deck.defineGraph(graph);
@@ -128,10 +128,10 @@ describe("project/render pipeline", () => {
 
   test("projected package identities remain distinct from package paths", () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.add(() => (
-      <Slide name="Identity">
+    deck.slide({ name: "Identity" }, () => (
+      <>
         <Text>Stable</Text>
-      </Slide>
+      </>
     ));
 
     const project = deck.project();
@@ -147,13 +147,13 @@ describe("project/render pipeline", () => {
 
   test("projected media parts are connected through slide relationships", () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.add(() => (
-      <Slide name="Media">
+    deck.slide({ name: "Media" }, () => (
+      <>
         <Image
           data="data:image/png;base64,iVBORw0KGgo="
           style={{ x: 1, y: 1, width: 2, height: 1 }}
         />
-      </Slide>
+      </>
     ));
 
     const project = deck.project();
@@ -181,7 +181,7 @@ describe("project/render pipeline", () => {
 
   test("projected package manifest carries content types and root relationships", () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.add(() => <Slide name="Manifest" />);
+    deck.slide({ name: "Manifest" }, () => <></>);
 
     const project = deck.project();
     const parts = project.projection?.parts ?? [];
@@ -240,10 +240,10 @@ describe("project/render pipeline", () => {
         },
       }),
     );
-    deck.add(() => (
-      <Slide name="Styled graph">
+    deck.slide({ name: "Styled graph" }, () => (
+      <>
         <p className="title">Styled title</p>
-      </Slide>
+      </>
     ));
 
     const graph = deck.compile().graph!;
@@ -260,7 +260,7 @@ describe("project/render pipeline", () => {
 
   test("defineProjection reports lightweight shape diagnostics", () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.add(() => <Slide name="Projection shape" />);
+    deck.slide({ name: "Projection shape" }, () => <></>);
 
     const projection = deck.project().projection!;
     deck.defineProjection({ ...projection, version: "0.5" as never });
@@ -280,7 +280,7 @@ describe("project/render pipeline", () => {
 
   test("defineProjection keeps invalid projection shapes as diagnostics", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.add(() => <Slide name="Invalid projection shape" />);
+    deck.slide({ name: "Invalid projection shape" }, () => <></>);
 
     deck.defineProjection({
       version: "0.6",
@@ -309,7 +309,7 @@ describe("project/render pipeline", () => {
 
   test("project validates defined projection package consistency before render", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.add(() => <Slide name="Broken package" />);
+    deck.slide({ name: "Broken package" }, () => <></>);
 
     const projection = deck.project().projection!;
     deck.defineProjection({
@@ -335,7 +335,7 @@ describe("project/render pipeline", () => {
 
   test("project validates duplicate package paths and relationship target path mismatches", () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.add(() => <Slide name="Broken package paths" />);
+    deck.slide({ name: "Broken package paths" }, () => <></>);
 
     const projection = deck.project().projection!;
     const firstPart = projection.parts[0]!;
@@ -372,7 +372,7 @@ describe("project/render pipeline", () => {
 
   test("project summary exposes default adapter limitations", () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.add(() => <Slide name="Adapter limitations" />);
+    deck.slide({ name: "Adapter limitations" }, () => <></>);
 
     const project = deck.project();
 
@@ -387,7 +387,7 @@ describe("project/render pipeline", () => {
 
   test("pipeline artifact collection keeps keyed snapshots behind whole-artifact defines", () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.add(() => <Slide name="Artifacts" />);
+    deck.slide({ name: "Artifacts" }, () => <></>);
     const graph = deck.compile().graph!;
     const projection = deck.project().projection!;
     const artifacts = new PipelineArtifactCollection();
@@ -409,7 +409,7 @@ describe("project/render pipeline", () => {
 
   test("stage operations materialize source graph and package part snapshots", () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.add(() => <Slide name="Materialized" />);
+    deck.slide({ name: "Materialized" }, () => <></>);
     const artifacts = new PipelineArtifactCollection();
 
     const compile = compileSource(deck, artifacts);
@@ -433,11 +433,11 @@ describe("project/render pipeline", () => {
     const child = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     const artifacts = new PipelineArtifactCollection();
 
-    parent.add(() => <Slide name="Root" />);
-    child.add(() => (
-      <Slide name="Child">
+    parent.slide({ name: "Root" }, () => <></>);
+    child.slide({ name: "Child" }, () => (
+      <>
         <Text>Mounted source</Text>
-      </Slide>
+      </>
     ));
     parent.mount("child", child);
 
@@ -469,7 +469,7 @@ describe("project/render pipeline", () => {
   test("projection artifacts expose package dependency snapshots", () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     const artifacts = new PipelineArtifactCollection();
-    deck.add(() => <Slide name="Package dependencies" />);
+    deck.slide({ name: "Package dependencies" }, () => <></>);
 
     const project = projectSource({
       source: deck,
@@ -504,7 +504,7 @@ describe("project/render pipeline", () => {
 
   test("explicit writer adapter format mismatches are warnings", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.add(() => <Slide name="Adapter mismatch" />);
+    deck.slide({ name: "Adapter mismatch" }, () => <></>);
     const adapter: WriterAdapter<PptxPackageModel, "pdf"> = {
       kind: "deckjsx.writerAdapter",
       name: "fake-pdf",
@@ -535,7 +535,7 @@ describe("project/render pipeline", () => {
 
   test("adapter-like invalid writer values are render-blocking errors", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.add(() => <Slide name="Invalid adapter" />);
+    deck.slide({ name: "Invalid adapter" }, () => <></>);
     const invalidAdapter = {
       kind: "deckjsx.writerAdapter",
       name: "missing-projection-format",
@@ -563,10 +563,10 @@ describe("project/render pipeline", () => {
 
   test("render blocks artifacts when project has error diagnostics", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.add(() => (
-      <Slide name="Invalid">
+    deck.slide({ name: "Invalid" }, () => (
+      <>
         <View style={{ x: "1qu" as never, y: 1, width: 2, height: 1 }} />
-      </Slide>
+      </>
     ));
 
     const project = deck.project();
@@ -582,11 +582,11 @@ describe("project/render pipeline", () => {
 
   test("partial projection keeps computable elements for inspection", () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.add(() => (
-      <Slide name="Partially invalid">
+    deck.slide({ name: "Partially invalid" }, () => (
+      <>
         <Text style={{ x: 1, y: 1, width: 2, height: 1 }}>Kept</Text>
         <View style={{ x: "1qu" as never, y: 1, width: 2, height: 1 }} />
-      </Slide>
+      </>
     ));
 
     const project = deck.project();
@@ -600,12 +600,12 @@ describe("project/render pipeline", () => {
 
   test("projected element origins survive layout filtering and paint ordering", () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.add(() => (
-      <Slide name="Origin stability">
+    deck.slide({ name: "Origin stability" }, () => (
+      <>
         <Text style={{ display: "none", x: 1, y: 1, width: 2, height: 1 }}>Hidden</Text>
         <Text style={{ zIndex: 10, x: 1, y: 1, width: 2, height: 1 }}>First</Text>
         <Text style={{ zIndex: 0, x: 1, y: 2, width: 2, height: 1 }}>Second</Text>
-      </Slide>
+      </>
     ));
 
     const compile = deck.compile();

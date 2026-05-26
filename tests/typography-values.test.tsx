@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, EMU_PER_INCH, Image, Shape, Slide, Text } from "../src/index.ts";
+import { Deck, EMU_PER_INCH, Image, Shape, Text } from "../src/index.ts";
 import { SAMPLE_SVG_DATA_URI, summarizeNodes } from "./helpers.ts";
 
 describe("typography-values", () => {
@@ -8,8 +8,8 @@ describe("typography-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Text semantics">
+    deck.slide({ name: "Text semantics" }, () => (
+      <>
         <Text
           style={{
             x: 1,
@@ -47,7 +47,7 @@ describe("typography-values", () => {
             href: "https://example.com/shape",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -95,8 +95,8 @@ describe("typography-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Lists">
+    deck.slide({ name: "Lists" }, () => (
+      <>
         <Text
           style={{
             x: 1,
@@ -121,7 +121,7 @@ describe("typography-values", () => {
         >
           Number item
         </Text>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -149,8 +149,8 @@ describe("typography-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Typography aliases">
+    deck.slide({ name: "Typography aliases" }, () => (
+      <>
         <Text
           style={{
             x: 1,
@@ -165,7 +165,7 @@ describe("typography-values", () => {
         >
           Decorated
         </Text>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -186,8 +186,8 @@ describe("typography-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Tab stops">
+    deck.slide({ name: "Tab stops" }, () => (
+      <>
         <Text
           style={{
             x: 1,
@@ -203,7 +203,7 @@ describe("typography-values", () => {
         >
           Alpha\tBeta\tGamma
         </Text>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -226,8 +226,8 @@ describe("typography-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Text indent">
+    deck.slide({ name: "Text indent" }, () => (
+      <>
         <Text
           style={{
             x: 1,
@@ -239,7 +239,7 @@ describe("typography-values", () => {
         >
           Indented
         </Text>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -258,8 +258,8 @@ describe("typography-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Text transform">
+    deck.slide({ name: "Text transform" }, () => (
+      <>
         <Text
           style={{
             x: 1,
@@ -286,7 +286,7 @@ describe("typography-values", () => {
         >
           hello DECKJSX world
         </Text>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -329,8 +329,8 @@ describe("typography-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Line height semantics">
+    deck.slide({ name: "Line height semantics" }, () => (
+      <>
         <Text
           style={{
             x: 1,
@@ -359,7 +359,7 @@ describe("typography-values", () => {
         >
           Reset decoration
         </Text>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -381,8 +381,8 @@ describe("typography-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="White space">
+    deck.slide({ name: "White space" }, () => (
+      <>
         <Text
           style={{
             x: 1,
@@ -420,7 +420,7 @@ describe("typography-values", () => {
         >
           Override
         </Text>
-      </Slide>
+      </>
     ));
 
     const texts = deck
@@ -437,8 +437,8 @@ describe("typography-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Word break">
+    deck.slide({ name: "Word break" }, () => (
+      <>
         <Text
           style={{
             x: 1,
@@ -476,7 +476,7 @@ describe("typography-values", () => {
         >
           Override
         </Text>
-      </Slide>
+      </>
     ));
 
     const texts = deck

@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
-import { Deck, Shape, Slide, Text, View } from "../src/index.ts";
+import { Deck, Shape, Text, View } from "../src/index.ts";
 
 type Metric = {
   label: string;
@@ -24,8 +24,8 @@ export async function writeSampleDeck(output = "examples/output/deckjsx-sample.p
     meta: { title: "deckjsx Sample Report", author: "deckjsx" },
   });
 
-  deck.add(({ composition }) => (
-    <Slide name="Title" style={{ backgroundColor: "#F8FAFC" }}>
+  deck.slide({ name: "Title", style: { backgroundColor: "#F8FAFC" } }, ({ composition }) => (
+    <>
       <Shape shape="rect" style={{ x: 0.7, y: 0.65, width: 0.12, height: 5.8, fill: "#2563EB" }} />
       <Text
         style={{
@@ -102,11 +102,11 @@ export async function writeSampleDeck(output = "examples/output/deckjsx-sample.p
       >
         {composition.slideIndex + 1} / {composition.totalSlides}
       </Text>
-    </Slide>
+    </>
   ));
 
-  deck.add(({ composition }) => (
-    <Slide name="Takeaways" style={{ backgroundColor: "#FFFFFF" }}>
+  deck.slide({ name: "Takeaways", style: { backgroundColor: "#FFFFFF" } }, ({ composition }) => (
+    <>
       <Text
         style={{
           x: 0.75,
@@ -178,7 +178,7 @@ export async function writeSampleDeck(output = "examples/output/deckjsx-sample.p
       >
         {composition.slideIndex + 1} / {composition.totalSlides}
       </Text>
-    </Slide>
+    </>
   ));
 
   await deck.render({ output });

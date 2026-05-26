@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, Image, Shape, Slide, Text, View } from "../src/index.ts";
+import { Deck, Image, Shape, Text, View } from "../src/index.ts";
 
 describe("transform-values", () => {
   test("render normalizes transform rotate, translate, scale, and mirror aliases", () => {
@@ -7,8 +7,8 @@ describe("transform-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Transform aliases">
+    deck.slide({ name: "Transform aliases" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -51,7 +51,7 @@ describe("transform-values", () => {
             transform: "rotate(1rad) scale(-1, -1)",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const [view, text, shape, image] = deck.project().projection!.slides[0].payload.elements;
@@ -96,8 +96,8 @@ describe("transform-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Transform boxes">
+    deck.slide({ name: "Transform boxes" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -152,7 +152,7 @@ describe("transform-values", () => {
             transform: "matrix(1, 0.5, 0.25, 1, 96, 48)",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const [scaled, rotated, skewX, skewY, matrix] =
@@ -202,8 +202,8 @@ describe("transform-values", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Unsupported transform">
+    deck.slide({ name: "Unsupported transform" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -213,7 +213,7 @@ describe("transform-values", () => {
             transform: "matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const result = deck.project();

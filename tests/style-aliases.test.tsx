@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, EMU_PER_INCH, Image, Slide, Text, View } from "../src/index.ts";
+import { Deck, EMU_PER_INCH, Image, Text, View } from "../src/index.ts";
 import { summarizeNodes } from "./helpers.ts";
 
 describe("style-aliases", () => {
@@ -8,8 +8,8 @@ describe("style-aliases", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Aliases">
+    deck.slide({ name: "Aliases" }, () => (
+      <>
         <View
           style={{
             left: "96px",
@@ -44,7 +44,7 @@ describe("style-aliases", () => {
             }}
           />
         </View>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;
@@ -100,8 +100,8 @@ describe("style-aliases", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Alias parity">
+    deck.slide({ name: "Alias parity" }, () => (
+      <>
         <View
           style={{
             x: 1,
@@ -202,7 +202,7 @@ describe("style-aliases", () => {
             objectFit: "cover",
           }}
         />
-      </Slide>
+      </>
     ));
 
     const nodes = deck.project().projection!.slides[0].payload.elements;
@@ -231,8 +231,8 @@ describe("style-aliases", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
     });
 
-    deck.add(() => (
-      <Slide name="Spacing aliases">
+    deck.slide({ name: "Spacing aliases" }, () => (
+      <>
         <View
           style={{
             right: "96px",
@@ -271,7 +271,7 @@ describe("style-aliases", () => {
           </Text>
           <Text style={{ width: 1, height: 0.5, fontSize: 18 }}>Two</Text>
         </View>
-      </Slide>
+      </>
     ));
 
     const ir = deck.project().projection!;

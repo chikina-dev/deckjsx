@@ -1,4 +1,4 @@
-import { Deck, Slide, Text, View } from "deckjsx";
+import { Deck, Text, View } from "deckjsx";
 import type {
   GraphNodeId,
   ResolvedStyleMap,
@@ -26,12 +26,12 @@ const styleEntityWithResolved = {
 void styleEntityWithResolved;
 
 const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-deck.add(() => (
-  <Slide>
+deck.slide(() => (
+  <>
     <View>
       <Text>Inspect me</Text>
     </View>
-  </Slide>
+  </>
 ));
 
 const graph = deck.compile().graph!;
