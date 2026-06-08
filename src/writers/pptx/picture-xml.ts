@@ -540,7 +540,7 @@ function resolveImageSrcRect(
 function writeSrcRect(writer: XmlChunkWriter, srcRect: ImageSrcRect | undefined): void {
   if (srcRect) {
     writer.empty("a:srcRect", { l: srcRect.l, r: srcRect.r, t: srcRect.t, b: srcRect.b });
-    writer.empty("a:stretch");
+    writer.open("a:stretch").empty("a:fillRect").close("a:stretch");
     return;
   }
 

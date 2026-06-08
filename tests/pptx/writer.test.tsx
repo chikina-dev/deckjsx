@@ -139,6 +139,44 @@ function centralDirectoryEntries(
   return entries;
 }
 
+function localFileHeaderEntries(
+  bytes: Uint8Array,
+): Array<{ path: string; flags: number; compressedSize: number; uncompressedSize: number }> {
+  const decoder = new TextDecoder();
+  const entries: Array<{
+    path: string;
+    flags: number;
+    compressedSize: number;
+    uncompressedSize: number;
+  }> = [];
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+  for (let offset = 0; offset <= bytes.byteLength - 30; ) {
+    if (view.getUint32(offset, true) !== 0x04034b50) {
+      break;
+    }
+
+    const flags = view.getUint16(offset + 6, true);
+    const compressedSize = view.getUint32(offset + 18, true);
+    const uncompressedSize = view.getUint32(offset + 22, true);
+    const fileNameLength = view.getUint16(offset + 26, true);
+    const extraLength = view.getUint16(offset + 28, true);
+    const nameStart = offset + 30;
+    const nameEnd = nameStart + fileNameLength;
+
+    entries.push({
+      path: decoder.decode(bytes.subarray(nameStart, nameEnd)),
+      flags,
+      compressedSize,
+      uncompressedSize,
+    });
+
+    offset = nameEnd + extraLength + compressedSize;
+  }
+
+  return entries;
+}
+
 function relationshipsFor(part: PptxPackagePart): readonly PptxRelationship[] {
   return (
     part.relationships ??
@@ -589,6 +627,32 @@ describe("direct pptx writer", () => {
     expect(centralDirectoryEntries(bytes)).toEqual([
       { path: "first.txt", modifiedDate: 0x0021, modifiedTime: 0 },
       { path: "second.txt", modifiedDate: 0x0021, modifiedTime: 0 },
+    ]);
+  });
+
+  test("ZIP byte helper writes local headers without data descriptors", () => {
+    const encoder = new TextEncoder();
+    const bytes = createPptxZipBytesFromEntries(
+      [
+        { path: "ppt/slides/slide1.xml", bytes: encoder.encode("<p:sld/>") },
+        { path: "ppt/media/media1.png", bytes: new Uint8Array([137, 80, 78, 71]) },
+      ],
+      { compression: "fast" },
+    );
+
+    expect(localFileHeaderEntries(bytes)).toEqual([
+      {
+        path: "ppt/slides/slide1.xml",
+        flags: 0,
+        compressedSize: expect.any(Number),
+        uncompressedSize: 8,
+      },
+      {
+        path: "ppt/media/media1.png",
+        flags: 0,
+        compressedSize: expect.any(Number),
+        uncompressedSize: 4,
+      },
     ]);
   });
 
@@ -3520,7 +3584,7 @@ describe("direct pptx writer", () => {
       expect(slideXml).toContain('<a:off x="1374775" y="1374775"/>');
       expect(slideXml).toContain('<a:ext cx="2736850" cy="908050"/>');
       expect(slideXml).toContain(
-        '<a:srcRect l="12587" r="12587" t="25174" b="25174"/><a:stretch/>',
+        '<a:srcRect l="12587" r="12587" t="25174" b="25174"/><a:stretch><a:fillRect/></a:stretch>',
       );
     } finally {
       await rm(tempDir, { recursive: true, force: true });
@@ -3563,7 +3627,7 @@ describe("direct pptx writer", () => {
       expect(slideXml).toContain('<a:off x="1374775" y="1374775"/>');
       expect(slideXml).toContain('<a:ext cx="2736850" cy="908050"/>');
       expect(slideXml).toContain(
-        '<a:srcRect l="12522" r="12522" t="25087" b="25087"/><a:stretch/>',
+        '<a:srcRect l="12522" r="12522" t="25087" b="25087"/><a:stretch><a:fillRect/></a:stretch>',
       );
     } finally {
       await rm(tempDir, { recursive: true, force: true });
@@ -3603,7 +3667,7 @@ describe("direct pptx writer", () => {
       expect(slideXml).toContain('<a:off x="1374775" y="1374775"/>');
       expect(slideXml).toContain('<a:ext cx="2736850" cy="908050"/>');
       expect(slideXml).toContain(
-        '<a:srcRect l="12522" r="12522" t="25087" b="25087"/><a:stretch/>',
+        '<a:srcRect l="12522" r="12522" t="25087" b="25087"/><a:stretch><a:fillRect/></a:stretch>',
       );
     } finally {
       await rm(tempDir, { recursive: true, force: true });

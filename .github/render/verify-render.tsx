@@ -68,9 +68,9 @@ const defaultOptions: Options = {
 
 const renderToolsEnabled = process.env.DECKJSX_RENDER_WITH_TOOLS === "1";
 const pngData =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
-const wideSvgData =
-  "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%2250%22%3E%3Crect%20width%3D%22100%22%20height%3D%2250%22%20fill%3D%22%232563eb%22%2F%3E%3C%2Fsvg%3E";
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGUExURSVj6////y1UwPwAAAABYktHRAH/Ai3eAAAAB3RJTUUH6gYIBDM5nZgK7wAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAldEVYdGRhdGU6Y3JlYXRlADIwMjYtMDYtMDhUMDQ6NTE6NTcrMDA6MDBDyTUuAAAAJXRFWHRkYXRlOm1vZGlmeQAyMDI2LTA2LTA4VDA0OjUxOjU3KzAwOjAwMpSNkgAAACh0RVh0ZGF0ZTp0aW1lc3RhbXAAMjAyNi0wNi0wOFQwNDo1MTo1NyswMDowMGWBrE0AAAAASUVORK5CYII=";
+const widePngData =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGQAAAAyAQMAAACQ++z9AAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGUExURSVj6////y1UwPwAAAABYktHRAH/Ai3eAAAAB3RJTUUH6gYIBDIiDubyQgAAAA9JREFUKM9jYBgFo2BoAgACvAABbZIddAAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyNi0wNi0wOFQwNDo1MDozNCswMDowMFuMTQoAAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjYtMDYtMDhUMDQ6NTA6MzQrMDA6MDAq0fW2AAAAKHRFWHRkYXRlOnRpbWVzdGFtcAAyMDI2LTA2LTA4VDA0OjUwOjM0KzAwOjAwfcTUaQAAAABJRU5ErkJggg==";
 
 function parsePages(value: string): number[] {
   const pages = value
@@ -134,6 +134,15 @@ async function maybePngByteLength(path: string | null): Promise<number | null> {
     return (await stat(path)).size;
   } catch {
     return null;
+  }
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -844,7 +853,7 @@ async function writeVerificationDeck(output: string) {
       Image crop verification
     </h1>,
     <img
-      data={wideSvgData}
+      data={widePngData}
       style={{
         x: 0.8,
         y: 1.55,
@@ -1170,7 +1179,14 @@ async function main() {
           options.outdir,
           fixture.pptx,
         ]);
-        fixture.pdf = join(options.outdir, `${parse(basename(fixture.pptx)).name}.pdf`);
+        const convertedPdf = join(options.outdir, `${parse(basename(fixture.pptx)).name}.pdf`);
+        if (!(await fileExists(convertedPdf))) {
+          throw new Error(
+            `LibreOffice did not produce the expected PDF for ${fixture.name}: ${convertedPdf}`,
+          );
+        }
+
+        fixture.pdf = convertedPdf;
         pdf ??= fixture.pdf;
         console.log(`Rendered PDF: ${fixture.pdf}`);
       } catch (error) {
