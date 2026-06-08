@@ -1,0 +1,13 @@
+{
+  "name": "deckjsx-pptxgenjs-regression-oracle",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "compare": "node ./compare.mjs"
+  },
+  "dependencies": {
+    "deckjsx": "file:../../..",
+    "fflate": "0.8.3",
+    "pptxgenjs": "3.12.0"
+  }
+}

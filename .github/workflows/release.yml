@@ -75,9 +75,6 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Install sample dependencies
-        run: npm ci --prefix sample
-
       - name: Validate package version
         shell: bash
         run: |
@@ -102,11 +99,29 @@ jobs:
       - name: Check
         run: bun run check
 
+      - name: Build
+        run: bun run build
+
+      - name: Install sample dependencies
+        run: npm ci --prefix sample
+
+      - name: Run sample smoke
+        run: npm run --prefix sample smoke
+
       - name: Test
         run: bun run test
 
-      - name: Build
-        run: bun run build
+      - name: Benchmark direct PPTX writer
+        run: bun run benchmark:pptx -- --iterations 1 --strict
+
+      - name: Verify render fixtures
+        run: bun run verify:render -- --skip-raster
+
+      - name: Install PPTX oracle dependencies
+        run: npm install --no-audit --no-fund --prefix .github/compat/pptxgenjs
+
+      - name: Compare direct PPTX writer with oracle
+        run: npm run --prefix .github/compat/pptxgenjs compare
 
       - name: Pack
         run: npm pack

@@ -29,7 +29,9 @@ be converted again later.
 v0.6 will introduce a result-first staged pipeline:
 
 - `compile()` returns a `CompileResult`, not a raw `SemanticAuthorGraph`.
-- `project()` returns a `ProjectResult`, not a raw projection.
+- `project()` returns a `ProjectResult`, not a raw projection. In v0.8.0 this stage becomes async
+  and returns `Promise<ProjectResult>` so asset probing can be completed before the package model is
+  inspected or rendered.
 - `render()` returns a `RenderResult`, not `void` or a raw artifact.
 - Stage options may change collected detail or processing policy, but they must not change the
   top-level result shape.
@@ -118,6 +120,10 @@ await deck.render({ output: "deck.pptx" });
 await deck.render(pptxgenjs({ output: "deck.pptx" }));
 ```
 
+ADR-0004 supersedes the concrete core adapter name for v0.8.0: the default path is the direct PPTX
+writer, and the explicit core adapter path is `pptx({ output })`. The `pptxgenjs` example remains
+historical v0.6 context.
+
 Writer Adapters declare the Projection Format they consume and the Output Format they return. An
 explicit adapter can override the Deck default Output Format, but render should report that mismatch
 as a warning. In v0.6, the default Writer Adapter may be pptxgenjs, but the Pptx Package Model must
@@ -143,23 +149,31 @@ option is a string path only. If artifact generation succeeds but file writing f
 the artifact bytes and reports the write failure in diagnostics. Written output information appears
 only when the side effect succeeds.
 
+ADR-0004 keeps this result-first shape for v0.8.0's direct PPTX writer. ZIP streaming and sink
+topology are internal writer concerns, not public render modes. Path-output side-effect failures use
+`E_RENDER_OUTPUT_WRITE_FAILED` while preserving produced artifact bytes.
+ADR-0004 also treats an unavailable path-output runtime boundary, such as non-Node runtime path
+output, as the same diagnostic family with a structured `reason=runtimeOutputUnavailable` note.
+
 Temporary Writer Adapters report their limitations as diagnostics instead of pulling the Projected
 Document Model toward their capabilities. Unsupported-but-nonbreaking gaps are warnings. Model
 inconsistencies or adapter gaps that would produce a broken artifact are render-blocking errors.
 
-The direct OOXML writer is a later-version concern. v0.6 establishes Project, Render, the Pptx
-Package Model, and the temporary pptxgenjs Writer Adapter without including direct OOXML
-serialization in the milestone.
+The direct OOXML writer was a later-version concern for v0.6. ADR-0004 makes that later concern the
+v0.8.0 default through the direct PPTX writer and removes the temporary pptxgenjs core adapter.
 
 The adapter public surface is `deckjsx/adapter`, for example:
 
 ```ts
-import { pptxgenjs } from "deckjsx/adapter";
+import { pptx } from "deckjsx/adapter";
 ```
 
 Detailed Pptx Package Model and inspection summary types are exported from `deckjsx/inspect` as
 read-only data model types. Mutation helpers and builders are deferred until sandbox and HMR
 workflows prove the required operations.
+For PPTX projection snapshots, package payload types exported through `deckjsx/inspect` should come
+from the Pptx Package Model vocabulary. Manifest, validation, and writer helper modules may consume
+or re-export those shapes internally, but they should not define an independent public type surface.
 
 Deck remains the public owner of authoring inputs and explicit Pipeline Artifacts, but stage
 execution policy belongs to an internal Pipeline Runner module. Pipeline stages materialize source,

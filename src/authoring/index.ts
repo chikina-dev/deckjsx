@@ -1,15 +1,30 @@
-import type { AuthorTreeNode } from "./tree";
-import type { EmptySlideTemplateSet, SlideTemplateSet, TemplateAreaRef } from "../templates";
+import type { JsxKey } from "./tree";
+import type { EmptySlideTemplateSet, SlideTemplateSet } from "../templates";
 import type { Theme } from "../style/theme";
 import type {
-  ImageStyle,
-  ShapeStyle,
-  SlideStyle,
-  TextRunStyle,
-  TextStyle,
-  ViewStyle,
-} from "../style/types";
+  AuthorNodeKind,
+  ImageNodeProps,
+  ShapeNodeProps,
+  SlideNodeProps,
+  TextNodeProps,
+  TextRunNodeProps,
+  ViewNodeProps,
+} from "./props";
 
+export type {
+  AuthorNodeKind,
+  AuthorNodeProps,
+  AuthorNodePropsMap,
+  ClassNameObject,
+  ClassNameValue,
+  ClassNameValueArray,
+  ImageNodeProps,
+  ShapeNodeProps,
+  SlideNodeProps,
+  TextNodeProps,
+  TextRunNodeProps,
+  ViewNodeProps,
+} from "./props";
 export type {
   BorderStyle,
   CssAlignContent,
@@ -65,9 +80,13 @@ export type {
   StyleTargetSelector,
 } from "../style/stylesheet";
 
+export type DeckJsxElement = {
+  readonly $$typeof: "deckjsx.author-tree" | "deckjsx.author-node";
+};
+
 export interface TextJsxChildArray extends ReadonlyArray<TextJsxChild> {}
 export type TextJsxChild =
-  | AuthorTreeNode
+  | DeckJsxElement
   | string
   | number
   | boolean
@@ -76,43 +95,11 @@ export type TextJsxChild =
   | TextJsxChildArray;
 export type ContentAuthorNode = AuthorNode<"view" | "text" | "image" | "shape">;
 export interface ContentJsxChildArray extends ReadonlyArray<ContentJsxChild> {}
-export type ContentJsxChild =
-  | AuthorNode
-  | AuthorTreeNode
-  | boolean
-  | null
-  | undefined
-  | ContentJsxChildArray;
+export type ContentJsxChild = DeckJsxElement | boolean | null | undefined | ContentJsxChildArray;
 export interface ViewIntrinsicJsxChildArray extends ReadonlyArray<ViewIntrinsicJsxChild> {}
 export type ViewIntrinsicJsxChild = ContentJsxChild | string | number | ViewIntrinsicJsxChildArray;
 export interface JsxNodeArray extends ReadonlyArray<JsxNode> {}
-export type JsxNode =
-  | AuthorNode
-  | AuthorTreeNode
-  | string
-  | number
-  | boolean
-  | null
-  | undefined
-  | JsxNodeArray;
-
-export interface ClassNameValueArray extends ReadonlyArray<ClassNameValue> {}
-export type ClassNameObject = Readonly<Record<string, boolean | null | undefined>>;
-export type ClassNameValue =
-  | string
-  | false
-  | null
-  | undefined
-  | ClassNameValueArray
-  | ClassNameObject;
-
-type ClassNameAuthorProps = {
-  className?: ClassNameValue;
-};
-
-type TemplateAreaAuthorProps = {
-  area?: TemplateAreaRef;
-};
+export type JsxNode = DeckJsxElement | string | number | boolean | null | undefined | JsxNodeArray;
 
 export type DeckOptions<TTemplates extends SlideTemplateSet = EmptySlideTemplateSet> = {
   layout: {
@@ -139,77 +126,21 @@ export type SlideContext = {
 export type SlideFactory<TSourceContext = void> =
   import("../composition/types").SlideFactory<TSourceContext>;
 
-export type SlideNodeProps = {
-  name?: string;
-  template?: string;
-  className?: ClassNameValue;
-  style?: SlideStyle;
-  background?: string;
-  backgroundImage?: string;
-  backgroundColor?: string;
-  backgroundTransparency?: number;
-  backgroundPosition?: string;
-  backgroundSize?: string;
-  backgroundRepeat?: string;
-  backgroundClip?: string;
-  backgroundOrigin?: string;
-};
-
 export type SlideProps = SlideNodeProps & {
   children?: ContentJsxChild;
 };
-
-export type ViewNodeProps = {
-  style?: ViewStyle;
-} & ClassNameAuthorProps &
-  TemplateAreaAuthorProps &
-  ViewStyle;
 
 export type ViewProps = ViewNodeProps & {
   children?: ContentJsxChild;
 };
 
-export type TextNodeProps = {
-  style?: TextStyle;
-} & ClassNameAuthorProps &
-  TemplateAreaAuthorProps &
-  TextStyle;
-
 export type TextProps = TextNodeProps & {
   children?: TextJsxChild;
 };
 
-export type TextRunNodeProps = {
-  style?: TextRunStyle;
-} & ClassNameAuthorProps &
-  TextRunStyle;
-
-export type ImageNodeProps = {
-  style?: ImageStyle;
-} & ClassNameAuthorProps &
-  TemplateAreaAuthorProps &
-  ImageStyle &
-  (
-    | {
-        src: string;
-        data?: string;
-      }
-    | {
-        src?: string;
-        data: string;
-      }
-  );
-
 export type ImageProps = ImageNodeProps & {
   children?: never;
 };
-
-export type ShapeNodeProps = {
-  style?: ShapeStyle;
-  shape: "rect" | "ellipse" | "line";
-} & ClassNameAuthorProps &
-  TemplateAreaAuthorProps &
-  ShapeStyle;
 
 export type ShapeProps = ShapeNodeProps & {
   children?: never;
@@ -222,16 +153,6 @@ export type AuthorNodeMap = {
   image: ImageProps;
   shape: ShapeProps;
 };
-
-export type AuthorNodeKind = keyof AuthorNodeMap;
-export type AuthorNodePropsMap = {
-  slide: SlideNodeProps;
-  view: ViewNodeProps;
-  text: TextNodeProps;
-  image: ImageNodeProps;
-  shape: ShapeNodeProps;
-};
-export type AuthorNodeProps<K extends AuthorNodeKind> = AuthorNodePropsMap[K];
 
 type BaseAuthorNode<K extends AuthorNodeKind, P, C> = {
   readonly $$typeof: "deckjsx.author-node";
@@ -256,19 +177,27 @@ type AuthorNodeByKind = {
 
 export type AuthorNode<K extends AuthorNodeKind = AuthorNodeKind> = AuthorNodeByKind[K];
 
-export type IntrinsicDivProps = ViewNodeProps & {
-  children?: ViewIntrinsicJsxChild;
+type IntrinsicKeyProps = {
+  key?: JsxKey;
 };
 
-export type IntrinsicPProps = TextNodeProps & {
-  children?: TextJsxChild;
-};
+export type IntrinsicDivProps = ViewNodeProps &
+  IntrinsicKeyProps & {
+    children?: ViewIntrinsicJsxChild;
+  };
 
-export type IntrinsicSpanProps = TextRunNodeProps & {
-  children?: TextJsxChild;
-};
+export type IntrinsicPProps = TextNodeProps &
+  IntrinsicKeyProps & {
+    children?: TextJsxChild;
+  };
 
-export type IntrinsicImgProps = ImageProps;
+export type IntrinsicSpanProps = TextRunNodeProps &
+  IntrinsicKeyProps & {
+    children?: TextJsxChild;
+  };
+
+export type IntrinsicImgProps = ImageProps & IntrinsicKeyProps;
+export type IntrinsicShapeProps = ShapeProps & IntrinsicKeyProps;
 
 export type IntrinsicViewTag =
   | "article"
@@ -285,6 +214,7 @@ export type IntrinsicTextTag = "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p";
 
 export type DeckJsxIntrinsicElements = {
   img: IntrinsicImgProps;
+  shape: IntrinsicShapeProps;
   span: IntrinsicSpanProps;
 } & {
   [Tag in IntrinsicViewTag]: IntrinsicDivProps;

@@ -4,9 +4,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/render-verification.yml"
-      - "Dockerfile.render"
-      - "examples/**"
-      - "scripts/verify-render.ts"
+      - ".github/render/**"
       - "src/**"
       - "package.json"
       - "bun.lock"
@@ -27,7 +25,7 @@ jobs:
       - name: Build render image
         id: build
         continue-on-error: true
-        run: docker build -f Dockerfile.render -t deckjsx-render .
+        run: docker build -f .github/render/Dockerfile -t deckjsx-render .
 
       - name: Render sample deck
         id: render
@@ -38,11 +36,11 @@ jobs:
       - name: Copy render artifacts
         if: always()
         run: |
-          mkdir -p ./examples/rendered
+          mkdir -p ./.github/render/artifacts
           if docker container inspect deckjsx-render-run >/dev/null 2>&1; then
-            docker cp deckjsx-render-run:/workspace/examples/rendered/. ./examples/rendered
+            docker cp deckjsx-render-run:/workspace/.github/render/artifacts/. ./.github/render/artifacts
           else
-            echo "Render container was not created." > ./examples/rendered/render-verification.log
+            echo "Render container was not created." > ./.github/render/artifacts/render-verification.log
           fi
 
       - name: Upload render artifacts
@@ -50,7 +48,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: render-verification
-          path: examples/rendered
+          path: .github/render/artifacts
 
       - name: Fail on render verification error
         if: steps.build.outcome == 'failure' || steps.render.outcome == 'failure'

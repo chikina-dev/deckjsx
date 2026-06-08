@@ -16,11 +16,10 @@ export type AuthoredTag =
   | "nav"
   | "p"
   | "section"
+  | "shape"
   | "span";
 
 export type SectioningTag = "article" | "aside" | "footer" | "header" | "main" | "nav" | "section";
-
-export type AuthoredComponent = "Image" | "Shape" | "Slide" | "Text" | "View";
 
 export type IntrinsicViewTag =
   | "article"
@@ -59,6 +58,10 @@ export function isIntrinsicTextTag(value: string): value is IntrinsicTextTag {
 
 export function isAuthoredTag(value: string): value is AuthoredTag {
   return (
-    isIntrinsicViewTag(value) || isIntrinsicTextTag(value) || value === "img" || value === "span"
+    isIntrinsicViewTag(value) ||
+    isIntrinsicTextTag(value) ||
+    value === "img" ||
+    value === "shape" ||
+    value === "span"
   );
 }

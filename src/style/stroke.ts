@@ -75,18 +75,27 @@ function tokenizeCssShorthand(value: string): string[] {
   return tokens;
 }
 
-function parseBorderStyleToken(value: string): BorderStyle | undefined {
+function parseBorderStyleToken(value: string):
+  | {
+      style: BorderStyle;
+      dashType?: StrokeDashType;
+    }
+  | undefined {
   const normalized = value.trim().toLowerCase();
   if (normalized === "none") {
-    return "none";
+    return { style: "none" };
   }
 
   if (normalized === "solid") {
-    return "solid";
+    return { style: "solid" };
   }
 
   if (normalized === "dash" || normalized === "dashed") {
-    return "dash";
+    return { style: "dash" };
+  }
+
+  if (normalized === "dot" || normalized === "dotted") {
+    return { style: "dash", dashType: "sysDot" };
   }
 }
 
@@ -113,6 +122,7 @@ export function parseBorderShorthand(value?: string): {
   borderColor?: string;
   borderWidth?: DeckLength;
   borderStyle?: BorderStyle;
+  borderDashType?: StrokeDashType;
 } {
   if (!value) {
     return {};
@@ -122,6 +132,7 @@ export function parseBorderShorthand(value?: string): {
   let borderColor: string | undefined;
   let borderWidth: DeckLength | undefined;
   let borderStyle: BorderStyle | undefined;
+  let borderDashType: StrokeDashType | undefined;
 
   for (const token of tokens) {
     const parsedWidth = parseBorderWidthToken(token);
@@ -132,7 +143,8 @@ export function parseBorderShorthand(value?: string): {
 
     const parsedStyle = parseBorderStyleToken(token);
     if (borderStyle === undefined && parsedStyle !== undefined) {
-      borderStyle = parsedStyle;
+      borderStyle = parsedStyle.style;
+      borderDashType = parsedStyle.dashType;
       continue;
     }
 
@@ -143,6 +155,7 @@ export function parseBorderShorthand(value?: string): {
     borderColor,
     borderWidth,
     borderStyle,
+    borderDashType,
   };
 }
 
@@ -150,12 +163,29 @@ export function parseOutlineShorthand(value?: string): {
   outlineColor?: string;
   outlineWidth?: DeckLength;
   outlineStyle?: BorderStyle;
+  outlineDashType?: StrokeDashType;
 } {
   const border = parseBorderShorthand(value);
   return {
     outlineColor: border.borderColor,
     outlineWidth: border.borderWidth,
     outlineStyle: border.borderStyle,
+    outlineDashType: border.borderDashType,
+  };
+}
+
+export function parseStrokeShorthand(value?: string): {
+  strokeColor?: string;
+  strokeWidth?: DeckLength;
+  strokeStyle?: BorderStyle;
+  strokeDashType?: StrokeDashType;
+} {
+  const border = parseBorderShorthand(value);
+  return {
+    strokeColor: border.borderColor,
+    strokeWidth: border.borderWidth,
+    strokeStyle: border.borderStyle,
+    strokeDashType: border.borderDashType,
   };
 }
 
@@ -208,6 +238,7 @@ export function parseSideBorderAuthoring(value?: string) {
     color: border.borderColor,
     width: border.borderWidth,
     style: border.borderStyle,
+    dashType: border.borderDashType,
   };
 }
 
@@ -225,12 +256,13 @@ export function toStroke(
   if (!parsed) {
     return undefined;
   }
+  const projectedDashType = dashType ?? (style === "dash" ? "dash" : undefined);
 
   return {
     color: parsed.color,
     widthPt: parseStrokeWidth(width, 1, context),
     style,
-    ...(dashType ? { dashType } : {}),
+    ...(projectedDashType ? { dashType: projectedDashType } : {}),
     ...(lineCap ? { lineCap } : {}),
     ...(lineJoin ? { lineJoin } : {}),
     transparency: normalizeTransparency(transparency ?? alphaToTransparency(parsed.alpha)),
@@ -366,6 +398,7 @@ export function parseStrokeLineJoin(value?: string): StrokeLineJoin | undefined 
 export function resolveNodeStrokes(
   props: Pick<
     ViewStyle,
+    | "border"
     | "borderColor"
     | "borderWidth"
     | "borderStyle"
@@ -387,19 +420,24 @@ export function resolveNodeStrokes(
     | "borderBottomStyle"
     | "borderLeftStyle"
   > &
-    Partial<Pick<ShapeStyle, "strokeDasharray" | "strokeLinecap" | "strokeLinejoin">>,
+    Partial<Pick<ShapeStyle, "stroke" | "strokeDasharray" | "strokeLinecap" | "strokeLinejoin">>,
   context?: LengthResolutionContext,
 ): {
   stroke?: StrokeIR;
   edgeStrokes?: EdgeStrokeIR;
 } {
+  const border = parseBorderShorthand(props.border);
+  const stroke = parseStrokeShorthand(props.stroke);
+  const explicitDashType = parseStrokeDasharray(props.strokeDasharray, context);
+  const uniformDashType = explicitDashType ?? stroke.strokeDashType ?? border.borderDashType;
+
   if (!hasSideBorderAuthoring(props)) {
     return {
       stroke: toStroke(
         props.borderColor,
         props.borderWidth,
         props.borderStyle,
-        parseStrokeDasharray(props.strokeDasharray, context),
+        uniformDashType,
         parseStrokeLineCap(props.strokeLinecap),
         parseStrokeLineJoin(props.strokeLinejoin),
         props.borderTransparency,
@@ -409,42 +447,46 @@ export function resolveNodeStrokes(
   }
 
   const edgeStrokes: EdgeStrokeIR = {};
+  const topBorder = parseSideBorderAuthoring(props.borderTop);
+  const rightBorder = parseSideBorderAuthoring(props.borderRight);
+  const bottomBorder = parseSideBorderAuthoring(props.borderBottom);
+  const leftBorder = parseSideBorderAuthoring(props.borderLeft);
 
   const top = toStroke(
-    props.borderTopColor ?? props.borderColor,
-    props.borderTopWidth ?? props.borderWidth,
-    props.borderTopStyle ?? props.borderStyle,
-    undefined,
+    props.borderTopColor ?? topBorder.color ?? props.borderColor,
+    props.borderTopWidth ?? topBorder.width ?? props.borderWidth,
+    props.borderTopStyle ?? topBorder.style ?? props.borderStyle,
+    explicitDashType ?? topBorder.dashType ?? uniformDashType,
     parseStrokeLineCap(props.strokeLinecap),
     parseStrokeLineJoin(props.strokeLinejoin),
     props.borderTransparency,
     context,
   );
   const right = toStroke(
-    props.borderRightColor ?? props.borderColor,
-    props.borderRightWidth ?? props.borderWidth,
-    props.borderRightStyle ?? props.borderStyle,
-    undefined,
+    props.borderRightColor ?? rightBorder.color ?? props.borderColor,
+    props.borderRightWidth ?? rightBorder.width ?? props.borderWidth,
+    props.borderRightStyle ?? rightBorder.style ?? props.borderStyle,
+    explicitDashType ?? rightBorder.dashType ?? uniformDashType,
     parseStrokeLineCap(props.strokeLinecap),
     parseStrokeLineJoin(props.strokeLinejoin),
     props.borderTransparency,
     context,
   );
   const bottom = toStroke(
-    props.borderBottomColor ?? props.borderColor,
-    props.borderBottomWidth ?? props.borderWidth,
-    props.borderBottomStyle ?? props.borderStyle,
-    undefined,
+    props.borderBottomColor ?? bottomBorder.color ?? props.borderColor,
+    props.borderBottomWidth ?? bottomBorder.width ?? props.borderWidth,
+    props.borderBottomStyle ?? bottomBorder.style ?? props.borderStyle,
+    explicitDashType ?? bottomBorder.dashType ?? uniformDashType,
     parseStrokeLineCap(props.strokeLinecap),
     parseStrokeLineJoin(props.strokeLinejoin),
     props.borderTransparency,
     context,
   );
   const left = toStroke(
-    props.borderLeftColor ?? props.borderColor,
-    props.borderLeftWidth ?? props.borderWidth,
-    props.borderLeftStyle ?? props.borderStyle,
-    undefined,
+    props.borderLeftColor ?? leftBorder.color ?? props.borderColor,
+    props.borderLeftWidth ?? leftBorder.width ?? props.borderWidth,
+    props.borderLeftStyle ?? leftBorder.style ?? props.borderStyle,
+    explicitDashType ?? leftBorder.dashType ?? uniformDashType,
     parseStrokeLineCap(props.strokeLinecap),
     parseStrokeLineJoin(props.strokeLinejoin),
     props.borderTransparency,

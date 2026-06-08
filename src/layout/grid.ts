@@ -27,7 +27,7 @@ export type GridAutoPlacementCursor = {
   column: number;
 };
 
-export type GridEntryPlacement<TChild = unknown> = {
+export type GridEntryPlacement<TChild = never> = {
   child: TChild;
   row: number;
   column: number;

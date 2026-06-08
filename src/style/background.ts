@@ -242,6 +242,17 @@ function withBackgroundFillFrame(
   };
 }
 
+function ensureBackgroundFillLayerFrame(layer: BackgroundLayerIR, frame: Frame | undefined) {
+  if (layer.kind === "background-image" || layer.frame !== undefined || !frame) {
+    return layer;
+  }
+
+  return {
+    ...layer,
+    frame: { ...frame },
+  };
+}
+
 function resolveBackgroundLayerFrames(
   frame: Frame | undefined,
   boxFrames: BackgroundBoxFrames | undefined,
@@ -1660,15 +1671,18 @@ export function resolveBackgroundLayers(
 
   const [topLayer, ...remainingLayers] = layers;
   const fill = topLayerFill(topLayer);
+  const backgroundLayers =
+    fill === undefined
+      ? [...layers].reverse()
+      : remainingLayers.length > 0
+        ? [...remainingLayers].reverse()
+        : undefined;
 
   return {
     fill,
-    backgroundLayers:
-      fill === undefined
-        ? [...layers].reverse()
-        : remainingLayers.length > 0
-          ? [...remainingLayers].reverse()
-          : undefined,
+    backgroundLayers: backgroundLayers?.map((layer) =>
+      ensureBackgroundFillLayerFrame(layer, frame),
+    ),
   };
 }
 

@@ -113,6 +113,7 @@ export function resolveListStyle(
     case "disc":
       return {
         type: "bullet",
+        characterCode: "2022",
         ...(indentPt !== undefined ? { indentPt } : {}),
       };
     case "circle":

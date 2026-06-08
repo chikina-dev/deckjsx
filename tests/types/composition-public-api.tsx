@@ -1,4 +1,4 @@
-import { Deck, Text } from "deckjsx";
+import { Deck } from "deckjsx";
 import type {
   BoundSource,
   CompositionContext,
@@ -26,7 +26,7 @@ void compositionTypeAssertions;
 const root = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 root.slide(({ composition }) => (
   <>
-    <Text>{composition.slideIndex}</Text>
+    <p>{composition.slideIndex}</p>
   </>
 ));
 
@@ -44,9 +44,9 @@ const section = new Deck<{ sectionTitle: string }>({
 
 section.slide(({ context, composition }) => (
   <>
-    <Text>
+    <p>
       {context.sectionTitle}:{composition.slideIndex}
-    </Text>
+    </p>
   </>
 ));
 
@@ -93,5 +93,5 @@ const mapper = ((context) => ({ source: context.sectionTitle })) satisfies Sourc
 >;
 void mapper;
 
-const factory = (({ composition }) => <Text>{composition.slideIndex}</Text>) satisfies SlideFactory;
+const factory = (({ composition }) => <p>{composition.slideIndex}</p>) satisfies SlideFactory;
 void factory;

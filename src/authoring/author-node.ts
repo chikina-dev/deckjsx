@@ -1,6 +1,5 @@
 import type {
   AuthorNode,
-  AuthorNodeKind,
   ContentJsxChild,
   ImageNodeProps,
   ShapeNodeProps,
@@ -10,16 +9,29 @@ import type {
   ViewNodeProps,
 } from "./index";
 import { isIntrinsicTextTag, isIntrinsicViewTag } from "./tags";
-import { type AuthorElementNode, type AuthorTreeNode, isAuthorTreeNode } from "./tree";
+import {
+  type AuthorElementNode,
+  type AuthorImageElementNode,
+  type AuthorShapeElementNode,
+  type AuthorSlideElementNode,
+  type AuthorSpanElementNode,
+  type AuthorTextElementNode,
+  type AuthorTreeNode,
+  type AuthorViewElementNode,
+  isAuthorTreeNode,
+} from "./tree";
 
-type AuthorNodeChild =
-  | AuthorNode
-  | string
-  | number
-  | boolean
-  | null
-  | undefined
-  | AuthorNodeChild[];
+function textAuthorNode(
+  props: TextNodeProps,
+  children: readonly TextJsxChild[],
+): AuthorNode<"text"> {
+  return {
+    $$typeof: "deckjsx.author-node",
+    kind: "text",
+    props,
+    children,
+  };
+}
 
 function textFromPrimitive(value: string | number): AuthorNode<"text"> | null {
   if (typeof value === "string" && value.trim().length === 0) {
@@ -31,71 +43,23 @@ function textFromPrimitive(value: string | number): AuthorNode<"text"> | null {
     return null;
   }
 
-  return authorNode("text", {}, [text]);
+  return textAuthorNode({}, [text]);
 }
 
-function authorNode<K extends AuthorNodeKind>(
-  kind: K,
-  props: AuthorNode<K>["props"],
-  children: AuthorNode<K>["children"],
-): AuthorNode<K> {
-  return {
-    $$typeof: "deckjsx.author-node",
-    kind,
-    props,
-    children,
-  } as AuthorNode<K>;
-}
-
-function elementKind(node: AuthorElementNode): AuthorNodeKind {
-  if (node.source.kind === "component") {
-    switch (node.source.component) {
-      case "Slide":
-        return "slide";
-      case "View":
-        return "view";
-      case "Text":
-        return "text";
-      case "Image":
-        return "image";
-      case "Shape":
-        return "shape";
-    }
-  }
-
-  if (isIntrinsicViewTag(node.source.tag)) {
-    return "view";
-  }
-
-  if (isIntrinsicTextTag(node.source.tag) || node.source.tag === "span") {
-    return "text";
-  }
-
-  return "image";
-}
-
-function convertChildrenFor(
-  kind: AuthorNodeKind,
-  children: readonly AuthorTreeNode[],
-): AuthorNodeChild[] {
-  const converted: AuthorNodeChild[] = [];
+function convertContentChildren(children: readonly AuthorTreeNode[]): ContentJsxChild[] {
+  const converted: ContentJsxChild[] = [];
 
   for (const child of children) {
     if (child.kind === "fragment") {
-      converted.push(...convertChildrenFor(kind, child.children));
+      converted.push(...convertContentChildren(child.children));
       continue;
     }
 
     if (child.kind === "text") {
-      if (kind === "view" || kind === "slide") {
-        const textNode = textFromPrimitive(child.value);
-        if (textNode) {
-          converted.push(textNode);
-        }
-        continue;
+      const textNode = textFromPrimitive(child.value);
+      if (textNode) {
+        converted.push(textNode);
       }
-
-      converted.push(child.value);
       continue;
     }
 
@@ -105,55 +69,150 @@ function convertChildrenFor(
   return converted;
 }
 
-export function toAuthorNode(node: AuthorElementNode): AuthorNode {
-  const kind = elementKind(node);
-  const props = node.props;
+function convertTextChildren(children: readonly AuthorTreeNode[]): TextJsxChild[] {
+  const converted: TextJsxChild[] = [];
 
-  switch (kind) {
-    case "slide":
-      return authorNode(
-        "slide",
-        props as SlideNodeProps,
-        convertChildrenFor(kind, node.children) as ContentJsxChild[],
-      );
-    case "view":
-      return authorNode(
-        "view",
-        props as ViewNodeProps,
-        convertChildrenFor(kind, node.children) as ContentJsxChild[],
-      );
-    case "text":
-      return authorNode(
-        "text",
-        props as TextNodeProps,
-        convertChildrenFor(kind, node.children) as TextJsxChild[],
-      );
-    case "image":
-      return authorNode("image", props as ImageNodeProps, []);
-    case "shape":
-      return authorNode("shape", props as ShapeNodeProps, []);
+  for (const child of children) {
+    if (child.kind === "fragment") {
+      converted.push(...convertTextChildren(child.children));
+      continue;
+    }
+
+    if (child.kind === "text") {
+      converted.push(child.value);
+      continue;
+    }
+
+    const node = toAuthorNode(child);
+    if (node.kind === "text") {
+      converted.push(node);
+    }
   }
+
+  return converted;
 }
 
-export function toAuthorJsxNode(value: unknown): ContentJsxChild | AuthorNode<"slide"> {
+function slideAuthorNode(
+  props: SlideNodeProps,
+  children: readonly ContentJsxChild[],
+): AuthorNode<"slide"> {
+  return {
+    $$typeof: "deckjsx.author-node",
+    kind: "slide",
+    props,
+    children,
+  };
+}
+
+function viewAuthorNode(
+  props: ViewNodeProps,
+  children: readonly ContentJsxChild[],
+): AuthorNode<"view"> {
+  return {
+    $$typeof: "deckjsx.author-node",
+    kind: "view",
+    props,
+    children,
+  };
+}
+
+function imageAuthorNode(props: ImageNodeProps): AuthorNode<"image"> {
+  return {
+    $$typeof: "deckjsx.author-node",
+    kind: "image",
+    props,
+    children: [],
+  };
+}
+
+function shapeAuthorNode(props: ShapeNodeProps): AuthorNode<"shape"> {
+  return {
+    $$typeof: "deckjsx.author-node",
+    kind: "shape",
+    props,
+    children: [],
+  };
+}
+
+function isSlideElement(node: AuthorElementNode): node is AuthorSlideElementNode {
+  return node.source.kind === "slide";
+}
+
+function isViewElement(node: AuthorElementNode): node is AuthorViewElementNode {
+  return node.source.kind === "tag" && isIntrinsicViewTag(node.source.tag);
+}
+
+function isTextElement(node: AuthorElementNode): node is AuthorTextElementNode {
+  return node.source.kind === "tag" && isIntrinsicTextTag(node.source.tag);
+}
+
+function isSpanElement(node: AuthorElementNode): node is AuthorSpanElementNode {
+  return node.source.kind === "tag" && node.source.tag === "span";
+}
+
+function isImageElement(node: AuthorElementNode): node is AuthorImageElementNode {
+  return node.source.kind === "tag" && node.source.tag === "img";
+}
+
+function isShapeElement(node: AuthorElementNode): node is AuthorShapeElementNode {
+  return node.source.kind === "tag" && node.source.tag === "shape";
+}
+
+export function toAuthorNode(node: AuthorElementNode): AuthorNode {
+  if (isSlideElement(node)) {
+    return slideAuthorNode(node.props, convertContentChildren(node.children));
+  }
+
+  if (isViewElement(node)) {
+    return viewAuthorNode(node.props, convertContentChildren(node.children));
+  }
+
+  if (isTextElement(node)) {
+    return textAuthorNode(node.props, convertTextChildren(node.children));
+  }
+
+  if (isSpanElement(node)) {
+    return textAuthorNode(node.props, convertTextChildren(node.children));
+  }
+
+  if (isImageElement(node)) {
+    return imageAuthorNode(node.props);
+  }
+
+  if (isShapeElement(node)) {
+    return shapeAuthorNode(node.props);
+  }
+
+  throw new Error("Unsupported author element node.");
+}
+
+export function toAuthorJsxNode(value: unknown): ContentJsxChild {
   if (isAuthorNodeValue(value)) {
     return value;
   }
 
   if (Array.isArray(value)) {
-    return value.map((item) => toAuthorJsxNode(item)) as ContentJsxChild;
+    return value.map((item) => toAuthorJsxNode(item));
   }
 
   if (!isAuthorTreeNode(value)) {
-    return value as ContentJsxChild;
+    if (typeof value === "string" || typeof value === "number") {
+      return textFromPrimitive(value) ?? undefined;
+    }
+
+    if (value === null || value === undefined || typeof value === "boolean") {
+      return value;
+    }
+
+    throw new Error("JSX content must be deckjsx author tree nodes or primitive text values.");
   }
 
   if (value.kind === "fragment") {
-    return value.children.map((child) => toAuthorJsxNode(child)) as ContentJsxChild;
+    return value.children.map((child) => toAuthorJsxNode(child));
   }
 
   if (value.kind === "text") {
-    return value.value as unknown as ContentJsxChild;
+    return textFromPrimitive(value.value) ?? undefined;
   }
 
   return toAuthorNode(value);

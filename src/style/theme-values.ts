@@ -1,8 +1,12 @@
 type Primitive = string | number | boolean | bigint | symbol | null | undefined;
+type ThemeObjectValue =
+  | Primitive
+  | readonly ThemeObjectValue[]
+  | { readonly [key: string]: ThemeObjectValue };
 
-export type DeepMerge<TBase, TExtension> = TExtension extends readonly unknown[]
+export type DeepMerge<TBase, TExtension> = TExtension extends readonly (infer _ExtensionItem)[]
   ? TExtension
-  : TBase extends readonly unknown[]
+  : TBase extends readonly (infer _BaseItem)[]
     ? TExtension
     : TBase extends Primitive
       ? TExtension
@@ -28,11 +32,11 @@ export type MergedTheme<TBase extends object, TExtension extends object> = DeepM
 > &
   object;
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, ThemeObjectValue> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function isPlainObject(value: unknown): value is Record<string, unknown> {
+export function isPlainObject(value: unknown): value is Record<string, ThemeObjectValue> {
   if (!isRecord(value)) {
     return false;
   }
@@ -63,7 +67,7 @@ export function mergeThemeValues<TBase, TExtension>(
     return cloneThemeValue(extension) as DeepMerge<TBase, TExtension>;
   }
 
-  const merged: Record<string, unknown> = { ...cloneThemeValue(base) };
+  const merged: Record<string, ThemeObjectValue> = { ...cloneThemeValue(base) };
   Object.entries(extension).forEach(([key, value]) => {
     merged[key] =
       key in merged && isPlainObject(merged[key]) && isPlainObject(value)

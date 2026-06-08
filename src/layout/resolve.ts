@@ -1,4 +1,4 @@
-import { isContentNode, isSlideNode } from "../jsx";
+import { isAuthorNode, isContentNode, isSlideNode } from "../jsx";
 import { toAuthorJsxNode, toAuthorNode } from "../authoring/author-node";
 import {
   normalizeImageProps,
@@ -19,12 +19,17 @@ import { intersectClipRect, type ClipRect, type Frame, type Placement } from "./
 import type {
   ProjectedLayoutGroup,
   ImageSourceIR,
+  ProjectedLayoutClip,
   ProjectedLayoutNode,
   ProjectedLayoutDocument,
   ProjectedLayoutOrigin,
   ProjectedLayoutShape,
   ProjectedLayoutSlide,
   ProjectedLayoutText,
+  ProjectedUnsupportedSemantic,
+  EdgeStrokeIR,
+  ShadowIR,
+  StrokeIR,
   TextRunIR,
   TextStyleIR,
 } from "./projected";
@@ -41,8 +46,10 @@ import type {
   CssAlignSelf,
   CssJustifySelf,
   DeckLength,
+  BorderStyle,
   StackAlignment,
   StackAxis,
+  StyleDeclarationValue,
   ViewStyle,
 } from "../style/types";
 import type { ComposedAuthorRoot } from "../composition/types";
@@ -83,16 +90,19 @@ import {
   parseObjectPosition,
   resolveBackgroundBoxFrames,
   resolveBackgroundLayers,
+  type BackgroundBoxFrames,
 } from "../style/background";
 import { normalizeColor } from "../style/color";
 import { parseLength, parsePointValue, type LengthResolutionContext } from "../style/length";
 import {
+  parseOutlineShorthand,
   parseStrokeLineCap,
   parseStrokeLineJoin,
   resolveNodeStrokes,
   toStroke,
 } from "../style/stroke";
 import { parseShadowShorthand } from "../style/shadow";
+import { parseTransformOrigin, parseTransformShorthand } from "../style/transform";
 import {
   extractText,
   getTextLengthContext,
@@ -118,26 +128,651 @@ type LayoutChildNode =
       kind: "view";
       source: AuthorNode<"view">;
       props: NormalizedViewProps;
+      siblingOrder: number;
       origin?: ProjectedLayoutOrigin;
     }
   | {
       kind: "text";
       source: AuthorNode<"text">;
       props: NormalizedTextProps;
+      siblingOrder: number;
       origin?: ProjectedLayoutOrigin;
     }
   | {
       kind: "image";
       source: AuthorNode<"image">;
       props: NormalizedImageProps;
+      siblingOrder: number;
       origin?: ProjectedLayoutOrigin;
     }
   | {
       kind: "shape";
       source: AuthorNode<"shape">;
       props: NormalizedShapeProps;
+      siblingOrder: number;
       origin?: ProjectedLayoutOrigin;
     };
+
+function errorReason(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function unsupportedSemantic(input: {
+  feature: ProjectedUnsupportedSemantic["feature"];
+  property: string;
+  value: StyleDeclarationValue | null | undefined;
+  error: unknown;
+  fallback?: ProjectedUnsupportedSemantic["fallback"];
+}): ProjectedUnsupportedSemantic | undefined {
+  if (input.value === undefined || input.value === null || input.value === "") {
+    return undefined;
+  }
+  return {
+    feature: input.feature,
+    property: input.property,
+    value: typeof input.value === "string" ? input.value : JSON.stringify(input.value),
+    reason: errorReason(input.error),
+    ...(input.fallback ? { fallback: input.fallback } : {}),
+  };
+}
+
+function parseShadowShorthandOrIgnore(input: { property: string; value?: string }): {
+  readonly shadow?: ShadowIR;
+  readonly unsupportedSemantics: readonly ProjectedUnsupportedSemantic[];
+} {
+  try {
+    return {
+      shadow: parseShadowShorthand(input.value),
+      unsupportedSemantics: [],
+    };
+  } catch (error) {
+    const unsupported = unsupportedSemantic({
+      feature: "shadow",
+      property: input.property,
+      value: input.value,
+      error,
+    });
+    return { unsupportedSemantics: unsupported ? [unsupported] : [] };
+  }
+}
+
+type StrokeProjectionProps = {
+  readonly border?: string;
+  readonly borderColor?: string;
+  readonly borderWidth?: DeckLength;
+  readonly borderStyle?: BorderStyle;
+  readonly borderTransparency?: number;
+  readonly borderTop?: string;
+  readonly borderRight?: string;
+  readonly borderBottom?: string;
+  readonly borderLeft?: string;
+  readonly borderTopColor?: string;
+  readonly borderRightColor?: string;
+  readonly borderBottomColor?: string;
+  readonly borderLeftColor?: string;
+  readonly borderTopWidth?: DeckLength;
+  readonly borderRightWidth?: DeckLength;
+  readonly borderBottomWidth?: DeckLength;
+  readonly borderLeftWidth?: DeckLength;
+  readonly borderTopStyle?: BorderStyle;
+  readonly borderRightStyle?: BorderStyle;
+  readonly borderBottomStyle?: BorderStyle;
+  readonly borderLeftStyle?: BorderStyle;
+  readonly outline?: string;
+  readonly outlineColor?: string;
+  readonly outlineWidth?: DeckLength;
+  readonly outlineStyle?: BorderStyle;
+  readonly stroke?: string;
+  readonly strokeWidth?: DeckLength;
+  readonly strokeDasharray?: string;
+  readonly strokeLinecap?: string;
+  readonly strokeLinejoin?: string;
+};
+
+const STROKE_FALLBACK_REASON =
+  "CSS-like stroke or border input could not be projected to the current PPTX stroke model; v0.8 preserves the authored stroke input as unsupported semantic metadata.";
+
+const OUTLINE_FALLBACK_REASON =
+  "CSS-like outline input could not be projected to the current PPTX outline model; v0.8 preserves the authored outline input as unsupported semantic metadata.";
+
+function firstDefinedStrokeInput(
+  props: StrokeProjectionProps,
+  keys: readonly (keyof StrokeProjectionProps)[],
+): { readonly property: string; readonly value: StyleDeclarationValue } | undefined {
+  for (const key of keys) {
+    const value = props[key];
+    if (value !== undefined && value !== null && value !== "") {
+      return { property: key, value };
+    }
+  }
+  return undefined;
+}
+
+function strokeFallbackInput(props: StrokeProjectionProps): {
+  readonly feature: ProjectedUnsupportedSemantic["feature"];
+  readonly property: string;
+  readonly value: StyleDeclarationValue;
+} {
+  const strokeInput = firstDefinedStrokeInput(props, [
+    "strokeDasharray",
+    "strokeLinecap",
+    "strokeLinejoin",
+    "stroke",
+    "strokeWidth",
+  ]);
+  if (strokeInput) {
+    return { feature: "stroke", ...strokeInput };
+  }
+
+  const borderInput = firstDefinedStrokeInput(props, [
+    "border",
+    "borderTop",
+    "borderRight",
+    "borderBottom",
+    "borderLeft",
+    "borderColor",
+    "borderWidth",
+    "borderStyle",
+    "borderTopColor",
+    "borderRightColor",
+    "borderBottomColor",
+    "borderLeftColor",
+    "borderTopWidth",
+    "borderRightWidth",
+    "borderBottomWidth",
+    "borderLeftWidth",
+    "borderTopStyle",
+    "borderRightStyle",
+    "borderBottomStyle",
+    "borderLeftStyle",
+  ]);
+  return borderInput
+    ? { feature: "border", ...borderInput }
+    : { feature: "border", property: "border", value: "unknown" };
+}
+
+function outlineFallbackInput(props: StrokeProjectionProps): {
+  readonly property: string;
+  readonly value: StyleDeclarationValue;
+} {
+  return (
+    firstDefinedStrokeInput(props, ["outline", "outlineColor", "outlineWidth", "outlineStyle"]) ??
+    firstDefinedStrokeInput(props, ["strokeLinecap", "strokeLinejoin"]) ?? {
+      property: "outline",
+      value: "unknown",
+    }
+  );
+}
+
+function hasAuthoredOutlineInput(props: StrokeProjectionProps): boolean {
+  return (
+    props.outline !== undefined ||
+    props.outlineColor !== undefined ||
+    props.outlineWidth !== undefined ||
+    props.outlineStyle !== undefined
+  );
+}
+
+function hasAuthoredStrokeInput(props: StrokeProjectionProps): boolean {
+  return (
+    props.border !== undefined ||
+    props.borderTop !== undefined ||
+    props.borderRight !== undefined ||
+    props.borderBottom !== undefined ||
+    props.borderLeft !== undefined ||
+    props.stroke !== undefined ||
+    props.strokeDasharray !== undefined ||
+    props.strokeLinecap !== undefined ||
+    props.strokeLinejoin !== undefined
+  );
+}
+
+function isExplicitNone(value: StyleDeclarationValue | undefined): boolean {
+  return typeof value === "string" && value.trim().toLowerCase() === "none";
+}
+
+function isStrokeIntentionallyNone(props: StrokeProjectionProps): boolean {
+  return (
+    isExplicitNone(props.border) ||
+    isExplicitNone(props.borderTop) ||
+    isExplicitNone(props.borderRight) ||
+    isExplicitNone(props.borderBottom) ||
+    isExplicitNone(props.borderLeft) ||
+    props.borderStyle === "none"
+  );
+}
+
+function unsupportedStrokeFallback(
+  props: StrokeProjectionProps,
+  error: unknown,
+): ProjectedUnsupportedSemantic | undefined {
+  const input = strokeFallbackInput(props);
+  return unsupportedSemantic({
+    feature: input.feature,
+    property: input.property,
+    value: input.value,
+    error: new Error(`${STROKE_FALLBACK_REASON} ${errorReason(error)}`),
+    fallback: {
+      strategy: "preserveAuthoredValueOnly",
+      preserves: ["authoredStrokeInput"],
+      missing: ["pptxStroke"],
+    },
+  });
+}
+
+function resolveNodeStrokesOrFallback(
+  props: StrokeProjectionProps,
+  context?: Parameters<typeof resolveNodeStrokes>[1],
+): {
+  readonly stroke?: StrokeIR;
+  readonly edgeStrokes?: EdgeStrokeIR;
+  readonly unsupportedSemantics: readonly ProjectedUnsupportedSemantic[];
+} {
+  try {
+    const strokes = resolveNodeStrokes(props as Parameters<typeof resolveNodeStrokes>[0], context);
+    if (
+      !strokes.stroke &&
+      !strokes.edgeStrokes &&
+      hasAuthoredStrokeInput(props) &&
+      !isStrokeIntentionallyNone(props)
+    ) {
+      const semantic = unsupportedStrokeFallback(
+        props,
+        new Error("No PPTX stroke could be produced from the authored stroke input."),
+      );
+      return { ...strokes, unsupportedSemantics: semantic ? [semantic] : [] };
+    }
+
+    return { ...strokes, unsupportedSemantics: [] };
+  } catch (error) {
+    const semantic = unsupportedStrokeFallback(props, error);
+    return { unsupportedSemantics: semantic ? [semantic] : [] };
+  }
+}
+
+function outlineStrokeOrFallback(
+  props: StrokeProjectionProps,
+  context?: Parameters<typeof toStroke>[7],
+): {
+  readonly outline?: StrokeIR;
+  readonly unsupportedSemantics: readonly ProjectedUnsupportedSemantic[];
+} {
+  if (!hasAuthoredOutlineInput(props)) {
+    return { unsupportedSemantics: [] };
+  }
+
+  try {
+    const outlineInput = parseOutlineShorthand(props.outline);
+    const outline = toStroke(
+      props.outlineColor ?? outlineInput.outlineColor,
+      props.outlineWidth ?? outlineInput.outlineWidth,
+      props.outlineStyle ?? outlineInput.outlineStyle,
+      outlineInput.outlineDashType,
+      parseStrokeLineCap(props.strokeLinecap),
+      parseStrokeLineJoin(props.strokeLinejoin),
+      undefined,
+      context,
+    );
+    if (outline) {
+      return { outline, unsupportedSemantics: [] };
+    }
+    const input = outlineFallbackInput(props);
+    const semantic = unsupportedSemantic({
+      feature: "outline",
+      property: input.property,
+      value: input.value,
+      error: new Error(OUTLINE_FALLBACK_REASON),
+      fallback: {
+        strategy: "preserveAuthoredValueOnly",
+        preserves: ["authoredOutlineInput"],
+        missing: ["pptxOutline"],
+      },
+    });
+    return { unsupportedSemantics: semantic ? [semantic] : [] };
+  } catch (error) {
+    const input = outlineFallbackInput(props);
+    const semantic = unsupportedSemantic({
+      feature: "outline",
+      property: input.property,
+      value: input.value,
+      error: new Error(`${OUTLINE_FALLBACK_REASON} ${errorReason(error)}`),
+      fallback: {
+        strategy: "preserveAuthoredValueOnly",
+        preserves: ["authoredOutlineInput"],
+        missing: ["pptxOutline"],
+      },
+    });
+    return { unsupportedSemantics: semantic ? [semantic] : [] };
+  }
+}
+
+function resolveBackgroundLayersOrEmpty(
+  input: { readonly property: string; readonly value?: string },
+  transparency?: number,
+  context?: { widthEmu: number; heightEmu: number },
+  frame?: Frame,
+  boxFrames?: BackgroundBoxFrames,
+  backgroundPosition?: string,
+  backgroundSize?: string,
+  backgroundRepeat?: string,
+  backgroundOrigin?: string,
+  backgroundClip?: string,
+): ReturnType<typeof resolveBackgroundLayers> & {
+  readonly unsupportedSemantics?: readonly ProjectedUnsupportedSemantic[];
+} {
+  try {
+    return resolveBackgroundLayers(
+      input.value,
+      transparency,
+      context,
+      frame,
+      boxFrames,
+      backgroundPosition,
+      backgroundSize,
+      backgroundRepeat,
+      backgroundOrigin,
+      backgroundClip,
+    );
+  } catch (error) {
+    const unsupported = unsupportedSemantic({
+      feature: "background",
+      property: input.property,
+      value: input.value,
+      error,
+      fallback: {
+        strategy: "preserveAuthoredValueOnly",
+        preserves: ["authoredBackgroundInput"],
+        missing: ["pptxBackgroundLayer"],
+      },
+    });
+    return unsupported ? { unsupportedSemantics: [unsupported] } : {};
+  }
+}
+
+function unsupportedTransformSemantics(props: {
+  readonly transform?: string;
+  readonly transformOrigin?: string;
+}): readonly ProjectedUnsupportedSemantic[] {
+  const unsupported: ProjectedUnsupportedSemantic[] = [];
+  try {
+    parseTransformShorthand(props.transform);
+  } catch (error) {
+    const semantic = unsupportedSemantic({
+      feature: "transform",
+      property: "transform",
+      value: props.transform,
+      error,
+    });
+    if (semantic) {
+      unsupported.push(semantic);
+    }
+  }
+  try {
+    parseTransformOrigin(props.transformOrigin, {
+      widthEmu: EMU_PER_INCH,
+      heightEmu: EMU_PER_INCH,
+    });
+  } catch (error) {
+    const semantic = unsupportedSemantic({
+      feature: "transform",
+      property: "transformOrigin",
+      value: props.transformOrigin,
+      error,
+    });
+    if (semantic) {
+      unsupported.push(semantic);
+    }
+  }
+  return unsupported;
+}
+
+const GROUP_OPACITY_COMPOSITING_FALLBACK_REASON =
+  "CSS group opacity creates a composited stacking context; the current PPTX writer cascades alpha to child drawing values instead of compositing the rendered subtree.";
+
+const OPACITY_STACKING_CONTEXT_FALLBACK_REASON =
+  "CSS opacity creates a stacking context; v0.8 preserves the projected opacity value but does not yet evaluate a full CSS stacking-context subtree for this drawing node.";
+
+const CLIPPING_TRANSFORM_FALLBACK_REASON =
+  "CSS overflow clipping combined with transforms may require a transformed clip mask; v0.8 records axis-aligned clipping metadata and emits an approximate PPTX fallback.";
+
+const CLIPPED_IMAGE_SOURCE_RECT_TRANSFORM_FALLBACK_REASON =
+  "CSS clipping of a transformed image may require clipping the transformed visual image; v0.8 folds axis-aligned clipping into the PPTX image source rectangle before applying transform.";
+
+const TRANSFORM_STACKING_CONTEXT_FALLBACK_REASON =
+  "CSS transforms create a stacking context; v0.8 preserves projected transform and paint-order inputs but does not yet evaluate a full CSS stacking-context subtree.";
+
+const FILTER_EFFECT_FALLBACK_REASON =
+  "CSS filter effects are not emitted by the current PPTX writer; v0.8 preserves the authored filter as an unsupported paint semantic for inspection.";
+
+const BLEND_MODE_FALLBACK_REASON =
+  "CSS blend modes require compositing behavior that the current PPTX writer does not reproduce; v0.8 preserves the authored blend mode as an unsupported paint semantic for inspection.";
+
+const ISOLATION_FALLBACK_REASON =
+  "CSS isolation creates a compositing group; v0.8 preserves the authored isolation input but does not yet evaluate isolated compositing groups.";
+
+function unsupportedGroupOpacitySemantics(props: {
+  readonly opacity?: number;
+}): readonly ProjectedUnsupportedSemantic[] {
+  if (props.opacity === undefined || props.opacity <= 0 || props.opacity >= 1) {
+    return [];
+  }
+
+  const semantic = unsupportedSemantic({
+    feature: "opacity",
+    property: "opacity",
+    value: props.opacity,
+    error: new Error(GROUP_OPACITY_COMPOSITING_FALLBACK_REASON),
+    fallback: {
+      strategy: "cascadeOpacityToChildren",
+      preserves: ["projectedOpacity", "childDrawingValues"],
+      missing: ["compositedSubtree", "cssStackingContext"],
+    },
+  });
+  return semantic ? [semantic] : [];
+}
+
+function unsupportedOpacityStackingContextSemantics(props: {
+  readonly opacity?: number;
+}): readonly ProjectedUnsupportedSemantic[] {
+  if (props.opacity === undefined || props.opacity <= 0 || props.opacity >= 1) {
+    return [];
+  }
+
+  const semantic = unsupportedSemantic({
+    feature: "opacity",
+    property: "stackingContext",
+    value: props.opacity,
+    error: new Error(OPACITY_STACKING_CONTEXT_FALLBACK_REASON),
+    fallback: {
+      strategy: "preserveOpacityWithoutCompositedSubtree",
+      preserves: ["projectedOpacity", "drawingNode"],
+      missing: ["compositedSubtree", "cssStackingContext"],
+    },
+  });
+  return semantic ? [semantic] : [];
+}
+
+function hasProjectedTransform(input: {
+  readonly rotation?: number;
+  readonly flipH?: boolean;
+  readonly flipV?: boolean;
+}): boolean {
+  return (
+    (input.rotation !== undefined && input.rotation !== 0) ||
+    input.flipH === true ||
+    input.flipV === true
+  );
+}
+
+function unsupportedClippingTransformSemantics(input: {
+  readonly clip?: ProjectedLayoutClip;
+  readonly rotation?: number;
+  readonly flipH?: boolean;
+  readonly flipV?: boolean;
+}): readonly ProjectedUnsupportedSemantic[] {
+  if (!input.clip || !hasProjectedTransform(input)) {
+    return [];
+  }
+
+  const semantic = unsupportedSemantic({
+    feature: "clipping",
+    property: "overflow",
+    value: `hidden + transform:${input.clip.strategy}`,
+    error: new Error(CLIPPING_TRANSFORM_FALLBACK_REASON),
+    fallback: {
+      strategy: "axisAlignedClipWithoutTransformedMask",
+      preserves: ["originalFrame", "clipFrame", "visibleFrame", "projectedTransform"],
+      missing: ["transformedClipMask"],
+    },
+  });
+  return semantic ? [semantic] : [];
+}
+
+function unsupportedClippedImageSourceRectTransformSemantics(input: {
+  readonly clip?: ProjectedLayoutClip;
+  readonly rotation?: number;
+  readonly flipH?: boolean;
+  readonly flipV?: boolean;
+  readonly fit?: string;
+  readonly hasExplicitCrop?: boolean;
+}): readonly ProjectedUnsupportedSemantic[] {
+  if (!input.clip || !hasProjectedTransform(input)) {
+    return [];
+  }
+
+  const cropSuffix = input.hasExplicitCrop ? "+crop" : "";
+  const semantic = unsupportedSemantic({
+    feature: "clipping",
+    property: "imageSourceRect",
+    value: `clip:${input.clip.strategy}+transform+fit:${input.fit ?? "contain"}${cropSuffix}`,
+    error: new Error(CLIPPED_IMAGE_SOURCE_RECT_TRANSFORM_FALLBACK_REASON),
+    fallback: {
+      strategy: "sourceRectBeforeTransform",
+      preserves: ["sourceFrame", "crop", "objectPosition", "projectedTransform"],
+      missing: ["transformedImageClip"],
+    },
+  });
+  return semantic ? [semantic] : [];
+}
+
+function unsupportedTransformStackingContextSemantics(props: {
+  readonly transform?: string;
+}): readonly ProjectedUnsupportedSemantic[] {
+  let operations: ReturnType<typeof parseTransformShorthand>;
+  try {
+    operations = parseTransformShorthand(props.transform);
+  } catch {
+    return [];
+  }
+
+  if (!operations?.length) {
+    return [];
+  }
+
+  const semantic = unsupportedSemantic({
+    feature: "transform",
+    property: "stackingContext",
+    value: props.transform,
+    error: new Error(TRANSFORM_STACKING_CONTEXT_FALLBACK_REASON),
+    fallback: {
+      strategy: "preserveTransformWithoutStackingContext",
+      preserves: ["projectedTransform", "paintOrderInputs"],
+      missing: ["cssStackingContext"],
+    },
+  });
+  return semantic ? [semantic] : [];
+}
+
+function unsupportedCompositingSemantics(props: {
+  readonly filter?: string;
+  readonly mixBlendMode?: string;
+  readonly isolation?: string;
+}): readonly ProjectedUnsupportedSemantic[] {
+  const unsupported: ProjectedUnsupportedSemantic[] = [];
+  const filter = props.filter?.trim();
+  if (filter && filter.toLowerCase() !== "none") {
+    const semantic = unsupportedSemantic({
+      feature: "filter",
+      property: "filter",
+      value: props.filter,
+      error: new Error(FILTER_EFFECT_FALLBACK_REASON),
+      fallback: {
+        strategy: "dropFilterEffect",
+        preserves: ["authoredFilter"],
+        missing: ["filterEffect"],
+      },
+    });
+    if (semantic) {
+      unsupported.push(semantic);
+    }
+  }
+
+  const mixBlendMode = props.mixBlendMode?.trim();
+  if (mixBlendMode && mixBlendMode.toLowerCase() !== "normal") {
+    const semantic = unsupportedSemantic({
+      feature: "blend",
+      property: "mixBlendMode",
+      value: props.mixBlendMode,
+      error: new Error(BLEND_MODE_FALLBACK_REASON),
+      fallback: {
+        strategy: "dropBlendMode",
+        preserves: ["authoredBlendMode"],
+        missing: ["blendCompositing"],
+      },
+    });
+    if (semantic) {
+      unsupported.push(semantic);
+    }
+  }
+
+  if (props.isolation === "isolate") {
+    const semantic = unsupportedSemantic({
+      feature: "isolation",
+      property: "isolation",
+      value: props.isolation,
+      error: new Error(ISOLATION_FALLBACK_REASON),
+      fallback: {
+        strategy: "dropIsolationGroup",
+        preserves: ["authoredIsolation"],
+        missing: ["isolatedCompositingGroup"],
+      },
+    });
+    if (semantic) {
+      unsupported.push(semantic);
+    }
+  }
+
+  return unsupported;
+}
+
+function backgroundInput(props: {
+  readonly background?: string;
+  readonly backgroundColor?: string;
+  readonly backgroundImage?: string;
+}): { readonly property: string; readonly value?: string } {
+  if (props.backgroundColor !== undefined) {
+    return { property: "backgroundColor", value: props.backgroundColor };
+  }
+  if (props.backgroundImage !== undefined) {
+    return { property: "backgroundImage", value: props.backgroundImage };
+  }
+  return { property: "background", value: props.background };
+}
+
+function shapeFillInput(props: {
+  readonly background?: string;
+  readonly backgroundImage?: string;
+  readonly fill?: string;
+}): { readonly property: string; readonly value?: string } {
+  if (props.fill !== undefined) {
+    return { property: "fill", value: props.fill };
+  }
+  if (props.backgroundImage !== undefined) {
+    return { property: "backgroundImage", value: props.backgroundImage };
+  }
+  return { property: "background", value: props.background };
+}
+
 type ResolvedGridContainerSpec = {
   contentX: number;
   contentY: number;
@@ -179,6 +814,9 @@ function createIdGenerator(): IdGenerator {
 
 function imageSourceFromProps(props: NormalizedImageProps): ImageSourceIR {
   if (props.src) {
+    if (/^https?:\/\//i.test(props.src)) {
+      return { kind: "url", url: props.src };
+    }
     return { kind: "path", path: props.src };
   }
 
@@ -198,6 +836,7 @@ function originForNode(
 
 function layoutChildFromNode(
   child: ContentAuthorNode,
+  siblingOrder: number,
   context?: LengthResolutionContext,
   options?: ProjectedLayoutResolutionOptions,
 ): LayoutChildNode {
@@ -209,6 +848,7 @@ function layoutChildFromNode(
         kind: "view",
         source: child,
         props: normalizeViewProps(child.props),
+        siblingOrder,
         ...(origin ? { origin } : {}),
       };
     case "text":
@@ -216,6 +856,7 @@ function layoutChildFromNode(
         kind: "text",
         source: child,
         props: normalizeTextProps(child.props),
+        siblingOrder,
         ...(origin ? { origin } : {}),
       };
     case "image":
@@ -223,6 +864,7 @@ function layoutChildFromNode(
         kind: "image",
         source: child,
         props: normalizeImageProps(child.props, context),
+        siblingOrder,
         ...(origin ? { origin } : {}),
       };
     case "shape":
@@ -230,6 +872,7 @@ function layoutChildFromNode(
         kind: "shape",
         source: child,
         props: normalizeShapeProps(child.props),
+        siblingOrder,
         ...(origin ? { origin } : {}),
       };
   }
@@ -286,16 +929,23 @@ function parseImageCrop(
   return normalized;
 }
 function sortNodesForPaint(nodes: ReadonlyArray<ProjectedLayoutNode>): ProjectedLayoutNode[] {
-  return [...nodes]
-    .map((node) =>
+  return nodes
+    .map((node, siblingOrder) =>
       node.kind === "group"
         ? {
             ...node,
+            siblingOrder,
             children: sortNodesForPaint(node.children),
           }
-        : node,
+        : {
+            ...node,
+            siblingOrder,
+          },
     )
-    .sort((left, right) => (left.zIndex ?? 0) - (right.zIndex ?? 0));
+    .sort(
+      (left, right) =>
+        (left.zIndex ?? 0) - (right.zIndex ?? 0) || left.siblingOrder - right.siblingOrder,
+    );
 }
 
 function resolveAlignContentOffset(
@@ -964,7 +1614,7 @@ function compileChildren(
   );
 
   const authorChildren: LayoutChildNode[] = normalized
-    .map((child): LayoutChildNode => {
+    .map((child, siblingOrder): LayoutChildNode => {
       if (!isContentNode(child)) {
         if (isSlideNode(child)) {
           throw new Error("Slide cannot be nested inside another slide or view.");
@@ -973,7 +1623,7 @@ function compileChildren(
         throw new Error("Only deckjsx components can be children of View in structured layout.");
       }
 
-      return layoutChildFromNode(child, context, resolutionOptions);
+      return layoutChildFromNode(child, siblingOrder, context, resolutionOptions);
     })
     .filter((child) => child.props.display !== "none");
 
@@ -1224,8 +1874,9 @@ function compileGroupNode(
 ): ProjectedLayoutGroup | null {
   const { props } = node;
   const resolved = frameFromProps(props, parentFrame, placement, context);
-  const strokes = resolveNodeStrokes(props, context);
-  const shadow = parseShadowShorthand(props.boxShadow);
+  const strokes = resolveNodeStrokesOrFallback(props, context);
+  const shadow = parseShadowShorthandOrIgnore({ property: "boxShadow", value: props.boxShadow });
+  const outline = outlineStrokeOrFallback(props, context);
   const originalFrame: Frame = {
     xEmu: resolved.xEmu,
     yEmu: resolved.yEmu,
@@ -1246,8 +1897,8 @@ function compileGroupNode(
     strokes.edgeStrokes,
     parseSpacing(props.padding, context),
   );
-  const backgroundFill = resolveBackgroundLayers(
-    props.backgroundColor ?? props.backgroundImage ?? props.background,
+  const backgroundFill = resolveBackgroundLayersOrEmpty(
+    backgroundInput(props),
     props.backgroundTransparency,
     {
       widthEmu: visibleFrame.widthEmu,
@@ -1261,48 +1912,46 @@ function compileGroupNode(
     props.backgroundOrigin,
     props.backgroundClip,
   );
+  const clip = clippingMetadata(originalFrame, clipRect, visibleFrame);
+  const unsupportedSemantics = [
+    ...unsupportedTransformSemantics(props),
+    ...unsupportedTransformStackingContextSemantics(props),
+    ...unsupportedCompositingSemantics(props),
+    ...unsupportedGroupOpacitySemantics(props),
+    ...unsupportedClippingTransformSemantics({
+      clip,
+      rotation: resolved.rotation,
+      flipH: resolved.flipH,
+      flipV: resolved.flipV,
+    }),
+    ...strokes.unsupportedSemantics,
+    ...outline.unsupportedSemantics,
+    ...shadow.unsupportedSemantics,
+    ...(backgroundFill.unsupportedSemantics ?? []),
+  ];
 
   return {
     id: idGenerator.nextNode(),
     kind: "group",
     ...(node.origin ? { origin: node.origin } : {}),
     frame: visibleFrame,
+    siblingOrder: node.siblingOrder,
+    ...(clip ? { clip } : {}),
     opacity: resolved.opacity,
     rotation: resolved.rotation,
     zIndex: resolved.zIndex,
     ...(props.visibility !== undefined ? { visibility: props.visibility } : {}),
     flipH: resolved.flipH,
     flipV: resolved.flipV,
+    ...(unsupportedSemantics.length ? { unsupportedSemantics } : {}),
     fill: backgroundFill.fill,
     ...(backgroundFill.backgroundLayers
       ? { backgroundLayers: backgroundFill.backgroundLayers }
       : {}),
     stroke: strokes.stroke,
     ...(strokes.edgeStrokes ? { edgeStrokes: strokes.edgeStrokes } : {}),
-    ...(toStroke(
-      props.outlineColor,
-      props.outlineWidth,
-      props.outlineStyle,
-      undefined,
-      parseStrokeLineCap(props.strokeLinecap),
-      parseStrokeLineJoin(props.strokeLinejoin),
-      undefined,
-      context,
-    )
-      ? {
-          outline: toStroke(
-            props.outlineColor,
-            props.outlineWidth,
-            props.outlineStyle,
-            undefined,
-            parseStrokeLineCap(props.strokeLinecap),
-            parseStrokeLineJoin(props.strokeLinejoin),
-            undefined,
-            context,
-          ),
-        }
-      : {}),
-    ...(shadow ? { shadow } : {}),
+    ...(outline.outline ? { outline: outline.outline } : {}),
+    ...(shadow.shadow ? { shadow: shadow.shadow } : {}),
     radiusEmu: parseLength(props.borderRadius, 0, 0, context),
     children: compileChildren(
       node.source.children,
@@ -1342,7 +1991,9 @@ function textStyleFromProps(
 ): TextStyleIR {
   const list = resolveListStyle(props, textLengthContext);
   const lineHeight = resolveLineHeight(props.lineHeight, textLengthContext);
-  const underlineStyle = resolveUnderlineStyle(props.textDecorationStyle);
+  const underlineStyle = props.underline
+    ? (resolveUnderlineStyle(props.textDecorationStyle) ?? "sng")
+    : resolveUnderlineStyle(props.textDecorationStyle);
   const underlineColor = normalizeColor(props.textDecorationColor);
   const textDirection = resolveTextDirection(props.writingMode);
   const tabStops = resolveTabStops(props.tabStops, textLengthContext);
@@ -1387,20 +2038,20 @@ function isEmptyRunStyle(style: TextStyleIR): boolean {
   return Object.values(style).every((value) => value === undefined);
 }
 
-function flattenUnknownChildren(children: ReadonlyArray<unknown>): unknown[] {
-  return children.flatMap((child): unknown[] =>
-    Array.isArray(child) ? flattenUnknownChildren(child) : [child],
+function flattenJsxChildren(children: ReadonlyArray<JsxNode>): JsxNode[] {
+  return children.flatMap((child): JsxNode[] =>
+    Array.isArray(child) ? flattenJsxChildren(child) : [child],
   );
 }
 
 function extractRichTextRuns(
-  children: ReadonlyArray<unknown>,
+  children: ReadonlyArray<JsxNode>,
   textTransform: NormalizedTextProps["textTransform"],
   textLengthContext?: LengthResolutionContext,
 ): TextRunIR[] {
   const runs: TextRunIR[] = [];
 
-  for (const child of flattenUnknownChildren(children)) {
+  for (const child of flattenJsxChildren(children)) {
     if (child === null || child === undefined || child === false || child === true) {
       continue;
     }
@@ -1410,8 +2061,8 @@ function extractRichTextRuns(
       continue;
     }
 
-    if (typeof child === "object" && child !== null && "kind" in child) {
-      const authorNode = child as AuthorNode;
+    if (isAuthorNode(child)) {
+      const authorNode = child;
       if (authorNode.kind !== "text") {
         throw new Error("Text nodes can only contain primitive text or inline text runs.");
       }
@@ -1420,7 +2071,7 @@ function extractRichTextRuns(
       const childLengthContext = getTextLengthContext(props, textLengthContext);
       const style = textStyleFromProps(props, childLengthContext);
       const text = extractRichTextRuns(
-        authorNode.children as ReadonlyArray<unknown>,
+        authorNode.children,
         props.textTransform ?? textTransform,
         childLengthContext,
       )
@@ -1430,10 +2081,41 @@ function extractRichTextRuns(
         text,
         ...(!isEmptyRunStyle(style) ? { style } : {}),
       });
+      continue;
+    }
+
+    if (typeof child === "object") {
+      throw new Error("Text nodes can only contain primitive text or inline text runs.");
     }
   }
 
   return runs;
+}
+
+function sameFrame(left: Frame, right: Frame): boolean {
+  return (
+    left.xEmu === right.xEmu &&
+    left.yEmu === right.yEmu &&
+    left.widthEmu === right.widthEmu &&
+    left.heightEmu === right.heightEmu
+  );
+}
+
+function clippingMetadata(
+  originalFrame: Frame,
+  clipRect: ClipRect | undefined,
+  visibleFrame: Frame,
+): ProjectedLayoutClip | undefined {
+  if (!clipRect || sameFrame(originalFrame, visibleFrame)) {
+    return undefined;
+  }
+
+  return {
+    strategy: "intersectParentOverflow",
+    originalFrame,
+    clipFrame: clipRect,
+    visibleFrame,
+  };
 }
 
 function compileTextNode(
@@ -1447,8 +2129,12 @@ function compileTextNode(
   const { props } = node;
   const textLengthContext = getTextLengthContext(props, context);
   const resolved = frameFromProps(props, parentFrame, placement, textLengthContext);
-  const strokes = resolveNodeStrokes(props, textLengthContext);
-  const shadow = parseShadowShorthand(props.textShadow ?? props.boxShadow);
+  const strokes = resolveNodeStrokesOrFallback(props, textLengthContext);
+  const shadow = parseShadowShorthandOrIgnore({
+    property: props.textShadow !== undefined ? "textShadow" : "boxShadow",
+    value: props.textShadow ?? props.boxShadow,
+  });
+  const outline = outlineStrokeOrFallback(props, textLengthContext);
   const hyperlink = props.href
     ? {
         url: props.href,
@@ -1456,21 +2142,15 @@ function compileTextNode(
       }
     : undefined;
   const style = textStyleFromProps(props, textLengthContext);
-  const runs = extractRichTextRuns(
-    node.source.children as ReadonlyArray<unknown>,
-    props.textTransform,
-    textLengthContext,
-  );
+  const runs = extractRichTextRuns(node.source.children, props.textTransform, textLengthContext);
 
-  const visibleFrame = intersectClipRect(
-    {
-      xEmu: resolved.xEmu,
-      yEmu: resolved.yEmu,
-      widthEmu: resolved.widthEmu,
-      heightEmu: resolved.heightEmu,
-    },
-    clipRect,
-  );
+  const originalFrame = {
+    xEmu: resolved.xEmu,
+    yEmu: resolved.yEmu,
+    widthEmu: resolved.widthEmu,
+    heightEmu: resolved.heightEmu,
+  };
+  const visibleFrame = intersectClipRect(originalFrame, clipRect);
 
   if (!visibleFrame) {
     return null;
@@ -1482,8 +2162,8 @@ function compileTextNode(
     strokes.edgeStrokes,
     parseSpacing(props.padding, textLengthContext),
   );
-  const backgroundFill = resolveBackgroundLayers(
-    props.backgroundColor ?? props.backgroundImage ?? props.background,
+  const backgroundFill = resolveBackgroundLayersOrEmpty(
+    backgroundInput(props),
     props.backgroundTransparency,
     {
       widthEmu: visibleFrame.widthEmu,
@@ -1497,18 +2177,37 @@ function compileTextNode(
     props.backgroundOrigin,
     props.backgroundClip,
   );
+  const clip = clippingMetadata(originalFrame, clipRect, visibleFrame);
+  const unsupportedSemantics = [
+    ...unsupportedTransformSemantics(props),
+    ...unsupportedCompositingSemantics(props),
+    ...unsupportedOpacityStackingContextSemantics(props),
+    ...unsupportedClippingTransformSemantics({
+      clip,
+      rotation: resolved.rotation,
+      flipH: resolved.flipH,
+      flipV: resolved.flipV,
+    }),
+    ...strokes.unsupportedSemantics,
+    ...outline.unsupportedSemantics,
+    ...shadow.unsupportedSemantics,
+    ...(backgroundFill.unsupportedSemantics ?? []),
+  ];
 
   return {
     id: idGenerator.nextNode(),
     kind: "text",
     ...(node.origin ? { origin: node.origin } : {}),
     frame: visibleFrame,
+    siblingOrder: node.siblingOrder,
+    ...(clip ? { clip } : {}),
     opacity: resolved.opacity,
     rotation: resolved.rotation,
     zIndex: resolved.zIndex,
     ...(props.visibility !== undefined ? { visibility: props.visibility } : {}),
     flipH: resolved.flipH,
     flipV: resolved.flipV,
+    ...(unsupportedSemantics.length ? { unsupportedSemantics } : {}),
     content: {
       text: runs.map((run) => run.text).join(""),
       ...(runs.length > 1 || runs.some((run) => run.style) ? { runs } : {}),
@@ -1520,30 +2219,8 @@ function compileTextNode(
       : {}),
     stroke: strokes.stroke,
     ...(strokes.edgeStrokes ? { edgeStrokes: strokes.edgeStrokes } : {}),
-    ...(toStroke(
-      props.outlineColor,
-      props.outlineWidth,
-      props.outlineStyle,
-      undefined,
-      parseStrokeLineCap(props.strokeLinecap),
-      parseStrokeLineJoin(props.strokeLinejoin),
-      undefined,
-      textLengthContext,
-    )
-      ? {
-          outline: toStroke(
-            props.outlineColor,
-            props.outlineWidth,
-            props.outlineStyle,
-            undefined,
-            parseStrokeLineCap(props.strokeLinecap),
-            parseStrokeLineJoin(props.strokeLinejoin),
-            undefined,
-            textLengthContext,
-          ),
-        }
-      : {}),
-    ...(shadow ? { shadow } : {}),
+    ...(outline.outline ? { outline: outline.outline } : {}),
+    ...(shadow.shadow ? { shadow: shadow.shadow } : {}),
     ...(hyperlink ? { hyperlink } : {}),
     radiusEmu: parseLength(props.borderRadius, 0, 0, textLengthContext),
   };
@@ -1559,7 +2236,7 @@ function compileImageNode(
 ): ProjectedLayoutNode | null {
   const { props } = node;
   const resolved = frameFromProps(props, parentFrame, placement, context);
-  const shadow = parseShadowShorthand(props.boxShadow);
+  const shadow = parseShadowShorthandOrIgnore({ property: "boxShadow", value: props.boxShadow });
   const objectPosition = parseObjectPosition(props.objectPosition, {
     widthEmu: resolved.widthEmu,
     heightEmu: resolved.heightEmu,
@@ -1576,43 +2253,60 @@ function compileImageNode(
     throw new Error("Image requires either src or data.");
   }
 
-  const visibleFrame = intersectClipRect(
-    {
-      xEmu: resolved.xEmu,
-      yEmu: resolved.yEmu,
-      widthEmu: resolved.widthEmu,
-      heightEmu: resolved.heightEmu,
-    },
-    clipRect,
-  );
+  const originalFrame = {
+    xEmu: resolved.xEmu,
+    yEmu: resolved.yEmu,
+    widthEmu: resolved.widthEmu,
+    heightEmu: resolved.heightEmu,
+  };
+  const visibleFrame = intersectClipRect(originalFrame, clipRect);
 
   if (!visibleFrame) {
     return null;
   }
+  const clip = clippingMetadata(originalFrame, clipRect, visibleFrame);
+  const unsupportedSemantics = [
+    ...unsupportedTransformSemantics(props),
+    ...unsupportedCompositingSemantics(props),
+    ...unsupportedOpacityStackingContextSemantics(props),
+    ...unsupportedClippingTransformSemantics({
+      clip,
+      rotation: resolved.rotation,
+      flipH: resolved.flipH,
+      flipV: resolved.flipV,
+    }),
+    ...unsupportedClippedImageSourceRectTransformSemantics({
+      clip,
+      rotation: resolved.rotation,
+      flipH: resolved.flipH,
+      flipV: resolved.flipV,
+      fit: props.fit,
+      hasExplicitCrop: crop !== undefined,
+    }),
+    ...shadow.unsupportedSemantics,
+  ];
 
   return {
     id: idGenerator.nextNode(),
     kind: "image",
     ...(node.origin ? { origin: node.origin } : {}),
     frame: visibleFrame,
-    sourceFrame: {
-      xEmu: resolved.xEmu,
-      yEmu: resolved.yEmu,
-      widthEmu: resolved.widthEmu,
-      heightEmu: resolved.heightEmu,
-    },
+    siblingOrder: node.siblingOrder,
+    ...(clip ? { clip } : {}),
+    sourceFrame: originalFrame,
     opacity: resolved.opacity,
     rotation: resolved.rotation,
     zIndex: resolved.zIndex,
     ...(props.visibility !== undefined ? { visibility: props.visibility } : {}),
     flipH: resolved.flipH,
     flipV: resolved.flipV,
+    ...(unsupportedSemantics.length ? { unsupportedSemantics } : {}),
     fit: props.fit ?? "contain",
     ...(objectPosition ? { objectPosition } : {}),
     ...(crop ? { crop } : {}),
     transparency: normalizeTransparency(props.transparency),
     rounding: props.rounding,
-    ...(shadow ? { shadow } : {}),
+    ...(shadow.shadow ? { shadow: shadow.shadow } : {}),
     ...(hyperlink ? { hyperlink } : {}),
     source: imageSourceFromProps(props),
   };
@@ -1628,8 +2322,9 @@ function compileShapeNode(
 ): ProjectedLayoutShape | null {
   const { props } = node;
   const resolved = frameFromProps(props, parentFrame, placement, context);
-  const strokes = resolveNodeStrokes(props, context);
-  const shadow = parseShadowShorthand(props.boxShadow);
+  const strokes = resolveNodeStrokesOrFallback(props, context);
+  const shadow = parseShadowShorthandOrIgnore({ property: "boxShadow", value: props.boxShadow });
+  const outline = outlineStrokeOrFallback(props, context);
   const hyperlink = props.href
     ? {
         url: props.href,
@@ -1637,15 +2332,13 @@ function compileShapeNode(
       }
     : undefined;
 
-  const visibleFrame = intersectClipRect(
-    {
-      xEmu: resolved.xEmu,
-      yEmu: resolved.yEmu,
-      widthEmu: resolved.widthEmu,
-      heightEmu: resolved.heightEmu,
-    },
-    clipRect,
-  );
+  const originalFrame = {
+    xEmu: resolved.xEmu,
+    yEmu: resolved.yEmu,
+    widthEmu: resolved.widthEmu,
+    heightEmu: resolved.heightEmu,
+  };
+  const visibleFrame = intersectClipRect(originalFrame, clipRect);
 
   if (!visibleFrame) {
     return null;
@@ -1656,8 +2349,8 @@ function compileShapeNode(
     strokes.stroke,
     strokes.edgeStrokes,
   );
-  const shapeFill = resolveBackgroundLayers(
-    props.fill ?? props.backgroundImage ?? props.background,
+  const shapeFill = resolveBackgroundLayersOrEmpty(
+    shapeFillInput(props),
     props.fillTransparency,
     {
       widthEmu: visibleFrame.widthEmu,
@@ -1671,6 +2364,22 @@ function compileShapeNode(
     props.backgroundOrigin,
     props.backgroundClip,
   );
+  const clip = clippingMetadata(originalFrame, clipRect, visibleFrame);
+  const unsupportedSemantics = [
+    ...unsupportedTransformSemantics(props),
+    ...unsupportedCompositingSemantics(props),
+    ...unsupportedOpacityStackingContextSemantics(props),
+    ...unsupportedClippingTransformSemantics({
+      clip,
+      rotation: resolved.rotation,
+      flipH: resolved.flipH,
+      flipV: resolved.flipV,
+    }),
+    ...strokes.unsupportedSemantics,
+    ...outline.unsupportedSemantics,
+    ...shadow.unsupportedSemantics,
+    ...(shapeFill.unsupportedSemantics ?? []),
+  ];
 
   return {
     id: idGenerator.nextNode(),
@@ -1678,40 +2387,21 @@ function compileShapeNode(
     ...(node.origin ? { origin: node.origin } : {}),
     shape: props.shape,
     frame: visibleFrame,
+    siblingOrder: node.siblingOrder,
+    ...(clip ? { clip } : {}),
     opacity: resolved.opacity,
     rotation: resolved.rotation,
     zIndex: resolved.zIndex,
     ...(props.visibility !== undefined ? { visibility: props.visibility } : {}),
     flipH: resolved.flipH,
     flipV: resolved.flipV,
+    ...(unsupportedSemantics.length ? { unsupportedSemantics } : {}),
     fill: shapeFill.fill,
     ...(shapeFill.backgroundLayers ? { backgroundLayers: shapeFill.backgroundLayers } : {}),
     stroke: strokes.stroke,
     ...(strokes.edgeStrokes ? { edgeStrokes: strokes.edgeStrokes } : {}),
-    ...(toStroke(
-      props.outlineColor,
-      props.outlineWidth,
-      props.outlineStyle,
-      undefined,
-      parseStrokeLineCap(props.strokeLinecap),
-      parseStrokeLineJoin(props.strokeLinejoin),
-      undefined,
-      context,
-    )
-      ? {
-          outline: toStroke(
-            props.outlineColor,
-            props.outlineWidth,
-            props.outlineStyle,
-            undefined,
-            parseStrokeLineCap(props.strokeLinecap),
-            parseStrokeLineJoin(props.strokeLinejoin),
-            undefined,
-            context,
-          ),
-        }
-      : {}),
-    ...(shadow ? { shadow } : {}),
+    ...(outline.outline ? { outline: outline.outline } : {}),
+    ...(shadow.shadow ? { shadow: shadow.shadow } : {}),
     ...(hyperlink ? { hyperlink } : {}),
     radiusEmu: parseLength(props.radius, 0, 0, context),
   };
@@ -1760,8 +2450,8 @@ function compileSlide(
 
   const slideProps = normalizeSlideProps(root.props);
   const backgroundBoxFrames = resolveBackgroundBoxFrames(slideFrame);
-  const backgroundFill = resolveBackgroundLayers(
-    slideProps.backgroundColor ?? slideProps.backgroundImage ?? slideProps.background,
+  const backgroundFill = resolveBackgroundLayersOrEmpty(
+    backgroundInput(slideProps),
     slideProps.backgroundTransparency,
     {
       widthEmu: slideFrame.widthEmu,
@@ -1778,7 +2468,10 @@ function compileSlide(
   const nodes = root.children
     .filter((child) => child !== null && child !== undefined && child !== false && child !== true)
     .filter(isContentNode)
-    .map((child): LayoutChildNode => layoutChildFromNode(child, lengthContext, resolutionOptions))
+    .map(
+      (child, siblingOrder): LayoutChildNode =>
+        layoutChildFromNode(child, siblingOrder, lengthContext, resolutionOptions),
+    )
     .filter((child) => child.props.display !== "none")
     .map((child) =>
       compileNode(

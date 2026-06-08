@@ -68,7 +68,8 @@ Public Theme defaults should be expressed in authoring-language terms rather tha
 Theme authoring should preserve TypeScript access to theme values instead of relying on string token paths.
 Styles authored from Theme values should receive concrete style values directly; deckjsx should not implement string token path resolution or token provenance for every class or inline style property.
 Theme composition should not retroactively affect already-authored concrete StyleSheets; active Theme composition applies to Theme Defaults unless an author explicitly creates a merged Theme with `theme.extend(childTheme)` before deriving styles from it.
-_Avoid_: output template, PowerPoint theme XML, string token reference
+Theme can be projected into output-specific theme structures, but it is not itself an output theme file.
+_Avoid_: output template, string token reference
 
 **Theme Snapshot**:
 The immutable-ish authored Theme value visible to Deck composition and style resolution. A Theme Snapshot owns typed value access, Theme Default diagnostics, and Theme composition policy, while exposing only a fixed snapshot to downstream modules.
@@ -84,11 +85,18 @@ _Avoid_: DeckOptions.defaults, global style rule, semantic kind default, compone
 **Slide Template**:
 A Deck-owned named slide structure that defines reusable Template Areas for placing authored slide content. Slide Templates belong to a Deck's page-structure vocabulary and may coexist with Theme-driven visual vocabulary without being stored inside Theme.
 Slide Template references should be type-guided by the active Deck template set when possible; authoring a template reference without a matching Deck template set is a type-level mismatch rather than an ordinary unresolved reference.
+Output projections may preserve Slide Template structure in format-specific ways, but a Slide Template remains deckjsx authoring vocabulary rather than being identical to a PowerPoint slide master or layout.
 _Avoid_: Theme.templates, layout utility, PowerPoint slide master
 
 **Template Area**:
 A named frame inside a Slide Template that describes where authored content belongs on a slide. Template Areas are referenced by authored content before layout/projection resolves concrete output coordinates.
+Template Areas may carry an authoring-level area kind, such as title, body, picture, footer, date, slide number, or generic, so output projections can choose appropriate format-specific semantics without making authors write output-specific placeholder identifiers.
 _Avoid_: CSS grid area, arbitrary coordinate alias, output placeholder
+
+**Template Area Kind**:
+An authoring-level semantic hint on a Template Area, such as title, body, picture, footer, date, slide number, or generic. It is not itself a PowerPoint placeholder type; output projections translate it into format-specific layout or placeholder data when useful.
+When no kind is authored, the Template Area kind is generic. It should not be inferred from the Template Area name, because area names are local authoring labels while kind is an explicit semantic hint.
+_Avoid_: PPTX placeholder type, inferred area name, output id
 
 **Template Area Reference**:
 An authored relationship object from content to a Template Area in the active Slide Template. Authors should obtain Template Area References from the slide factory's typed template handle rather than spelling area names as strings.
@@ -103,14 +111,45 @@ _Avoid_: output style model, PPTX shape properties
 The explicit public surface for inspecting compiled deck meaning, including the Semantic Author Graph and inspection-only views such as resolved styles. It is separate from the Authoring Interface so graph internals and debug-oriented payloads do not look like everyday authoring vocabulary.
 The public result contract for inspect-mode compile may be reachable from the Authoring Interface, but detailed graph and resolved-style vocabulary belongs to the Inspection Interface.
 In v0.6, detailed Projected Document Model types such as the Pptx Package Model also belong to the Inspection Interface, while stage Result types remain available from the Authoring Interface.
-Detailed inspection exports may include Pptx Package Model, package parts, PPTX element identities, and project inspection summaries, while root authoring exports should keep only the stage result types and common authoring vocabulary.
+Detailed inspection exports may include Pptx Package Model, package parts, package order keys, PPTX element identities, projected drawing paint inputs, and project inspection summaries, while root authoring exports should keep only the stage result types and common authoring vocabulary.
 In v0.6, Inspection Interface exports for projected models should be read-only data model types rather than mutation helpers or builder APIs. Editing helpers can wait until sandbox and HMR workflows prove the needed operations.
+In v0.8, expensive projection explanation data should stay behind the Inspection Interface and should not become mandatory Authoring Interface or Project cost merely because sandbox and HMR tooling can use it.
 _Avoid_: root authoring export, output projection surface, legacy output surface
+
+**Derived Projection Inspection View**:
+An inspection-only view computed from a Projected Document Model, diagnostics, and related Pipeline Artifacts to explain output-facing state without becoming the primary projected model. Examples include Effective Projected Style View, Composed Visual Paint Order View, Project Result warning rollups, and build/reuse explanations exposed through Render inspection summaries.
+Derived Projection Inspection Views may be materialized lazily or by detail level so ordinary Project and Render calls do not pay for every sandbox explanation. They must not be writer input and must not duplicate ownership from the Pptx Package Model or Pptx Package Assembly Plan.
+_Avoid_: Projected Document Model, writer input, eager debug payload, root authoring export
 
 **Asset Entity**:
 A graph entity that represents reusable media or external content such as an image source. Renderable nodes reference Asset Entities instead of embedding output-specific media paths.
-In v0.6, projection should preserve enough asset identity and media-part references for HMR and inspection, but deep image processing, conversion, compression, and deduplication belong to the direct OOXML writer phase rather than the Pptx Package Model's core responsibilities.
+Asset Entities describe authored media relationships; they are not output package parts or media byte caches.
 _Avoid_: PPTX media path
+
+**Authored Media Source**:
+The media reference supplied by authoring, such as a data URI, bytes, an absolute URL, an app-public URL, or a filesystem-like path. It is distinct from a PPTX Media Part, and resolving it into bytes belongs to a multi-runtime asset-loading boundary rather than to graph construction or package projection.
+_Avoid_: media part, package path, resolved image bytes
+
+**Asset Loading Boundary**:
+The pipeline resource boundary that resolves Authored Media Sources into reusable metadata and bytes without making deckjsx core depend on one runtime's file system or asset APIs.
+Registered loaders are evaluated before built-in multi-runtime handling and in Deck registration order. The resolver scope that wins Project probing should also be used by Render loading so metadata and bytes are not mixed across different runtime assumptions.
+Loader result fields are validated at the boundary: media type, extension, and hash must be non-empty strings when present; width and height must be positive finite numbers; byteLength must be a finite non-negative number; and load bytes must be a Uint8Array.
+For image sources, Project probing must produce width and height. Missing dimensions are data retrieval failure, not a writer fallback.
+_Avoid_: graph asset resolution, Project-time file IO, core fs dependency
+
+**Asset Artifact**:
+A Pipeline Artifact that records resolved media metadata and optionally loaded source bytes for an Asset Entity or Authored Media Source.
+_Avoid_: Asset Entity, Media Part, graph payload, package projection
+
+**Media Allocation Key**:
+The projected key used to decide whether authored media references share one PPTX Media Part. When an Asset Artifact has a content hash, the key is hash-based; otherwise it is based on resolver scope plus Authored Media Source. The key controls Package Part Identity and media part reuse, while package paths such as `ppt/media/media1.png` remain deterministic assembly names assigned from first projected use.
+_Avoid_: graph node id, drawing element id, ZIP path as identity, byte cache key
+
+**Pptx Media Projection**:
+The PPTX projection responsibility that turns graph asset references, Authored Media Sources, and Asset Artifacts into media package part identity, media part payloads, slide relationship references, and deterministic reuse decisions.
+Pptx Media Projection may use probe metadata and resolver scope from Asset Artifacts, but it does not own media byte loading or byte caches. Media bytes belong to Asset Artifacts and Render-time media emission.
+It should assign media package parts and drawing/background relationship ids during Project so the Output Writer can serialize concrete projected relationships instead of rediscovering media topology.
+_Avoid_: media byte store, writer-local media relationship creation, filesystem loader
 
 **Presentation IR**:
 A legacy backend-independent projection used by the current rendering path. It is not the canonical model of author intent and should not be assumed as a required step for future OOXML output.
@@ -121,40 +160,196 @@ The temporary explicit public surface for the current legacy rendering path and 
 _Avoid_: Authoring Interface, canonical graph model, future output projection surface, compatibility guarantee
 
 **Adapter Interface**:
-The explicit public surface for Writer Adapters used by Render, such as a pptxgenjs adapter. It is separate from the Authoring Interface so render-time adapter selection does not become ordinary deck authoring vocabulary.
+The explicit public surface for Writer Adapters used by Render, such as the built-in `pptx()` adapter. It is separate from the Authoring Interface so render-time adapter selection does not become ordinary deck authoring vocabulary.
 _Avoid_: root authoring export, backend registry, legacy output surface
 
 **Pptx Package Model**:
 The PPTX-specific Projected Document Model produced from the Semantic Author Graph. It is a structured package-part graph shaped around OOXML package structure: presentation parts, slide parts, relationship parts, media parts, theme/layout parts, content types, package paths, and PowerPoint identifiers. Package parts should preserve structured data that can be turned into XML or writer calls rather than becoming raw XML bytes too early. It should be friendly to future incremental rebuilds by making changed package parts and their graph/source origins explicit, and it is the primary model future HMR should inspect when deciding what output parts changed.
 Its primary key space is Package Part Identity rather than Graph Identity, while each package part should retain origin and dependency links back to Graph Identity and Source Origin where relevant.
 Its shape should be derived from PPTX/OOXML package structure itself rather than from the legacy Presentation IR or the needs of a specific writer adapter such as pptxgenjs.
-Projecting to the Pptx Package Model should materialize a complete package skeleton rather than leaving required package structure to Writer Adapters. In v0.6, this may be the smallest useful skeleton, but manifest parts, required support parts, authored-content parts, and their relationships should be visible to sandbox, diagnostics, and future HMR before Render runs.
-Image-bearing slide elements should be connected to media parts through projected slide relationships during Project, not left for a Writer Adapter to invent invisibly during Render.
-It should distinguish manifest parts, support parts, and authored-content parts. Manifest parts include content types and relationship manifests. Support parts include document properties, presentation properties, view properties, themes, slide masters, slide layouts, notes masters, and notes slides. Authored-content parts include slides, slide relationships, and media. Support parts may be user- or sandbox-editable even when deckjsx has no first-class authoring syntax for them yet. Authored-content changes should not force unrelated manifest or support parts to be treated as changed unless their manifests or dependencies actually change.
-In v0.6, support parts may use thin placeholder payloads when deckjsx has not yet modeled the corresponding OOXML domain. They should still carry structured payload status and editable intent rather than being path-only package entries.
-Relationship parts should generally follow the category of the part they describe: root and presentation relationships are manifest parts, slide relationships are authored-content parts, and layout/master/notes relationships are support parts.
-Slide part payloads may be close to the final OOXML/XML structure because the pipeline intentionally moves from HTML-like JSX, through the Semantic Author Graph, toward output-specific package structure. The model should still preserve structured projected data and provenance instead of becoming raw XML bytes too early.
-PPTX slide payloads may use OOXML-like structure and names internally, but public inspection should also expose deckjsx-readable element kinds, such as shape, text body, run, text, picture, and group. Similar projected element vocabulary may be reused by other output models such as PDF, while each Projected Document Model still owns its format-specific interpretation.
-Projected PPTX elements should carry the concrete values needed by Writer Adapters, such as frame, fill, stroke, text, and picture information, while retaining provenance links to graph nodes, style entities, resolved styles, assets, and source origins where relevant.
-The Pptx Package Model should also carry project-time layout and measurement results that sandbox and inspection tools need to understand output, such as resolved frames, text fitting, overflow, and constraint results. These are distinct from final serialized values that only Render or a specific Writer Adapter can know.
+It is both an abstraction of OOXML package structure and the result of projecting from the Semantic Author Graph, so it should stay practical to derive from graph concepts instead of mirroring OOXML so literally that projection becomes unnatural.
+It distinguishes manifest parts, support parts, and authored-content parts so package structure, authored meaning, and support metadata can be inspected separately.
+Package parts should carry Package Part Requirement metadata because requirement status is package semantics rather than ZIP assembly policy.
+Slide part payloads may be close to PPTX drawing structure, but they should use deckjsx-readable projected PPTX terms rather than raw OOXML tag names when a clearer term exists.
+Pptx Package Model owns output-facing relationships, identities, calculated drawing properties, and provenance needed by inspection, sandbox, and future HMR workflows.
 _Avoid_: semantic graph, generic presentation model, slide content tree as the primary model, raw XML bytes as the primary model, Presentation IR
 
+**Package Part Requirement**:
+The Pptx Package Model metadata that explains whether a package part is required, optional, or conditional for a projected PPTX package. It should include the requirement status, the evaluated `required` boolean for the current package snapshot, a stable reason, the condition that was evaluated when the requirement is conditional, and dependency references to the package parts or relationships that caused the evaluation.
+Render may use Package Part Requirement when building an Assembly Plan, but it should not invent package requirement policy that was missing from projection.
+_Avoid_: ZIP entry status, writer-local required flag, validation diagnostic only
+
 **Package Manifest Projection**:
-The PPTX projection sub-module that constructs package-level manifest data for the Pptx Package Model, including content type entries, root relationships, presentation relationships, slide relationships, and media relationship references. It exists so sandbox and future HMR tools can inspect package dependencies before Render.
-Package Manifest Projection should own deterministic package relationship records, while Writer Adapters consume or report limitations against those records.
+The package-level projection concept that describes content type entries, package relationships, and media relationship references in the Pptx Package Model.
+Support XML should consume projected relationship records, including relationship ids, instead of recomputing `rId` values from package positions. Numeric support ids that are not relationship ids may still be emitted deterministically by the support XML writer.
+Package validation should check the relationship payloads consumed by writers, including required presentation, slide master, and slide layout relationships, so broken support XML relationship ids fail before Render emits bytes.
 _Avoid_: writer-invented package manifests, path-only support parts
+
+**PPTX Projection Composite Node**:
+The internal module boundary that owns projection from graph/style/layout/theme/asset snapshots into the Pptx Package Model, plus PPTX projection inspection and validation helpers. It may contain multiple internal graphs, but externally it should expose coherent projection snapshots and commands through its public barrel rather than leaking internal submodule dependencies.
+Its model subgraph may reference upstream identity and provenance identifiers, but should not import upstream payload structures as model payload.
+_Avoid_: direct writer import of projection internals, file split by ceremony, project/model cycle
 
 **Package Part Identity**:
 Stable identity for a part in a Projected Document Model, especially a PPTX package part. It is distinct from the package path because paths can change due to slide ordering, media placement, or writer layout decisions while the conceptual output part remains the same.
 _Avoid_: package path, relationship id, graph id
 
+**Package Part Order Key**:
+A deterministic package-part ordering value produced by projection so Render can assemble ZIP entries consistently without making the ZIP writer invent package ordering policy.
+It should reflect meaningful PPTX package convention and deckjsx projection order rather than arbitrary lexical path sorting alone.
+It carries structured ordering metadata, including a package order group, numeric group order, projection sequence, package path, and stable encoded value for comparison.
+_Avoid_: Map iteration order, writer-local sort, package identity
+
+**Package Part Fingerprint**:
+A deterministic fingerprint for a package part's meaningful projected payload and dependencies.
+Dependency fingerprints should include both relationship targets owned by a part and owner relationship parts whose projected relationship ids are consumed by that part's XML. This lets HMR/build-artifact reuse invalidate owner XML when a `.rels` part changes.
+_Avoid_: package path, ZIP timestamp, rendered bytes hash, graph identity
+
 **Pptx Element Identity**:
-Stable identity for a projected element inside a Pptx Package Model slide part. It is distinct from Graph Identity and from OOXML object identifiers because the same authored graph node may project into output-specific elements, while OOXML shape ids and relationship ids may be assigned later by writer or serialization concerns.
+Stable identity for a projected element inside a Pptx Package Model slide part. It is distinct from Graph Identity and from OOXML object identifiers because the same authored graph node may project into output-specific elements.
 Pptx elements should retain origin links to graph nodes and package parts where relevant, but their own identity belongs to the Projected Document Model.
 _Avoid_: graph node id, OOXML shape id, relationship id
 
+**Pptx Slide Drawing**:
+The structured drawing payload of a PPTX slide part, made of projected drawing nodes such as text boxes, pictures, shapes, and groups. It expands authored content into the drawing-object units that PPTX output will contain, while preserving origins back to graph nodes.
+_Avoid_: slide elements, shapeTree, raw OOXML tree, renderer commands
+
+**Pptx Package Model Type Surface**:
+The read-only public inspection type surface for PPTX projection snapshots, exported through `deckjsx/inspect`.
+Package model payload types, including content types, relationships, support payloads, media payloads, and drawing payloads, belong to the Pptx Package Model type vocabulary even when internal projection helpers assemble them.
+Internal helpers such as manifest projection, support XML emission, package validation, and writer build artifacts may re-export or consume these types, but they should not become independent public sources of truth.
+This keeps public inspection aligned with the graph-to-PptxPackageModel projection result while leaving helper modules free to change for performance, HMR invalidation, or writer assembly.
+_Avoid_: helper-module type source of truth, writer-owned public model, duplicated manifest payload vocabulary
+
+**Pptx Package Part Payload**:
+The structured projected data carried by a Pptx Package Model package part. It describes what the part means for PPTX package generation, inspection, sandbox edits, and future HMR invalidation before the Output Writer serializes it.
+A package part payload may be close to PPTX/OOXML package structure, but it should stay in deckjsx-readable projected terms rather than becoming raw XML, an XML node tree, writer-local options, or media byte storage.
+Package part payloads are part of the inspection type vocabulary. They should be validated structurally before Render so invalid defined projections fail with diagnostics that point at the Pptx Package Model path instead of being hidden by writer fallbacks.
+_Avoid_: XML emission model, writer command payload, media byte cache, path-only placeholder
+
+**Pptx Drawing Projection**:
+The PPTX projection responsibility that turns resolved layout, resolved style, paint-order inputs, template/layout anchors, generated paint layers, and authored graph nodes into Pptx Slide Drawing nodes.
+It owns drawing traversal and reconstruction policy for projection, including flattening or grouping choices, generated background/border/outline nodes, visibility/display handling, and the data needed for later media relationship attachment.
+It should preserve projected drawing meaning for inspection and HMR without forcing the Output Writer to reinterpret graph, layout, or CSS-like authoring semantics.
+_Avoid_: writer drawing traversal, raw OOXML shape tree builder, graph authoring model
+
+**Projected Paint Order**:
+The output-facing paint order computed from deckjsx's CSS-like rendering semantics, including z-index, generated backgrounds, outlines, template-owned drawing, and authored slide content. It preserves intended visual stacking before the PPTX projection chooses whether each drawing object can live in a slide layout part or must be expanded into a slide part.
+Projected Paint Order is a cross-output projection concept, but each Projected Document Model owns its concrete representation instead of sharing a premature common drawing-node base type.
+Projected Paint Order is an extension point for improving CSS-like rendering fidelity over time; v0.8 does not have to reproduce every CSS stacking-context rule, but it should not discard authored paint semantics that future projections need.
+Projection should preserve supported CSS-like paint parameters as distinct projected values and report unobserved or unsupported paint semantics as diagnostic warnings rather than silently collapsing them away.
+`display: none` and `visibility: hidden` have different projected meanings: display-none content is filtered out of drawing nodes with inspection trace, while visibility-hidden content remains a projected drawing node with visibility state.
+Opacity should be preserved as paint data even when CSS-style group compositing or stacking-context behavior is not fully implemented yet.
+_Avoid_: raw OOXML order only, package-part order, ignoring CSS-like stacking
+
+**Projected Fallback Strategy**:
+The inspection-facing explanation of how a Projected Document Model preserved an authored or CSS-like meaning that the current writer cannot reproduce exactly. It names the fallback strategy, the projected or authored values that remain preserved, and the CSS-like behavior that is still missing.
+Projected Fallback Strategy should appear with unsupported semantic warnings and inspection summaries so sandbox and future HMR tooling can distinguish "value was erased" from "value was preserved but emitted through an approximation."
+Fallback payloads are structured projected data, not free-form prose. Package consistency validation should reject unknown fallback strategies or malformed preserved/missing value lists before Render emits bytes, especially for `defineProjection()` payloads supplied by tests, tooling, or future sandbox workflows.
+_Avoid_: authoring error, writer command, silent approximation
+
+**Filtered Projection Record**:
+An inspection-only Project Result record for authored or graph content that was intentionally not projected into output package structure, such as `display: none` content. It explains projection filtering without pretending the filtered content is part of the Pptx Package Model.
+_Avoid_: Pptx Drawing Node, hidden output shape, package part payload
+
+**Project Inspection Summary**:
+A lightweight derived inspection view attached to Project Result that summarizes projected package structure, slide drawing, media, diagnostics, adapter limitations, and projection filtering without requiring tools to traverse the full Projected Document Model.
+Project Inspection Summary may include Filtered Projection Records and aggregate warnings, but it should not become a second package model or a storage location for data that belongs to the Pptx Package Model.
+It may expose byte-free copies of projected drawing connection points that sandbox and HMR tools need to read quickly, such as projected visibility, measurement, clipping, opacity, transform flags, z-index/paint-order summaries, layout anchors, and unsupported/fallback semantic records. These fields summarize values already owned by the Pptx Package Model rather than creating new projection authority.
+Default Project summaries should remain cheap enough for normal Project/Render and HMR loops; more expensive explanation views should stay detail-gated Derived Projection Inspection Views.
+_Avoid_: Pptx Package Model replacement, writer input, eager sandbox-only payload, media bytes, XML chunks, Build Artifact storage
+
+**Pptx Drawing Node**:
+A projected PPTX drawing object inside a Pptx Slide Drawing. It carries PPTX-domain structure such as non-visual properties, transform, geometry, shape properties, picture fill, and text body while avoiding raw OOXML tag names as the primary model vocabulary.
+Every Pptx Drawing Node should carry origin information. Generated drawing nodes, such as background layers, edge strokes, outlines, or support visuals, should preserve the graph/source origin that caused them to exist.
+A drawing node placed by a Template Area should carry a direct layout-anchor relationship in addition to origin information, because provenance and projected layout constraint are different meanings.
+When authored content is passed into a mounted source and placed by that source's Template Area, authored origin and template-owner source can differ. Do not store a layout-anchor source identity unless the graph reference can prove the template-owner source; preserve template name, area name, and resolved anchor frame instead of guessing.
+Drawing nodes should preserve CSS-like paint semantics even when PPTX package-part boundaries require the projection to choose different emission targets.
+Drawing nodes should retain the paint-order inputs that produced their final paint order, not only the final order index.
+`paintOrder.siblingOrder` is the graph/layout sibling order before z-index sorting; it is not an alias for `paintOrderIndex`, which is the final PPTX drawing order. In structured layout, this is the projected sibling order after layout filtering and CSS `order` handling. This distinction lets inspection, sandbox, and HMR tooling explain why visual order changed without reconstructing the author graph.
+When a drawing node preserves CSS-like `edgeStrokes` or `outline`, the Pptx Package Model should also preserve the generated border/outline layer plan that the writer consumes. Losing those generated layer records, or letting their element identity, serialized shape object id, frame, stroke payload, or shape plan drift from the owning paint semantics, is a projection consistency failure rather than a writer fallback.
+Drawing metadata such as serialized object identity, root emission target, paint-order inputs, final paint-order index, and layout-anchor provenance is structured package data. Broken metadata should fail package consistency validation before Render emits bytes.
+PPTX geometric transform data and observed CSS-like transform semantics should remain distinguishable when they are not equivalent.
+When CSS-like overflow clipping affects a drawing node, the projected node should preserve authored/original frame, clip frame, visible frame, and clipping strategy separately from the final visible frame.
+When clipping interacts with transforms or compositing in a way the current PPTX writer cannot faithfully reproduce, Project should preserve the observed inputs and report a nonblocking warning when a structurally valid fallback exists. Blocking Render is reserved for structurally invalid package projections or concrete projected fields that the writer cannot serialize.
+Paint inputs are explanation and dependency data for inspection, diagnostics, HMR, and future projection improvements; writers should serialize concrete projected fields rather than reinterpret paint inputs.
+Node-local unobserved or unsupported paint semantics should remain attached to the drawing node, while Project Result diagnostics or summaries may aggregate them across the deck.
+Representative nonbreaking unsupported CSS-like semantics, such as unsupported transform functions, unsupported background descriptors, or unsupported multi-layer shadows, should project with fallback behavior plus warning diagnostics rather than blocking the entire Project Result.
+_Avoid_: authored node, raw OOXML tag, writer command
+
+**Pptx Emission Target**:
+The projected decision about which PPTX package part should serialize a drawing object, such as a slide part or slide layout part. It is chosen after Projected Paint Order is known and explains package placement without making the writer infer projection policy.
+Drawing objects emitted into a slide layout part belong to that layout part, while slide-level inspection may still show them in a composed visual paint-order view for slides that use the layout.
+_Avoid_: writer-local placement, raw package path, paint order itself
+
+**Composed Visual Paint Order View**:
+A derived inspection view that combines layout-emitted and slide-emitted drawing nodes for a specific slide in projected visual order. It does not change package part ownership and should not be treated as a second drawing tree.
+_Avoid_: package model ownership, duplicated slide drawing, writer input
+
+**Pptx Drawing Group**:
+A projected PPTX drawing node that represents an actual PowerPoint group object when group semantics are needed. Authored layout containers should not automatically become Pptx Drawing Groups; they may flatten into the drawing objects they produce while preserving container origins.
+_Avoid_: authored container, layout group, implicit View wrapper
+
+**Pptx Slide Layout Projection**:
+The projected PPTX layout structure derived from a deckjsx Slide Template. It may become a PPTX Slide Layout Part with placeholder-like anchors derived from Template Areas, while authored slide content remains slide drawing content that can retain links back to those Template Areas.
+Every PPTX slide should relate to a slide layout projection; untemplated slides use the default blank layout projection.
+Slide layouts relate to slide masters, but the model should not assume there can only ever be one slide master.
+Slide layouts and slide masters should retain dependencies on the Pptx Theme Projection they use.
+Even generic Template Areas should remain as layout anchors when projected, because the anchor preserves deckjsx template meaning, origin, and frame even when it has no strong PowerPoint placeholder type.
+A template-derived slide layout's package identity is source-local: it is based on Source Identity and Slide Template name, so same-named templates in different sources project to distinct layout parts while slides using the same template in one source share the layout projection.
+Its fingerprint describes template layout structure, not the authored slide content of slides that use the template.
+Slides that place content through a layout anchor depend on that anchor's projected frame and constraints.
+A slide layout projection may include template-owned common drawing structure in addition to Template Area anchors; this keeps Slide Template from collapsing into area frame resolution only.
+Template-owned common drawing should prefer layout-part representation, while slide-level expansion is a projected fallback when PPTX rendering constraints would otherwise break the Projected Paint Order.
+Slides that use a slide layout should retain layout identity and relevant layout fingerprint dependencies, especially when slide drawing values are derived from layout anchors.
+_Avoid_: Slide Template itself, frame resolver only, moving authored slide content into a layout part
+
+**Pptx Placeholder Projection**:
+The PPTX-specific placeholder or placeholder-like data projected from a Template Area and its Template Area Kind. It belongs to Pptx Slide Layout Projection and should not be confused with the authoring-level Template Area Kind.
+Generic Template Areas should not be semantically disguised as body/title placeholders. If PPTX serialization needs a concrete placeholder type for compatibility, that fallback type is separate from the projected deckjsx area kind.
+Placeholder projections used only as deckjsx layout anchors should not create visible PowerPoint editing prompts that imply authors should manually type into them.
+_Avoid_: Template Area Kind, area name, authored content
+
+**Pptx Theme Part**:
+The PPTX package support part that stores PowerPoint theme data such as color schemes, font schemes, format schemes, and related defaults. It is distinct from deckjsx Theme even when it represents similar design-default concepts.
+PPTX packages may contain multiple theme parts when multiple masters, imported sources, or future source-specific theme ownership require them, even if an initial projection emits a single default theme part.
+_Avoid_: Theme itself, StyleSheet, resolved style view
+
+**Pptx Theme Projection**:
+The output projection bridge that maps deckjsx Theme vocabulary and defaults into PPTX theme-support structure when useful. It allows Theme and Pptx Theme Part to stay distinct without pretending they are unrelated concepts.
+It should be inspectable enough to explain which Theme values reached PPTX theme support, which were projected into concrete drawing properties, and which remained unprojected.
+Unprojected Theme mappings should preserve the resolved value, graph/default provenance, and reason so inspection and HMR tooling can distinguish unsupported projection decisions from lost Theme data.
+Even the default theme projection should be structured enough to record projected purpose, source, color scheme, font scheme, and format scheme data rather than treating the theme part as an opaque placeholder.
+Theme projection should support both whole-theme mapping summaries and property-level provenance on projected drawing values.
+When a Theme Default wins resolved style resolution and is projected as a concrete drawing value, Pptx Theme Projection trace should record the graph node, authored tag/default key, property, resolved value, and projection decision.
+Projected drawing values may carry both resolved concrete values and PPTX theme references when a Theme-derived value can be represented either way.
+Theme reference serialization choice should be explicit: v0.8 may emit concrete sRGB colors or concrete latin typefaces while preserving matching PPTX color-scheme or font-scheme candidates in Theme Projection trace for future serialization and HMR decisions.
+Theme Projection trace is structured Pptx Package Model data. Invalid trace discriminants, package-part references, inheritance steps, or serialization choices should fail package consistency validation before Render emits bytes.
+Theme Projection candidates should come from Theme design/default vocabulary rather than from local StyleSheet rules.
+Theme Defaults are projection candidates, but Pptx Theme Projection decides whether they become theme support data, layout/master defaults, or concrete drawing properties.
+Theme Default style decisions should classify resolved winners by projection destination, such as concrete drawing property, drawing metadata, layout input, filtered projection input, style input, or unsupported semantic fallback, instead of treating every Theme Default winner as a concrete drawing property.
+Theme-derived defaults that project through layout or master inheritance should remain visible through effective/provenance inspection on affected drawing values.
+Effective Theme inheritance trace should connect Theme Default projection decisions through the PPTX package chain that made them effective, including theme part, slide master, slide layout, slide part, and drawing value where those identities are known.
+Theme projection dependencies should support both whole-theme and value-group fingerprints, such as color, font, format, and defaults groups.
+Theme projection should trace mappings between deckjsx Theme groups and PPTX theme groups instead of assuming they are identical or one-to-one.
+A default theme projection exists even when no author Theme is configured, because PPTX required theme support and effective defaults still need provenance.
+Theme projection identity should preserve theme source or origin and projected theme role so a single-theme initial projection can evolve into multiple PPTX theme parts later.
+Theme projection purpose should stay extensible rather than being limited to a closed set of early role names.
+Theme changes should invalidate dependent package parts according to how the theme value is used, not by forcing every slide to rebuild.
+Theme projection consumes Theme Snapshot, Theme Defaults, and resolved style provenance rather than reading JSX authoring directly.
+Theme projection should use the active Theme Snapshot after composition, while retaining source and merge provenance for inspection and future HMR.
+Theme projection trace may share provenance vocabulary with resolved style inspection, but it remains a distinct trace because it explains output theme mapping rather than CSS-like cascade winners.
+_Avoid_: Theme itself, raw theme XML, resolved inline style only
+
+**Effective Projected Style View**:
+A derived inspection view that explains effective projected drawing values after package-owned defaults, theme projection, layout/master inheritance, and concrete drawing properties are considered. It should not replace package-owned defaults or duplicate every effective value into the Pptx Package Model.
+It is distinct from Resolved Style Inspection View: resolved style explains authoring/graph style resolution before output projection, while effective projected style explains output-specific inheritance and defaults after projection.
+Effective Projected Style View is a cross-output projection concept, but each Projected Document Model owns its concrete view shape.
+Writers should not use it as input. HMR and sandbox tooling may read it for explanation, while dirty decisions should remain grounded in package fingerprints and dependencies.
+_Avoid_: package ownership, raw resolved style only, writer input
+
 **Pptx Serialized Identity**:
-Deterministic PPTX/OOXML-facing identifiers assigned during Project, such as relationship ids and shape object ids. They are separate from Pptx Element Identity, but should be stable enough for sandbox inspection, diffing, and future HMR. Writer Adapters should use projected serialized identities when available and report diagnostics when they must diverge.
+Deterministic PPTX/OOXML-facing identifiers, such as relationship ids and shape object ids. They are separate from Pptx Element Identity.
 _Avoid_: projected element identity, graph identity, writer-local counter only
 
 **Projected Document Model**:
@@ -170,20 +365,66 @@ _Avoid_: backend
 The output-format-specific writer that turns a Projected Document Model into bytes or files. It owns serialization and file/package writing concerns, not authoring semantics or graph interpretation.
 _Avoid_: backend
 
+**XML Emission**:
+The direct writer's serialization procedure for turning Pptx Package Model structured data into OOXML bytes. XML Emission is not a second structured document model, XML IR, or sandbox-editable tree below the Pptx Package Model.
+It should use PPTX-domain emitter helpers above a byte/chunk writer so serialization stays fast without introducing an XML-shaped intermediate model.
+Serialization formatting policy, such as attribute order, namespace order, numeric formatting, and empty-element style, belongs to emitter fingerprinting because it affects bytes without changing projected meaning.
+Escaping and serialization of concrete projected fields are writer responsibilities; failure to serialize a valid Pptx Package Model field is a Render error.
+XML emitters should rely on Project/pre-Render validation for structural consistency and perform only lightweight invariant checks during serialization.
+_Avoid_: XML-shaped Projected Document Model, raw XML tree as inspection model, writer-side semantic projection
+
+**PPTX Writer Composite Node**:
+The internal module boundary that turns Pptx Package Model snapshots into package-part build artifacts, assembly plans, ZIP bytes, rendered artifacts, and optional output side effects. It may contain build, XML emission, assembly, ZIP, and sink graphs, but externally it should expose the PPTX writer adapter contract rather than leaking writer internals.
+_Avoid_: writer-side projection, direct imports of projection internals, public ZIP implementation surface
+
+**Render Output Side Effect**:
+The optional runtime action that writes a produced Rendered Artifact to an output path after artifact bytes exist. It is separate from package generation: Rendered Artifact bytes remain the primary output, while path writing reports requested, skipped, unavailable, failed, or written status through Render inspection summary and diagnostics.
+_Avoid_: primary artifact, writer package assembly, public streaming mode
+
+**Pptx Package Build Artifact**:
+A render-stage Pipeline Artifact that materializes a Pptx Package Model into package-part bytes before the final PPTX ZIP bytes are assembled. It is keyed by Package Part Identity, but it is not the Projected Document Model or the primary inspection model.
+Project owns structured package data and fingerprints; Render owns build artifacts and serialized bytes.
+Build artifacts should keep Package Part Identity, final package path, serialized bytes, and build fingerprints distinct so ZIP assembly and future streaming output do not infer package data from the wrong field.
+ZIP compression policy belongs to assembly, not to package-part byte generation, so compression changes should not invalidate reusable part bytes by themselves.
+Build invalidation should allow both global writer fingerprints and more specific part-emitter fingerprints.
+Render should decide reusable non-media package-part Build Artifacts before invoking XML/support emitters when package fingerprints and writer/emitter fingerprints prove a match. Media parts may still require byte fingerprint evaluation unless the projection or Asset Artifact provides a trusted byte hash. A media byte fingerprint may therefore be derived from trusted projected media metadata, such as loader-provided content hash, rather than from reading the bytes again on every warm render.
+Build artifacts should carry part-local Build Notes that explain the successful materialization of package-part bytes, including rebuild reason, part kind, byte length, writer/emitter/part fingerprints, dependency fingerprint count, media byte fingerprint when relevant, and diagnostic code references. Render Result remains the source of truth for stage diagnostics.
+Only successfully materialized package-part bytes should become build artifacts; failed or missing entries belong in Render diagnostics and the Assembly Plan.
+Successful build artifacts may be retained even when the overall Render fails, so a later Render can reuse the completed parts.
+_Avoid_: Pptx Package Model, Projected Document Model, raw projection, final rendered artifact
+
+**Pptx Package Build Note**:
+Part-local metadata inside a Pptx Package Build Artifact that explains why package-part bytes were successfully built or rebuilt. It is useful for sandbox and HMR reuse explanations, but it is not a diagnostic result and should not replace Render Result diagnostics.
+_Avoid_: Render diagnostic, Assembly Plan final entry, Projected Document Model
+
+**Pptx Package Assembly Plan**:
+A render-stage plan for assembling package-part build artifacts into the final PPTX ZIP. It defines deterministic entry order, package paths, source build artifact identities, compression policy, and missing/required entry status before ZIP bytes are written.
+Its package structure comes from the Pptx Package Model, while Render adds build artifact availability, writer/media fingerprints, and compression decisions.
+It should use Package Part Order Keys from the Pptx Package Model rather than relying on writer-local ordering.
+It belongs to Render Result inspection/debug output rather than Project Result's primary Pptx Package Model inspection.
+Assembly entries should explain build artifact reuse, rebuild, invalidation, or missing status and the reason for that status.
+The ZIP writer should consume the Assembly Plan in streaming order internally; streaming ZIP is an implementation strategy, not a separate authoring-facing output mode.
+Assembly entry status reasons are typed debug/reuse reasons, not public diagnostic code families.
+Assembly entries should distinguish required package entries from optional entries so missing required parts can block Render while optional parts can be reported without corrupting the package.
+_Avoid_: unordered build artifact map, Projected Document Model, ZIP writer implementation detail
+
+**Pptx ZIP Sink**:
+An internal writer boundary that receives final PPTX ZIP chunks while the ZIP module consumes the Assembly Plan. Collecting sinks materialize the public `RenderedArtifact.bytes`; tee sinks may fan out chunks to multiple internal consumers, but sink topology is not public API.
+Path output may be implemented as a runtime side effect over produced artifact bytes or as an internal sink when the runtime boundary supports it. Either way, it must not change the public Render Result shape or expose streaming ZIP as a user-facing mode.
+Sink failures that prevent artifact byte collection are Render assembly failures. Path-output side-effect failures after artifact bytes exist should preserve `RenderedArtifact.bytes`, omit written output metadata, and report `E_RENDER_OUTPUT_WRITE_FAILED`.
+When path output is requested in a runtime without the Node output boundary, Render should use the same diagnostic family with `reason=runtimeOutputUnavailable` and keep the produced artifact bytes.
+_Avoid_: public stream mode, adapter option surface, runtime filesystem dependency in writer core
+
 **Writer Adapter**:
 A concrete Output Writer implementation that may target a library, runtime, or direct file format writer. A Writer Adapter must adapt itself to the Projected Document Model rather than pulling the model toward the adapter's preferred input shape, even when that makes the adapter slower or more complex. Temporary writer adapters can be removed once a better direct writer exists.
-A Writer Adapter declares both the Projection Format it consumes and the Output Format it returns, allowing render to choose or compute the correct Projected Document Model before invoking the adapter. Authors may pass explicit Writer Adapters such as a pptxgenjs adapter, while render may also provide a default adapter.
-In v0.6, the default Writer Adapter may be the pptxgenjs adapter, but the Pptx Package Model should still be shaped for deckjsx's projection and HMR needs rather than for pptxgenjs convenience.
-Calling Render without an explicit Writer Adapter should use the package default adapter for the Deck's selected Output Format, while explicit adapter selection should be imported from the Adapter Interface. This keeps ordinary rendering concise while preserving an extension point for temporary or future writers.
-When a temporary Writer Adapter cannot faithfully express all projected package information, it should report that limitation as diagnostics instead of pulling the Projected Document Model toward the adapter. Unsupported-but-nonbreaking adapter gaps may be warnings, while model inconsistencies or adapter gaps that would produce a broken artifact should be render-blocking errors.
-The direct OOXML writer is a later version concern. v0.6 establishes the Project/Render boundary, Pptx Package Model, and temporary pptxgenjs Writer Adapter without treating direct OOXML serialization as part of the same milestone.
+A Writer Adapter declares both the Projection Format it consumes and the Output Format it returns, allowing Render to choose or compute the correct Projected Document Model before invoking the adapter.
+When a Writer Adapter cannot faithfully express projected package information, that mismatch should be visible as diagnostics instead of reshaping the Projected Document Model around the adapter.
 _Avoid_: model-defining backend, renderer-shaped document model, long-term compatibility promise
 
 **Project**:
 The operation that turns the Semantic Author Graph into a Projected Document Model, such as the Pptx Package Model. Project is the primary API for inspecting output-facing computed state before any writer adapter runs, and it is the stage a sandbox should use to show computed projection results.
 Project may use the default Output Format when no format is provided, and it may accept an explicit format when tooling or a sandbox wants a specific Projected Document Model without invoking a Writer Adapter.
-Project may have a strict mode that returns the Projected Document Model or throws a Diagnostic Error, and an inspect mode that returns diagnostics and any projection artifacts that could be computed for sandbox/tooling inspection.
-In v0.6, Project should be result-first: it returns a Project Result containing diagnostics, the selected Output Format, and any Projected Document Model that could be materialized.
+Project is a result-first stage: it returns diagnostics, selected output information, and any Projected Document Model that could be materialized.
 _Avoid_: hidden build state, writer execution, legacy render
 
 **Project Result**:
@@ -199,13 +440,14 @@ Project options may change the selected format, collected detail, or processing 
 _Avoid_: raw projection-only return, writer artifact, mode-dependent return shape
 
 **Render**:
-The operation that turns a Projected Document Model into an output artifact or file through a Writer Adapter. Render is downstream of Project and should not compile authoring inputs, read the Author Tree, or own semantic validation. In v0.6, render may use a pptxgenjs Writer Adapter even if that adapter is slower or more complex.
+The operation that turns a Projected Document Model into an output artifact or file through a Writer Adapter. Render is downstream of Project and should not compile authoring inputs, read the Author Tree, or own semantic validation.
 Render should return a Render Result containing diagnostics and the rendered artifact for tests, tooling, and sandbox inspection; when an output path is provided, writing the artifact to that path is an additional side effect.
 Render can accept an explicit Writer Adapter or use the default adapter. When an adapter declares its required output format, render should ensure the matching Projected Document Model exists before invoking the adapter.
 Render should support either default-adapter options or a fully configured Writer Adapter value, rather than accepting a separate adapter-plus-options overload. Adapter-specific options belong to the adapter factory so the Render API stays narrow.
 When an explicit Writer Adapter requires a different format than the Deck default Output Format, render should use the adapter-required format and report a warning rather than silently using the Deck default.
 Render should read the Deck's current Pipeline Artifact Collection rather than accepting an arbitrary projection value as a positional input; edited projections should be supplied with defineProjection before rendering.
 Render should not write or return a rendered artifact when the Project Result contains error diagnostics. Partial projections remain available for inspection through Project, while Render treats warnings as non-blocking and errors as blocking.
+Render may run lightweight pre-Render package consistency validation, especially for defined or cached projections, without taking over authoring or projection semantics.
 _Avoid_: compile, project, authoring-to-output shortcut, semantic validation stage
 
 **Render Result**:
@@ -214,13 +456,20 @@ Stage results should provide a Result-like `ok` flag derived from error diagnost
 Render may materialize earlier unresolved stages such as Compile and Project when needed, and Render Result should make those prior-stage diagnostics or stage summaries visible so callers can tell which stage blocked or warned.
 Stage results should expose diagnostics both as a flat list for simple consumers and as stage-grouped summaries for inspection tools. Individual diagnostics should carry enough stage information to remain meaningful when flattened. Stage summaries should also indicate artifact presence, such as whether graph, projection, or rendered artifact output is available, partial, or missing.
 Render Result is still returned when no output path is provided; in that case the rendered artifact should carry bytes as a runtime-neutral `Uint8Array` so tests, browser tooling, and sandbox flows can consume the result without writing a file. Providing an output path adds file writing as a side effect and records output information, but it does not replace the result-first return shape.
-In v0.6, Render's file output option should be a string path only. Other destinations such as streams, browser blobs, or filesystem handles can consume Rendered Artifact bytes outside the core API.
-When artifact generation succeeds but file writing fails, Render Result should retain the artifact bytes and report the write failure as diagnostics rather than discarding the rendered artifact. Written output information should only be present when the side effect succeeded.
+Render's file output option may remain a string path convenience. Runtimes without path-based file writing should report output-write diagnostics while still returning artifact bytes when rendering succeeds.
+When artifact generation succeeds but file writing fails, Render Result should retain the artifact bytes and report the write failure as error diagnostics rather than discarding the rendered artifact. Written output information should only be present when the side effect succeeded.
+Render Result should not expose separate streaming, sink, or file-handle modes. The implementation may optimize output side effects internally, but public callers receive the same result-first shape whether they render to bytes only or also request an output path.
 Render options or Writer Adapters may change writer behavior or output detail, but they should not change the top-level Render Result shape.
 _Avoid_: void file write, raw artifact-only return, semantic validation result
 
 **Rendered Artifact**:
 The bytes produced by Render together with enough metadata for tooling to consume them without external knowledge. A rendered artifact should include the Output Format, media type, file extension, and runtime-neutral bytes.
+The final PPTX ZIP is a Rendered Artifact output, while pipeline reuse should primarily happen at package-part build artifact granularity.
+Collecting streamed ZIP chunks into a `Uint8Array` is a rendered-artifact sink concern rather than the core ZIP assembly policy.
+Rendered-artifact sinks should keep the core runtime-neutral; runtime-specific file writing belongs to a thin boundary rather than the PPTX package writer core.
+Partial ZIP bytes from a failed sink should not become a Rendered Artifact.
+When bytes collection and file writing are both requested, Render should prefer one ZIP generation feeding multiple sinks rather than generating the ZIP twice.
+Side-effect sink failures should not automatically abort independent collecting sinks; ZIP source failures and individual sink failures are different concerns.
 _Avoid_: raw byte array, writer-local return value, file-only output
 
 **Compile**:

@@ -1,8 +1,11 @@
 import { isAuthorNodeValue } from "../authoring/author-node";
+import type { JsxNode } from "../authoring/index";
 import {
   createAuthorElement,
+  authorElementPropsFromEntries,
+  isAuthorTreeChild,
   isAuthorTreeNode,
-  type AuthorTreeChild,
+  type AuthorElementProps,
   type AuthorTreeNode,
 } from "../authoring/tree";
 import { createDiagnostics, diagnostic, type Diagnostic } from "../diagnostics";
@@ -13,6 +16,7 @@ import {
   createTemplateHandle,
   validateSlideTemplates,
   type SlideTemplateSet,
+  type TemplateHandle,
   type TemplateName,
 } from "../templates";
 import {
@@ -22,6 +26,9 @@ import {
   type CompositionEntry,
   type CompositionInspectResult,
   type CompositionSource,
+  type SlideFactoryInput,
+  type SourceContextValue,
+  type SlideOptions,
   type SourceContextBinding,
   type SourceSlotOrigin,
 } from "./types";
@@ -35,17 +42,27 @@ type SourcePlan = {
   readonly stylesheets: readonly StyleSheet[];
   readonly theme?: Theme;
   readonly templates?: SlideTemplateSet;
-  readonly context: SourceContextBinding<unknown>;
+  readonly context: SourceContextBinding<SourceContextValue | void>;
   readonly entries: readonly PlanEntry[];
   readonly slideCount: number;
   readonly slotOrigins: WeakMap<AuthorTreeNode, SourceSlotOrigin>;
 };
 
+type PlannedSlideFactoryInput =
+  | (SlideFactoryInput<void> & { readonly template?: TemplateHandle<SlideTemplateSet, string> })
+  | (SlideFactoryInput<SourceContextValue> & {
+      readonly template?: TemplateHandle<SlideTemplateSet, string>;
+    });
+
+type PlannedSlideFactory = {
+  bivarianceHack(input: PlannedSlideFactoryInput): JsxNode;
+}["bivarianceHack"];
+
 type PlanEntry =
   | {
       readonly kind: "slide";
-      readonly factory: (input: unknown) => unknown;
-      readonly options?: Record<string, unknown>;
+      readonly factory: PlannedSlideFactory;
+      readonly options?: SlideOptions<SlideTemplateSet, string>;
       readonly path: string;
     }
   | {
@@ -60,7 +77,7 @@ type ResolveContext = {
   readonly source: SourceOrigin;
   readonly sourceIdentityMaterial: readonly string[];
   readonly sourcePath: string;
-  readonly context: SourceContextBinding<unknown>;
+  readonly context: SourceContextBinding<SourceContextValue | void>;
   readonly activeTheme?: Theme;
   readonly slotOwnerSource: SourceOrigin;
   readonly slotOwnerMaterial: readonly string[];
@@ -68,6 +85,12 @@ type ResolveContext = {
 
 function addDiagnostic(context: ResolveContext, item: Diagnostic): void {
   context.diagnostics.push(item);
+}
+
+function propsRecordForSlideOptions(
+  options: SlideOptions<SlideTemplateSet, string> | undefined,
+): AuthorElementProps {
+  return options === undefined ? {} : authorElementPropsFromEntries(Object.entries(options));
 }
 
 function compositionDiagnostic(input: {
@@ -169,7 +192,7 @@ function mapSlotOrigins(
 }
 
 function collectSourceSlots(
-  context: SourceContextBinding<unknown>,
+  context: SourceContextBinding<SourceContextValue | void>,
   parent: ResolveContext,
 ): WeakMap<AuthorTreeNode, SourceSlotOrigin> {
   const origins = new WeakMap<AuthorTreeNode, SourceSlotOrigin>();
@@ -194,11 +217,11 @@ function collectSourceSlots(
   return origins;
 }
 
-function childContextFor(
-  entry: Extract<CompositionEntry<unknown>, { kind: "mount" }>,
+function childContextFor<TParentContext extends SourceContextValue | void>(
+  entry: Extract<CompositionEntry<TParentContext, SlideTemplateSet>, { kind: "mount" }>,
   context: ResolveContext,
   path: string,
-): SourceContextBinding<unknown> | undefined {
+): SourceContextBinding<SourceContextValue | void> | undefined {
   if (entry.invalidExtraContext) {
     addDiagnostic(
       context,
@@ -222,8 +245,10 @@ function childContextFor(
 
   try {
     const value = context.context.present
-      ? entry.contextProvider(context.context.value)
-      : (entry.contextProvider as () => unknown)();
+      ? (
+          entry.contextProvider as (context: SourceContextValue | void) => SourceContextValue | void
+        )(context.context.value)
+      : (entry.contextProvider as () => SourceContextValue | void)();
 
     if (isPromiseLike(value)) {
       addDiagnostic(
@@ -253,8 +278,11 @@ function childContextFor(
   }
 }
 
-function resolveSource(
-  source: CompositionSource<unknown>,
+function resolveSource<
+  TSourceContext extends SourceContextValue | void,
+  TTemplates extends SlideTemplateSet,
+>(
+  source: CompositionSource<TSourceContext, TTemplates>,
   context: ResolveContext,
 ): SourcePlan | undefined {
   const sourceState = source[COMPOSITION_SOURCE]();
@@ -309,8 +337,8 @@ function resolveSource(
     if (entry.kind === "slide") {
       entries.push({
         kind: "slide",
-        factory: entry.factory as (input: unknown) => unknown,
-        ...(entry.options ? { options: entry.options as Record<string, unknown> } : {}),
+        factory: entry.factory,
+        ...(entry.options ? { options: entry.options } : {}),
         path: `${context.sourcePath} > slideFactory[${index}]`,
       });
       slideCount += 1;
@@ -429,19 +457,13 @@ function flattenPlan(
           }
         : input;
     const content = entry.factory(factoryInput);
-    const root =
-      content === null ||
-      content === undefined ||
-      typeof content === "boolean" ||
-      isAuthorTreeNode(content) ||
-      Array.isArray(content) ||
-      typeof content !== "object"
-        ? createAuthorElement({
-            source: { kind: "component", component: "Slide" },
-            props: entry.options ?? {},
-            children: [content as AuthorTreeChild],
-          })
-        : content;
+    const root = isAuthorTreeChild(content)
+      ? createAuthorElement({
+          source: { kind: "slide" },
+          props: propsRecordForSlideOptions(entry.options),
+          children: [content],
+        })
+      : content;
 
     if (!isAuthorTreeNode(root) || root.kind !== "element") {
       diagnostics.push(
@@ -474,7 +496,10 @@ function flattenPlan(
   return nextDeckSlideIndex;
 }
 
-export function resolveComposition(source: CompositionSource<any>): CompositionInspectResult {
+export function resolveComposition<
+  TSourceContext extends SourceContextValue | void,
+  TTemplates extends SlideTemplateSet,
+>(source: CompositionSource<TSourceContext, TTemplates>): CompositionInspectResult {
   const diagnostics: Diagnostic[] = [];
   const rootPlan = resolveSource(source, {
     diagnostics,

@@ -1,4 +1,4 @@
-import type { AuthoredComponent, AuthoredTag } from "../authoring/tags";
+import type { AuthoredTag } from "../authoring/tags";
 import type { SemanticNodeKind, SemanticRole } from "./types";
 
 export function semanticKindForTag(tag: AuthoredTag): SemanticNodeKind {
@@ -6,26 +6,15 @@ export function semanticKindForTag(tag: AuthoredTag): SemanticNodeKind {
     return "image";
   }
 
+  if (tag === "shape") {
+    return "shape";
+  }
+
   if (tag === "p" || /^h[1-6]$/.test(tag) || tag === "span") {
     return tag === "span" ? "textRun" : "text";
   }
 
   return "container";
-}
-
-export function semanticKindForComponent(component: AuthoredComponent): SemanticNodeKind {
-  switch (component) {
-    case "Slide":
-      return "slide";
-    case "View":
-      return "container";
-    case "Text":
-      return "text";
-    case "Image":
-      return "image";
-    case "Shape":
-      return "shape";
-  }
 }
 
 export function semanticRoleForTag(tag: AuthoredTag): SemanticRole | undefined {
@@ -53,21 +42,9 @@ export function semanticRoleForTag(tag: AuthoredTag): SemanticRole | undefined {
       return { kind: "heading", level: Number(tag.slice(1)) as 1 | 2 | 3 | 4 | 5 | 6 };
     case "img":
       return { kind: "image" };
-    case "span":
-      return undefined;
-  }
-}
-
-export function semanticRoleForComponent(component: AuthoredComponent): SemanticRole | undefined {
-  switch (component) {
-    case "Slide":
-      return { kind: "slide" };
-    case "Image":
-      return { kind: "image" };
-    case "Shape":
+    case "shape":
       return { kind: "shape" };
-    case "Text":
-    case "View":
+    case "span":
       return undefined;
   }
 }

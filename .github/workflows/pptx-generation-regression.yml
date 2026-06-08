@@ -1,0 +1,54 @@
+name: PPTX generation regression
+
+on:
+  pull_request:
+    paths:
+      - ".github/compat/pptxgenjs/**"
+      - ".github/workflows/pptx-generation-regression.yml"
+      - "src/**"
+      - "tests/**"
+      - "package.json"
+      - "bun.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pptx-generation:
+    name: Direct writer against pptxgenjs oracle
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+
+      - name: Install root dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build deckjsx package
+        run: bun run build
+
+      - name: Install oracle dependencies
+        run: npm install --no-audit --no-fund --prefix .github/compat/pptxgenjs
+
+      - name: Compare direct writer with oracle
+        run: npm run --prefix .github/compat/pptxgenjs compare
+
+      - name: Upload comparison artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: pptx-generation-regression
+          path: .github/compat/pptxgenjs/artifacts

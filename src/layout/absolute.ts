@@ -38,6 +38,26 @@ export function parseAspectRatio(value: CssAspectRatio | undefined): number | un
   return width / height;
 }
 
+function parseTransformShorthandOrIgnore(value?: string) {
+  try {
+    return parseTransformShorthand(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function parseTransformOriginOrCenter(
+  value: string | undefined,
+  context: { widthEmu: number; heightEmu: number },
+  lengthContext?: LengthResolutionContext,
+) {
+  try {
+    return parseTransformOrigin(value, context, lengthContext);
+  } catch {
+    return { x: 0.5, y: 0.5 };
+  }
+}
+
 export function inflateSpecifiedBoxSize(
   valueEmu: number,
   boxSizing: CssBoxSizing | undefined,
@@ -81,7 +101,7 @@ export function frameFromProps(
   placement?: Placement,
   context?: LengthResolutionContext,
 ) {
-  const transform = parseTransformShorthand(props.transform);
+  const transform = parseTransformShorthandOrIgnore(props.transform);
   const resolvedInset = resolveInset(props.inset, props.top, props.right, props.bottom, props.left);
   const resolvedX = props.x ?? resolvedInset?.left;
   const resolvedY = props.y ?? resolvedInset?.top;
@@ -186,7 +206,7 @@ export function frameFromProps(
   let transformRotation = 0;
   let transformFlipH = false;
   let transformFlipV = false;
-  const transformOrigin = parseTransformOrigin(
+  const transformOrigin = parseTransformOriginOrCenter(
     props.transformOrigin,
     {
       widthEmu: resolvedWidth,

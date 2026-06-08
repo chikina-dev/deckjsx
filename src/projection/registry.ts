@@ -1,16 +1,21 @@
 import type { DeckOptions } from "../authoring/index";
-import type { Diagnostics } from "../diagnostics";
-import type { SemanticAuthorGraph } from "../graph";
+import { createDiagnostics, type Diagnostics } from "../diagnostics";
+import type { AssetEntity, SemanticAuthorGraph } from "../graph";
 import type { ProjectionFormat } from "../pipeline";
 import type { ResolvedStyleMap } from "../style/resolve";
+import { summarizePptxPackage } from "./pptx/inspect";
+import { projectGraphToPartialPptxPackage, projectGraphToPptxPackage } from "./pptx/project";
 import {
-  projectGraphToPartialPptxPackage,
-  projectGraphToPptxPackage,
-  summarizePptxPackage,
-  type ProjectInspectionAdapterLimitation,
-  type ProjectInspectionSummary,
-  type PptxPackageModel,
-} from "./pptx";
+  collectPptxUnsupportedProjectionDiagnostics,
+  collectPptxUnsupportedProjectionModelDiagnostics,
+} from "./pptx/style";
+import { collectPptxThemeProjectionDiagnostics } from "./pptx/theme";
+import type {
+  ProjectInspectionAdapterLimitation,
+  ProjectInspectionSummary,
+  PptxPackageModel,
+  PptxProjectionAssetArtifact,
+} from "./pptx/model";
 
 export type ProjectedDocumentModel = PptxPackageModel;
 
@@ -21,12 +26,23 @@ type ProjectionCapability<TModel extends ProjectedDocumentModel> = {
     resolvedStyles: ResolvedStyleMap;
     options: DeckOptions;
     diagnostics?: Diagnostics;
+    assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
   }): TModel;
+  diagnostics(input: {
+    graph: SemanticAuthorGraph;
+    resolvedStyles: ResolvedStyleMap;
+    options: DeckOptions;
+  }): Diagnostics;
+  projectionDiagnostics(
+    projection: TModel,
+    options?: { readonly includeAllUnsupportedSemantics?: boolean },
+  ): Diagnostics;
   projectPartial(input: {
     graph: SemanticAuthorGraph;
     resolvedStyles: ResolvedStyleMap;
     options: DeckOptions;
     diagnostics?: Diagnostics;
+    assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
   }): TModel;
   canSummarize(projection: ProjectedDocumentModel): projection is TModel;
   summarize(
@@ -34,6 +50,9 @@ type ProjectionCapability<TModel extends ProjectedDocumentModel> = {
     options?: {
       diagnostics?: Diagnostics;
       adapterLimitations?: readonly ProjectInspectionAdapterLimitation[];
+      graph?: SemanticAuthorGraph;
+      includeDetails?: boolean;
+      resolvedStyles?: ResolvedStyleMap;
     },
   ): ProjectInspectionSummary;
 };
@@ -41,6 +60,12 @@ type ProjectionCapability<TModel extends ProjectedDocumentModel> = {
 const pptxProjectionCapability: ProjectionCapability<PptxPackageModel> = {
   format: "pptx",
   project: projectGraphToPptxPackage,
+  diagnostics: (input) =>
+    createDiagnostics([
+      ...collectPptxUnsupportedProjectionDiagnostics(input).items,
+      ...collectPptxThemeProjectionDiagnostics(input).items,
+    ]),
+  projectionDiagnostics: collectPptxUnsupportedProjectionModelDiagnostics,
   projectPartial: projectGraphToPartialPptxPackage,
   canSummarize: isPptxPackageModelShape,
   summarize: summarizePptxPackage,
@@ -55,12 +80,35 @@ function projectionCapabilityFor(
   }
 }
 
+export function projectionDiagnosticsForGraph(input: {
+  format: ProjectionFormat;
+  graph: SemanticAuthorGraph;
+  resolvedStyles: ResolvedStyleMap;
+  options: DeckOptions;
+}): Diagnostics {
+  return projectionCapabilityFor(input.format).diagnostics(input);
+}
+
+export function projectionDiagnosticsForModel(input: {
+  projection: ProjectedDocumentModel;
+  includeAllUnsupportedSemantics?: boolean;
+}): Diagnostics {
+  if (!canSummarizeProjectedDocumentModel(input.projection)) {
+    return { items: [], hasErrors: false, hasWarnings: false };
+  }
+
+  return projectionCapabilityFor(input.projection.format).projectionDiagnostics(input.projection, {
+    includeAllUnsupportedSemantics: input.includeAllUnsupportedSemantics,
+  });
+}
+
 export function projectGraphToDocumentModel(input: {
   format: ProjectionFormat;
   graph: SemanticAuthorGraph;
   resolvedStyles: ResolvedStyleMap;
   options: DeckOptions;
   diagnostics?: Diagnostics;
+  assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
 }): ProjectedDocumentModel {
   return projectionCapabilityFor(input.format).project(input);
 }
@@ -71,6 +119,7 @@ export function projectGraphToPartialDocumentModel(input: {
   resolvedStyles: ResolvedStyleMap;
   options: DeckOptions;
   diagnostics?: Diagnostics;
+  assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
 }): ProjectedDocumentModel {
   return projectionCapabilityFor(input.format).projectPartial(input);
 }
@@ -80,6 +129,9 @@ export function summarizeProjectedDocumentModel(
   options: {
     diagnostics?: Diagnostics;
     adapterLimitations?: readonly ProjectInspectionAdapterLimitation[];
+    graph?: SemanticAuthorGraph;
+    includeDetails?: boolean;
+    resolvedStyles?: ResolvedStyleMap;
   } = {},
 ): ProjectInspectionSummary | undefined {
   if (!canSummarizeProjectedDocumentModel(projection)) {
@@ -98,13 +150,9 @@ export function canSummarizeProjectedDocumentModel(
 function isPptxPackageModelShape(
   projection: ProjectedDocumentModel,
 ): projection is PptxPackageModel {
-  const candidate = projection as unknown as {
-    format?: unknown;
-    parts?: unknown;
-    slides?: unknown;
-  };
-
   return (
-    candidate.format === "pptx" && Array.isArray(candidate.parts) && Array.isArray(candidate.slides)
+    projection.format === "pptx" &&
+    Array.isArray(projection.parts) &&
+    Array.isArray(projection.slides)
   );
 }
