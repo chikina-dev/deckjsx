@@ -1,5 +1,6 @@
-import type { AuthoredComponent, AuthoredTag, SectioningTag } from "../authoring/tags";
+import type { AuthoredTag, SectioningTag } from "../authoring/tags";
 import type { JsxKey, SourceSpan } from "../authoring/tree";
+import type { StyleDeclaration } from "../style/types";
 
 export type Brand<T, B extends string> = T & { readonly __brand: B };
 export type GraphNodeId = Brand<string, "GraphNodeId">;
@@ -57,7 +58,6 @@ export type BaseSemanticNode = {
   readonly kind: SemanticNodeKind;
   readonly origin: SemanticOrigin;
   readonly authoredTag?: AuthoredTag;
-  readonly authoredComponent?: AuthoredComponent;
   readonly role?: SemanticRole;
   readonly key?: JsxKey;
   readonly styleRef?: StyleEntityId;
@@ -120,7 +120,7 @@ export type StyleEntity = {
   readonly id: StyleEntityId;
   readonly target: SemanticNodeKind;
   readonly authored: {
-    readonly style?: unknown;
+    readonly style?: StyleDeclaration;
     readonly classRefs?: readonly StyleClassRef[];
   };
 };
@@ -130,7 +130,8 @@ export type AssetEntity = {
   readonly kind: "image";
   readonly source:
     | { readonly kind: "path"; readonly path: string }
-    | { readonly kind: "data"; readonly data: string };
+    | { readonly kind: "data"; readonly data: string }
+    | { readonly kind: "url"; readonly url: string };
   readonly metadata: {
     readonly mediaType?: string;
     readonly byteLength?: number;

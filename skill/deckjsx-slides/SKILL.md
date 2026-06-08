@@ -1,35 +1,26 @@
 ---
 name: deckjsx-slides
-description: Use this skill when creating, editing, or reviewing PowerPoint slide decks with the deckjsx library, especially html-like TSX/JSX slides that compile to PPTX through Deck, semantic lowercase tags, Shape, and the pptxgenjs writer adapter.
+description: Use this skill when creating, editing, or reviewing PowerPoint slide decks with the deckjsx library, especially html-like TSX/JSX slides that compile to PPTX through Deck, semantic lowercase tags, and the direct PPTX writer.
 ---
 
 # deckjsx Slides
 
-Use `deckjsx` as a compiler for presentation documents, not as a direct `pptxgenjs` wrapper. Prefer html-like TSX/JSX authoring: `deck.slide()` declares each slide, while lowercase semantic tags describe slide content. Inspect authoring semantics with `Deck#compile()`, inspect output-facing state with `Deck#project()`, and emit PowerPoint files with `Deck#render({ output })`.
+Use `deckjsx` as a compiler for presentation documents, not as a thin writer wrapper. Prefer html-like TSX/JSX authoring: `deck.slide()` declares each slide, while lowercase semantic tags describe slide content. Inspect authoring semantics with `Deck#compile()`, inspect output-facing state with async `Deck#project()`, and emit PowerPoint files with `Deck#render({ output })`.
 
 For Japanese guidance, read `SKILL-ja.md` in this skill folder. Keep both files aligned when updating examples or workflow.
-
-## Example Files
-
-Concrete TSX examples live in `examples/`. Load the specific file that matches the task instead of retyping large examples:
-
-- `examples/minimal-output.tsx`: minimal `.pptx` output through the `pptxgenjs` writer adapter.
-- `examples/multi-slide-report.tsx`: a two-slide executive report with metadata, page numbers, grid cards, and repeated data.
-- `examples/layout-patterns.tsx`: absolute, flex/stack, grid, and overlay positioning patterns.
-- `examples/visual-effects.tsx`: background layers, gradients, shadows, image fit/position, and shape stroke effects.
-
-These files import from `deckjsx` so they are directly usable in package consumers and sample projects. Inside the deckjsx repository, prefer the repo's existing test imports when adding compiler tests.
 
 ## Core Workflow
 
 1. Create a `Deck` with an explicit slide layout.
-2. Add slides with `deck.slide((context) => <>...</>)`.
+2. Add slides with `deck.slide((context) => <main>...</main>)` or another view-like root.
 3. Prefer html-like tags for authoring: `div`, `section`, `article`, `main`, `header`, `footer`, `aside`, `nav`, and `figure` are view-like containers; `p` and `h1`-`h6` are text-like; `img` is a leaf image element.
 4. Put layout/container styles on view-like tags and typography styles on text-like tags. For example, put `fontSize` on `<h1>` or `<p>`, not on `<header>` or `<footer>`.
-5. Use `Shape`, and the capitalized `View`, `Text`, and `Image` components when they make code clearer or when updating older decks.
-6. Use `deck.project()` when inspecting, testing, or snapshotting output-facing computed state.
+5. Use lowercase `<shape shape="rect" />`, `<shape shape="ellipse" />`, or `<shape shape="line" />` for simple shapes.
+6. Use `await deck.project()` when inspecting, testing, or snapshotting output-facing computed state.
 7. Use `await deck.render({ output: "deck.pptx" })` to write a `.pptx`.
-8. Validate library changes with `vp check` and `vp test`; for output-specific work, inspect generated PPTX contents or render/open the result when possible.
+8. Use `inspection: "none"` on Project or Render hot paths that do not need inspection summaries.
+9. Treat unsupported CSS-like fidelity gaps, such as subtree opacity compositing or clipping with transforms, as Project warnings plus preserved projected metadata when a structurally valid PPTX fallback exists.
+10. Validate library changes with `vp check` and `vp test`; for output-specific work, also run the strict PPTX writer benchmark and the isolated generation oracle, then inspect generated PPTX contents or render/open the result when possible.
 
 ## Minimal PPTX Output
 
@@ -41,20 +32,18 @@ const deck = new Deck({
 });
 
 deck.slide({ name: "File output" }, () => (
-  <>
-    <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>Hello PPTX</p>
-  </>
+  <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>Hello PPTX</p>
 ));
 
 await deck.render({ output: "sample.pptx" });
 ```
 
-This pattern is based on the PPTX writer coverage in `tests/writer-pptxgenjs.test.tsx`.
+This pattern is based on the PPTX writer coverage in `tests/pptx/writer.test.tsx`.
 
 ## Full Slide Pattern
 
 ```tsx
-import { Deck, Shape } from "deckjsx";
+import { Deck } from "deckjsx";
 
 const deck = new Deck({
   layout: { width: 13.333, height: 7.5, unit: "in" },
@@ -64,7 +53,7 @@ const deck = new Deck({
 deck.slide(
   { name: "Quarterly Review", style: { backgroundColor: "#F8FAFC" } },
   ({ composition }) => (
-    <>
+    <div style={{ x: 0, y: 0, width: 13.333, height: 7.5 }}>
       <header
         style={{
           x: 0.7,
@@ -99,7 +88,7 @@ deck.slide(
           Keep each slide focused on one message. Use the layout primitives to make the hierarchy
           explicit.
         </p>
-        <Shape
+        <shape
           shape="rect"
           style={{
             fill: "#2563EB",
@@ -120,7 +109,7 @@ deck.slide(
           {composition.slideIndex + 1} / {composition.totalSlides}
         </p>
       </footer>
-    </>
+    </div>
   ),
 );
 
@@ -133,7 +122,7 @@ Use these patterns as reliable starting points because they mirror repository te
 
 ### Multiple Slides And Page Numbers
 
-Based on `tests/deck.test.tsx`.
+Based on `tests/authoring/deck.test.tsx`.
 
 ```tsx
 const deck = new Deck({
@@ -142,11 +131,9 @@ const deck = new Deck({
 });
 
 deck.slide({ name: "Report slide" }, ({ composition }) => (
-  <>
-    <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>
-      {composition.slideIndex + 1} / {composition.totalSlides}
-    </p>
-  </>
+  <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>
+    {composition.slideIndex + 1} / {composition.totalSlides}
+  </p>
 ));
 ```
 
@@ -156,7 +143,7 @@ Use for polished PowerPoint composition where placement must be predictable.
 
 ```tsx
 deck.slide({ name: "Absolute" }, () => (
-  <>
+  <main style={{ x: 0, y: 0, width: 10, height: 5.625 }}>
     <h1 style={{ x: 0.75, y: 0.6, width: 8, height: 0.55, fontSize: 26 }}>Executive Summary</h1>
     <section
       style={{
@@ -168,13 +155,13 @@ deck.slide({ name: "Absolute" }, () => (
         borderRadius: 0.12,
       }}
     />
-  </>
+  </main>
 ));
 ```
 
 ### Stack Or Flex Layout
 
-Based on `tests/layout-stack.test.tsx`.
+Based on `tests/layout/stack.test.tsx`.
 
 ```tsx
 <section
@@ -208,7 +195,7 @@ Based on `tests/layout-stack.test.tsx`.
 
 ### Grid Layout
 
-Based on `tests/layout-grid.test.tsx`.
+Based on `tests/layout/grid.test.tsx`.
 
 ```tsx
 <section
@@ -232,7 +219,7 @@ Based on `tests/layout-grid.test.tsx`.
 
 ### Image Fit, Crop, And Position
 
-Based on `tests/image-values.test.tsx`.
+Based on `tests/style/image-values.test.tsx`.
 
 ```tsx
 <img
@@ -250,7 +237,7 @@ Based on `tests/image-values.test.tsx`.
 
 ### Background Layers
 
-Based on `tests/background-layers.test.tsx`.
+Based on `tests/style/background-layers.test.tsx`.
 
 ```tsx
 deck.slide(
@@ -263,24 +250,22 @@ deck.slide(
     },
   },
   () => (
-    <>
-      <div
-        style={{
-          x: 1,
-          y: 1,
-          width: 2,
-          height: 1,
-          background: `url("${SAMPLE_SVG_DATA_URI}") repeat-x left top / contain`,
-        }}
-      />
-    </>
+    <div
+      style={{
+        x: 1,
+        y: 1,
+        width: 2,
+        height: 1,
+        background: `url("${SAMPLE_SVG_DATA_URI}") repeat-x left top / contain`,
+      }}
+    />
   ),
 );
 ```
 
 ### Gradients And Shadows
 
-Based on `tests/gradient-values.test.tsx` and `tests/writer-pptxgenjs.test.tsx`.
+Based on `tests/style/gradient-values.test.tsx` and `tests/pptx/writer.test.tsx`.
 
 ```tsx
 deck.slide(
@@ -292,29 +277,27 @@ deck.slide(
     },
   },
   () => (
-    <>
-      <Shape
-        shape="rect"
-        style={{
-          x: 1,
-          y: 1,
-          width: 2,
-          height: 1,
-          fill: "#F97316",
-          boxShadow: "6px 6px 10px rgba(15, 23, 42, 0.35)",
-          stroke: "dodgerblue",
-          strokeWidth: "3pt",
-          strokeDasharray: "1 4",
-        }}
-      />
-    </>
+    <shape
+      shape="rect"
+      style={{
+        x: 1,
+        y: 1,
+        width: 2,
+        height: 1,
+        fill: "#F97316",
+        boxShadow: "6px 6px 10px rgba(15, 23, 42, 0.35)",
+        stroke: "dodgerblue",
+        strokeWidth: "3pt",
+        strokeDasharray: "1 4",
+      }}
+    />
   ),
 );
 ```
 
 ### Typography, Links, And Lists
 
-Based on `tests/typography-values.test.tsx` and `tests/style-values.test.tsx`.
+Based on `tests/style/typography-values.test.tsx` and `tests/style/values.test.tsx`.
 
 ```tsx
 <p
@@ -350,16 +333,16 @@ Based on `tests/typography-values.test.tsx` and `tests/style-values.test.tsx`.
 ## deckjsx API Notes
 
 - Preferred authoring surface: `deck.slide()` plus lowercase html-like tags. View-like tags are `div`, `section`, `article`, `main`, `header`, `footer`, `aside`, `nav`, and `figure`; text-like tags are `p` and `h1`-`h6`; image tags are `img`.
-- Public component fallbacks remain available: `View`, `Text`, `Image`, and `Shape`.
 - `Deck#slide()` receives `{ composition }`; use `composition.slideIndex` and `composition.totalSlides`.
 - Geometry numbers default to inches; font-size numbers default to points.
-- View-like tags accept view/layout styles. Text styles belong on `p`, `h1`-`h6`, or `Text`.
+- View-like tags accept view/layout styles. Text styles belong on `p` or `h1`-`h6`.
 - Use `span` inside text-like elements for rich inline text runs.
 - Supported length strings include units such as `"in"`, `"pt"`, `"px"`, and `"%"`.
 - Prefer CSS-like aliases where available: `left`, `top`, `display`, `flexDirection`, `objectFit`, `objectPosition`, `background`, `border`, `boxShadow`, `textDecoration`, and grid properties.
-- `img` and `Image` accept `src` for paths and `data` for data URIs. They are leaf elements and do not accept children.
-- `Shape` currently supports `shape="rect"`, `"ellipse"`, or `"line"`.
-- The implemented writer adapter is `pptxgenjs`; direct OOXML writing is future work, not the output path to choose today.
+- `img` accepts `src` for paths and `data` for data URIs. It is a leaf element and does not accept children.
+- `shape` currently supports `shape="rect"`, `"ellipse"`, or `"line"`.
+- The implemented writer adapter is the direct PPTX writer. Use `await deck.render({ output })` for the default writer or `pptx()` from `deckjsx/adapter` when an explicit adapter is needed.
+- Treat writer internals as private: XML emitters, ZIP settings, sinks, Assembly Plan builders, and Build Artifact storage should not appear in deck authoring guidance.
 
 ## Visual Styling
 
@@ -372,7 +355,7 @@ Based on `tests/typography-values.test.tsx` and `tests/style-values.test.tsx`.
 ## Testing And Review
 
 - When changing compiler behavior, add or update tests that assert authoring semantics through
-  `deck.compile()` or output-facing computed state through `deck.project()`.
+  `deck.compile()` or output-facing computed state through `await deck.project()`.
 - When changing writer output, create a temporary `.pptx`, unzip/inspect XML when needed, and assert meaningful emitted markup.
 - Keep Node-only file writing in output/runtime code, not core compiler normalization.
-- If a generated deck looks wrong, check resolved frames in `deck.project()` first; most visual bugs are layout or unit normalization issues before writer emission.
+- If a generated deck looks wrong, check resolved frames in `await deck.project()` first; most visual bugs are layout or unit normalization issues before writer emission.

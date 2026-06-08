@@ -1,0 +1,966 @@
+import {
+  type ImageNormalizationInput,
+  normalizeImageProps,
+  normalizeShapeProps,
+  normalizeSlideProps,
+  normalizeTextProps,
+  normalizeViewProps,
+  type ShapeNormalizationInput,
+  type SlideNormalizationInput,
+  type TextNormalizationInput,
+  type ViewNormalizationInput,
+} from "../../compiler/normalization";
+import { createDiagnostics, diagnostic, type Diagnostics } from "../../diagnostics";
+import type { SemanticAuthorGraph, SemanticNode } from "../../graph";
+import type { Frame } from "../../layout/frame";
+import type { EdgeStrokeIR, StrokeIR } from "../../layout/projected";
+import type {
+  PptxPackageModel,
+  PptxUnsupportedSemantic,
+  PptxUnsupportedSemanticFeature,
+} from "./model";
+import { walkElements } from "./drawing";
+import { resolveBackgroundLayers } from "../../style/background";
+import {
+  IMAGE_STYLE_KEYS,
+  SHAPE_STYLE_KEYS,
+  TEXT_RUN_STYLE_KEYS,
+  TEXT_STYLE_KEYS,
+  VIEW_STYLE_KEYS,
+  type BorderStyle,
+  type DeckLength,
+  type StyleDeclaration,
+  type StyleDeclarationValue,
+} from "../../style/types";
+import type {
+  ResolvedStyle,
+  ResolvedStyleDeclaration,
+  ResolvedStyleMap,
+} from "../../style/resolve";
+import { parseShadowShorthand } from "../../style/shadow";
+import {
+  parseOutlineShorthand,
+  parseStrokeLineCap,
+  parseStrokeLineJoin,
+  resolveNodeStrokes,
+  toStroke,
+} from "../../style/stroke";
+import { parseTransformOrigin, parseTransformShorthand } from "../../style/transform";
+import { EMU_PER_INCH } from "../../types";
+
+const SLIDE_STYLE_KEYS = [
+  "background",
+  "backgroundImage",
+  "backgroundColor",
+  "backgroundTransparency",
+  "backgroundPosition",
+  "backgroundSize",
+  "backgroundRepeat",
+  "backgroundClip",
+  "backgroundOrigin",
+] as const;
+
+function targetStyle<TStyle extends object>(
+  style: Readonly<StyleDeclaration>,
+  keys: readonly (keyof StyleDeclaration)[],
+): Partial<TStyle> {
+  const result: Record<string, StyleDeclaration[keyof StyleDeclaration]> = {};
+  keys.forEach((key) => {
+    if (style[key] !== undefined) {
+      result[String(key)] = style[key];
+    }
+  });
+  return result as Partial<TStyle>;
+}
+
+export function pptxStyleFor(
+  node: SemanticNode,
+  resolvedStyles: ResolvedStyleMap,
+): Readonly<ResolvedStyleDeclaration> {
+  return resolvedStyles.get(node.id)?.style ?? {};
+}
+
+export function slideStyleFor(
+  node: SemanticNode,
+  resolvedStyles: ResolvedStyleMap,
+): SlideNormalizationInput {
+  return targetStyle<SlideNormalizationInput>(pptxStyleFor(node, resolvedStyles), SLIDE_STYLE_KEYS);
+}
+
+export function viewStyleFor(
+  node: SemanticNode,
+  resolvedStyles: ResolvedStyleMap,
+): ViewNormalizationInput {
+  return targetStyle<ViewNormalizationInput>(pptxStyleFor(node, resolvedStyles), VIEW_STYLE_KEYS);
+}
+
+export function textStyleFor(
+  node: SemanticNode,
+  resolvedStyles: ResolvedStyleMap,
+): TextNormalizationInput {
+  return targetStyle<TextNormalizationInput>(pptxStyleFor(node, resolvedStyles), TEXT_STYLE_KEYS);
+}
+
+export function textRunStyleFor(
+  node: SemanticNode,
+  resolvedStyles: ResolvedStyleMap,
+): TextNormalizationInput {
+  return targetStyle<TextNormalizationInput>(
+    pptxStyleFor(node, resolvedStyles),
+    TEXT_RUN_STYLE_KEYS,
+  );
+}
+
+export function imageStyleFor(
+  node: SemanticNode,
+  resolvedStyles: ResolvedStyleMap,
+): ImageNormalizationInput {
+  return targetStyle<ImageNormalizationInput>(pptxStyleFor(node, resolvedStyles), IMAGE_STYLE_KEYS);
+}
+
+export function shapeStyleFor(
+  node: SemanticNode,
+  resolvedStyles: ResolvedStyleMap,
+  shape: ShapeNormalizationInput["shape"],
+): ShapeNormalizationInput {
+  return {
+    ...targetStyle<ShapeNormalizationInput>(pptxStyleFor(node, resolvedStyles), SHAPE_STYLE_KEYS),
+    shape,
+  };
+}
+
+export function resolvedStyleFor(
+  node: SemanticNode,
+  resolvedStyles: ResolvedStyleMap,
+): ResolvedStyle | undefined {
+  return resolvedStyles.get(node.id);
+}
+
+function hasNonDefaultProperty(resolved: ResolvedStyle | undefined, key: string): boolean {
+  const source = resolved?.properties[key]?.source;
+  return source !== undefined && source.layer !== "default";
+}
+
+export function backgroundInputFor(
+  resolved: ResolvedStyle | undefined,
+  props: {
+    readonly background?: string;
+    readonly backgroundColor?: string;
+    readonly backgroundImage?: string;
+  },
+): { readonly property: string; readonly value: string } | undefined {
+  if (hasNonDefaultProperty(resolved, "backgroundColor") && props.backgroundColor !== undefined) {
+    return { property: "backgroundColor", value: props.backgroundColor };
+  }
+  if (hasNonDefaultProperty(resolved, "backgroundImage") && props.backgroundImage !== undefined) {
+    return { property: "backgroundImage", value: props.backgroundImage };
+  }
+  if (hasNonDefaultProperty(resolved, "background") && props.background !== undefined) {
+    return { property: "background", value: props.background };
+  }
+  if (props.backgroundColor !== undefined) {
+    return { property: "backgroundColor", value: props.backgroundColor };
+  }
+  if (props.backgroundImage !== undefined) {
+    return { property: "backgroundImage", value: props.backgroundImage };
+  }
+  if (props.background !== undefined) {
+    return { property: "background", value: props.background };
+  }
+  return undefined;
+}
+
+export function shapeFillInputFor(
+  resolved: ResolvedStyle | undefined,
+  props: {
+    readonly background?: string;
+    readonly backgroundColor?: string;
+    readonly backgroundImage?: string;
+    readonly fill?: string;
+  },
+): { readonly property: string; readonly value: string } | undefined {
+  if (hasNonDefaultProperty(resolved, "fill") && props.fill !== undefined) {
+    return { property: "fill", value: props.fill };
+  }
+  return (
+    backgroundInputFor(resolved, props) ??
+    (props.fill !== undefined ? { property: "fill", value: props.fill } : undefined)
+  );
+}
+
+function errorReason(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+type SemanticProjectionValue = StyleDeclarationValue | null | undefined;
+
+function semanticValue(value: Exclude<SemanticProjectionValue, null | undefined>): string {
+  return typeof value === "string" ? value : JSON.stringify(value);
+}
+
+function unsupportedSemantic(input: {
+  feature: PptxUnsupportedSemanticFeature;
+  property: string;
+  value: SemanticProjectionValue;
+  error: unknown;
+  fallback?: PptxUnsupportedSemantic["fallback"];
+}): PptxUnsupportedSemantic | undefined {
+  if (input.value === undefined || input.value === null || input.value === "") {
+    return undefined;
+  }
+  return {
+    feature: input.feature,
+    property: input.property,
+    value: semanticValue(input.value),
+    reason: errorReason(input.error),
+    ...(input.fallback ? { fallback: input.fallback } : {}),
+  };
+}
+
+export function parseShadowSafely(input: { property: string; value: string | undefined }): {
+  readonly shadow?: ReturnType<typeof parseShadowShorthand>;
+  readonly unsupportedSemantics: readonly PptxUnsupportedSemantic[];
+} {
+  try {
+    return {
+      shadow: parseShadowShorthand(input.value),
+      unsupportedSemantics: [],
+    };
+  } catch (error) {
+    const unsupported = unsupportedSemantic({
+      feature: "shadow",
+      property: input.property,
+      value: input.value,
+      error,
+    });
+    return { unsupportedSemantics: unsupported ? [unsupported] : [] };
+  }
+}
+
+type PptxStrokeProjectionProps = {
+  readonly border?: string;
+  readonly borderColor?: string;
+  readonly borderWidth?: DeckLength;
+  readonly borderStyle?: BorderStyle;
+  readonly borderTransparency?: number;
+  readonly borderTop?: string;
+  readonly borderRight?: string;
+  readonly borderBottom?: string;
+  readonly borderLeft?: string;
+  readonly borderTopColor?: string;
+  readonly borderRightColor?: string;
+  readonly borderBottomColor?: string;
+  readonly borderLeftColor?: string;
+  readonly borderTopWidth?: DeckLength;
+  readonly borderRightWidth?: DeckLength;
+  readonly borderBottomWidth?: DeckLength;
+  readonly borderLeftWidth?: DeckLength;
+  readonly borderTopStyle?: BorderStyle;
+  readonly borderRightStyle?: BorderStyle;
+  readonly borderBottomStyle?: BorderStyle;
+  readonly borderLeftStyle?: BorderStyle;
+  readonly outline?: string;
+  readonly outlineColor?: string;
+  readonly outlineWidth?: DeckLength;
+  readonly outlineStyle?: BorderStyle;
+  readonly stroke?: string;
+  readonly strokeWidth?: DeckLength;
+  readonly strokeDasharray?: string;
+  readonly strokeLinecap?: string;
+  readonly strokeLinejoin?: string;
+};
+
+const STROKE_FALLBACK_REASON =
+  "CSS-like stroke or border input could not be projected to the current PPTX stroke model; v0.8 preserves the authored stroke input as unsupported semantic metadata.";
+
+const OUTLINE_FALLBACK_REASON =
+  "CSS-like outline input could not be projected to the current PPTX outline model; v0.8 preserves the authored outline input as unsupported semantic metadata.";
+
+function firstDefinedStrokeInput(
+  props: PptxStrokeProjectionProps,
+  keys: readonly (keyof PptxStrokeProjectionProps)[],
+): { readonly property: string; readonly value: StyleDeclarationValue } | undefined {
+  for (const key of keys) {
+    const value = props[key];
+    if (value !== undefined && value !== null && value !== "") {
+      return { property: key, value };
+    }
+  }
+  return undefined;
+}
+
+function strokeFallbackInput(props: PptxStrokeProjectionProps): {
+  readonly feature: PptxUnsupportedSemanticFeature;
+  readonly property: string;
+  readonly value: StyleDeclarationValue;
+} {
+  const strokeInput = firstDefinedStrokeInput(props, [
+    "strokeDasharray",
+    "strokeLinecap",
+    "strokeLinejoin",
+    "stroke",
+    "strokeWidth",
+  ]);
+  if (strokeInput) {
+    return { feature: "stroke", ...strokeInput };
+  }
+
+  const borderInput = firstDefinedStrokeInput(props, [
+    "border",
+    "borderTop",
+    "borderRight",
+    "borderBottom",
+    "borderLeft",
+    "borderColor",
+    "borderWidth",
+    "borderStyle",
+    "borderTopColor",
+    "borderRightColor",
+    "borderBottomColor",
+    "borderLeftColor",
+    "borderTopWidth",
+    "borderRightWidth",
+    "borderBottomWidth",
+    "borderLeftWidth",
+    "borderTopStyle",
+    "borderRightStyle",
+    "borderBottomStyle",
+    "borderLeftStyle",
+  ]);
+  return borderInput
+    ? { feature: "border", ...borderInput }
+    : { feature: "border", property: "border", value: "unknown" };
+}
+
+function outlineFallbackInput(props: PptxStrokeProjectionProps): {
+  readonly property: string;
+  readonly value: StyleDeclarationValue;
+} {
+  return (
+    firstDefinedStrokeInput(props, ["outline", "outlineColor", "outlineWidth", "outlineStyle"]) ??
+    firstDefinedStrokeInput(props, ["strokeLinecap", "strokeLinejoin"]) ?? {
+      property: "outline",
+      value: "unknown",
+    }
+  );
+}
+
+function hasAuthoredOutlineInput(props: PptxStrokeProjectionProps): boolean {
+  return (
+    props.outline !== undefined ||
+    props.outlineColor !== undefined ||
+    props.outlineWidth !== undefined ||
+    props.outlineStyle !== undefined
+  );
+}
+
+function hasAuthoredStrokeInput(props: PptxStrokeProjectionProps): boolean {
+  return (
+    props.border !== undefined ||
+    props.borderTop !== undefined ||
+    props.borderRight !== undefined ||
+    props.borderBottom !== undefined ||
+    props.borderLeft !== undefined ||
+    props.stroke !== undefined ||
+    props.strokeDasharray !== undefined ||
+    props.strokeLinecap !== undefined ||
+    props.strokeLinejoin !== undefined
+  );
+}
+
+function isExplicitNone(value: StyleDeclarationValue | undefined): boolean {
+  return typeof value === "string" && value.trim().toLowerCase() === "none";
+}
+
+function isStrokeIntentionallyNone(props: PptxStrokeProjectionProps): boolean {
+  return (
+    isExplicitNone(props.border) ||
+    isExplicitNone(props.borderTop) ||
+    isExplicitNone(props.borderRight) ||
+    isExplicitNone(props.borderBottom) ||
+    isExplicitNone(props.borderLeft) ||
+    props.borderStyle === "none"
+  );
+}
+
+function unsupportedStrokeFallback(
+  props: PptxStrokeProjectionProps,
+  error: unknown,
+): PptxUnsupportedSemantic | undefined {
+  const input = strokeFallbackInput(props);
+  return unsupportedSemantic({
+    feature: input.feature,
+    property: input.property,
+    value: input.value,
+    error: new Error(`${STROKE_FALLBACK_REASON} ${errorReason(error)}`),
+    fallback: {
+      strategy: "preserveAuthoredValueOnly",
+      preserves: ["authoredStrokeInput"],
+      missing: ["pptxStroke"],
+    },
+  });
+}
+
+export function resolveNodeStrokesSafely(
+  props: PptxStrokeProjectionProps,
+  context?: Parameters<typeof resolveNodeStrokes>[1],
+): {
+  readonly stroke?: StrokeIR;
+  readonly edgeStrokes?: EdgeStrokeIR;
+  readonly unsupportedSemantics: readonly PptxUnsupportedSemantic[];
+} {
+  try {
+    const strokes = resolveNodeStrokes(props as Parameters<typeof resolveNodeStrokes>[0], context);
+    if (
+      !strokes.stroke &&
+      !strokes.edgeStrokes &&
+      hasAuthoredStrokeInput(props) &&
+      !isStrokeIntentionallyNone(props)
+    ) {
+      const semantic = unsupportedStrokeFallback(
+        props,
+        new Error("No PPTX stroke could be produced from the authored stroke input."),
+      );
+      return { ...strokes, unsupportedSemantics: semantic ? [semantic] : [] };
+    }
+
+    return {
+      ...strokes,
+      unsupportedSemantics: [],
+    };
+  } catch (error) {
+    const semantic = unsupportedStrokeFallback(props, error);
+    return { unsupportedSemantics: semantic ? [semantic] : [] };
+  }
+}
+
+export function outlineStrokeSafely(
+  props: PptxStrokeProjectionProps,
+  context?: Parameters<typeof toStroke>[7],
+): {
+  readonly outline?: StrokeIR;
+  readonly unsupportedSemantics: readonly PptxUnsupportedSemantic[];
+} {
+  if (!hasAuthoredOutlineInput(props)) {
+    return { unsupportedSemantics: [] };
+  }
+
+  try {
+    const outlineInput = parseOutlineShorthand(props.outline);
+    const outline = toStroke(
+      props.outlineColor ?? outlineInput.outlineColor,
+      props.outlineWidth ?? outlineInput.outlineWidth,
+      props.outlineStyle ?? outlineInput.outlineStyle,
+      outlineInput.outlineDashType,
+      parseStrokeLineCap(props.strokeLinecap),
+      parseStrokeLineJoin(props.strokeLinejoin),
+      undefined,
+      context,
+    );
+    if (outline) {
+      return { outline, unsupportedSemantics: [] };
+    }
+    const input = outlineFallbackInput(props);
+    const semantic = unsupportedSemantic({
+      feature: "outline",
+      property: input.property,
+      value: input.value,
+      error: new Error(OUTLINE_FALLBACK_REASON),
+      fallback: {
+        strategy: "preserveAuthoredValueOnly",
+        preserves: ["authoredOutlineInput"],
+        missing: ["pptxOutline"],
+      },
+    });
+    return { unsupportedSemantics: semantic ? [semantic] : [] };
+  } catch (error) {
+    const input = outlineFallbackInput(props);
+    const semantic = unsupportedSemantic({
+      feature: "outline",
+      property: input.property,
+      value: input.value,
+      error: new Error(`${OUTLINE_FALLBACK_REASON} ${errorReason(error)}`),
+      fallback: {
+        strategy: "preserveAuthoredValueOnly",
+        preserves: ["authoredOutlineInput"],
+        missing: ["pptxOutline"],
+      },
+    });
+    return { unsupportedSemantics: semantic ? [semantic] : [] };
+  }
+}
+
+export function unsupportedTransformSemantics(props: {
+  readonly transform?: string;
+  readonly transformOrigin?: string;
+}): readonly PptxUnsupportedSemantic[] {
+  const unsupported: PptxUnsupportedSemantic[] = [];
+  try {
+    parseTransformShorthand(props.transform);
+  } catch (error) {
+    const semantic = unsupportedSemantic({
+      feature: "transform",
+      property: "transform",
+      value: props.transform,
+      error,
+    });
+    if (semantic) {
+      unsupported.push(semantic);
+    }
+  }
+
+  try {
+    parseTransformOrigin(props.transformOrigin, {
+      widthEmu: EMU_PER_INCH,
+      heightEmu: EMU_PER_INCH,
+    });
+  } catch (error) {
+    const semantic = unsupportedSemantic({
+      feature: "transform",
+      property: "transformOrigin",
+      value: props.transformOrigin,
+      error,
+    });
+    if (semantic) {
+      unsupported.push(semantic);
+    }
+  }
+
+  return unsupported;
+}
+
+const GROUP_OPACITY_COMPOSITING_FALLBACK_REASON =
+  "CSS group opacity creates a composited stacking context; the current PPTX writer cascades alpha to child drawing values instead of compositing the rendered subtree.";
+
+const OPACITY_STACKING_CONTEXT_FALLBACK_REASON =
+  "CSS opacity creates a stacking context; v0.8 preserves the projected opacity value but does not yet evaluate a full CSS stacking-context subtree for this drawing node.";
+
+const TRANSFORM_STACKING_CONTEXT_FALLBACK_REASON =
+  "CSS transforms create a stacking context; v0.8 preserves projected transform and paint-order inputs but does not yet evaluate a full CSS stacking-context subtree.";
+
+const FILTER_EFFECT_FALLBACK_REASON =
+  "CSS filter effects are not emitted by the current PPTX writer; v0.8 preserves the authored filter as an unsupported paint semantic for inspection.";
+
+const BLEND_MODE_FALLBACK_REASON =
+  "CSS blend modes require compositing behavior that the current PPTX writer does not reproduce; v0.8 preserves the authored blend mode as an unsupported paint semantic for inspection.";
+
+const ISOLATION_FALLBACK_REASON =
+  "CSS isolation creates a compositing group; v0.8 preserves the authored isolation input but does not yet evaluate isolated compositing groups.";
+
+export function unsupportedGroupOpacitySemantics(props: {
+  readonly opacity?: number;
+}): readonly PptxUnsupportedSemantic[] {
+  if (props.opacity === undefined || props.opacity <= 0 || props.opacity >= 1) {
+    return [];
+  }
+
+  const semantic = unsupportedSemantic({
+    feature: "opacity",
+    property: "opacity",
+    value: props.opacity,
+    error: new Error(GROUP_OPACITY_COMPOSITING_FALLBACK_REASON),
+    fallback: {
+      strategy: "cascadeOpacityToChildren",
+      preserves: ["projectedOpacity", "childDrawingValues"],
+      missing: ["compositedSubtree", "cssStackingContext"],
+    },
+  });
+  return semantic ? [semantic] : [];
+}
+
+export function unsupportedOpacityStackingContextSemantics(props: {
+  readonly opacity?: number;
+}): readonly PptxUnsupportedSemantic[] {
+  if (props.opacity === undefined || props.opacity <= 0 || props.opacity >= 1) {
+    return [];
+  }
+
+  const semantic = unsupportedSemantic({
+    feature: "opacity",
+    property: "stackingContext",
+    value: props.opacity,
+    error: new Error(OPACITY_STACKING_CONTEXT_FALLBACK_REASON),
+    fallback: {
+      strategy: "preserveOpacityWithoutCompositedSubtree",
+      preserves: ["projectedOpacity", "drawingNode"],
+      missing: ["compositedSubtree", "cssStackingContext"],
+    },
+  });
+  return semantic ? [semantic] : [];
+}
+
+export function unsupportedTransformStackingContextSemantics(props: {
+  readonly transform?: string;
+}): readonly PptxUnsupportedSemantic[] {
+  let operations: ReturnType<typeof parseTransformShorthand>;
+  try {
+    operations = parseTransformShorthand(props.transform);
+  } catch {
+    return [];
+  }
+
+  if (!operations?.length) {
+    return [];
+  }
+
+  const semantic = unsupportedSemantic({
+    feature: "transform",
+    property: "stackingContext",
+    value: props.transform,
+    error: new Error(TRANSFORM_STACKING_CONTEXT_FALLBACK_REASON),
+    fallback: {
+      strategy: "preserveTransformWithoutStackingContext",
+      preserves: ["projectedTransform", "paintOrderInputs"],
+      missing: ["cssStackingContext"],
+    },
+  });
+  return semantic ? [semantic] : [];
+}
+
+export function unsupportedCompositingSemantics(props: {
+  readonly filter?: string;
+  readonly mixBlendMode?: string;
+  readonly isolation?: string;
+}): readonly PptxUnsupportedSemantic[] {
+  const unsupported: PptxUnsupportedSemantic[] = [];
+  const filter = props.filter?.trim();
+  if (filter && filter.toLowerCase() !== "none") {
+    const semantic = unsupportedSemantic({
+      feature: "filter",
+      property: "filter",
+      value: props.filter,
+      error: new Error(FILTER_EFFECT_FALLBACK_REASON),
+      fallback: {
+        strategy: "dropFilterEffect",
+        preserves: ["authoredFilter"],
+        missing: ["filterEffect"],
+      },
+    });
+    if (semantic) {
+      unsupported.push(semantic);
+    }
+  }
+
+  const mixBlendMode = props.mixBlendMode?.trim();
+  if (mixBlendMode && mixBlendMode.toLowerCase() !== "normal") {
+    const semantic = unsupportedSemantic({
+      feature: "blend",
+      property: "mixBlendMode",
+      value: props.mixBlendMode,
+      error: new Error(BLEND_MODE_FALLBACK_REASON),
+      fallback: {
+        strategy: "dropBlendMode",
+        preserves: ["authoredBlendMode"],
+        missing: ["blendCompositing"],
+      },
+    });
+    if (semantic) {
+      unsupported.push(semantic);
+    }
+  }
+
+  if (props.isolation === "isolate") {
+    const semantic = unsupportedSemantic({
+      feature: "isolation",
+      property: "isolation",
+      value: props.isolation,
+      error: new Error(ISOLATION_FALLBACK_REASON),
+      fallback: {
+        strategy: "dropIsolationGroup",
+        preserves: ["authoredIsolation"],
+        missing: ["isolatedCompositingGroup"],
+      },
+    });
+    if (semantic) {
+      unsupported.push(semantic);
+    }
+  }
+
+  return unsupported;
+}
+
+export function resolveBackgroundLayersSafely(
+  input: { readonly property: string; readonly value: string | undefined },
+  transparency?: number,
+  context?: { widthEmu: number; heightEmu: number },
+  frame?: Frame,
+  boxFrames?: Parameters<typeof resolveBackgroundLayers>[4],
+  backgroundPosition?: string,
+  backgroundSize?: string,
+  backgroundRepeat?: string,
+  backgroundOrigin?: string,
+  backgroundClip?: string,
+): ReturnType<typeof resolveBackgroundLayers> & {
+  readonly unsupportedSemantics?: readonly PptxUnsupportedSemantic[];
+} {
+  try {
+    return resolveBackgroundLayers(
+      input.value,
+      transparency,
+      context,
+      frame,
+      boxFrames,
+      backgroundPosition,
+      backgroundSize,
+      backgroundRepeat,
+      backgroundOrigin,
+      backgroundClip,
+    );
+  } catch (error) {
+    const unsupported = unsupportedSemantic({
+      feature: "background",
+      property: input.property,
+      value: input.value,
+      error,
+      fallback: {
+        strategy: "preserveAuthoredValueOnly",
+        preserves: ["authoredBackgroundInput"],
+        missing: ["pptxBackgroundLayer"],
+      },
+    });
+    return unsupported ? { unsupportedSemantics: [unsupported] } : {};
+  }
+}
+
+function unsupportedSemanticsForGraphNode(
+  node: SemanticNode,
+  resolvedStyles: ResolvedStyleMap,
+): readonly PptxUnsupportedSemantic[] {
+  const resolved = resolvedStyleFor(node, resolvedStyles);
+  const frame = {
+    xEmu: 0,
+    yEmu: 0,
+    widthEmu: EMU_PER_INCH,
+    heightEmu: EMU_PER_INCH,
+  };
+
+  try {
+    switch (node.kind) {
+      case "container": {
+        const props = normalizeViewProps(viewStyleFor(node, resolvedStyles));
+        const strokes = resolveNodeStrokesSafely(props);
+        const outline = outlineStrokeSafely(props);
+        const backgroundInput = backgroundInputFor(resolved, props);
+        const background = resolveBackgroundLayersSafely(
+          { property: backgroundInput?.property ?? "background", value: backgroundInput?.value },
+          props.backgroundTransparency,
+          { widthEmu: frame.widthEmu, heightEmu: frame.heightEmu },
+          frame,
+          { borderBox: frame, paddingBox: frame, contentBox: frame },
+          props.backgroundPosition,
+          props.backgroundSize,
+          props.backgroundRepeat,
+          props.backgroundOrigin,
+          props.backgroundClip,
+        );
+        return [
+          ...unsupportedTransformSemantics(props),
+          ...unsupportedCompositingSemantics(props),
+          ...unsupportedGroupOpacitySemantics(props),
+          ...strokes.unsupportedSemantics,
+          ...outline.unsupportedSemantics,
+          ...parseShadowSafely({ property: "boxShadow", value: props.boxShadow })
+            .unsupportedSemantics,
+          ...(background.unsupportedSemantics ?? []),
+        ];
+      }
+      case "text": {
+        const props = normalizeTextProps(textStyleFor(node, resolvedStyles));
+        const strokes = resolveNodeStrokesSafely(props);
+        const outline = outlineStrokeSafely(props);
+        const backgroundInput = backgroundInputFor(resolved, props);
+        const background = resolveBackgroundLayersSafely(
+          { property: backgroundInput?.property ?? "background", value: backgroundInput?.value },
+          props.backgroundTransparency,
+          { widthEmu: frame.widthEmu, heightEmu: frame.heightEmu },
+          frame,
+          { borderBox: frame, paddingBox: frame, contentBox: frame },
+          props.backgroundPosition,
+          props.backgroundSize,
+          props.backgroundRepeat,
+          props.backgroundOrigin,
+          props.backgroundClip,
+        );
+        return [
+          ...unsupportedTransformSemantics(props),
+          ...unsupportedCompositingSemantics(props),
+          ...strokes.unsupportedSemantics,
+          ...outline.unsupportedSemantics,
+          ...parseShadowSafely({
+            property: props.textShadow !== undefined ? "textShadow" : "boxShadow",
+            value: props.textShadow ?? props.boxShadow,
+          }).unsupportedSemantics,
+          ...(background.unsupportedSemantics ?? []),
+        ];
+      }
+      case "image": {
+        const props = normalizeImageProps(imageStyleFor(node, resolvedStyles));
+        return [
+          ...unsupportedTransformSemantics(props),
+          ...unsupportedCompositingSemantics(props),
+          ...parseShadowSafely({ property: "boxShadow", value: props.boxShadow })
+            .unsupportedSemantics,
+        ];
+      }
+      case "shape": {
+        const props = normalizeShapeProps({
+          ...shapeStyleFor(node, resolvedStyles, node.shape),
+        });
+        const strokes = resolveNodeStrokesSafely(props);
+        const outline = outlineStrokeSafely(props);
+        const fillInput = shapeFillInputFor(resolved, props);
+        const fill = resolveBackgroundLayersSafely(
+          { property: fillInput?.property ?? "fill", value: fillInput?.value },
+          props.fillTransparency,
+          { widthEmu: frame.widthEmu, heightEmu: frame.heightEmu },
+          frame,
+          { borderBox: frame, paddingBox: frame, contentBox: frame },
+          props.backgroundPosition,
+          props.backgroundSize,
+          props.backgroundRepeat,
+          props.backgroundOrigin,
+          props.backgroundClip,
+        );
+        return [
+          ...unsupportedTransformSemantics(props),
+          ...unsupportedCompositingSemantics(props),
+          ...strokes.unsupportedSemantics,
+          ...outline.unsupportedSemantics,
+          ...parseShadowSafely({ property: "boxShadow", value: props.boxShadow })
+            .unsupportedSemantics,
+          ...(fill.unsupportedSemantics ?? []),
+        ];
+      }
+      case "slide": {
+        const props = normalizeSlideProps(slideStyleFor(node, resolvedStyles));
+        const backgroundInput = backgroundInputFor(resolved, props);
+        const background = resolveBackgroundLayersSafely(
+          { property: backgroundInput?.property ?? "background", value: backgroundInput?.value },
+          props.backgroundTransparency,
+          { widthEmu: frame.widthEmu, heightEmu: frame.heightEmu },
+          frame,
+          { borderBox: frame, paddingBox: frame, contentBox: frame },
+          props.backgroundPosition,
+          props.backgroundSize,
+          props.backgroundRepeat,
+          props.backgroundOrigin,
+          props.backgroundClip,
+        );
+        return background.unsupportedSemantics ?? [];
+      }
+      case "document":
+      case "textRun":
+        return [];
+    }
+  } catch {
+    return [];
+  }
+}
+
+export function collectPptxUnsupportedProjectionDiagnostics(input: {
+  graph: SemanticAuthorGraph;
+  resolvedStyles: ResolvedStyleMap;
+}): Diagnostics {
+  const items = [...input.graph.nodes.values()].flatMap((node) =>
+    unsupportedSemanticsForGraphNode(node, input.resolvedStyles).map((semantic) =>
+      diagnostic({
+        severity: "warning",
+        code: "W_PROJECT_UNSUPPORTED_PPTX_SEMANTIC",
+        title: "css-like semantic was preserved with a pptx fallback",
+        message: semantic.reason,
+        labels: [
+          {
+            path: `graph.nodes.${node.id}.style.${semantic.property}`,
+            message: `${semantic.feature} fallback for ${semantic.value}`,
+            severity: "primary",
+          },
+        ],
+        notes: [
+          `graphNodeId=${node.id}`,
+          `nodeKind=${node.kind}`,
+          `feature=${semantic.feature}`,
+          `property=${semantic.property}`,
+          `value=${semantic.value}`,
+          semantic.fallback ? `fallbackStrategy=${semantic.fallback.strategy}` : undefined,
+          semantic.fallback?.preserves.length
+            ? `fallbackPreserves=${semantic.fallback.preserves.join(",")}`
+            : undefined,
+          semantic.fallback?.missing.length
+            ? `fallbackMissing=${semantic.fallback.missing.join(",")}`
+            : undefined,
+        ].filter((note): note is string => note !== undefined),
+        help: [
+          "The projected PPTX model keeps this unsupported CSS-like meaning for inspection, but the current direct writer uses a fallback instead of reproducing it exactly.",
+        ],
+      }),
+    ),
+  );
+  return createDiagnostics(items);
+}
+
+export function collectPptxUnsupportedProjectionModelDiagnostics(
+  projection: PptxPackageModel,
+  options: { readonly includeAllUnsupportedSemantics?: boolean } = {},
+): Diagnostics {
+  const items = projection.slides.flatMap((slide) => {
+    const slideItems: ReturnType<typeof diagnostic>[] = [];
+    walkElements(slide.payload.drawing.children, (element) => {
+      for (const semantic of element.unsupportedSemantics ?? []) {
+        if (
+          !options.includeAllUnsupportedSemantics &&
+          semantic.feature !== "border" &&
+          semantic.feature !== "clipping" &&
+          semantic.feature !== "filter" &&
+          semantic.feature !== "blend" &&
+          semantic.feature !== "isolation" &&
+          semantic.feature !== "outline" &&
+          semantic.feature !== "stroke" &&
+          !(semantic.feature === "opacity" && semantic.property === "stackingContext") &&
+          !(semantic.feature === "transform" && semantic.property === "stackingContext")
+        ) {
+          continue;
+        }
+
+        const graphNodeId = element.origin.graphNodeIds?.[0];
+        slideItems.push(
+          diagnostic({
+            severity: "warning",
+            code: "W_PROJECT_UNSUPPORTED_PPTX_SEMANTIC",
+            title: "css-like semantic was preserved with a pptx fallback",
+            message: semantic.reason,
+            labels: [
+              {
+                path: `projection.parts.${element.packagePartId}.elements.${element.id}.${semantic.property}`,
+                message: `${semantic.feature} fallback for ${semantic.value}`,
+                severity: "primary",
+              },
+            ],
+            notes: [
+              graphNodeId ? `graphNodeId=${graphNodeId}` : undefined,
+              `elementId=${element.id}`,
+              `elementKind=${element.kind}`,
+              `slidePartId=${slide.id}`,
+              `slideId=${slide.payload.slideId}`,
+              `feature=${semantic.feature}`,
+              `property=${semantic.property}`,
+              `value=${semantic.value}`,
+              semantic.fallback ? `fallbackStrategy=${semantic.fallback.strategy}` : undefined,
+              semantic.fallback?.preserves.length
+                ? `fallbackPreserves=${semantic.fallback.preserves.join(",")}`
+                : undefined,
+              semantic.fallback?.missing.length
+                ? `fallbackMissing=${semantic.fallback.missing.join(",")}`
+                : undefined,
+            ].filter((note): note is string => note !== undefined),
+            help: [
+              "The projected PPTX model keeps this unsupported CSS-like meaning for inspection, but the current direct writer uses a fallback instead of reproducing it exactly.",
+            ],
+          }),
+        );
+      }
+    });
+    return slideItems;
+  });
+
+  return createDiagnostics(items);
+}

@@ -28,7 +28,7 @@ export type StyleClassDefinition<TStyle extends StyleClassStyle = StyleClassStyl
   | TargetedStyleClassDefinition<TStyle>;
 
 export type StyleSheetInput<
-  TClasses extends Readonly<Record<string, unknown>> = Readonly<
+  TClasses extends Readonly<Record<string, StyleClassDefinition>> = Readonly<
     Record<string, StyleClassDefinition>
   >,
 > = {
@@ -77,12 +77,12 @@ export type StyleClassDefinitionFor<TDefinition> = TDefinition extends {
       ? TDefinition
       : never;
 
-export type StyleSheetClasses<TClasses extends Readonly<Record<string, unknown>>> = {
+export type StyleSheetClasses<TClasses extends Readonly<Record<string, StyleClassDefinition>>> = {
   readonly [ClassName in keyof TClasses]: StyleClassDefinitionFor<TClasses[ClassName]>;
 };
 
 class StyleSheetImpl<
-  TClasses extends Readonly<Record<string, unknown>> = Readonly<
+  TClasses extends Readonly<Record<string, StyleClassDefinition>> = Readonly<
     Record<string, StyleClassDefinition>
   >,
 > {
@@ -94,14 +94,14 @@ class StyleSheetImpl<
 }
 
 export type StyleSheet<
-  TClasses extends Readonly<Record<string, unknown>> = Readonly<
+  TClasses extends Readonly<Record<string, StyleClassDefinition>> = Readonly<
     Record<string, StyleClassDefinition>
   >,
 > = StyleSheetImpl<TClasses>;
 
 export const StyleSheet: {
   new <
-    const TClasses extends Readonly<Record<string, unknown>> = Readonly<
+    const TClasses extends Readonly<Record<string, StyleClassDefinition>> = Readonly<
       Record<string, StyleClassDefinition>
     >,
   >(

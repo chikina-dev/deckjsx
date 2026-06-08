@@ -1,6 +1,12 @@
 import { diagnostic, type Diagnostic } from "../diagnostics";
 import type { SemanticNode, StyleEntity } from "../graph";
-import type { StyleClassDefinition, StyleSheet, StyleTargetSelector } from "./stylesheet";
+import type {
+  StyleClassDefinition,
+  StyleSheet,
+  StyleTargetSelector,
+  TargetedStyleClassDefinition,
+} from "./stylesheet";
+import type { StyleDeclaration } from "./types";
 import {
   collectSelectorConditionClassNames,
   compareSpecificity,
@@ -38,24 +44,17 @@ export type MatchedClass = {
   readonly registration: RegisteredClass;
   readonly selector: string;
   readonly specificity: Specificity;
-  readonly style: Record<string, unknown>;
+  readonly style: StyleDeclaration;
 };
 
 function isTargetedDefinition(
   definition: StyleClassDefinition,
-): definition is Extract<StyleClassDefinition, { readonly style: unknown }> {
-  return (
-    typeof definition === "object" &&
-    definition !== null &&
-    "style" in definition &&
-    typeof (definition as { readonly style?: unknown }).style === "object" &&
-    (definition as { readonly style?: unknown }).style !== null
-  );
+): definition is TargetedStyleClassDefinition {
+  return "style" in definition && typeof definition.style === "object" && definition.style !== null;
 }
 
-function styleObjectFor(definition: StyleClassDefinition): Record<string, unknown> {
-  const style = isTargetedDefinition(definition) ? definition.style : definition;
-  return style as Record<string, unknown>;
+function styleObjectFor(definition: StyleClassDefinition): StyleDeclaration {
+  return isTargetedDefinition(definition) ? definition.style : definition;
 }
 
 function targetsFor(definition: StyleClassDefinition): readonly StyleTargetSelector[] | undefined {

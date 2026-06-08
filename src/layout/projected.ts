@@ -8,12 +8,16 @@ import type {
   VerticalAlign,
 } from "../style/types";
 import type { AssetEntityId, GraphNodeId, SourceOrigin, StyleEntityId } from "../graph";
+import type { SemanticTemplateAreaRef } from "../graph/types";
+import type { TemplateAreaKind } from "../templates";
 
 export type ProjectedLayoutOrigin = {
   readonly graphNodeIds?: readonly GraphNodeId[];
   readonly styleEntityIds?: readonly StyleEntityId[];
   readonly assetEntityIds?: readonly AssetEntityId[];
   readonly source?: SourceOrigin;
+  readonly templateAreaRef?: SemanticTemplateAreaRef;
+  readonly templateAreaKind?: TemplateAreaKind;
 };
 
 export type ProjectedLayoutDocument = {
@@ -37,6 +41,51 @@ export type FrameIR = SizeIR & {
   yEmu: number;
 };
 
+export type ProjectedLayoutClip = {
+  readonly strategy: "intersectParentOverflow";
+  readonly originalFrame: FrameIR;
+  readonly clipFrame: FrameIR;
+  readonly visibleFrame: FrameIR;
+};
+
+export type ProjectedUnsupportedSemanticFeature =
+  | "blend"
+  | "background"
+  | "border"
+  | "clipping"
+  | "filter"
+  | "isolation"
+  | "outline"
+  | "opacity"
+  | "shadow"
+  | "stroke"
+  | "transform";
+
+export type ProjectedUnsupportedFallbackStrategy =
+  | "axisAlignedClipWithoutTransformedMask"
+  | "cascadeOpacityToChildren"
+  | "dropBlendMode"
+  | "dropFilterEffect"
+  | "dropIsolationGroup"
+  | "preserveAuthoredValueOnly"
+  | "preserveOpacityWithoutCompositedSubtree"
+  | "preserveTransformWithoutStackingContext"
+  | "sourceRectBeforeTransform";
+
+export type ProjectedUnsupportedFallback = {
+  readonly strategy: ProjectedUnsupportedFallbackStrategy;
+  readonly preserves: readonly string[];
+  readonly missing: readonly string[];
+};
+
+export type ProjectedUnsupportedSemantic = {
+  readonly feature: ProjectedUnsupportedSemanticFeature;
+  readonly property: string;
+  readonly value: string;
+  readonly reason: string;
+  readonly fallback?: ProjectedUnsupportedFallback;
+};
+
 export type ProjectedLayoutSlide = {
   id: string;
   name?: string;
@@ -55,21 +104,24 @@ export type ProjectedLayoutBaseNode = {
   id: string;
   origin?: ProjectedLayoutOrigin;
   frame: FrameIR;
+  siblingOrder: number;
   opacity?: number;
   rotation?: number;
   zIndex?: number;
   visibility?: CssVisibility;
   flipH?: boolean;
   flipV?: boolean;
+  clip?: ProjectedLayoutClip;
+  unsupportedSemantics?: ReadonlyArray<ProjectedUnsupportedSemantic>;
 };
 
 export type ShadowIR = {
   type: "outer" | "inner";
   color: string;
-  opacity?: number;
-  blurPt?: number;
-  offsetPt?: number;
-  angle?: number;
+  opacity: number;
+  blurPt: number;
+  offsetPt: number;
+  angle: number;
 };
 
 export type HyperlinkIR = {
@@ -228,7 +280,7 @@ export type TextTabStopIR = {
 
 export type TextBulletListIR = {
   type: "bullet";
-  characterCode?: string;
+  characterCode: string;
   indentPt?: number;
 };
 
@@ -282,4 +334,8 @@ export type ImageSourceIR =
   | {
       kind: "data";
       data: string;
+    }
+  | {
+      kind: "url";
+      url: string;
     };

@@ -1,20 +1,21 @@
-import type { AuthoredComponent, AuthoredTag } from "../authoring/tags";
-import type { AuthorElementNode, AuthorTextLeaf, AuthorTreeNode, JsxKey } from "../authoring/tree";
+import type {
+  AuthorElementNode,
+  AuthorElementProps,
+  AuthorElementPropValue,
+  AuthorImageElementNode,
+  AuthorShapeElementNode,
+  AuthorSlideElementNode,
+  AuthorTextLeaf,
+  AuthorTreeNode,
+  JsxKey,
+} from "../authoring/tree";
+import type { ImageNodeProps } from "../authoring/props";
 import type { ComposedAuthorRoot, SourceSlotOrigin } from "../composition/types";
 import { createDiagnostics, diagnostic, type Diagnostic, type Diagnostics } from "../diagnostics";
-import {
-  isTemplateAreaRef,
-  templateRefValue,
-  type SlideTemplateSet,
-  type TemplateAreaRef,
-} from "../templates";
+import type { StyleDeclaration } from "../style/types";
+import { isTemplateAreaRef, templateRefValue, type SlideTemplateSet } from "../templates";
 import { assetEntityId, graphNodeId, styleEntityId } from "./identity";
-import {
-  semanticKindForComponent,
-  semanticKindForTag,
-  semanticRoleForComponent,
-  semanticRoleForTag,
-} from "./roles";
+import { semanticKindForTag, semanticRoleForTag } from "./roles";
 import type {
   AssetEntity,
   AssetEntityId,
@@ -23,11 +24,12 @@ import type {
   SemanticNode,
   SemanticNodeKind,
   SemanticOrigin,
+  SemanticRole,
+  SemanticTemplateAreaRef,
   SourceOrigin,
   StyleClassRef,
   StyleEntity,
   StyleEntityId,
-  SemanticTemplateAreaRef,
 } from "./types";
 
 type BuildState = {
@@ -57,24 +59,42 @@ type BuildChild = {
   kind: SemanticNodeKind;
 };
 
+function isRecord(
+  value: AuthorElementPropValue,
+): value is Readonly<Record<string, AuthorElementPropValue>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function keySegment(key: JsxKey | undefined, index: number): string {
   return key === undefined ? `index:${index}` : `key:${String(key)}`;
 }
 
 function sourceName(node: AuthorElementNode): string {
-  return node.source.kind === "tag" ? node.source.tag : node.source.component;
+  return node.source.kind === "tag" ? node.source.tag : "slide";
 }
 
 function nodeSemanticKind(node: AuthorElementNode): SemanticNodeKind {
-  return node.source.kind === "tag"
-    ? semanticKindForTag(node.source.tag)
-    : semanticKindForComponent(node.source.component);
+  return node.source.kind === "tag" ? semanticKindForTag(node.source.tag) : "slide";
 }
 
-function nodeRole(node: AuthorElementNode) {
-  return node.source.kind === "tag"
-    ? semanticRoleForTag(node.source.tag)
-    : semanticRoleForComponent(node.source.component);
+function nodeRole(node: AuthorElementNode): SemanticRole | undefined {
+  return node.source.kind === "tag" ? semanticRoleForTag(node.source.tag) : { kind: "slide" };
+}
+
+function isSlideElement(node: AuthorElementNode): node is AuthorSlideElementNode {
+  return node.source.kind === "slide";
+}
+
+function isImageElement(node: AuthorElementNode): node is AuthorImageElementNode {
+  return node.source.kind === "tag" && node.source.tag === "img";
+}
+
+function isShapeElement(node: AuthorElementNode): node is AuthorShapeElementNode {
+  return node.source.kind === "tag" && node.source.tag === "shape";
+}
+
+function templateAreaValueFor(node: AuthorElementNode): AuthorElementPropValue | undefined {
+  return "area" in node.props ? node.props.area : undefined;
 }
 
 function sourceFor(context: BuildContext): SourceOrigin {
@@ -113,7 +133,7 @@ function textOriginFor(node: AuthorTextLeaf, path: string, context: BuildContext
   };
 }
 
-function collectClassNames(value: unknown, names: string[]): void {
+function collectClassNames(value: AuthorElementPropValue, names: string[]): void {
   if (value === false || value === null || value === undefined) {
     return;
   }
@@ -128,8 +148,8 @@ function collectClassNames(value: unknown, names: string[]): void {
     return;
   }
 
-  if (typeof value === "object") {
-    Object.entries(value as Record<string, unknown>).forEach(([name, enabled]) => {
+  if (isRecord(value)) {
+    Object.entries(value).forEach(([name, enabled]) => {
       if (enabled === true) {
         collectClassNames(name, names);
       }
@@ -137,25 +157,27 @@ function collectClassNames(value: unknown, names: string[]): void {
   }
 }
 
-function classRefsFor(value: unknown): readonly StyleClassRef[] | undefined {
+function classRefsFor(value: AuthorElementPropValue): readonly StyleClassRef[] | undefined {
   const names: string[] = [];
   collectClassNames(value, names);
   return names.length === 0 ? undefined : names.map((name, index) => ({ name, index }));
 }
 
-function directStyleProps(props: Record<string, unknown>): Record<string, unknown> | undefined {
-  const {
-    children: _children,
-    className: _className,
-    data: _data,
-    area: _area,
-    name: _name,
-    shape: _shape,
-    src: _src,
-    style: _style,
-    template: _template,
-    ...directStyle
-  } = props;
+function directStyleProps(props: AuthorElementProps): StyleDeclaration | undefined {
+  const directStyle: StyleDeclaration = Object.fromEntries(
+    Object.entries(props).filter(
+      ([key]) =>
+        key !== "children" &&
+        key !== "className" &&
+        key !== "data" &&
+        key !== "area" &&
+        key !== "name" &&
+        key !== "shape" &&
+        key !== "src" &&
+        key !== "style" &&
+        key !== "template",
+    ),
+  );
 
   return Object.keys(directStyle).length === 0 ? undefined : directStyle;
 }
@@ -164,32 +186,33 @@ function sourceKeyFor(source: SourceOrigin | undefined): string {
   return !source || source.kind === "root" ? "root" : source.sourceIdentity;
 }
 
-function mergedAuthoredStyle(props: Record<string, unknown>): unknown {
+function mergedAuthoredStyle(props: AuthorElementProps): StyleDeclaration | undefined {
   const directStyle = directStyleProps(props);
   const inlineStyle = props.style;
 
   if (directStyle === undefined) {
-    return inlineStyle;
+    return isRecord(inlineStyle) ? Object.fromEntries(Object.entries(inlineStyle)) : undefined;
   }
 
   if (
     inlineStyle !== undefined &&
     (typeof inlineStyle !== "object" || inlineStyle === null || Array.isArray(inlineStyle))
   ) {
-    return inlineStyle;
+    return undefined;
   }
 
-  return {
+  const merged: StyleDeclaration = {
     ...directStyle,
-    ...(inlineStyle as Record<string, unknown> | undefined),
+    ...(isRecord(inlineStyle) ? inlineStyle : undefined),
   };
+  return merged;
 }
 
 function styleRefFor(
   state: BuildState,
   idMaterial: readonly string[],
   target: SemanticNodeKind,
-  props: Record<string, unknown>,
+  props: AuthorElementProps,
 ): StyleEntityId | undefined {
   const style = mergedAuthoredStyle(props);
   const classRefs = classRefsFor(props.className);
@@ -233,7 +256,7 @@ function invalidStructure(
 function assetForImage(
   state: BuildState,
   idMaterial: readonly string[],
-  props: Record<string, unknown>,
+  props: ImageNodeProps,
   path: string,
 ): AssetEntityId | undefined {
   if (typeof props.src !== "string" && typeof props.data !== "string") {
@@ -246,14 +269,21 @@ function assetForImage(
     return undefined;
   }
 
+  let source: AssetEntity["source"];
+  if (typeof props.src === "string" && /^https?:\/\//i.test(props.src)) {
+    source = { kind: "url", url: props.src };
+  } else if (typeof props.src === "string") {
+    source = { kind: "path", path: props.src };
+  } else if (typeof props.data === "string") {
+    source = { kind: "data", data: props.data };
+  } else {
+    return undefined;
+  }
   const id = assetEntityId(idMaterial);
   const entity: AssetEntity = {
     id,
     kind: "image",
-    source:
-      typeof props.src === "string"
-        ? { kind: "path", path: props.src }
-        : { kind: "data", data: props.data as string },
+    source,
     metadata:
       typeof props.data === "string" && props.data.startsWith("data:")
         ? { mediaType: props.data.slice(5, props.data.indexOf(";")) || undefined }
@@ -274,15 +304,12 @@ function semanticBase(
   context: BuildContext,
 ) {
   const styleRef = styleRefFor(state, material, kind, node.props);
-  const templateAreaRef = templateAreaRefFor(state, node.props.area, path, context);
+  const templateAreaRef = templateAreaRefFor(state, templateAreaValueFor(node), path, context);
   return {
     id,
     kind,
     origin: originFor(node, path, context),
-    ...(node.source.kind === "tag" ? { authoredTag: node.source.tag as AuthoredTag } : {}),
-    ...(node.source.kind === "component"
-      ? { authoredComponent: node.source.component as AuthoredComponent }
-      : {}),
+    ...(node.source.kind === "tag" ? { authoredTag: node.source.tag } : {}),
     ...(node.key !== undefined ? { key: node.key } : {}),
     ...(nodeRole(node) ? { role: nodeRole(node) } : {}),
     ...(styleRef ? { styleRef } : {}),
@@ -309,7 +336,7 @@ function templateAreaDiagnostic(input: {
 
 function templateAreaRefFor(
   state: BuildState,
-  value: unknown,
+  value: AuthorElementPropValue,
   path: string,
   context: BuildContext,
 ): SemanticTemplateAreaRef | undefined {
@@ -331,7 +358,7 @@ function templateAreaRefFor(
     return undefined;
   }
 
-  const ref = templateRefValue(value as TemplateAreaRef);
+  const ref = templateRefValue(value);
   if (!context.activeSlideTemplate) {
     addDiagnostic(
       state,
@@ -685,7 +712,7 @@ function buildNode(
     return buildTextLikeNode(state, node, id, path, material, nodeContext);
   }
 
-  if (kind === "image") {
+  if (isImageElement(node)) {
     if (node.children.length > 0) {
       addDiagnostic(
         state,
@@ -702,7 +729,7 @@ function buildNode(
     return { id, kind: "image" };
   }
 
-  if (kind === "shape") {
+  if (isShapeElement(node)) {
     state.nodes.set(id, {
       ...semanticBase(state, node, id, "shape", path, material, nodeContext),
       kind: "shape",
@@ -713,10 +740,13 @@ function buildNode(
   }
 
   const slideTemplateName =
-    kind === "slide" && typeof node.props.template === "string" ? node.props.template : undefined;
-  const slideTemplates =
-    kind === "slide" ? state.templates.get(sourceKeyFor(sourceFor(nodeContext))) : undefined;
-  if (kind === "slide" && slideTemplateName && !slideTemplates?.[slideTemplateName]) {
+    isSlideElement(node) && typeof node.props.template === "string"
+      ? node.props.template
+      : undefined;
+  const slideTemplates = isSlideElement(node)
+    ? state.templates.get(sourceKeyFor(sourceFor(nodeContext)))
+    : undefined;
+  if (isSlideElement(node) && slideTemplateName && !slideTemplates?.[slideTemplateName]) {
     addDiagnostic(
       state,
       templateAreaDiagnostic({
@@ -737,15 +767,19 @@ function buildNode(
     slotOrigins: nodeContext.slotOrigins,
     activeSlot: nodeContext.activeSlot,
     activeSlideTemplate: slideTemplateName ?? nodeContext.activeSlideTemplate,
-    activeSlideTemplates: kind === "slide" ? slideTemplates : nodeContext.activeSlideTemplates,
-    directSlideChild: kind === "slide",
-    usedTemplateAreas: kind === "slide" ? new Map() : nodeContext.usedTemplateAreas,
+    activeSlideTemplates: isSlideElement(node) ? slideTemplates : nodeContext.activeSlideTemplates,
+    directSlideChild: isSlideElement(node),
+    usedTemplateAreas: isSlideElement(node) ? new Map() : nodeContext.usedTemplateAreas,
   });
   state.nodes.set(id, {
     ...semanticBase(state, node, id, kind, path, material, nodeContext),
     kind,
-    ...(kind === "slide" && typeof node.props.name === "string" ? { name: node.props.name } : {}),
-    ...(kind === "slide" && slideTemplateName ? { templateRef: { name: slideTemplateName } } : {}),
+    ...(isSlideElement(node) && typeof node.props.name === "string"
+      ? { name: node.props.name }
+      : {}),
+    ...(isSlideElement(node) && slideTemplateName
+      ? { templateRef: { name: slideTemplateName } }
+      : {}),
     children: childIds,
   } as SemanticNode);
   return { id, kind };

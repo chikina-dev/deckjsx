@@ -104,7 +104,9 @@ export type SourceContextInput<TParentContext, TChildContext> =
   | TChildContext
   | SourceContextMapper<TParentContext, TChildContext>;
 
-export type SourceContextBinding<TSourceContext = unknown> =
+export type SourceContextValue = JsxNode | { readonly [key: string]: SourceContextValue };
+
+export type SourceContextBinding<TSourceContext = void> =
   | { readonly present: false }
   | { readonly present: true; readonly value: TSourceContext };
 
@@ -131,22 +133,33 @@ export type CompositionInspectResult = {
   readonly diagnostics: Diagnostics;
 };
 
-export type CompositionEntry<TSourceContext = unknown> =
+export type CompositionEntry<
+  TSourceContext extends SourceContextValue | void = void,
+  TTemplates extends SlideTemplateSet = SlideTemplateSet,
+> =
   | {
       readonly kind: "slide";
-      readonly options?: SlideOptions<SlideTemplateSet>;
-      readonly factory: SlideFactory<TSourceContext, SlideFactoryInput<TSourceContext> & object>;
+      readonly options?: SlideOptions<TTemplates>;
+      readonly factory:
+        | SlideFactory<TSourceContext, SlideFactoryInput<TSourceContext> & object>
+        | SlideFactory<
+            TSourceContext,
+            SlideFactoryInputWithTemplate<TSourceContext, TTemplates, TemplateName<TTemplates>>
+          >;
     }
   | {
       readonly kind: "mount";
       readonly sourceKey: string;
-      readonly source: CompositionSource<unknown>;
-      readonly contextProvider?: SourceContextInput<TSourceContext, unknown>;
+      readonly source: CompositionSource<SourceContextValue, SlideTemplateSet>;
+      readonly contextProvider?: SourceContextInput<TSourceContext, SourceContextValue>;
       readonly invalidExtraContext?: boolean;
     };
 
-export type CompositionSourceInternals<TSourceContext = unknown> = {
-  readonly entries: readonly CompositionEntry<TSourceContext>[];
+export type CompositionSourceInternals<
+  TSourceContext extends SourceContextValue | void = void,
+  TTemplates extends SlideTemplateSet = SlideTemplateSet,
+> = {
+  readonly entries: readonly CompositionEntry<TSourceContext, TTemplates>[];
   readonly stylesheets: readonly StyleSheet[];
   readonly theme?: Theme;
   readonly templates?: SlideTemplateSet;
@@ -154,8 +167,11 @@ export type CompositionSourceInternals<TSourceContext = unknown> = {
   readonly boundContext: SourceContextBinding<TSourceContext>;
 };
 
-export type CompositionSource<TSourceContext = unknown> = {
-  readonly [COMPOSITION_SOURCE]: () => CompositionSourceInternals<TSourceContext>;
+export type CompositionSource<
+  TSourceContext extends SourceContextValue | void = void,
+  TTemplates extends SlideTemplateSet = SlideTemplateSet,
+> = {
+  readonly [COMPOSITION_SOURCE]: () => CompositionSourceInternals<TSourceContext, TTemplates>;
 };
 
 export function sourceIdentity(value: string): SourceIdentity {

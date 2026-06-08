@@ -1,39 +1,30 @@
 ---
 name: deckjsx-slides-ja
-description: deckjsx ライブラリで PowerPoint スライドや PPTX デッキを作成、編集、レビューするときに使う日本語ガイド。Deck、deck.slide()、html-like lowercase tag、Shape、pptxgenjs writer adapter を使う TSX/JSX スライド制作向け。
+description: deckjsx ライブラリで PowerPoint スライドや PPTX デッキを作成、編集、レビューするときに使う日本語ガイド。Deck、deck.slide()、html-like lowercase tag、direct PPTX writer を使う TSX/JSX スライド制作向け。
 ---
 
 # deckjsx Slides 日本語ガイド
 
-`deckjsx` は `pptxgenjs` の薄いラッパーではなく、JSX/TSX で書いたスライドを Semantic Author Graph と Pptx Package Model に変換し、writer adapter で `.pptx` に出力するライブラリとして扱います。`deck.slide()` でスライドを宣言し、lowercase の html-like tag でスライド内容を書くのを基本にします。
+`deckjsx` は薄い writer wrapper ではなく、JSX/TSX で書いたスライドを Semantic Author Graph と Pptx Package Model に変換し、direct PPTX writer で `.pptx` に出力するライブラリとして扱います。`deck.slide()` でスライドを宣言し、lowercase の html-like tag でスライド内容を書くのを基本にします。
 
 英語版の標準 skill は `SKILL.md` です。例や運用ルールを更新するときは、この日本語版も同じ内容に揃えてください。
-
-## サンプルファイル
-
-具体的な TSX サンプルは `examples/` に置いてあります。大きな例を本文から書き写すより、目的に合うファイルだけ読んで使ってください。
-
-- `examples/minimal-output.tsx`: `pptxgenjs` writer adapter で最小の `.pptx` を出力する例。
-- `examples/multi-slide-report.tsx`: metadata、ページ番号、grid card、データ繰り返しを含む2枚構成のレポート例。
-- `examples/layout-patterns.tsx`: absolute、flex/stack、grid、overlay positioning の例。
-- `examples/visual-effects.tsx`: 背景レイヤー、グラデーション、影、画像 fit/position、shape stroke の例。
-
-これらのファイルは `deckjsx` package から import する形にしています。sample project や package consumer でそのまま使いやすく、deckjsx repository 内で compiler test を書く場合は既存テストの import 形式に合わせてください。
 
 ## 基本ワークフロー
 
 1. `Deck` を作り、スライドサイズを明示する。
-2. `deck.slide((context) => <>...</>)` でスライドを追加する。
+2. `deck.slide((context) => <main>...</main>)` のように view-like root でスライドを追加する。
 3. 基本は html-like tag を使う。`div`、`section`、`article`、`main`、`header`、`footer`、`aside`、`nav`、`figure` は view-like container、`p` と `h1`-`h6` は text-like、`img` は leaf image。
 4. layout/container の style は view-like tag に、typography の style は text-like tag に置く。たとえば `fontSize` は `<header>` や `<footer>` ではなく `<h1>` や `<p>` に置く。
-5. `Shape`、および既存 deck の更新や明示性が必要な場面では capitalized な `View`、`Text`、`Image` component も使ってよい。
-6. 出力向けの計算結果を確認、テスト、snapshot するときは `deck.project()` を使う。
+5. 図形は lowercase の `<shape shape="rect" />`、`<shape shape="ellipse" />`、`<shape shape="line" />` を使う。
+6. 出力向けの計算結果を確認、テスト、snapshot するときは `await deck.project()` を使う。
 7. PPTX を書き出すときは `await deck.render({ output: "deck.pptx" })` を使う。
-8. ライブラリを変更したら `vp check` と `vp test` で検証する。writer output を触る場合は、必要に応じて生成した PPTX の XML も確認する。
+8. inspection summary が不要な Project / Render hot path では `inspection: "none"` を使う。
+9. subtree opacity compositing や transform と組み合わさった clipping など、CSS-like fidelity gap は構造的に有効な PPTX fallback がある限り Project warning と projection metadata の保存で扱う。
+10. ライブラリを変更したら `vp check` と `vp test` で検証する。writer output を触る場合は、strict PPTX writer benchmark と isolated generation oracle も実行し、必要に応じて生成した PPTX の XML や描画結果を確認する。
 
 ## 最小の PPTX 出力
 
-`tests/writer-pptxgenjs.test.tsx` の PPTX writer coverage に近い、最小の出力例です。
+`tests/pptx/writer.test.tsx` の PPTX writer coverage に近い、最小の出力例です。
 
 ```tsx
 import { Deck } from "deckjsx";
@@ -43,9 +34,7 @@ const deck = new Deck({
 });
 
 deck.slide({ name: "File output" }, () => (
-  <>
-    <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>Hello PPTX</p>
-  </>
+  <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>Hello PPTX</p>
 ));
 
 await deck.render({ output: "sample.pptx" });
@@ -54,7 +43,7 @@ await deck.render({ output: "sample.pptx" });
 ## 標準的なスライド例
 
 ```tsx
-import { Deck, Shape } from "deckjsx";
+import { Deck } from "deckjsx";
 
 const deck = new Deck({
   layout: { width: 13.333, height: 7.5, unit: "in" },
@@ -64,7 +53,7 @@ const deck = new Deck({
 deck.slide(
   { name: "Quarterly Review", style: { backgroundColor: "#F8FAFC" } },
   ({ composition }) => (
-    <>
+    <div style={{ x: 0, y: 0, width: 13.333, height: 7.5 }}>
       <header
         style={{
           x: 0.7,
@@ -98,7 +87,7 @@ deck.slide(
         <p style={{ fontSize: 18, color: "#334155", fit: "shrink" }}>
           1枚のスライドには1つの主張を置き、階層はサイズ、余白、色、配置で表現する。
         </p>
-        <Shape
+        <shape
           shape="rect"
           style={{
             fill: "#2563EB",
@@ -119,7 +108,7 @@ deck.slide(
           {composition.slideIndex + 1} / {composition.totalSlides}
         </p>
       </footer>
-    </>
+    </div>
   ),
 );
 ```
@@ -130,7 +119,7 @@ deck.slide(
 
 ### 複数スライドとページ番号
 
-`tests/deck.test.tsx` に基づくパターンです。
+`tests/authoring/deck.test.tsx` に基づくパターンです。
 
 ```tsx
 const deck = new Deck({
@@ -139,11 +128,9 @@ const deck = new Deck({
 });
 
 deck.slide({ name: "Report slide" }, ({ composition }) => (
-  <>
-    <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>
-      {composition.slideIndex + 1} / {composition.totalSlides}
-    </p>
-  </>
+  <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>
+    {composition.slideIndex + 1} / {composition.totalSlides}
+  </p>
 ));
 ```
 
@@ -153,7 +140,7 @@ PowerPoint らしい正確な配置が必要なときに使います。
 
 ```tsx
 deck.slide({ name: "Absolute" }, () => (
-  <>
+  <main style={{ x: 0, y: 0, width: 10, height: 5.625 }}>
     <h1 style={{ x: 0.75, y: 0.6, width: 8, height: 0.55, fontSize: 26 }}>Executive Summary</h1>
     <section
       style={{
@@ -165,13 +152,13 @@ deck.slide({ name: "Absolute" }, () => (
         borderRadius: 0.12,
       }}
     />
-  </>
+  </main>
 ));
 ```
 
 ### stack / flex レイアウト
 
-`tests/layout-stack.test.tsx` に基づくパターンです。
+`tests/layout/stack.test.tsx` に基づくパターンです。
 
 ```tsx
 <section
@@ -205,7 +192,7 @@ deck.slide({ name: "Absolute" }, () => (
 
 ### grid レイアウト
 
-`tests/layout-grid.test.tsx` に基づくパターンです。
+`tests/layout/grid.test.tsx` に基づくパターンです。
 
 ```tsx
 <section
@@ -229,7 +216,7 @@ deck.slide({ name: "Absolute" }, () => (
 
 ### 画像の fit / crop / position
 
-`tests/image-values.test.tsx` に基づくパターンです。
+`tests/style/image-values.test.tsx` に基づくパターンです。
 
 ```tsx
 <img
@@ -247,7 +234,7 @@ deck.slide({ name: "Absolute" }, () => (
 
 ### 背景レイヤー
 
-`tests/background-layers.test.tsx` に基づくパターンです。
+`tests/style/background-layers.test.tsx` に基づくパターンです。
 
 ```tsx
 deck.slide(
@@ -260,24 +247,22 @@ deck.slide(
     },
   },
   () => (
-    <>
-      <div
-        style={{
-          x: 1,
-          y: 1,
-          width: 2,
-          height: 1,
-          background: `url("${SAMPLE_SVG_DATA_URI}") repeat-x left top / contain`,
-        }}
-      />
-    </>
+    <div
+      style={{
+        x: 1,
+        y: 1,
+        width: 2,
+        height: 1,
+        background: `url("${SAMPLE_SVG_DATA_URI}") repeat-x left top / contain`,
+      }}
+    />
   ),
 );
 ```
 
 ### グラデーションと影
 
-`tests/gradient-values.test.tsx` と `tests/writer-pptxgenjs.test.tsx` に基づくパターンです。
+`tests/style/gradient-values.test.tsx` と `tests/pptx/writer.test.tsx` に基づくパターンです。
 
 ```tsx
 deck.slide(
@@ -289,29 +274,27 @@ deck.slide(
     },
   },
   () => (
-    <>
-      <Shape
-        shape="rect"
-        style={{
-          x: 1,
-          y: 1,
-          width: 2,
-          height: 1,
-          fill: "#F97316",
-          boxShadow: "6px 6px 10px rgba(15, 23, 42, 0.35)",
-          stroke: "dodgerblue",
-          strokeWidth: "3pt",
-          strokeDasharray: "1 4",
-        }}
-      />
-    </>
+    <shape
+      shape="rect"
+      style={{
+        x: 1,
+        y: 1,
+        width: 2,
+        height: 1,
+        fill: "#F97316",
+        boxShadow: "6px 6px 10px rgba(15, 23, 42, 0.35)",
+        stroke: "dodgerblue",
+        strokeWidth: "3pt",
+        strokeDasharray: "1 4",
+      }}
+    />
   ),
 );
 ```
 
 ### タイポグラフィ、リンク、リスト
 
-`tests/typography-values.test.tsx` と `tests/style-values.test.tsx` に基づくパターンです。
+`tests/style/typography-values.test.tsx` と `tests/style/values.test.tsx` に基づくパターンです。
 
 ```tsx
 <p
@@ -347,21 +330,21 @@ deck.slide(
 ## API メモ
 
 - 推奨の authoring surface は `deck.slide()` と lowercase html-like tag。view-like tag は `div`、`section`、`article`、`main`、`header`、`footer`、`aside`、`nav`、`figure`。text-like tag は `p` と `h1`-`h6`。image tag は `img`。
-- fallback として `View`、`Text`、`Image`、`Shape` component も使える。
 - `Deck#slide()` の callback には `{ composition }` が渡る。`composition.slideIndex` と `composition.totalSlides` を使う。
 - 幾何値の number は inch、font size の number は point として扱う。
-- view-like tag は view/layout style を受け取る。text style は `p`、`h1`-`h6`、または `Text` に置く。
-- `span` と rich inline text は 0.2.0 の surface にはまだ含めない。現時点では必要に応じて別の text node として表現する。
+- view-like tag は view/layout style を受け取る。text style は `p` または `h1`-`h6` に置く。
+- text-like element の中では `span` を使って rich inline text run を表現できる。
 - length 文字列は `"in"`、`"pt"`、`"px"`、`"%"` などを使える。
 - CSS 風 alias は `left`、`top`、`display`、`flexDirection`、`objectFit`、`objectPosition`、`background`、`border`、`boxShadow`、`textDecoration`、grid 系 property を優先する。
-- `img` と `Image` は path 用の `src` と data URI 用の `data` を受け取る。leaf element なので children は受け取らない。
-- `Shape` は現在 `shape="rect"`、`"ellipse"`、`"line"` をサポートする。
-- 実装済み writer adapter は `pptxgenjs`。direct OOXML writing は今後の作業で、現時点で選ぶ出力先ではない。
+- `img` は path 用の `src` と data URI 用の `data` を受け取る。leaf element なので children は受け取らない。
+- `shape` は現在 `shape="rect"`、`"ellipse"`、`"line"` をサポートする。
+- 実装済み writer adapter は direct PPTX writer。通常は `await deck.render({ output })` を使い、明示的な adapter が必要な場合は `deckjsx/adapter` の `pptx()` を使う。
+- XML emitter、ZIP setting、sink、Assembly Plan builder、Build Artifact storage などの writer 内部実装は private として扱い、deck authoring guidance には出さない。
 
 ## テストとレビュー
 
 - compiler behavior を変えるときは、`deck.compile()` の authoring semantics または
-  `deck.project()` の出力向け計算結果を検証するテストを追加または更新する。
+  `await deck.project()` の出力向け計算結果を検証するテストを追加または更新する。
 - writer output を変えるときは、一時 `.pptx` を生成し、必要なら unzip して XML の意味ある markup を検証する。
 - Node 専用のファイル書き込みは output/runtime 層に置き、core compiler normalization に混ぜない。
-- 生成デッキの見た目がおかしいときは、まず `deck.project()` の resolved frame を確認する。多くの見た目の問題は writer emission より前の layout や unit normalization にある。
+- 生成デッキの見た目がおかしいときは、まず `await deck.project()` の resolved frame を確認する。多くの見た目の問題は writer emission より前の layout や unit normalization にある。

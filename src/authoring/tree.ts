@@ -1,4 +1,13 @@
-import type { AuthoredComponent, AuthoredTag } from "./tags";
+import { isIntrinsicTextTag, isIntrinsicViewTag } from "./tags";
+import type { AuthoredTag, IntrinsicTextTag, IntrinsicViewTag } from "./tags";
+import type {
+  ImageNodeProps,
+  ShapeNodeProps,
+  SlideNodeProps,
+  TextNodeProps,
+  TextRunNodeProps,
+  ViewNodeProps,
+} from "./props";
 
 export type JsxKey = string | number | bigint;
 
@@ -13,20 +22,64 @@ export type AuthorElementSource =
       readonly kind: "tag";
       readonly tag: AuthoredTag;
     }
-  | {
-      readonly kind: "component";
-      readonly component: AuthoredComponent;
-    };
+  | { readonly kind: "slide" };
 
-export type AuthorElementNode = {
+type AuthorElementNodeBase<
+  TSource extends AuthorElementSource,
+  TProps extends AuthorElementProps,
+> = {
   readonly $$typeof: "deckjsx.author-tree";
   readonly kind: "element";
-  readonly source: AuthorElementSource;
+  readonly source: TSource;
   readonly key?: JsxKey;
-  readonly props: Record<string, unknown>;
+  readonly props: TProps;
   readonly children: readonly AuthorTreeNode[];
   readonly sourceSpan?: SourceSpan;
 };
+
+export type AuthorElementPropValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | readonly AuthorElementPropValue[]
+  | { readonly [key: string]: AuthorElementPropValue };
+
+export type AuthorElementProps = Readonly<Record<string, AuthorElementPropValue>>;
+
+export type AuthorSlideElementNode = AuthorElementNodeBase<
+  { readonly kind: "slide" },
+  SlideNodeProps
+>;
+export type AuthorViewElementNode = AuthorElementNodeBase<
+  { readonly kind: "tag"; readonly tag: IntrinsicViewTag },
+  ViewNodeProps
+>;
+export type AuthorTextElementNode = AuthorElementNodeBase<
+  { readonly kind: "tag"; readonly tag: IntrinsicTextTag },
+  TextNodeProps
+>;
+export type AuthorSpanElementNode = AuthorElementNodeBase<
+  { readonly kind: "tag"; readonly tag: "span" },
+  TextRunNodeProps
+>;
+export type AuthorImageElementNode = AuthorElementNodeBase<
+  { readonly kind: "tag"; readonly tag: "img" },
+  ImageNodeProps
+>;
+export type AuthorShapeElementNode = AuthorElementNodeBase<
+  { readonly kind: "tag"; readonly tag: "shape" },
+  ShapeNodeProps
+>;
+
+export type AuthorElementNode =
+  | AuthorSlideElementNode
+  | AuthorViewElementNode
+  | AuthorTextElementNode
+  | AuthorSpanElementNode
+  | AuthorImageElementNode
+  | AuthorShapeElementNode;
 
 export type AuthorFragmentNode = {
   readonly $$typeof: "deckjsx.author-tree";
@@ -53,8 +106,45 @@ export type AuthorTreeChild =
   | undefined
   | readonly AuthorTreeChild[];
 
-function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
+function isRecord(value: unknown): value is Record<PropertyKey, AuthorElementPropValue> {
   return typeof value === "object" && value !== null;
+}
+
+export function isAuthorElementPropValue(value: unknown): value is AuthorElementPropValue {
+  if (
+    value === null ||
+    value === undefined ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return true;
+  }
+
+  if (Array.isArray(value)) {
+    return value.every(isAuthorElementPropValue);
+  }
+
+  if (typeof value !== "object" || isAuthorTreeNode(value)) {
+    return false;
+  }
+
+  return Object.values(value).every(isAuthorElementPropValue);
+}
+
+export function authorElementPropsFromEntries<
+  TProps extends AuthorElementProps = AuthorElementProps,
+>(entries: Iterable<readonly [string, unknown]>): TProps {
+  const props: Record<string, AuthorElementPropValue> = {};
+  for (const [key, value] of entries) {
+    if (!isAuthorElementPropValue(value)) {
+      throw new Error(`JSX prop "${key}" must be serializable authoring data.`);
+    }
+
+    props[key] = value;
+  }
+
+  return props as TProps;
 }
 
 export function createAuthorText(value: string | number, sourceSpan?: SourceSpan): AuthorTextLeaf {
@@ -66,22 +156,154 @@ export function createAuthorText(value: string | number, sourceSpan?: SourceSpan
   };
 }
 
-export function createAuthorElement(input: {
-  source: AuthorElementSource;
-  props?: Record<string, unknown>;
+type AuthorElementInput<TNode extends AuthorElementNode> = {
+  source: TNode["source"];
+  props?: TNode["props"];
   children?: readonly AuthorTreeChild[];
   key?: JsxKey;
   sourceSpan?: SourceSpan;
-}): AuthorElementNode {
+};
+
+type RequiredAuthorElementInput<TNode extends AuthorElementNode> = Omit<
+  AuthorElementInput<TNode>,
+  "props"
+> & {
+  props: TNode["props"];
+};
+
+type AnyAuthorElementInput =
+  | AuthorElementInput<AuthorSlideElementNode>
+  | AuthorElementInput<AuthorViewElementNode>
+  | AuthorElementInput<AuthorTextElementNode>
+  | AuthorElementInput<AuthorSpanElementNode>
+  | RequiredAuthorElementInput<AuthorImageElementNode>
+  | RequiredAuthorElementInput<AuthorShapeElementNode>;
+
+function buildAuthorElement<
+  TSource extends AuthorElementSource,
+  TProps extends AuthorElementProps,
+>(input: {
+  source: TSource;
+  props: TProps;
+  children?: readonly AuthorTreeChild[];
+  key?: JsxKey;
+  sourceSpan?: SourceSpan;
+}): AuthorElementNodeBase<TSource, TProps> {
   return {
     $$typeof: "deckjsx.author-tree",
     kind: "element",
     source: input.source,
     ...(input.key !== undefined ? { key: input.key } : {}),
-    props: input.props ?? {},
+    props: input.props,
     children: normalizeAuthorChildren(input.children ?? []),
     ...(input.sourceSpan ? { sourceSpan: input.sourceSpan } : {}),
   };
+}
+
+function isSlideElementInput(
+  input: AnyAuthorElementInput,
+): input is AuthorElementInput<AuthorSlideElementNode> {
+  return input.source.kind === "slide";
+}
+
+function isViewElementInput(
+  input: AnyAuthorElementInput,
+): input is AuthorElementInput<AuthorViewElementNode> {
+  return input.source.kind === "tag" && isIntrinsicViewTag(input.source.tag);
+}
+
+function isTextElementInput(
+  input: AnyAuthorElementInput,
+): input is AuthorElementInput<AuthorTextElementNode> {
+  return input.source.kind === "tag" && isIntrinsicTextTag(input.source.tag);
+}
+
+function isSpanElementInput(
+  input: AnyAuthorElementInput,
+): input is AuthorElementInput<AuthorSpanElementNode> {
+  return input.source.kind === "tag" && input.source.tag === "span";
+}
+
+function isImageElementInput(
+  input: AnyAuthorElementInput,
+): input is RequiredAuthorElementInput<AuthorImageElementNode> {
+  return input.source.kind === "tag" && input.source.tag === "img";
+}
+
+function isShapeElementInput(
+  input: AnyAuthorElementInput,
+): input is RequiredAuthorElementInput<AuthorShapeElementNode> {
+  return input.source.kind === "tag" && input.source.tag === "shape";
+}
+
+export function createAuthorElement(
+  input: AuthorElementInput<AuthorSlideElementNode>,
+): AuthorSlideElementNode;
+export function createAuthorElement(
+  input: AuthorElementInput<AuthorViewElementNode>,
+): AuthorViewElementNode;
+export function createAuthorElement(
+  input: AuthorElementInput<AuthorTextElementNode>,
+): AuthorTextElementNode;
+export function createAuthorElement(
+  input: AuthorElementInput<AuthorSpanElementNode>,
+): AuthorSpanElementNode;
+export function createAuthorElement(
+  input: RequiredAuthorElementInput<AuthorImageElementNode>,
+): AuthorImageElementNode;
+export function createAuthorElement(
+  input: RequiredAuthorElementInput<AuthorShapeElementNode>,
+): AuthorShapeElementNode;
+export function createAuthorElement(input: AnyAuthorElementInput): AuthorElementNode {
+  if (isSlideElementInput(input)) {
+    return buildAuthorElement({
+      ...input,
+      source: input.source,
+      props: input.props ?? {},
+    });
+  }
+
+  if (isViewElementInput(input)) {
+    return buildAuthorElement({
+      ...input,
+      source: input.source,
+      props: input.props ?? {},
+    });
+  }
+
+  if (isTextElementInput(input)) {
+    return buildAuthorElement({
+      ...input,
+      source: input.source,
+      props: input.props ?? {},
+    });
+  }
+
+  if (isSpanElementInput(input)) {
+    return buildAuthorElement({
+      ...input,
+      source: input.source,
+      props: input.props ?? {},
+    });
+  }
+
+  if (isImageElementInput(input)) {
+    return buildAuthorElement({
+      ...input,
+      source: input.source,
+      props: input.props,
+    });
+  }
+
+  if (isShapeElementInput(input)) {
+    return buildAuthorElement({
+      ...input,
+      source: input.source,
+      props: input.props,
+    });
+  }
+
+  throw new Error("Unsupported author element source.");
 }
 
 export function createAuthorFragment(input: {
@@ -100,6 +322,28 @@ export function createAuthorFragment(input: {
 
 export function isAuthorTreeNode(value: unknown): value is AuthorTreeNode {
   return isRecord(value) && value.$$typeof === "deckjsx.author-tree";
+}
+
+export function isAuthorTreeChild(value: unknown): value is AuthorTreeChild {
+  return (
+    value === null ||
+    value === undefined ||
+    typeof value === "boolean" ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    isAuthorTreeNode(value) ||
+    (Array.isArray(value) && value.every(isAuthorTreeChild))
+  );
+}
+
+export function authorTreeChildrenFromUnknown(children: readonly unknown[]): AuthorTreeChild[] {
+  return children.map((child) => {
+    if (!isAuthorTreeChild(child)) {
+      throw new Error("JSX children must be deckjsx author tree nodes or primitive text values.");
+    }
+
+    return child;
+  });
 }
 
 export function normalizeAuthorChildren(children: readonly AuthorTreeChild[]): AuthorTreeNode[] {
@@ -125,9 +369,9 @@ export function normalizeAuthorChildren(children: readonly AuthorTreeChild[]): A
 }
 
 export function collectChildren(
-  propsObject: Record<PropertyKey, unknown>,
-  children: readonly unknown[],
-): unknown {
+  propsObject: { readonly children?: AuthorTreeChild },
+  children: readonly AuthorTreeChild[],
+): AuthorTreeChild {
   if (children.length === 0) {
     return propsObject.children;
   }

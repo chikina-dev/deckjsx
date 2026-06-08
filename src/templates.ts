@@ -5,6 +5,18 @@ import type { DeckLength } from "./style/types";
 
 const TEMPLATE_AREA_REF = Symbol("deckjsx.templateAreaRef");
 
+const TEMPLATE_AREA_KINDS = [
+  "body",
+  "date",
+  "footer",
+  "generic",
+  "picture",
+  "slideNumber",
+  "title",
+] as const;
+
+export type TemplateAreaKind = (typeof TEMPLATE_AREA_KINDS)[number];
+
 /** The concrete frame used by a Template Area before output projection. */
 export type TemplateFrame = {
   readonly x: DeckLength;
@@ -16,6 +28,7 @@ export type TemplateFrame = {
 /** A named placement area inside a Slide Template. */
 export type TemplateArea = {
   readonly frame: TemplateFrame;
+  readonly kind?: TemplateAreaKind;
 };
 
 /** A reusable Deck-owned slide structure made of named Template Areas. */
@@ -32,7 +45,8 @@ export type EmptySlideTemplateSet = Record<never, never>;
  * A branded authored reference from slide content to one Template Area.
  *
  * Authors normally obtain this value from the slide factory's `template` handle, for example
- * `area={template.title}`. deckjsx does not expose a root-level constructor for these refs.
+ * `area={template.title}`. The runtime reference object is library-owned so callers do not have to
+ * manufacture branded values.
  *
  * @typeParam TTemplateName - Name of the Slide Template that owns the referenced area.
  * @typeParam TAreaName - Name of the referenced Template Area.
@@ -46,6 +60,13 @@ export type TemplateAreaRef<
   readonly area: TAreaName;
 }> & {
   readonly __deckjsxTemplateAreaRefBrand?: never;
+};
+
+type RuntimeTemplateAreaRef<
+  TTemplateName extends string,
+  TAreaName extends string,
+> = TemplateAreaRef<TTemplateName, TAreaName> & {
+  readonly [TEMPLATE_AREA_REF]: true;
 };
 
 type TemplateAreaNames<
@@ -87,7 +108,7 @@ export function createTemplateHandle<
   TName extends keyof TTemplates & string,
 >(templates: TTemplates, name: TName): TemplateHandle<TTemplates, TName> {
   const template = templates[name];
-  const handle: Record<string, unknown> = { $name: name };
+  const handle: Record<string, string | TemplateAreaRef> = { $name: name };
 
   if (template && isRecord(template.areas)) {
     Object.keys(template.areas).forEach((area) => {
@@ -109,12 +130,13 @@ export function createTemplateAreaRef<TTemplateName extends string, TAreaName ex
   template: TTemplateName,
   area: TAreaName,
 ): TemplateAreaRef<TTemplateName, TAreaName> {
-  return {
+  const ref: RuntimeTemplateAreaRef<TTemplateName, TAreaName> = {
     type: "deckjsx.templateAreaRef",
     template,
     area,
     [TEMPLATE_AREA_REF]: true,
-  } as unknown as TemplateAreaRef<TTemplateName, TAreaName>;
+  };
+  return ref;
 }
 
 /**
@@ -220,6 +242,17 @@ export function validateSlideTemplates(
         return;
       }
 
+      if (area.kind !== undefined && !isTemplateAreaKind(area.kind)) {
+        diagnostics.push(
+          templateDiagnostic(
+            "E_TEMPLATE_AREA_KIND_INVALID",
+            "invalid template area kind",
+            `${areaPath}.kind`,
+            `Template Area kind must be one of: ${TEMPLATE_AREA_KINDS.join(", ")}.`,
+          ),
+        );
+      }
+
       diagnostics.push(...validateFrame(area.frame, `${areaPath}.frame`));
     });
   });
@@ -257,6 +290,10 @@ function validLength(value: unknown): boolean {
     (typeof value === "number" && Number.isFinite(value)) ||
     (typeof value === "string" && isDeckLengthString(value))
   );
+}
+
+export function isTemplateAreaKind(value: unknown): value is TemplateAreaKind {
+  return typeof value === "string" && (TEMPLATE_AREA_KINDS as readonly string[]).includes(value);
 }
 
 function isRecord(value: unknown): value is Record<PropertyKey, unknown> {

@@ -1,4 +1,5 @@
 import type { DeckOptions } from "./authoring/index";
+import type { AssetLoader } from "./assets";
 import type { RenderOptions, WriterAdapter } from "./adapter";
 import {
   COMPOSITION_SOURCE,
@@ -9,10 +10,11 @@ import {
   type SlideFactoryInputWithTemplate,
   type SlideOptions,
   type SourceContextInput,
+  type SourceContextValue,
 } from "./composition/types";
 import type { Diagnostics } from "./diagnostics";
 import type { SemanticAuthorGraph } from "./graph";
-import { resultOk, stageSummary, type StageArtifactStatus } from "./pipeline";
+import { resultOk, stageSummary, type ProjectOptions, type StageArtifactStatus } from "./pipeline";
 import { PipelineArtifactCollection } from "./pipeline-artifacts";
 import {
   compileSource,
@@ -22,7 +24,7 @@ import {
   type ProjectResult,
   type RenderResult,
 } from "./pipeline-runner";
-import type { PptxPackageModel } from "./projection/pptx";
+import type { PptxPackageModel, PptxPackageModelCandidate } from "./projection/pptx/model";
 import type { StyleSheet } from "./style/stylesheet";
 import type { EmptySlideTemplateSet, SlideTemplateSet, TemplateName } from "./templates";
 
@@ -36,12 +38,17 @@ export type {
 } from "./composition/types";
 export type { CompileResult, ProjectResult, RenderResult } from "./pipeline-runner";
 
-type WithSource<TSourceContext, TTemplates extends SlideTemplateSet> = [TSourceContext] extends [
-  void,
-]
+type WithSource<
+  TSourceContext extends SourceContextValue | void,
+  TTemplates extends SlideTemplateSet,
+> = [TSourceContext] extends [void]
   ? never
   : (sourceContext: TSourceContext) => BoundSource<TSourceContext, TTemplates>;
 
+type PresentStageArtifactStatus = Exclude<StageArtifactStatus, "missing">;
+
+function projectedArtifactStatus(value: undefined, diagnostics: Diagnostics): "missing";
+function projectedArtifactStatus<T>(value: T, diagnostics: Diagnostics): PresentStageArtifactStatus;
 function projectedArtifactStatus<T>(
   value: T | undefined,
   diagnostics: Diagnostics,
@@ -64,9 +71,9 @@ function projectedArtifactStatus<T>(
  * @typeParam TTemplates - The Deck-local Slide Template set owned by the source Deck.
  */
 export class BoundSource<
-  TSourceContext = void,
+  TSourceContext extends SourceContextValue | void = void,
   TTemplates extends SlideTemplateSet = SlideTemplateSet,
-> implements CompositionSource<TSourceContext> {
+> implements CompositionSource<TSourceContext, TTemplates> {
   readonly #source: Deck<TSourceContext, TTemplates>;
   readonly #sourceContext: TSourceContext;
 
@@ -79,7 +86,7 @@ export class BoundSource<
     this.#sourceContext = sourceContext;
   }
 
-  [COMPOSITION_SOURCE](): CompositionSourceInternals<TSourceContext> {
+  [COMPOSITION_SOURCE](): CompositionSourceInternals<TSourceContext, TTemplates> {
     const source = this.#source[COMPOSITION_SOURCE]();
     return {
       entries: source.entries,
@@ -105,8 +112,13 @@ export class BoundSource<
    *
    * @returns A project result with diagnostics, stage summaries, and the projected model when valid.
    */
-  project(): ProjectResult {
-    return projectSource({ source: this, options: this.#source.options });
+  project(options?: ProjectOptions): Promise<ProjectResult> {
+    return projectSource({
+      source: this,
+      options: this.#source.options,
+      projectOptions: options,
+      assetLoaders: this.#source.assetLoaders,
+    });
   }
 
   /**
@@ -120,6 +132,7 @@ export class BoundSource<
       source: this,
       options: this.#source.options,
       renderInput: config ?? {},
+      assetLoaders: this.#source.assetLoaders,
     });
   }
 }
@@ -139,12 +152,13 @@ type UntemplatedSlideOptions = Omit<SlideOptions<SlideTemplateSet>, "template"> 
  * @typeParam TTemplates - Deck-local Slide Template set inferred from `new Deck({ templates })`.
  */
 export class Deck<
-  TSourceContext = void,
+  TSourceContext extends SourceContextValue | void = void,
   TTemplates extends SlideTemplateSet = EmptySlideTemplateSet,
-> implements CompositionSource<TSourceContext> {
+> implements CompositionSource<TSourceContext, TTemplates> {
   readonly #options: DeckOptions<TTemplates>;
-  readonly #entries: CompositionEntry<TSourceContext>[] = [];
+  readonly #entries: CompositionEntry<TSourceContext, TTemplates>[] = [];
   readonly #stylesheets: StyleSheet[] = [];
+  readonly #assetLoaders: AssetLoader[] = [];
   readonly #artifacts = new PipelineArtifactCollection();
 
   /** Bind Source Context to this Deck so it can be compiled, projected, rendered, or mounted. */
@@ -163,7 +177,11 @@ export class Deck<
     return this.#options;
   }
 
-  [COMPOSITION_SOURCE](): CompositionSourceInternals<TSourceContext> {
+  get assetLoaders(): readonly AssetLoader[] {
+    return this.#assetLoaders;
+  }
+
+  [COMPOSITION_SOURCE](): CompositionSourceInternals<TSourceContext, TTemplates> {
     return {
       entries: this.#entries,
       stylesheets: this.#stylesheets,
@@ -183,6 +201,25 @@ export class Deck<
   useStyles(stylesheet: StyleSheet): this {
     this.#stylesheets.push(stylesheet);
     this.#artifacts.invalidateFromSource();
+    return this;
+  }
+
+  /**
+   * Register a source-local Asset Loading Boundary for media metadata and bytes.
+   *
+   * Asset loaders keep runtime-specific filesystem, framework-public URL, or authenticated media
+   * rules outside the multi-runtime core. Project and Render consume the registered loaders when
+   * media metadata or bytes are required.
+   *
+   * Loaders are evaluated before deckjsx's built-in asset boundary and in registration order. The
+   * loader that resolves Project metadata also owns Render byte loading for that source.
+   *
+   * @param loader - Asset loader with optional probe/load functions.
+   * @returns This Deck, for fluent authoring.
+   */
+  useAssets(loader: AssetLoader): this {
+    this.#assetLoaders.push(loader);
+    this.#artifacts.invalidateAssets();
     return this;
   }
 
@@ -228,9 +265,18 @@ export class Deck<
   slide(
     optionsOrFactory:
       | UntemplatedSlideOptions
-      | SlideOptions<SlideTemplateSet, string>
-      | SlideFactory<TSourceContext, any>,
-    maybeFactory?: SlideFactory<TSourceContext, any>,
+      | SlideOptions<TTemplates, TemplateName<TTemplates>>
+      | SlideFactory<TSourceContext>
+      | SlideFactory<
+          TSourceContext,
+          SlideFactoryInputWithTemplate<TSourceContext, TTemplates, TemplateName<TTemplates>>
+        >,
+    maybeFactory?:
+      | SlideFactory<TSourceContext>
+      | SlideFactory<
+          TSourceContext,
+          SlideFactoryInputWithTemplate<TSourceContext, TTemplates, TemplateName<TTemplates>>
+        >,
   ): this {
     const options = typeof optionsOrFactory === "function" ? undefined : optionsOrFactory;
     const factory = typeof optionsOrFactory === "function" ? optionsOrFactory : maybeFactory;
@@ -254,21 +300,21 @@ export class Deck<
    * @param context - Required child Source Context value or synchronous mapper when the child needs context.
    * @returns This Deck, for fluent authoring.
    */
-  mount<TChildContext, TChildTemplates extends SlideTemplateSet>(
+  mount<TChildContext extends SourceContextValue | void, TChildTemplates extends SlideTemplateSet>(
     sourceKey: string,
     child: Deck<TChildContext, TChildTemplates>,
     ...context: [TChildContext] extends [void]
       ? []
       : [sourceContext: SourceContextInput<TSourceContext, TChildContext>]
   ): this;
-  mount<TChildContext, TChildTemplates extends SlideTemplateSet>(
+  mount<TChildContext extends SourceContextValue | void, TChildTemplates extends SlideTemplateSet>(
     sourceKey: string,
     child: BoundSource<TChildContext, TChildTemplates>,
   ): this;
   mount(
     sourceKey: string,
-    child: CompositionSource<unknown>,
-    ...context: readonly unknown[]
+    child: CompositionSource<SourceContextValue, SlideTemplateSet>,
+    ...context: readonly SourceContextInput<TSourceContext, SourceContextValue>[]
   ): this {
     this.#entries.push({
       kind: "mount",
@@ -298,7 +344,7 @@ export class Deck<
    * @param projection - The projected PPTX Package Model to use as this Deck's projection state.
    * @returns This Deck, for fluent pipeline editing.
    */
-  defineProjection(projection: PptxPackageModel): this {
+  defineProjection(projection: PptxPackageModelCandidate): this {
     this.#artifacts.replaceProjectionArtifact(projection);
     return this;
   }
@@ -336,13 +382,15 @@ export class Deck<
    *
    * @returns A project result with diagnostics, stage summaries, and the projected model when valid.
    */
-  project(this: Deck<void, TTemplates>): ProjectResult {
+  project(this: Deck<void, TTemplates>, options?: ProjectOptions): Promise<ProjectResult> {
     return projectSource({
       source: this,
       options: this.#options,
+      projectOptions: options,
       definedGraph: this.#artifacts.graph,
       definedProjection: this.#artifacts.projection,
       artifacts: this.#artifacts,
+      assetLoaders: this.#assetLoaders,
     });
   }
 
@@ -363,6 +411,7 @@ export class Deck<
       definedGraph: this.#artifacts.graph,
       definedProjection: this.#artifacts.projection,
       artifacts: this.#artifacts,
+      assetLoaders: this.#assetLoaders,
     });
   }
 }

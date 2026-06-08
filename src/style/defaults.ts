@@ -5,6 +5,7 @@ import type {
   ShapeStyle,
   SlideStyle,
   StyleForAuthoredTag,
+  StyleDeclaration,
   TextRunStyle,
   TextStyle,
   ViewStyle,
@@ -144,7 +145,7 @@ export const ELEMENT_DEFAULTS: {
   },
 };
 
-export function elementDefaultsFor(node: SemanticNode): Record<string, unknown> | undefined {
+export function elementDefaultsFor(node: SemanticNode): StyleDeclaration | undefined {
   switch (node.kind) {
     case "slide":
       return ELEMENT_DEFAULTS.slide;

@@ -26,5 +26,5 @@
       "deckjsx/jsx-runtime": ["./src/jsx-runtime.ts"]
     }
   },
-  "exclude": ["dist", "sample"]
+  "exclude": [".github", "dist", "sample"]
 }

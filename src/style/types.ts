@@ -88,6 +88,9 @@ type BaseAuthorProps = {
   rotation?: number;
   transform?: string;
   transformOrigin?: string;
+  filter?: string;
+  mixBlendMode?: string;
+  isolation?: "auto" | "isolate";
   zIndex?: number;
   flipH?: boolean;
   flipV?: boolean;
@@ -333,6 +336,28 @@ export type TextRunStyle = Pick<
   | "textShadow"
 >;
 
+type KnownStyleDeclarationSource =
+  | SlideStyle
+  | ViewStyle
+  | TextStyle
+  | TextRunStyle
+  | ImageStyle
+  | ShapeStyle;
+type KeysOfUnion<T> = T extends T ? keyof T : never;
+type ValueOfUnion<T, TKey extends PropertyKey> = T extends T
+  ? TKey extends keyof T
+    ? T[TKey]
+    : never
+  : never;
+type KnownStyleDeclarationKey = KeysOfUnion<KnownStyleDeclarationSource>;
+export type StyleDeclarationValue = ValueOfUnion<
+  KnownStyleDeclarationSource,
+  KnownStyleDeclarationKey
+>;
+export type StyleDeclaration = {
+  readonly [Key in KnownStyleDeclarationKey]?: ValueOfUnion<KnownStyleDeclarationSource, Key>;
+};
+
 export type StyleForAuthoredTag<TTag extends string> = TTag extends "span"
   ? TextRunStyle
   : TTag extends "img"
@@ -346,6 +371,9 @@ export const VIEW_STYLE_KEYS = [
   "rotation",
   "transform",
   "transformOrigin",
+  "filter",
+  "mixBlendMode",
+  "isolation",
   "zIndex",
   "flipH",
   "flipV",
@@ -527,6 +555,9 @@ export const IMAGE_STYLE_KEYS = [
   "rotation",
   "transform",
   "transformOrigin",
+  "filter",
+  "mixBlendMode",
+  "isolation",
   "zIndex",
   "flipH",
   "flipV",

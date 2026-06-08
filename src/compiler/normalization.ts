@@ -21,14 +21,36 @@ import {
   parseBorderShorthand,
   parseOutlineShorthand,
   parseSideBorderAuthoring,
+  parseStrokeShorthand,
 } from "../style/stroke";
 import { parseTextDecoration, resolveTextWrap } from "../style/typography";
 
 export type NormalizedSlideProps = Omit<SlideProps, "style"> & SlideStyle;
 export type NormalizedViewProps = Omit<ViewProps, "style"> & ViewStyle;
 export type NormalizedTextProps = Omit<TextProps, "style"> & TextStyle;
-export type NormalizedImageProps = Omit<ImageProps, "style"> & ImageStyle;
+export type NormalizedImageProps = Partial<Omit<ImageProps, "style">> & ImageStyle;
 export type NormalizedShapeProps = Omit<ShapeProps, "style"> & ShapeStyle;
+export type SlideNormalizationInput = Partial<Omit<SlideProps, "style">> &
+  SlideStyle & {
+    readonly style?: SlideStyle;
+  };
+export type ViewNormalizationInput = Partial<Omit<ViewProps, "style">> &
+  ViewStyle & {
+    readonly style?: ViewStyle;
+  };
+export type TextNormalizationInput = Partial<Omit<TextProps, "style">> &
+  TextStyle & {
+    readonly style?: TextStyle;
+  };
+export type ImageNormalizationInput = Partial<Omit<ImageProps, "style">> &
+  ImageStyle & {
+    readonly style?: ImageStyle;
+  };
+export type ShapeNormalizationInput = Partial<Omit<ShapeProps, "style">> &
+  ShapeStyle & {
+    readonly style?: ShapeStyle;
+    readonly shape: ShapeProps["shape"];
+  };
 
 function resolveFlexDirection(
   direction: StackAxis | undefined,
@@ -193,7 +215,7 @@ export function parsePlaceContent(value: string | undefined): {
   };
 }
 
-export function normalizeViewProps(props: ViewProps): NormalizedViewProps {
+export function normalizeViewProps(props: ViewNormalizationInput): NormalizedViewProps {
   const { style, ...rest } = props;
   const resolved: NormalizedViewProps = {
     ...rest,
@@ -274,7 +296,7 @@ export function normalizeViewProps(props: ViewProps): NormalizedViewProps {
   };
 }
 
-export function normalizeTextProps(props: TextProps): NormalizedTextProps {
+export function normalizeTextProps(props: TextNormalizationInput): NormalizedTextProps {
   const { style, ...rest } = props;
   const resolved: NormalizedTextProps = {
     ...rest,
@@ -352,7 +374,7 @@ export function normalizeTextProps(props: TextProps): NormalizedTextProps {
 }
 
 export function normalizeImageProps(
-  props: ImageProps,
+  props: ImageNormalizationInput,
   context?: LengthResolutionContext,
 ): NormalizedImageProps {
   const { style, ...rest } = props;
@@ -392,7 +414,7 @@ export function normalizeImageProps(
   };
 }
 
-export function normalizeSlideProps(props: SlideProps): NormalizedSlideProps {
+export function normalizeSlideProps(props: SlideNormalizationInput): NormalizedSlideProps {
   const { style, ...rest } = props;
   const resolved: NormalizedSlideProps = {
     ...rest,
@@ -406,7 +428,7 @@ export function normalizeSlideProps(props: SlideProps): NormalizedSlideProps {
   };
 }
 
-export function normalizeShapeProps(props: ShapeProps): NormalizedShapeProps {
+export function normalizeShapeProps(props: ShapeNormalizationInput): NormalizedShapeProps {
   const { style, ...rest } = props;
   const resolved: NormalizedShapeProps = {
     ...rest,
@@ -419,6 +441,7 @@ export function normalizeShapeProps(props: ShapeProps): NormalizedShapeProps {
   const borderBottom = parseSideBorderAuthoring(resolved.borderBottom);
   const borderLeft = parseSideBorderAuthoring(resolved.borderLeft);
   const outline = parseOutlineShorthand(resolved.outline);
+  const stroke = parseStrokeShorthand(resolved.stroke);
   const inset = resolveInset(
     resolved.inset,
     resolved.top,
@@ -440,9 +463,10 @@ export function normalizeShapeProps(props: ShapeProps): NormalizedShapeProps {
       resolved.backgroundImage ??
       background.backgroundColor,
     fillTransparency: resolved.fillTransparency ?? resolved.backgroundTransparency,
-    borderColor: resolved.borderColor ?? resolved.stroke ?? border.borderColor,
-    borderWidth: resolved.borderWidth ?? resolved.strokeWidth ?? border.borderWidth,
-    borderStyle: resolved.borderStyle ?? border.borderStyle,
+    borderColor: resolved.borderColor ?? stroke.strokeColor ?? border.borderColor,
+    borderWidth:
+      resolved.borderWidth ?? resolved.strokeWidth ?? stroke.strokeWidth ?? border.borderWidth,
+    borderStyle: resolved.borderStyle ?? stroke.strokeStyle ?? border.borderStyle,
     borderTransparency:
       resolved.borderTransparency ?? normalizeOpacityAsTransparency(resolved.strokeOpacity),
     borderTopColor: resolved.borderTopColor ?? borderTop.color,

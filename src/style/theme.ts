@@ -30,7 +30,9 @@ type ThemeInstance<TTheme extends object = ThemeInput> = {
 
 export type Theme<TTheme extends object = ThemeInput> = ThemeInstance<TTheme> & Readonly<TTheme>;
 
-class ThemeImpl<TTheme extends object = ThemeInput> {
+type ThemeRuntime<TTheme extends object> = ThemeImpl<TTheme> & Theme<TTheme>;
+
+class ThemeImpl<TTheme extends object = ThemeInput> implements ThemeInstance<TTheme> {
   readonly [THEME_INPUT]: TTheme;
   readonly [THEME_DIAGNOSTICS]: readonly Diagnostic[];
 
@@ -54,11 +56,12 @@ class ThemeImpl<TTheme extends object = ThemeInput> {
   }
 
   extend<const TExtension extends ThemeInput>(
+    this: ThemeRuntime<TTheme>,
     extension: TExtension | Theme<TExtension> | ((theme: Theme<TTheme>) => TExtension),
   ): Theme<MergedTheme<TTheme, TExtension>> {
     const input =
       typeof extension === "function"
-        ? extension(this as unknown as Theme<TTheme>)
+        ? extension(this)
         : isTheme(extension)
           ? themeInput(extension)
           : extension;
@@ -71,9 +74,10 @@ class ThemeImpl<TTheme extends object = ThemeInput> {
   }
 
   defineStyles<const TStyleSheet extends StyleSheetInput>(
+    this: ThemeRuntime<TTheme>,
     factory: (theme: Theme<TTheme>) => TStyleSheet,
   ): StyleSheet<TStyleSheet["classes"]> {
-    return new StyleSheet(factory(this as unknown as Theme<TTheme>));
+    return new StyleSheet(factory(this));
   }
 }
 

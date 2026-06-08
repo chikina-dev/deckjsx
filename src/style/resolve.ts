@@ -17,6 +17,10 @@ import {
 import type { SelectorContext } from "./selectors";
 import type { StyleSheet } from "./stylesheet";
 import { themeDiagnostics, themeInput, type Theme } from "./theme";
+import type { StyleDeclaration, StyleDeclarationValue } from "./types";
+
+export type ResolvedStyleDeclaration = StyleDeclaration;
+export type ResolvedStyleValue = StyleDeclarationValue;
 
 export type ResolvedStyleLayer = "default" | "theme" | "class" | "style";
 
@@ -33,12 +37,12 @@ export type ResolvedStyleSource =
   | { readonly layer: "style" };
 
 export type ResolvedStyleProperty = {
-  readonly value: unknown;
+  readonly value: ResolvedStyleValue | undefined;
   readonly source: ResolvedStyleSource;
 };
 
 export type ResolvedStyle = {
-  readonly style: Readonly<Record<string, unknown>>;
+  readonly style: Readonly<ResolvedStyleDeclaration>;
   readonly properties: Readonly<Record<string, ResolvedStyleProperty>>;
   readonly appliedClasses: readonly ResolvedStyleSource[];
 };
@@ -84,11 +88,11 @@ function themesBySource(roots: readonly ComposedAuthorRoot[]): ReadonlyMap<strin
 }
 
 function applyProperties(
-  style: Record<string, unknown>,
+  style: ResolvedStyleDeclaration,
   source: ResolvedStyleSource,
   properties: Record<string, ResolvedStyleProperty>,
 ): void {
-  Object.entries(style).forEach(([key, value]) => {
+  Object.entries<StyleDeclarationValue | undefined>(style).forEach(([key, value]) => {
     properties[key] = { value, source };
   });
 }
@@ -111,9 +115,9 @@ function resolvedStyleFor(
 
   const themeDefaults = node.authoredTag && theme ? themeInput(theme).defaults : undefined;
   const themeDefault = node.authoredTag ? themeDefaults?.[node.authoredTag] : undefined;
-  if (node.authoredTag && typeof themeDefault === "object" && themeDefault !== null) {
+  if (node.authoredTag && themeDefault) {
     applyProperties(
-      themeDefault as Record<string, unknown>,
+      themeDefault,
       {
         layer: "theme",
         defaultKey: node.authoredTag,
@@ -137,12 +141,8 @@ function resolvedStyleFor(
     });
   }
 
-  if (typeof entity?.authored.style === "object" && entity.authored.style !== null) {
-    applyProperties(
-      entity.authored.style as Record<string, unknown>,
-      { layer: "style" },
-      properties,
-    );
+  if (entity?.authored.style) {
+    applyProperties(entity.authored.style, { layer: "style" }, properties);
   }
 
   return {

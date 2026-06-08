@@ -1,5 +1,5 @@
-import { pptxgenjs, type RenderOptions, type WriterAdapter } from "./adapter";
-import type { ProjectInspectionAdapterLimitation, PptxPackageModel } from "./projection/pptx";
+import { pptx, type RenderOptions, type WriterAdapter } from "./adapter";
+import type { ProjectInspectionAdapterLimitation, PptxPackageModel } from "./projection/pptx/model";
 import type { ProjectionFormat } from "./pipeline";
 
 export function defaultWriterAdapterFor(
@@ -8,7 +8,7 @@ export function defaultWriterAdapterFor(
 ): WriterAdapter<PptxPackageModel, "pptx"> {
   switch (format) {
     case "pptx":
-      return pptxgenjs(options);
+      return pptx(options);
   }
 }
 
@@ -17,27 +17,30 @@ export function defaultAdapterLimitationsFor(
 ): readonly ProjectInspectionAdapterLimitation[] {
   switch (format) {
     case "pptx":
-      return [
-        {
-          adapter: "pptxgenjs",
-          code: "W_PPTXGENJS_TEMPORARY_ADAPTER",
-          message:
-            "The pptxgenjs adapter consumes the Pptx Package Model directly, but it cannot serialize every projected package-part detail yet.",
-        },
-      ];
+      return [];
   }
 }
 
-export function isWriterAdapter(value: unknown): value is WriterAdapter {
+type WriterAdapterInput = RenderOptions | WriterAdapter<PptxPackageModel> | undefined;
+
+function isObject(value: WriterAdapterInput): value is Exclude<WriterAdapterInput, undefined> {
+  return typeof value === "object" && value !== null;
+}
+
+export function isWriterAdapter(
+  value: WriterAdapterInput,
+): value is WriterAdapter<PptxPackageModel> {
+  if (!isObject(value) || !("kind" in value)) {
+    return false;
+  }
+
   return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as { kind?: unknown }).kind === "deckjsx.writerAdapter" &&
-    typeof (value as { name?: unknown }).name === "string" &&
-    (value as { projectionFormat?: unknown }).projectionFormat === "pptx" &&
-    typeof (value as { format?: unknown }).format === "string" &&
-    typeof (value as { options?: unknown }).options === "object" &&
-    (value as { options?: unknown }).options !== null &&
-    typeof (value as { render?: unknown }).render === "function"
+    value.kind === "deckjsx.writerAdapter" &&
+    typeof value.name === "string" &&
+    value.projectionFormat === "pptx" &&
+    typeof value.format === "string" &&
+    typeof value.options === "object" &&
+    value.options !== null &&
+    typeof value.render === "function"
   );
 }

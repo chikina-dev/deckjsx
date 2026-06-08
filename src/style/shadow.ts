@@ -139,7 +139,7 @@ export function parseShadowShorthand(value?: string): ShadowIR | undefined {
   return {
     type,
     color: parsedColor?.color ?? "000000",
-    opacity: parsedColor?.alpha,
+    opacity: parsedColor?.alpha ?? 1,
     blurPt,
     offsetPt,
     angle: angle % 360,

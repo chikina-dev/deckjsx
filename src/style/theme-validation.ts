@@ -38,7 +38,7 @@ function themeDiagnostic(input: {
 
 export function validateThemeDefaults(input: object): readonly Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
-  const defaults = (input as { readonly defaults?: unknown }).defaults;
+  const defaults = isRecord(input) ? input.defaults : undefined;
   if (defaults === undefined) {
     return diagnostics;
   }
@@ -54,7 +54,7 @@ export function validateThemeDefaults(input: object): readonly Diagnostic[] {
     ];
   }
 
-  Object.entries(defaults as Record<string, unknown>).forEach(([tag, style]) => {
+  Object.entries(defaults).forEach(([tag, style]) => {
     if (!isAuthoredTag(tag)) {
       diagnostics.push(
         themeDiagnostic({
