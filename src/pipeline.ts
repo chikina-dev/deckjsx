@@ -70,7 +70,6 @@ export type RenderAssemblyExpectedEntrySummary = {
   readonly requirementCondition?: string;
   readonly requirementDependencies?: readonly string[];
   readonly requirementReason?: string;
-  readonly compression: "default" | "store";
 };
 
 export type RenderAssemblyFinalEntrySummary = {

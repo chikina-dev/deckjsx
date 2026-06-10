@@ -1,5 +1,4 @@
 import { describe, expect, test } from "vite-plus/test";
-import { unzipSync } from "fflate";
 import { pptx, type WriterAdapter } from "../../src/adapter.ts";
 import { createDiagnostics } from "../../src/diagnostics/index.ts";
 import { Deck, StyleSheet, Theme, type RenderInspectionSummary } from "../../src/index.ts";
@@ -34,7 +33,12 @@ import type {
   PptxThemePartPayload,
   SemanticAuthorGraph,
 } from "../../src/inspect.ts";
-import { expectPptxPart, expectPptxPartByPath, SAMPLE_SVG_DATA_URI } from "../helpers.ts";
+import {
+  expectPptxPart,
+  expectPptxPartByPath,
+  SAMPLE_SVG_DATA_URI,
+  unzipSync,
+} from "../helpers.ts";
 
 function textNodeIdBy(graph: SemanticAuthorGraph, text: string): GraphNodeId | undefined {
   for (const node of graph.nodes.values()) {
@@ -716,7 +720,6 @@ describe("project/render pipeline", () => {
         reason: "mediaBytesMissing",
         expected: expect.objectContaining({
           path: "ppt/media/media1.png",
-          compression: "store",
           requirement: "conditional",
           required: true,
           requirementReason: mediaPart?.requirement?.reason,
@@ -806,7 +809,6 @@ describe("project/render pipeline", () => {
           packagePartId: optionalMediaPartId,
           requirement: "optional",
           required: false,
-          compression: "store",
         }),
         reasonDetails: expect.objectContaining({ kind: "mediaBytesMissing" }),
         final: expect.objectContaining({
@@ -860,7 +862,6 @@ describe("project/render pipeline", () => {
         status: "reused",
         expected: expect.objectContaining({
           path: "ppt/slides/slide1.xml",
-          compression: "default",
         }),
         final: expect.objectContaining({
           status: "reused",
@@ -1320,33 +1321,32 @@ describe("project/render pipeline", () => {
     });
   });
 
-  test("render reuses package part build artifacts when only compression changes", async () => {
+  test("render reuses package part build artifacts across store-only renders", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Compression reuse" }, () => (
+    deck.slide({ name: "Store reuse" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 2, height: 0.5 }}>compression</p>
+        <p style={{ x: 1, y: 1, width: 2, height: 0.5 }}>store</p>
       </>
     ));
 
-    const fast = await deck.render({ compression: "fast" });
-    const small = await deck.render({ compression: "small" });
+    const first = await deck.render();
+    const second = await deck.render();
 
-    expect(fast.ok).toBe(true);
-    expect(small.ok).toBe(true);
-    expect(fast.artifact?.bytes).not.toEqual(small.artifact?.bytes);
-    expect(small.summary?.assembly?.reusedCount).toBeGreaterThan(0);
-    expect(small.summary?.assembly?.entries).toContainEqual(
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(first.artifact?.bytes).toEqual(second.artifact?.bytes);
+    expect(second.summary?.assembly?.reusedCount).toBeGreaterThan(0);
+    expect(second.summary?.assembly?.entries).toContainEqual(
       expect.objectContaining({
         path: "ppt/slides/slide1.xml",
         status: "reused",
-        compression: "default",
       }),
     );
   });
 
-  test("render applies Assembly Plan compression per ZIP entry", async () => {
+  test("render emits store-only ZIP entries", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Entry compression" }, () => (
+    deck.slide({ name: "Store entries" }, () => (
       <>
         <img
           data={dataUriFromBytes("image/png", pngHeaderBytes(2, 1))}
@@ -1355,14 +1355,14 @@ describe("project/render pipeline", () => {
       </>
     ));
 
-    const render = await deck.render({ compression: "fast" });
+    const render = await deck.render();
     const bytes = render.artifact?.bytes ?? new Uint8Array();
 
     expect(render.ok).toBe(true);
     expect(render.summary?.assembly?.entries).toContainEqual(
-      expect.objectContaining({ path: "ppt/media/media1.png", compression: "store" }),
+      expect.objectContaining({ path: "ppt/media/media1.png" }),
     );
-    expect(localZipCompressionMethod(bytes, "ppt/slides/slide1.xml")).toBe(8);
+    expect(localZipCompressionMethod(bytes, "ppt/slides/slide1.xml")).toBe(0);
     expect(localZipCompressionMethod(bytes, "ppt/media/media1.png")).toBe(0);
   });
 
@@ -3181,7 +3181,7 @@ describe("project/render pipeline", () => {
     );
   });
 
-  test("render produces deterministic PPTX bytes for the same input and compression", async () => {
+  test("render produces deterministic PPTX bytes for the same input", async () => {
     function buildDeck() {
       const deck = new Deck({
         layout: { width: 10, height: 5.625, unit: "in" },
@@ -3206,8 +3206,8 @@ describe("project/render pipeline", () => {
       return deck;
     }
 
-    const first = await buildDeck().render({ compression: "fast" });
-    const second = await buildDeck().render({ compression: "fast" });
+    const first = await buildDeck().render();
+    const second = await buildDeck().render();
 
     expect(first.ok).toBe(true);
     expect(second.ok).toBe(true);
@@ -3242,8 +3242,8 @@ describe("project/render pipeline", () => {
       return deck;
     }
 
-    const first = await buildDeck().render({ compression: "fast" });
-    const second = await buildDeck().render({ compression: "fast" });
+    const first = await buildDeck().render();
+    const second = await buildDeck().render();
     const firstZip = unzipSync(first.artifact?.bytes ?? new Uint8Array());
 
     expect(first.ok).toBe(true);

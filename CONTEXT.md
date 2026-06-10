@@ -13,6 +13,11 @@ The structural tree produced from JSX authoring. It preserves JSX parent-child s
 Composition-specific source metadata should not be mutated into Author Tree nodes; source origin is resolved by composition and graph-building context.
 _Avoid_: backend input model
 
+**AuthorNode**:
+A legacy internal authoring-shaped node representation distinct from the Author Tree. AuthorNode values are not the canonical JSX capture model and should not be used as a bridge from the Semantic Author Graph back into layout or projection.
+Author Tree is the valid JSX-to-graph input; AuthorNode should be removed during v0.8.1 cleanup rather than kept as an alternate internal authoring node.
+_Avoid_: Author Tree, layout input snapshot, public authoring model
+
 **Authoring Interface**:
 The user-facing vocabulary for writing decks with deckjsx, including Deck, JSX authoring elements, Theme, StyleSheet, diagnostics that authors handle, and the type helpers needed to author slides. It should not make graph internals, legacy output projections, or concrete output adapters look like ordinary authoring concepts.
 It is not a public surface for directly constructing or inspecting Author Tree nodes.
@@ -48,6 +53,13 @@ Style Class References are produced from clsx-like `className` authoring values 
 Any style-capable authoring node may carry Style Class References; fragments and primitive text leaves do not.
 `className` is not a direct style prop; once normalized, it should appear as Style Class References rather than inside authored direct props.
 _Avoid_: resolved class style, merge-order precedence
+
+**Direct Style Prop**:
+A legacy authoring spelling where CSS-like layout or visual style values are written as JSX element props, such as `x`, `color`, or `display`, instead of inside `style`, a StyleSheet, a Theme Default, or a Template Area relationship.
+Direct Style Props are not structural or semantic props; `children`, `className`, `style`, `area`, `src`, `data`, and `shape` remain ordinary authoring props.
+Slide Declaration options follow the same rule: slide-level appearance belongs to `style`, StyleSheet classes, Theme Defaults, or Template Areas rather than standalone background or layout options.
+After v0.8.1, Direct Style Props are invalid authoring input rather than deprecated aliases. Diagnostics should describe them as unsupported authoring props in the current interface, not as migration-only removed props.
+_Avoid_: alternate inline style spelling, structural prop
 
 **StyleSheet**:
 An author-defined collection of reusable style classes registered on a Deck instance, created with `new StyleSheet(...)` or `theme.defineStyles(...)` and attached with `deck.useStyles()`. StyleSheets are source-local authored resources; parent Deck stylesheets do not implicitly flow into mounted child Decks.
@@ -106,6 +118,26 @@ _Avoid_: string area name, direct x/y replacement, style property, output placeh
 **Resolved Style Inspection View**:
 An inspectable view of style values after deckjsx has applied CSS-like style resolution rules such as element defaults, Theme defaults, registered StyleSheet rules, and inline style. It exists to show what output projections will consume without turning the Semantic Author Graph itself into a PPTX- or PDF-specific model. It may expose theme application trace, stylesheet source order, specificity, and property-level winner provenance, but Theme itself remains Deck-level configuration.
 _Avoid_: output style model, PPTX shape properties
+
+**Layout Input Snapshot**:
+An internal input snapshot prepared for layout from the Semantic Author Graph, Resolved Style Inspection View, Template Area relationships, Asset probe metadata, deck size, and ordered semantic children.
+It should contain only the semantic node kind, graph/source provenance, layout-relevant resolved style values, paint/text-construction inputs, structural layout data such as Template Area Reference, shape kind, image source reference, template area frame/kind, image probe dimensions, and child/text-run order needed by the layout solver.
+It is distinct from Projected Layout Snapshot: Layout Input Snapshot describes what the solver consumes, while Projected Layout Snapshot describes the concrete frames, filtering, clipping, generated visual layers, and layout results that downstream output projections consume.
+It should not contain Author Tree props, AuthorNode values, public NodeProps, unresolved class names, or live references to the full Resolved Style Map.
+_Avoid_: authoring props replay, resolved style map passthrough, layout result
+
+**Projected Layout Snapshot**:
+An internal snapshot of concrete layout frames, flow results, paint-order inputs, clipping, and layout-derived visual data computed from the Semantic Author Graph, Resolved Style Inspection View, Template Area relationships, and deck size before output-specific package projection.
+It is not an Author Tree, AuthorNode tree, or public authoring props replay; layout should consume graph and resolved-style snapshots rather than converting semantic nodes back into authoring-shaped nodes.
+Its boundary should make types stronger by separating authoring props, resolved style values, layout inputs, projected layout results, and output package payloads instead of using one broad prop shape across multiple stages.
+In v0.8.1 it is an internal stage boundary, not a public define API, Project Result artifact, or persisted schema requiring its own version field.
+Cross-output visual layering such as generated backgrounds, borders, outlines, clipping, visibility, and rich text run content belongs here before output-specific package projection chooses how to serialize it.
+_Avoid_: authoring-shaped layout bridge, solver IR, PPTX package model
+
+**Projected Layout Identity**:
+Stable identity for a node inside a Projected Layout Snapshot. It is distinct from Graph Identity because one semantic graph node may produce multiple layout nodes or generated layout artifacts.
+Projected Layout nodes should retain Graph Identity and Style Entity provenance, but their own identity belongs to the layout snapshot.
+_Avoid_: graph node id, PPTX element identity, PowerPoint shape id
 
 **Inspection Interface**:
 The explicit public surface for inspecting compiled deck meaning, including the Semantic Author Graph and inspection-only views such as resolved styles. It is separate from the Authoring Interface so graph internals and debug-oriented payloads do not look like everyday authoring vocabulary.
@@ -228,8 +260,9 @@ Package part payloads are part of the inspection type vocabulary. They should be
 _Avoid_: XML emission model, writer command payload, media byte cache, path-only placeholder
 
 **Pptx Drawing Projection**:
-The PPTX projection responsibility that turns resolved layout, resolved style, paint-order inputs, template/layout anchors, generated paint layers, and authored graph nodes into Pptx Slide Drawing nodes.
-It owns drawing traversal and reconstruction policy for projection, including flattening or grouping choices, generated background/border/outline nodes, visibility/display handling, and the data needed for later media relationship attachment.
+The PPTX projection responsibility that turns Projected Layout Snapshot nodes and generated visual layers into Pptx Slide Drawing nodes.
+It owns PPTX-specific drawing traversal and reconstruction policy for projection, including flattening or grouping choices, placeholder/layout-part placement, relationship references, object identity, and package-facing drawing payloads.
+Cross-output visual semantics such as generated background/border/outline layers, visibility/display filtering, clipping, rich text run construction, and media topology should already be present in the Projected Layout Snapshot; Pptx Drawing Projection maps those values into PPTX terms rather than regenerating them from graph or authoring props.
 It should preserve projected drawing meaning for inspection and HMR without forcing the Output Writer to reinterpret graph, layout, or CSS-like authoring semantics.
 _Avoid_: writer drawing traversal, raw OOXML shape tree builder, graph authoring model
 
@@ -375,6 +408,7 @@ _Avoid_: XML-shaped Projected Document Model, raw XML tree as inspection model, 
 
 **PPTX Writer Composite Node**:
 The internal module boundary that turns Pptx Package Model snapshots into package-part build artifacts, assembly plans, ZIP bytes, rendered artifacts, and optional output side effects. It may contain build, XML emission, assembly, ZIP, and sink graphs, but externally it should expose the PPTX writer adapter contract rather than leaking writer internals.
+The composite may keep one render orchestrator as the control owner for stage ordering and Render Result shaping while delegating validation, materialization, assembly, ZIP emission, sinks, and output side effects to smaller internal nodes.
 _Avoid_: writer-side projection, direct imports of projection internals, public ZIP implementation surface
 
 **Render Output Side Effect**:
@@ -398,8 +432,8 @@ Part-local metadata inside a Pptx Package Build Artifact that explains why packa
 _Avoid_: Render diagnostic, Assembly Plan final entry, Projected Document Model
 
 **Pptx Package Assembly Plan**:
-A render-stage plan for assembling package-part build artifacts into the final PPTX ZIP. It defines deterministic entry order, package paths, source build artifact identities, compression policy, and missing/required entry status before ZIP bytes are written.
-Its package structure comes from the Pptx Package Model, while Render adds build artifact availability, writer/media fingerprints, and compression decisions.
+A render-stage plan for assembling package-part build artifacts into the final PPTX ZIP. It defines deterministic entry order, package paths, source build artifact identities, ZIP entry storage policy, and missing/required entry status before ZIP bytes are written.
+Its package structure comes from the Pptx Package Model, while Render adds build artifact availability, writer/media fingerprints, and storage decisions.
 It should use Package Part Order Keys from the Pptx Package Model rather than relying on writer-local ordering.
 It belongs to Render Result inspection/debug output rather than Project Result's primary Pptx Package Model inspection.
 Assembly entries should explain build artifact reuse, rebuild, invalidation, or missing status and the reason for that status.
@@ -649,6 +683,10 @@ Developer: Should primitive JSX text become a Text node immediately?
 
 Domain expert: No. Primitive text remains an Author Tree leaf. The Semantic Author Graph decides whether it becomes an implicit text box, a text run, or an error based on its parent.
 
+Developer: Are Author Tree nodes and AuthorNode values the same thing?
+
+Domain expert: No. Author Tree is the JSX capture model that feeds graph construction. AuthorNode is a legacy internal authoring-shaped representation and should not be used as a post-graph layout bridge.
+
 Developer: Can h1 and p both become generic Text nodes before graph construction?
 
 Domain expert: No. Preserve the Authored Tag in the Author Tree, then raise it into a Semantic Role such as heading or paragraph.
@@ -656,6 +694,10 @@ Domain expert: No. Preserve the Authored Tag in the Author Tree, then raise it i
 Developer: Should styles and assets be children in the renderable graph tree?
 
 Domain expert: No. Keep them as Style Entities and Asset Entities referenced by semantic nodes.
+
+Developer: Can authors write layout or visual style values directly as JSX props?
+
+Domain expert: No. Style and layout values belong in `style`, StyleSheet classes, Theme Defaults, or Template Area relationships. Direct JSX props are reserved for structural and semantic authoring inputs.
 
 Developer: Should PDF output reuse the Pptx Package Model?
 

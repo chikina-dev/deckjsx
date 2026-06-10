@@ -7,15 +7,11 @@ import type {
   RenderedArtifact,
   RenderInspectionSummary,
 } from "./pipeline";
-import type { PptxCompressionMode } from "./pptx-options";
 import { pptxWriterContext } from "./adapter-context";
 import { renderPptxPackage } from "./writers/pptx";
 
-export type { PptxCompressionMode } from "./pptx-options";
-
 export type PptxRenderOptions = {
   readonly output?: string;
-  readonly compression?: PptxCompressionMode;
   readonly inspection?: InspectionDetailLevel;
 };
 

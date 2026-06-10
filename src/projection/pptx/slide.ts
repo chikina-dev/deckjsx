@@ -1,10 +1,9 @@
 import {
   normalizeImageProps,
   normalizeShapeProps,
-  normalizeSlideProps,
   normalizeTextProps,
   normalizeViewProps,
-} from "../../compiler/normalization";
+} from "../../layout/normalization";
 import type {
   AssetEntity,
   GraphNodeId,
@@ -105,7 +104,6 @@ import {
   resolveNodeStrokesSafely,
   shapeFillInputFor,
   shapeStyleFor,
-  slideStyleFor,
   textRunStyleFor,
   textStyleFor,
   unsupportedCompositingSemantics,
@@ -1097,13 +1095,6 @@ function compileChildrenPartial(
   return elements.sort(comparePptxElementsByPaintOrder);
 }
 
-function graphNodeForElement(
-  graph: SemanticAuthorGraph,
-  nodeId: GraphNodeId | undefined,
-): SemanticNode | undefined {
-  return nodeId ? graph.nodes.get(nodeId) : undefined;
-}
-
 function elementOriginFromLayoutOrigin(
   origin: ProjectedLayoutOrigin | undefined,
 ): PptxElementOrigin {
@@ -1117,12 +1108,10 @@ function elementOriginFromLayoutOrigin(
 
 function mapProjectedLayoutNodeToElement(input: {
   node: ProjectedLayoutNode;
-  graph: SemanticAuthorGraph;
   packagePartId: PackagePartId;
   indexPath: readonly number[];
 }): PptxElement {
   const graphNodeId = input.node.origin?.graphNodeIds?.[0];
-  const graphNode = graphNodeForElement(input.graph, graphNodeId);
   const layoutAnchor = layoutAnchorFor({
     templateAreaRef: input.node.origin?.templateAreaRef,
     templateAreaKind: input.node.origin?.templateAreaKind,
@@ -1136,11 +1125,7 @@ function mapProjectedLayoutNodeToElement(input: {
     }),
     packagePartId: input.packagePartId,
     serialized: { shapeObjectId: shapeObjectId(input.indexPath) },
-    origin: input.node.origin
-      ? elementOriginFromLayoutOrigin(input.node.origin)
-      : graphNode
-        ? originFor(graphNode)
-        : {},
+    origin: elementOriginFromLayoutOrigin(input.node.origin),
     frame: input.node.frame,
     measurement: { frame: input.node.frame },
     ...(layoutAnchor ? { layoutAnchor } : {}),
@@ -1189,7 +1174,6 @@ function mapProjectedLayoutNodeToElement(input: {
         children: input.node.children.map((child, index) =>
           mapProjectedLayoutNodeToElement({
             node: child,
-            graph: input.graph,
             packagePartId: input.packagePartId,
             indexPath: [...input.indexPath, index],
           }),
@@ -1278,10 +1262,7 @@ function mapProjectedLayoutNodeToElement(input: {
 }
 
 export function pptxSlidePartFor(input: {
-  graph: SemanticAuthorGraph;
-  resolvedStyles: ResolvedStyleMap;
-  slide: SemanticSlideNode;
-  layoutSlide?: ProjectedLayoutSlide;
+  layoutSlide: ProjectedLayoutSlide;
   slideIndex: number;
   slideFrame: FrameIR;
   slideLayoutPart: PptxPackagePart;
@@ -1289,43 +1270,18 @@ export function pptxSlidePartFor(input: {
 }): PptxSlidePart {
   const slideNumber = input.slideIndex + 1;
   const partId = input.slidePartId;
-  const resolved = resolvedStyleFor(input.slide, input.resolvedStyles);
-  const props = normalizeSlideProps(slideStyleFor(input.slide, input.resolvedStyles));
-  const slideTemplates = input.graph.templates.get(sourceKeyForOrigin(input.slide.origin.source));
-  const backgroundInput = backgroundInputFor(resolved, props);
-  const slideFill = resolveBackgroundLayersSafely(
-    { property: backgroundInput?.property ?? "background", value: backgroundInput?.value },
-    props.backgroundTransparency,
-    {
-      widthEmu: input.slideFrame.widthEmu,
-      heightEmu: input.slideFrame.heightEmu,
-    },
-    input.slideFrame,
-    {
-      borderBox: input.slideFrame,
-      paddingBox: input.slideFrame,
-      contentBox: input.slideFrame,
-    },
-    props.backgroundPosition,
-    props.backgroundSize,
-    props.backgroundRepeat,
-    props.backgroundOrigin,
-    props.backgroundClip,
-  );
   const backgroundLayers = projectBackgroundLayers({
-    layers: input.layoutSlide?.backgroundLayers ?? slideFill.backgroundLayers,
+    layers: input.layoutSlide.backgroundLayers,
     indexPath: [5000 + input.slideIndex],
   });
+  const origin = elementOriginFromLayoutOrigin(input.layoutSlide.origin);
 
   return {
     id: partId,
     category: "authored-content",
     kind: "slide",
     path: `ppt/slides/slide${slideNumber}.xml`,
-    origin: {
-      graphNodeIds: [input.slide.id],
-      ...(input.slide.origin.source ? { source: input.slide.origin.source } : {}),
-    },
+    origin,
     relationships: [
       {
         id: serializedId("rId1"),
@@ -1340,32 +1296,17 @@ export function pptxSlidePartFor(input: {
     ],
     payload: {
       slideId: String(256 + input.slideIndex),
-      name: input.slide.name,
-      background: input.layoutSlide?.background ?? slideFill.fill,
+      name: input.layoutSlide.name,
+      background: input.layoutSlide.background,
       ...(backgroundLayers ? { backgroundLayers } : {}),
       drawing: drawingFromElements(
-        input.layoutSlide
-          ? input.layoutSlide.nodes.map((node, index) =>
-              mapProjectedLayoutNodeToElement({
-                node,
-                graph: input.graph,
-                packagePartId: partId,
-                indexPath: [index],
-              }),
-            )
-          : compileChildren(
-              input.graph,
-              input.resolvedStyles,
-              input.slide.children,
-              slideTemplates,
-              partId,
-              input.slideFrame,
-              [],
-              {
-                viewportWidthEmu: input.slideFrame.widthEmu,
-                viewportHeightEmu: input.slideFrame.heightEmu,
-              },
-            ),
+        input.layoutSlide.nodes.map((node, index) =>
+          mapProjectedLayoutNodeToElement({
+            node,
+            packagePartId: partId,
+            indexPath: [index],
+          }),
+        ),
       ),
     },
   };

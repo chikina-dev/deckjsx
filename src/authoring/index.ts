@@ -2,7 +2,6 @@ import type { JsxKey } from "./tree";
 import type { EmptySlideTemplateSet, SlideTemplateSet } from "../templates";
 import type { Theme } from "../style/theme";
 import type {
-  AuthorNodeKind,
   ImageNodeProps,
   ShapeNodeProps,
   SlideNodeProps,
@@ -12,9 +11,6 @@ import type {
 } from "./props";
 
 export type {
-  AuthorNodeKind,
-  AuthorNodeProps,
-  AuthorNodePropsMap,
   ClassNameObject,
   ClassNameValue,
   ClassNameValueArray,
@@ -81,7 +77,7 @@ export type {
 } from "../style/stylesheet";
 
 export type DeckJsxElement = {
-  readonly $$typeof: "deckjsx.author-tree" | "deckjsx.author-node";
+  readonly $$typeof: "deckjsx.author-tree";
 };
 
 export interface TextJsxChildArray extends ReadonlyArray<TextJsxChild> {}
@@ -93,7 +89,6 @@ export type TextJsxChild =
   | null
   | undefined
   | TextJsxChildArray;
-export type ContentAuthorNode = AuthorNode<"view" | "text" | "image" | "shape">;
 export interface ContentJsxChildArray extends ReadonlyArray<ContentJsxChild> {}
 export type ContentJsxChild = DeckJsxElement | boolean | null | undefined | ContentJsxChildArray;
 export interface ViewIntrinsicJsxChildArray extends ReadonlyArray<ViewIntrinsicJsxChild> {}
@@ -145,37 +140,6 @@ export type ImageProps = ImageNodeProps & {
 export type ShapeProps = ShapeNodeProps & {
   children?: never;
 };
-
-export type AuthorNodeMap = {
-  slide: SlideProps;
-  view: ViewProps;
-  text: TextProps;
-  image: ImageProps;
-  shape: ShapeProps;
-};
-
-type BaseAuthorNode<K extends AuthorNodeKind, P, C> = {
-  readonly $$typeof: "deckjsx.author-node";
-  readonly kind: K;
-  readonly props: P;
-  readonly children: ReadonlyArray<C>;
-};
-
-export interface SlideAuthorNode extends BaseAuthorNode<"slide", SlideNodeProps, ContentJsxChild> {}
-export interface ViewAuthorNode extends BaseAuthorNode<"view", ViewNodeProps, ContentJsxChild> {}
-export interface TextAuthorNode extends BaseAuthorNode<"text", TextNodeProps, TextJsxChild> {}
-export interface ImageAuthorNode extends BaseAuthorNode<"image", ImageNodeProps, never> {}
-export interface ShapeAuthorNode extends BaseAuthorNode<"shape", ShapeNodeProps, never> {}
-
-type AuthorNodeByKind = {
-  slide: SlideAuthorNode;
-  view: ViewAuthorNode;
-  text: TextAuthorNode;
-  image: ImageAuthorNode;
-  shape: ShapeAuthorNode;
-};
-
-export type AuthorNode<K extends AuthorNodeKind = AuthorNodeKind> = AuthorNodeByKind[K];
 
 type IntrinsicKeyProps = {
   key?: JsxKey;

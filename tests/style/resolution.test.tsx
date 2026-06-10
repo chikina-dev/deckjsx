@@ -32,7 +32,7 @@ describe("style", () => {
             ["selected", { active: true, disabled: false, "": true, "   ": true }],
             "wide card",
           ]}
-          x={1}
+          style={{ x: 1 }}
         >
           <p className={{ title: true, muted: null }}>
             Hello <span className="accent">world</span>
@@ -75,20 +75,32 @@ describe("style", () => {
     expect(graph.styles.get(view?.styleRef ?? ("" as never))).not.toHaveProperty("resolved");
   });
 
-  test("normalizes direct style props into authored style for graph inspection", async () => {
+  test("reports direct style props without merging them into authored style", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide(() => (
       <>
-        <div x={1} y={2} style={{ y: 3, width: 4 }}>
+        <div
+          // @ts-expect-error direct style props are rejected by the authoring surface.
+          x={1}
+          y={2}
+          style={{ y: 3, width: 4 }}
+        >
           <p>
-            Hello <span color="red">world</span>
+            Hello
+            <span
+              // @ts-expect-error direct style props are rejected by the authoring surface.
+              color="red"
+            >
+              world
+            </span>
           </p>
         </div>
       </>
     ));
 
-    const graph = deck.compile().graph!;
+    const result = deck.compile();
+    const graph = result.graph!;
     const view = values(graph.nodes).find(
       (node) => node.kind === "container" && node.authoredTag === "div",
     );
@@ -97,13 +109,20 @@ describe("style", () => {
     );
 
     expect(graph.styles.get(view?.styleRef ?? ("" as never))?.authored.style).toEqual({
-      x: 1,
       y: 3,
       width: 4,
     });
-    expect(graph.styles.get(span?.styleRef ?? ("" as never))?.authored.style).toEqual({
-      color: "red",
-    });
+    expect(span?.styleRef).toBeUndefined();
+    expect(result.diagnostics.items.map((item) => item.code)).toContain(
+      "E_COMPILE_UNSUPPORTED_AUTHORING_PROP",
+    );
+    expect(result.diagnostics.items.map((item) => item.labels[0]?.path)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(".props.x"),
+        expect.stringContaining(".props.y"),
+        expect.stringContaining(".props.color"),
+      ]),
+    );
   });
 
   test("inspect mode exposes CSS-like resolved styles without changing the graph", async () => {

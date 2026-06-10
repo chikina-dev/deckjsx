@@ -6,7 +6,6 @@ import type {
   RenderedArtifact,
 } from "../pipeline";
 import type { AssetArtifact, PptxPackageBuildArtifact } from "../pipeline-artifacts";
-import type { PptxCompressionMode } from "../pptx-options";
 import type {
   PackagePartId,
   PptxMediaPartPayload,
@@ -47,7 +46,6 @@ import { slideBytes } from "./pptx/slide-xml";
 import { writePptxZipEntriesToSink } from "./pptx/zip";
 
 export type PptxWriterOptions = {
-  readonly compression?: PptxCompressionMode;
   readonly inspection?: InspectionDetailLevel;
 };
 
@@ -325,9 +323,7 @@ export async function renderPptxPackage(
   let outputSideEffectError: unknown;
 
   try {
-    writePptxZipEntriesToSink(zipEntriesFromAssemblyPlan(plan), sink, {
-      compression: options.compression,
-    });
+    writePptxZipEntriesToSink(zipEntriesFromAssemblyPlan(plan), sink);
     outputSideEffectError = sideEffectSink?.sideEffectError();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -339,7 +335,7 @@ export async function renderPptxPackage(
           title: "pptx zip assembly failed",
           message: "Render could not assemble the final PPTX ZIP from the current Assembly Plan.",
           labels: [{ path: "render.assembly.zip", message }],
-          notes: [`reason=zipSourceFailed compression=${options.compression ?? "fast"}`],
+          notes: ["reason=zipSourceFailed"],
           help: [
             "Inspect render.summary.assembly.entries to confirm every required package entry was available before ZIP emission.",
           ],

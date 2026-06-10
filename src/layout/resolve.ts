@@ -1,5 +1,3 @@
-import { isAuthorNode, isContentNode, isSlideNode } from "../jsx";
-import { toAuthorJsxNode, toAuthorNode } from "../authoring/author-node";
 import {
   normalizeImageProps,
   normalizeShapeProps,
@@ -13,7 +11,17 @@ import {
   type NormalizedShapeProps,
   type NormalizedTextProps,
   type NormalizedViewProps,
-} from "../compiler/normalization";
+} from "./normalization";
+import type {
+  LayoutInputContentNode,
+  LayoutInputDocument,
+  LayoutInputImage,
+  LayoutInputShape,
+  LayoutInputSlide,
+  LayoutInputText,
+  LayoutInputTextChild,
+  LayoutInputView,
+} from "./input";
 import { frameFromProps, inflateSpecifiedBoxSize, parseAspectRatio } from "./absolute";
 import { intersectClipRect, type ClipRect, type Frame, type Placement } from "./frame";
 import type {
@@ -33,26 +41,19 @@ import type {
   TextRunIR,
   TextStyleIR,
 } from "./projected";
-import type {
-  AuthorNode,
-  ContentAuthorNode,
-  DeckOptions,
-  ImageProps,
-  JsxNode,
-  SlideFactory,
-} from "../authoring/index";
+import type { DeckOptions } from "../authoring/index";
 import type {
   CssAlignContent,
   CssAlignSelf,
   CssJustifySelf,
   DeckLength,
   BorderStyle,
+  ImageStyle,
   StackAlignment,
   StackAxis,
   StyleDeclarationValue,
   ViewStyle,
 } from "../style/types";
-import type { ComposedAuthorRoot } from "../composition/types";
 import {
   advanceGridAutoPlacementCursor,
   markGridItem,
@@ -126,28 +127,28 @@ export type ProjectedLayoutResolutionOptions = {
 type LayoutChildNode =
   | {
       kind: "view";
-      source: AuthorNode<"view">;
+      source: LayoutInputView;
       props: NormalizedViewProps;
       siblingOrder: number;
       origin?: ProjectedLayoutOrigin;
     }
   | {
       kind: "text";
-      source: AuthorNode<"text">;
+      source: LayoutInputText;
       props: NormalizedTextProps;
       siblingOrder: number;
       origin?: ProjectedLayoutOrigin;
     }
   | {
       kind: "image";
-      source: AuthorNode<"image">;
+      source: LayoutInputImage;
       props: NormalizedImageProps;
       siblingOrder: number;
       origin?: ProjectedLayoutOrigin;
     }
   | {
       kind: "shape";
-      source: AuthorNode<"shape">;
+      source: LayoutInputShape;
       props: NormalizedShapeProps;
       siblingOrder: number;
       origin?: ProjectedLayoutOrigin;
@@ -827,20 +828,33 @@ function imageSourceFromProps(props: NormalizedImageProps): ImageSourceIR {
   throw new Error("Image requires either src or data.");
 }
 
-function originForNode(
-  node: ContentAuthorNode,
-  options?: ProjectedLayoutResolutionOptions,
-): ProjectedLayoutOrigin | undefined {
-  return options?.origins?.get(node);
+function isLayoutInputContentNode(value: unknown): value is LayoutInputContentNode {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "kind" in value &&
+    ((value as { kind?: unknown }).kind === "view" ||
+      (value as { kind?: unknown }).kind === "text" ||
+      (value as { kind?: unknown }).kind === "image" ||
+      (value as { kind?: unknown }).kind === "shape")
+  );
+}
+
+function isLayoutInputTextNode(value: unknown): value is LayoutInputText {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "kind" in value &&
+    (value as { kind?: unknown }).kind === "text"
+  );
 }
 
 function layoutChildFromNode(
-  child: ContentAuthorNode,
+  child: LayoutInputContentNode,
   siblingOrder: number,
   context?: LengthResolutionContext,
-  options?: ProjectedLayoutResolutionOptions,
 ): LayoutChildNode {
-  const origin = originForNode(child, options);
+  const origin = child.origin;
 
   switch (child.kind) {
     case "view":
@@ -896,7 +910,7 @@ function parseCropValue(value: number | `${number}%` | undefined): number {
 }
 
 function parseImageCrop(
-  crop: ImageProps["crop"],
+  crop: ImageStyle["crop"],
 ): { top: number; right: number; bottom: number; left: number } | undefined {
   if (!crop) {
     return undefined;
@@ -1580,7 +1594,7 @@ function compileGridChildren(
 }
 
 function compileChildren(
-  children: ReadonlyArray<JsxNode>,
+  children: ReadonlyArray<LayoutInputContentNode>,
   parentFrame: Frame,
   idGenerator: IdGenerator,
   layout: ViewStyle["layout"],
@@ -1609,21 +1623,13 @@ function compileChildren(
   context?: LengthResolutionContext,
   resolutionOptions?: ProjectedLayoutResolutionOptions,
 ): ProjectedLayoutNode[] {
-  const normalized = children.filter(
-    (child) => child !== null && child !== undefined && child !== false && child !== true,
-  );
-
-  const authorChildren: LayoutChildNode[] = normalized
+  const authorChildren: LayoutChildNode[] = children
     .map((child, siblingOrder): LayoutChildNode => {
-      if (!isContentNode(child)) {
-        if (isSlideNode(child)) {
-          throw new Error("Slide cannot be nested inside another slide or view.");
-        }
-
+      if (!isLayoutInputContentNode(child)) {
         throw new Error("Only deckjsx components can be children of View in structured layout.");
       }
 
-      return layoutChildFromNode(child, siblingOrder, context, resolutionOptions);
+      return layoutChildFromNode(child, siblingOrder, context);
     })
     .filter((child) => child.props.display !== "none");
 
@@ -2038,40 +2044,31 @@ function isEmptyRunStyle(style: TextStyleIR): boolean {
   return Object.values(style).every((value) => value === undefined);
 }
 
-function flattenJsxChildren(children: ReadonlyArray<JsxNode>): JsxNode[] {
-  return children.flatMap((child): JsxNode[] =>
-    Array.isArray(child) ? flattenJsxChildren(child) : [child],
+function flattenTextChildren(children: readonly LayoutInputTextChild[]): LayoutInputTextChild[] {
+  return children.flatMap((child): LayoutInputTextChild[] =>
+    Array.isArray(child) ? flattenTextChildren(child) : [child],
   );
 }
 
 function extractRichTextRuns(
-  children: ReadonlyArray<JsxNode>,
+  children: readonly LayoutInputTextChild[],
   textTransform: NormalizedTextProps["textTransform"],
   textLengthContext?: LengthResolutionContext,
 ): TextRunIR[] {
   const runs: TextRunIR[] = [];
 
-  for (const child of flattenJsxChildren(children)) {
-    if (child === null || child === undefined || child === false || child === true) {
-      continue;
-    }
-
+  for (const child of flattenTextChildren(children)) {
     if (typeof child === "string" || typeof child === "number") {
       runs.push({ text: extractText([child], textTransform) });
       continue;
     }
 
-    if (isAuthorNode(child)) {
-      const authorNode = child;
-      if (authorNode.kind !== "text") {
-        throw new Error("Text nodes can only contain primitive text or inline text runs.");
-      }
-
-      const props = normalizeTextProps(authorNode.props);
+    if (isLayoutInputTextNode(child)) {
+      const props = normalizeTextProps(child.props);
       const childLengthContext = getTextLengthContext(props, textLengthContext);
       const style = textStyleFromProps(props, childLengthContext);
       const text = extractRichTextRuns(
-        authorNode.children,
+        child.children,
         props.textTransform ?? textTransform,
         childLengthContext,
       )
@@ -2437,17 +2434,12 @@ function compileNode(
 }
 
 function compileSlide(
-  root: JsxNode,
+  root: LayoutInputSlide,
   context: { slideIndex: number },
   slideFrame: Frame,
   idGenerator: IdGenerator,
   lengthContext?: LengthResolutionContext,
-  resolutionOptions?: ProjectedLayoutResolutionOptions,
 ): ProjectedLayoutSlide {
-  if (!isSlideNode(root)) {
-    throw new Error(`Slide factory at index ${context.slideIndex} must resolve to a slide node.`);
-  }
-
   const slideProps = normalizeSlideProps(root.props);
   const backgroundBoxFrames = resolveBackgroundBoxFrames(slideFrame);
   const backgroundFill = resolveBackgroundLayersOrEmpty(
@@ -2466,29 +2458,20 @@ function compileSlide(
     slideProps.backgroundClip,
   );
   const nodes = root.children
-    .filter((child) => child !== null && child !== undefined && child !== false && child !== true)
-    .filter(isContentNode)
     .map(
       (child, siblingOrder): LayoutChildNode =>
-        layoutChildFromNode(child, siblingOrder, lengthContext, resolutionOptions),
+        layoutChildFromNode(child, siblingOrder, lengthContext),
     )
     .filter((child) => child.props.display !== "none")
     .map((child) =>
-      compileNode(
-        child,
-        slideFrame,
-        idGenerator,
-        undefined,
-        undefined,
-        lengthContext,
-        resolutionOptions,
-      ),
+      compileNode(child, slideFrame, idGenerator, undefined, undefined, lengthContext),
     )
     .filter((node): node is ProjectedLayoutNode => node !== null);
 
   return {
     id: idGenerator.nextSlide(),
     name: slideProps.name,
+    ...(root.origin ? { origin: root.origin } : {}),
     background: backgroundFill.fill,
     ...(backgroundFill.backgroundLayers
       ? { backgroundLayers: backgroundFill.backgroundLayers }
@@ -2499,12 +2482,12 @@ function compileSlide(
 
 export function resolveProjectedLayout(
   options: DeckOptions,
-  slides: ReadonlyArray<SlideFactory<void>>,
-  resolutionOptions: ProjectedLayoutResolutionOptions = {},
+  input: LayoutInputDocument,
 ): ProjectedLayoutDocument {
   const idGenerator = createIdGenerator();
-  const slideSize =
-    options.layout.unit === "in"
+  const slideSize = input.size
+    ? input.size
+    : options.layout.unit === "in"
       ? {
           widthEmu: options.layout.width * EMU_PER_INCH,
           heightEmu: options.layout.height * EMU_PER_INCH,
@@ -2513,6 +2496,7 @@ export function resolveProjectedLayout(
           widthEmu: (options.layout.width / POINTS_PER_INCH) * EMU_PER_INCH,
           heightEmu: (options.layout.height / POINTS_PER_INCH) * EMU_PER_INCH,
         };
+  const slideMeta = input.meta ?? options.meta;
   const slideFrame: Frame = {
     xEmu: 0,
     yEmu: 0,
@@ -2525,75 +2509,18 @@ export function resolveProjectedLayout(
   };
 
   return {
-    version: "layout-snapshot/0.6",
-    meta: options.meta,
+    ...(slideMeta ? { meta: slideMeta } : {}),
     size: slideSize,
-    slides: slides.map((factory, slideIndex) => {
+    slides: input.slides.map((slide, slideIndex) => {
       return compileSlide(
-        toAuthorJsxNode(
-          factory({
-            composition: {
-              slideIndex,
-              totalSlides: slides.length,
-              deckSlideIndex: slideIndex,
-              deckTotalSlides: slides.length,
-            },
-          }),
-        ),
+        slide,
         {
           slideIndex,
         },
         slideFrame,
         idGenerator,
         lengthContext,
-        resolutionOptions,
       );
     }),
-  };
-}
-
-export function resolveProjectedLayoutFromRoots(
-  options: DeckOptions,
-  roots: readonly ComposedAuthorRoot[],
-  resolutionOptions: ProjectedLayoutResolutionOptions = {},
-): ProjectedLayoutDocument {
-  const idGenerator = createIdGenerator();
-  const slideSize =
-    options.layout.unit === "in"
-      ? {
-          widthEmu: options.layout.width * EMU_PER_INCH,
-          heightEmu: options.layout.height * EMU_PER_INCH,
-        }
-      : {
-          widthEmu: (options.layout.width / POINTS_PER_INCH) * EMU_PER_INCH,
-          heightEmu: (options.layout.height / POINTS_PER_INCH) * EMU_PER_INCH,
-        };
-  const slideFrame: Frame = {
-    xEmu: 0,
-    yEmu: 0,
-    widthEmu: slideSize.widthEmu,
-    heightEmu: slideSize.heightEmu,
-  };
-  const lengthContext: LengthResolutionContext = {
-    viewportWidthEmu: slideFrame.widthEmu,
-    viewportHeightEmu: slideFrame.heightEmu,
-  };
-
-  return {
-    version: "layout-snapshot/0.6",
-    meta: options.meta,
-    size: slideSize,
-    slides: roots.map((root, slideIndex) =>
-      compileSlide(
-        toAuthorNode(root.root),
-        {
-          slideIndex,
-        },
-        slideFrame,
-        idGenerator,
-        lengthContext,
-        resolutionOptions,
-      ),
-    ),
   };
 }

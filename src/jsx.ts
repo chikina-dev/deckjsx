@@ -19,15 +19,12 @@ import {
   type IntrinsicTextTag,
   type IntrinsicViewTag,
 } from "./authoring/tags";
-import { isAuthorNodeValue } from "./authoring/author-node";
 import type {
-  AuthorNode,
-  AuthorNodeKind,
-  ContentAuthorNode,
   DeckJsxElement,
   IntrinsicDivProps,
   IntrinsicImgProps,
   IntrinsicPProps,
+  IntrinsicSpanProps,
   IntrinsicShapeProps,
   JsxNode,
   ShapeNodeProps,
@@ -147,7 +144,13 @@ export function createElement(
   props: (Omit<IntrinsicPProps, "children"> & Partial<Pick<IntrinsicPProps, "children">>) | null,
   ...children: ElementChildArgs<IntrinsicPProps>
 ): AuthorTreeNode;
-export function createElement(type: "span", props: IntrinsicPProps | null): AuthorTreeNode;
+export function createElement(
+  type: "span",
+  props:
+    | (Omit<IntrinsicSpanProps, "children"> & Partial<Pick<IntrinsicSpanProps, "children">>)
+    | null,
+  ...children: ElementChildArgs<IntrinsicSpanProps>
+): AuthorTreeNode;
 export function createElement(type: "img", props: IntrinsicImgProps): AuthorTreeNode;
 export function createElement(type: "shape", props: IntrinsicShapeProps): AuthorTreeNode;
 export function createElement(type: string, props: ComponentProps | null): never;
@@ -233,30 +236,4 @@ export function Fragment(props: { children?: JsxNode }): DeckJsxElement {
   return createAuthorFragment({
     children: props.children === undefined ? [] : authorTreeChildrenFromUnknown([props.children]),
   });
-}
-
-function isAuthorNodeKind(value: unknown): value is AuthorNodeKind {
-  return (
-    value === "slide" ||
-    value === "view" ||
-    value === "text" ||
-    value === "image" ||
-    value === "shape"
-  );
-}
-
-export function isAuthorNode(value: unknown): value is AuthorNode {
-  if (!isAuthorNodeValue(value)) {
-    return false;
-  }
-
-  return isAuthorNodeKind(value.kind);
-}
-
-export function isSlideNode(value: unknown): value is AuthorNode<"slide"> {
-  return isAuthorNode(value) && value.kind === "slide";
-}
-
-export function isContentNode(value: unknown): value is ContentAuthorNode {
-  return isAuthorNode(value) && value.kind !== "slide";
 }

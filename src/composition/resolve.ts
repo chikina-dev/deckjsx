@@ -1,4 +1,3 @@
-import { isAuthorNodeValue } from "../authoring/author-node";
 import type { JsxNode } from "../authoring/index";
 import {
   createAuthorElement,
@@ -144,10 +143,6 @@ function validateSourceKey(sourceKey: string): string | undefined {
 }
 
 function describeInvalidRoot(value: unknown): string {
-  if (isAuthorNodeValue(value)) {
-    return "Slide factory returned an AuthorNode value instead of an Author Tree node.";
-  }
-
   if (isAuthorTreeNode(value)) {
     return "Slide factory returned an Author Tree node that cannot be used as slide content.";
   }

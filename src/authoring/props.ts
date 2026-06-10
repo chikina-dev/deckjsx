@@ -31,39 +31,26 @@ export type SlideNodeProps = {
   template?: string;
   className?: ClassNameValue;
   style?: SlideStyle;
-  background?: string;
-  backgroundImage?: string;
-  backgroundColor?: string;
-  backgroundTransparency?: number;
-  backgroundPosition?: string;
-  backgroundSize?: string;
-  backgroundRepeat?: string;
-  backgroundClip?: string;
-  backgroundOrigin?: string;
 };
 
 export type ViewNodeProps = {
   style?: ViewStyle;
 } & ClassNameAuthorProps &
-  TemplateAreaAuthorProps &
-  ViewStyle;
+  TemplateAreaAuthorProps;
 
 export type TextNodeProps = {
   style?: TextStyle;
 } & ClassNameAuthorProps &
-  TemplateAreaAuthorProps &
-  TextStyle;
+  TemplateAreaAuthorProps;
 
 export type TextRunNodeProps = {
   style?: TextRunStyle;
-} & ClassNameAuthorProps &
-  TextRunStyle;
+} & ClassNameAuthorProps;
 
 export type ImageNodeProps = {
   style?: ImageStyle;
 } & ClassNameAuthorProps &
   TemplateAreaAuthorProps &
-  ImageStyle &
   (
     | {
         src: string;
@@ -77,19 +64,6 @@ export type ImageNodeProps = {
 
 export type ShapeNodeProps = {
   style?: ShapeStyle;
-  shape: "rect" | "ellipse" | "line";
+  shape?: "rect" | "ellipse" | "line";
 } & ClassNameAuthorProps &
-  TemplateAreaAuthorProps &
-  ShapeStyle;
-
-export type AuthorNodeKind = "slide" | "view" | "text" | "image" | "shape";
-
-export type AuthorNodePropsMap = {
-  slide: SlideNodeProps;
-  view: ViewNodeProps;
-  text: TextNodeProps;
-  image: ImageNodeProps;
-  shape: ShapeNodeProps;
-};
-
-export type AuthorNodeProps<K extends AuthorNodeKind> = AuthorNodePropsMap[K];
+  TemplateAreaAuthorProps;

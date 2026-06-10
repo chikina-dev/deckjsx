@@ -9,7 +9,7 @@ import {
   type SlideNormalizationInput,
   type TextNormalizationInput,
   type ViewNormalizationInput,
-} from "../../compiler/normalization";
+} from "../../layout/normalization";
 import { createDiagnostics, diagnostic, type Diagnostics } from "../../diagnostics";
 import type { SemanticAuthorGraph, SemanticNode } from "../../graph";
 import type { Frame } from "../../layout/frame";

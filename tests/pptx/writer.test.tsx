@@ -1,7 +1,6 @@
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { strFromU8, unzipSync, type Unzipped } from "fflate";
 import { describe, expect, test } from "vite-plus/test";
 import { Deck, Theme } from "../../src/index.ts";
 import { isPptxSlidePart, isPptxSupportPart } from "../../src/inspect.ts";
@@ -44,7 +43,13 @@ import {
   writePptxZipEntriesToSink,
 } from "../../src/writers/pptx/zip.ts";
 import { XmlChunkWriter } from "../../src/writers/pptx/xml-writer.ts";
-import { SAMPLE_SVG_DATA_URI, WIDE_SVG_DATA_URI } from "../helpers.ts";
+import {
+  SAMPLE_SVG_DATA_URI,
+  strFromU8,
+  unzipSync,
+  type Unzipped,
+  WIDE_SVG_DATA_URI,
+} from "../helpers.ts";
 
 function malformedBackgroundLayer(
   layer: Partial<PptxBackgroundLayer> & { readonly kind: "solid"; readonly color: string },
@@ -596,7 +601,6 @@ describe("direct pptx writer", () => {
         { path: "second.txt", bytes: encoder.encode("second") },
       ],
       sink,
-      { compression: "fast" },
     );
 
     const zip = unzipSync(sink.bytes());
@@ -614,15 +618,48 @@ describe("direct pptx writer", () => {
     expect(strFromU8(unzipSync(bytes)["deckjsx.txt"]!)).toBe("sink boundary");
   });
 
+  test("ZIP test helper rejects truncated local headers", () => {
+    const truncatedHeader = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+
+    expect(() => unzipSync(truncatedHeader)).toThrow(
+      "Truncated ZIP archive while reading local header at offset 0.",
+    );
+  });
+
+  test("ZIP test helper rejects truncated file names", () => {
+    const bytes = new Uint8Array(30);
+    const view = new DataView(bytes.buffer);
+    view.setUint32(0, 0x04034b50, true);
+    view.setUint16(26, 1, true);
+
+    expect(() => unzipSync(bytes)).toThrow(
+      "Truncated ZIP archive while reading file name at offset 0.",
+    );
+  });
+
+  test("ZIP test helper rejects truncated stored data", () => {
+    const encoder = new TextEncoder();
+    const path = encoder.encode("deckjsx.txt");
+    const bytes = new Uint8Array(30 + path.byteLength + 2);
+    const view = new DataView(bytes.buffer);
+    view.setUint32(0, 0x04034b50, true);
+    view.setUint32(18, 4, true);
+    view.setUint32(22, 4, true);
+    view.setUint16(26, path.byteLength, true);
+    bytes.set(path, 30);
+    bytes.set(encoder.encode("hi"), 30 + path.byteLength);
+
+    expect(() => unzipSync(bytes)).toThrow(
+      "Truncated ZIP archive while reading stored data for ZIP entry deckjsx.txt.",
+    );
+  });
+
   test("ZIP byte helper writes deterministic central directory metadata", () => {
     const encoder = new TextEncoder();
-    const bytes = createPptxZipBytesFromEntries(
-      [
-        { path: "first.txt", bytes: encoder.encode("first") },
-        { path: "second.txt", bytes: encoder.encode("second") },
-      ],
-      { compression: "fast" },
-    );
+    const bytes = createPptxZipBytesFromEntries([
+      { path: "first.txt", bytes: encoder.encode("first") },
+      { path: "second.txt", bytes: encoder.encode("second") },
+    ]);
 
     expect(centralDirectoryEntries(bytes)).toEqual([
       { path: "first.txt", modifiedDate: 0x0021, modifiedTime: 0 },
@@ -632,13 +669,10 @@ describe("direct pptx writer", () => {
 
   test("ZIP byte helper writes local headers without data descriptors", () => {
     const encoder = new TextEncoder();
-    const bytes = createPptxZipBytesFromEntries(
-      [
-        { path: "ppt/slides/slide1.xml", bytes: encoder.encode("<p:sld/>") },
-        { path: "ppt/media/media1.png", bytes: new Uint8Array([137, 80, 78, 71]) },
-      ],
-      { compression: "fast" },
-    );
+    const bytes = createPptxZipBytesFromEntries([
+      { path: "ppt/slides/slide1.xml", bytes: encoder.encode("<p:sld/>") },
+      { path: "ppt/media/media1.png", bytes: new Uint8Array([137, 80, 78, 71]) },
+    ]);
 
     expect(localFileHeaderEntries(bytes)).toEqual([
       {
@@ -2152,7 +2186,6 @@ describe("direct pptx writer", () => {
         orderKey: part?.orderKey?.value,
         requirement: part?.requirement?.status,
         required: part?.requirement?.required,
-        compression: part?.kind === "media" ? "store" : "default",
       });
       expect(entry.final.status).toBe("rebuilt");
       expect(entry.final.byteLength).toBe(zip[entry.path]?.byteLength);
