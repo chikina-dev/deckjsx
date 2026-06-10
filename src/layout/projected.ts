@@ -21,7 +21,6 @@ export type ProjectedLayoutOrigin = {
 };
 
 export type ProjectedLayoutDocument = {
-  version: "layout-snapshot/0.6";
   meta?: {
     title?: string;
     author?: string;
@@ -89,6 +88,7 @@ export type ProjectedUnsupportedSemantic = {
 export type ProjectedLayoutSlide = {
   id: string;
   name?: string;
+  origin?: ProjectedLayoutOrigin;
   background?: FillIR;
   backgroundLayers?: ReadonlyArray<BackgroundLayerIR>;
   nodes: ReadonlyArray<ProjectedLayoutNode>;

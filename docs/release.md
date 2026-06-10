@@ -85,9 +85,9 @@ shapes for diagnostics, expose type guards for narrowed valid part shapes instea
 to cast package-part payloads.
 Generated declaration files are part of this review. Reject a release if the public `.d.ts` output
 for `deckjsx`, `deckjsx/adapter`, or `deckjsx/inspect` imports or names internal writer chunks,
-Assembly Plan storage, Build Artifacts, Asset Artifacts, XML emitters, ZIP sinks, fflate settings, or
-runtime output handles. Public adapter options may describe semantic choices such as compression
-mode, but not the concrete ZIP-library configuration behind them.
+Assembly Plan storage, Build Artifacts, Asset Artifacts, XML emitters, ZIP sinks, compression
+settings, fflate settings, or runtime output handles. Public adapter options must not expose ZIP
+compression mode or concrete ZIP-library configuration in v0.8.1.
 The generated public declarations should also stay free of catch-all `unknown` payloads such as
 `Record<string, unknown>` or `readonly unknown[]`. Broad inspection containers that preserve
 malformed `defineProjection()` snapshots should expose structured candidate fields plus typed

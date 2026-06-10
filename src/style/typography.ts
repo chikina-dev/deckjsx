@@ -1,9 +1,8 @@
-import { isAuthorNode } from "../jsx";
 import type { TextStyleIR } from "../layout/projected";
-import type { JsxNode, TextProps } from "../authoring/index";
+import type { JsxNode } from "../authoring/index";
 import { POINTS_PER_INCH } from "../types";
 import { DEFAULT_FONT_SIZE_PT, parsePointValue, type LengthResolutionContext } from "./length";
-import type { TextTabStopAuthoring } from "./types";
+import type { TextStyle, TextTabStopAuthoring } from "./types";
 
 type TextDecorationResolution = {
   underline?: boolean;
@@ -37,9 +36,9 @@ export function parseTextDecoration(value?: string): TextDecorationResolution {
 }
 
 export function resolveLineHeight(
-  lineHeight: TextProps["lineHeight"] | undefined,
+  lineHeight: TextStyle["lineHeight"] | undefined,
   context?: LengthResolutionContext,
-): Pick<TextProps, "lineSpacing" | "lineSpacingMultiple"> {
+): Pick<TextStyle, "lineSpacing" | "lineSpacingMultiple"> {
   if (lineHeight === undefined || lineHeight === "normal") {
     return {};
   }
@@ -56,10 +55,10 @@ export function resolveLineHeight(
 }
 
 export function resolveTextWrap(
-  wrap: TextProps["wrap"] | undefined,
-  whiteSpace: TextProps["whiteSpace"] | undefined,
-  wordBreak: TextProps["wordBreak"] | undefined,
-  overflowWrap: TextProps["overflowWrap"] | undefined,
+  wrap: TextStyle["wrap"] | undefined,
+  whiteSpace: TextStyle["whiteSpace"] | undefined,
+  wordBreak: TextStyle["wordBreak"] | undefined,
+  overflowWrap: TextStyle["overflowWrap"] | undefined,
 ): boolean | undefined {
   if (wrap !== undefined) {
     return wrap;
@@ -85,7 +84,7 @@ export function resolveTextWrap(
 }
 
 export function getTextLengthContext(
-  props: TextProps,
+  props: TextStyle,
   context?: LengthResolutionContext,
 ): LengthResolutionContext | undefined {
   if (props.fontSize === undefined) {
@@ -99,7 +98,7 @@ export function getTextLengthContext(
 }
 
 export function resolveListStyle(
-  props: TextProps,
+  props: TextStyle,
   context?: LengthResolutionContext,
 ): TextStyleIR["list"] | undefined {
   const indentPt =
@@ -167,7 +166,7 @@ export function resolveListStyle(
 }
 
 export function resolveUnderlineStyle(
-  value: TextProps["textDecorationStyle"],
+  value: TextStyle["textDecorationStyle"],
 ): TextStyleIR["underlineStyle"] | undefined {
   switch (value) {
     case "solid":
@@ -186,7 +185,7 @@ export function resolveUnderlineStyle(
 }
 
 export function resolveTextDirection(
-  value: TextProps["writingMode"],
+  value: TextStyle["writingMode"],
 ): TextStyleIR["textDirection"] | undefined {
   switch (value) {
     case "horizontal-tb":
@@ -218,7 +217,7 @@ function resolveTabStopAlignment(
 }
 
 export function resolveTabStops(
-  tabStops: TextProps["tabStops"],
+  tabStops: TextStyle["tabStops"],
   context?: LengthResolutionContext,
 ): TextStyleIR["tabStops"] | undefined {
   if (!tabStops || tabStops.length === 0) {
@@ -241,7 +240,7 @@ function normalizeChildren(input: JsxNode): JsxNode[] {
 
 function applyTextTransform(
   value: string,
-  textTransform: TextProps["textTransform"] | undefined,
+  textTransform: TextStyle["textTransform"] | undefined,
 ): string {
   if (!textTransform || textTransform === "none") {
     return value;
@@ -262,7 +261,7 @@ function applyTextTransform(
 
 export function extractText(
   children: ReadonlyArray<JsxNode>,
-  textTransform?: TextProps["textTransform"],
+  textTransform?: TextStyle["textTransform"],
 ): string {
   const parts: string[] = [];
 
@@ -276,7 +275,7 @@ export function extractText(
       continue;
     }
 
-    if (isAuthorNode(child)) {
+    if (typeof child === "object") {
       throw new Error("Text nodes can only contain string or number children.");
     }
   }

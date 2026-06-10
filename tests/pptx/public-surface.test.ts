@@ -94,6 +94,9 @@ describe("public surface", () => {
     expect(publicDeclarationText).not.toMatch(/\bPptxPackageBuildArtifact\b/);
     expect(publicDeclarationText).not.toMatch(/\bAssetArtifact\b/);
     expect(publicDeclarationText).not.toMatch(/\bfflate\b/);
+    expect(publicDeclarationText).not.toMatch(/\bPptxCompressionMode\b/);
+    expect(publicDeclarationText).not.toMatch(/\bLayoutInput/);
+    expect(publicDeclarationText).not.toMatch(/\bProjectedLayoutDocument\b/);
     expect(publicDeclarationText).not.toMatch(/\bAuthorNode\b/);
     expect(publicDeclarationText).not.toMatch(/\bAuthorTreeNode\b/);
     expect(publicDeclarationText).not.toMatch(/\bAuthorElementNode\b/);
@@ -119,12 +122,22 @@ describe("public surface", () => {
     expect(typeTestText).not.toMatch(/readonly unknown\[\]/);
   });
 
-  test("core package dependencies do not reintroduce pptxgenjs", async () => {
+  test("core package dependencies do not reintroduce runtime writer dependencies", async () => {
     const pkg = await readPackageJson();
 
-    expect(pkg.dependencies).toEqual({ fflate: expect.any(String) });
+    expect(pkg.dependencies).toEqual({});
+    expect(pkg.dependencies).not.toHaveProperty("fflate");
     expect(pkg.dependencies).not.toHaveProperty("pptxgenjs");
     expect(pkg.devDependencies).not.toHaveProperty("pptxgenjs");
+  });
+
+  test("source cleanup does not reintroduce legacy author node marker", async () => {
+    const sourcePaths = await sourceFiles(new URL("../../src", import.meta.url).pathname);
+    const sourceText = (
+      await Promise.all(sourcePaths.map(async (file) => readFile(file, "utf8")))
+    ).join("\n");
+
+    expect(sourceText).not.toContain("deckjsx.author-node");
   });
 
   test("public sample uses the local direct-writer package without pptxgenjs", async () => {

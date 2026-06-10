@@ -1,11 +1,8 @@
-import { deflateSync, strToU8 } from "fflate";
-import type { PptxCompressionMode } from "../../pptx-options";
 import { createCollectingPptxZipSink, type PptxZipSink } from "./sinks";
 
 export type PptxZipEntry = {
   readonly path: string;
   readonly bytes: Uint8Array;
-  readonly compression?: "default" | "store";
 };
 
 type CentralDirectoryEntry = {
@@ -22,25 +19,11 @@ const FIXED_DOS_TIME = 0;
 const FIXED_DOS_DATE = 0x0021;
 const ZIP_VERSION = 20;
 const UTF8_FLAG = 0x0800;
-const DEFLATE_METHOD = 8;
 const STORE_METHOD = 0;
 const UINT32_MAX = 0xffffffff;
 
 const CRC32_TABLE = createCrc32Table();
-
-function zipLevel(compression: PptxCompressionMode | undefined): 0 | 1 | 6 | 9 {
-  switch (compression) {
-    case "store":
-      return 0;
-    case "balanced":
-      return 6;
-    case "small":
-      return 9;
-    case "fast":
-    default:
-      return 1;
-  }
-}
+const PATH_ENCODER = new TextEncoder();
 
 function createCrc32Table(): Uint32Array {
   const table = new Uint32Array(256);
@@ -81,7 +64,7 @@ function assertZip32Size(name: string, value: number): void {
 }
 
 function encodedPath(path: string): { readonly bytes: Uint8Array; readonly flags: number } {
-  const bytes = strToU8(path);
+  const bytes = PATH_ENCODER.encode(path);
   if (bytes.byteLength > 0xffff) {
     throw new Error(`PPTX ZIP entry path is too long: ${path}`);
   }
@@ -89,21 +72,6 @@ function encodedPath(path: string): { readonly bytes: Uint8Array; readonly flags
   return {
     bytes,
     flags: bytes.byteLength === path.length ? 0 : UTF8_FLAG,
-  };
-}
-
-function compressedBytesForEntry(
-  entry: PptxZipEntry,
-  options: { readonly compression?: PptxCompressionMode },
-): { readonly bytes: Uint8Array; readonly method: number } {
-  const shouldStore = entry.compression === "store" || options.compression === "store";
-  if (shouldStore) {
-    return { bytes: entry.bytes, method: STORE_METHOD };
-  }
-
-  return {
-    bytes: deflateSync(entry.bytes, { level: zipLevel(options.compression) }),
-    method: DEFLATE_METHOD,
   };
 }
 
@@ -169,7 +137,6 @@ function endOfCentralDirectory(entryCount: number, centralSize: number, centralO
 export function writePptxZipEntriesToSink(
   entries: Iterable<PptxZipEntry>,
   sink: PptxZipSink,
-  options: { readonly compression?: PptxCompressionMode } = {},
 ): void {
   const centralEntries: CentralDirectoryEntry[] = [];
   let offset = 0;
@@ -183,23 +150,22 @@ export function writePptxZipEntriesToSink(
   try {
     for (const entry of entries) {
       const path = encodedPath(entry.path);
-      const compressed = compressedBytesForEntry(entry, options);
-      assertZip32Size("compressed entry size", compressed.bytes.byteLength);
+      assertZip32Size("compressed entry size", entry.bytes.byteLength);
       assertZip32Size("uncompressed entry size", entry.bytes.byteLength);
 
       const centralEntry: CentralDirectoryEntry = {
         pathBytes: path.bytes,
         flags: path.flags,
-        method: compressed.method,
+        method: STORE_METHOD,
         crc: crc32(entry.bytes),
-        compressedSize: compressed.bytes.byteLength,
+        compressedSize: entry.bytes.byteLength,
         uncompressedSize: entry.bytes.byteLength,
         localHeaderOffset: offset,
       };
 
       centralEntries.push(centralEntry);
       write(localHeader(centralEntry));
-      write(compressed.bytes);
+      write(entry.bytes);
     }
 
     const centralOffset = offset;
@@ -212,11 +178,8 @@ export function writePptxZipEntriesToSink(
   }
 }
 
-export function createPptxZipBytesFromEntries(
-  entries: Iterable<PptxZipEntry>,
-  options: { readonly compression?: PptxCompressionMode } = {},
-): Uint8Array {
+export function createPptxZipBytesFromEntries(entries: Iterable<PptxZipEntry>): Uint8Array {
   const sink = createCollectingPptxZipSink();
-  writePptxZipEntriesToSink(entries, sink, options);
+  writePptxZipEntriesToSink(entries, sink);
   return sink.bytes();
 }

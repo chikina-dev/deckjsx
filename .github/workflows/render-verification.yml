@@ -38,7 +38,17 @@ jobs:
         run: |
           mkdir -p ./.github/render/artifacts
           if docker container inspect deckjsx-render-run >/dev/null 2>&1; then
-            docker cp deckjsx-render-run:/workspace/.github/render/artifacts/. ./.github/render/artifacts
+            if ! docker cp deckjsx-render-run:/workspace/.github/render/artifacts/. ./.github/render/artifacts 2>./.github/render/artifacts/docker-cp-error.log; then
+              {
+                echo "Render artifact directory was not created in the container."
+                echo
+                echo "docker cp error:"
+                cat ./.github/render/artifacts/docker-cp-error.log
+                echo
+                echo "Render container logs:"
+                docker logs deckjsx-render-run || true
+              } > ./.github/render/artifacts/render-verification.log
+            fi
           else
             echo "Render container was not created." > ./.github/render/artifacts/render-verification.log
           fi

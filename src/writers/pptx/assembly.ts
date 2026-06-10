@@ -203,7 +203,6 @@ export function expectedAssemblyEntryForPart(part: PptxPackagePart): PptxExpecte
       ? { requirementDependencies: requirement.requirementDependencies }
       : {}),
     ...(requirement.reason ? { requirementReason: requirement.reason } : {}),
-    compression: part.kind === "media" ? "store" : "default",
   };
 }
 
@@ -242,7 +241,6 @@ export function assemblyPlanEntry(input: {
     ...(input.expected.requirementReason
       ? { requirementReason: input.expected.requirementReason }
       : {}),
-    compression: input.expected.compression,
     status: input.final.status,
     ...(input.final.byteLength !== undefined ? { byteLength: input.final.byteLength } : {}),
     ...(input.final.reason ? { reason: input.final.reason } : {}),
@@ -263,7 +261,6 @@ export function assemblyPlanEntry(input: {
       ...(input.expected.requirementReason
         ? { requirementReason: input.expected.requirementReason }
         : {}),
-      compression: input.expected.compression,
     },
     final,
     ...(build ? { build } : {}),
@@ -288,7 +285,6 @@ export function assemblySummary(plan: readonly PptxAssemblyPlanEntry[]): RenderI
           ? { requirementDependencies: entry.requirementDependencies }
           : {}),
         ...(entry.requirementReason ? { requirementReason: entry.requirementReason } : {}),
-        compression: entry.compression,
         ...(entry.byteLength !== undefined ? { byteLength: entry.byteLength } : {}),
         ...(entry.reason ? { reason: entry.reason } : {}),
         ...(entry.reasonDetails ? { reasonDetails: entry.reasonDetails } : {}),
@@ -361,7 +357,6 @@ export function zipEntriesFromAssemblyPlan(plan: readonly PptxAssemblyPlanEntry[
     entries.push({
       path: entry.path,
       bytes: entry.bytes,
-      compression: entry.compression,
     });
   }
   return entries;

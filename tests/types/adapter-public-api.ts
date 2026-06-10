@@ -1,39 +1,31 @@
 import { pptx } from "deckjsx/adapter";
-import type {
-  PptxCompressionMode,
-  PptxRenderOptions,
-  WriterAdapter,
-  WriterRenderContext,
-} from "deckjsx/adapter";
+import type { PptxRenderOptions, WriterAdapter, WriterRenderContext } from "deckjsx/adapter";
 import type { ProjectionFormat } from "deckjsx";
 import type { PptxPackageModel } from "deckjsx/inspect";
 
 type Assert<T extends true> = T;
 type IsAssignable<From, To> = [From] extends [To] ? true : false;
 
-const adapter = pptx({ compression: "fast", output: "deck.pptx" });
+const adapter = pptx({ output: "deck.pptx" });
 adapter satisfies WriterAdapter<PptxPackageModel>;
 adapter.projectionFormat satisfies ProjectionFormat;
 adapter.format satisfies "pptx";
 
 const renderOptions = {
-  compression: "balanced",
   inspection: "summary",
   output: "deck.pptx",
 } satisfies PptxRenderOptions;
 void renderOptions;
 
-const compressionMode = "store" satisfies PptxCompressionMode;
-void compressionMode;
+// @ts-expect-error compression is no longer a public render option.
+pptx({ compression: "fast" });
 
-const compressionModeAssertions = {
-  numericLevelIsNotPublic: true,
-} satisfies {
-  numericLevelIsNotPublic: Assert<
-    IsAssignable<{ readonly level: 9 }, PptxCompressionMode> extends true ? false : true
-  >;
+type RemovedCompressionSurfaceAssertions = {
+  // @ts-expect-error compression mode is not public API.
+  compressionMode: import("deckjsx/adapter").PptxCompressionMode;
 };
-void compressionModeAssertions;
+declare const removedCompressionSurfaceAssertions: RemovedCompressionSurfaceAssertions;
+void removedCompressionSurfaceAssertions;
 
 const projectionFormat = "pptx" satisfies ProjectionFormat;
 void projectionFormat;
@@ -79,7 +71,7 @@ type AdapterPrivateLeakAssertions = {
   themeProjections: import("deckjsx/adapter").ProjectInspectionThemeProjectionView;
   // @ts-expect-error XML byte writer helpers are internal writer implementation details.
   xmlWriter: import("deckjsx/adapter").XmlChunkWriter;
-  // @ts-expect-error ZIP helpers and fflate integration stay behind the direct writer.
+  // @ts-expect-error ZIP helpers stay behind the direct writer.
   zipBytes: import("deckjsx/adapter").createPptxZipBytes;
   // @ts-expect-error deep direct-writer modules are not public adapter subpaths.
   writerSubpath: import("deckjsx/writers/pptx");

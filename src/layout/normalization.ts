@@ -1,4 +1,5 @@
-import type { ImageProps, ShapeProps, SlideProps, TextProps, ViewProps } from "../authoring/index";
+import type { ClassNameValue } from "../authoring/props";
+import type { TemplateAreaRef } from "../templates";
 import type {
   CssAlignContent,
   CssAlignSelf,
@@ -13,8 +14,8 @@ import type {
   TextStyle,
   ViewStyle,
 } from "../style/types";
-import { resolveGridContainerAuthoring } from "../layout/grid";
-import { resolveBoxSpacing, resolveInset } from "../layout/spacing";
+import { resolveGridContainerAuthoring } from "./grid";
+import { resolveBoxSpacing, resolveInset } from "./spacing";
 import { normalizeOpacityAsTransparency, parseBackgroundShorthand } from "../style/background";
 import { parseLength, type LengthResolutionContext } from "../style/length";
 import {
@@ -25,31 +26,52 @@ import {
 } from "../style/stroke";
 import { parseTextDecoration, resolveTextWrap } from "../style/typography";
 
-export type NormalizedSlideProps = Omit<SlideProps, "style"> & SlideStyle;
-export type NormalizedViewProps = Omit<ViewProps, "style"> & ViewStyle;
-export type NormalizedTextProps = Omit<TextProps, "style"> & TextStyle;
-export type NormalizedImageProps = Partial<Omit<ImageProps, "style">> & ImageStyle;
-export type NormalizedShapeProps = Omit<ShapeProps, "style"> & ShapeStyle;
-export type SlideNormalizationInput = Partial<Omit<SlideProps, "style">> &
+type SlideStructuralInput = {
+  readonly name?: string;
+  readonly template?: string;
+  readonly className?: ClassNameValue;
+};
+
+type AreaStructuralInput = {
+  readonly className?: ClassNameValue;
+  readonly area?: TemplateAreaRef;
+};
+
+type ImageStructuralInput = AreaStructuralInput & {
+  readonly src?: string;
+  readonly data?: string;
+};
+
+type ShapeKind = "rect" | "ellipse" | "line";
+
+type ShapeStructuralInput = AreaStructuralInput & {
+  readonly shape?: ShapeKind;
+};
+
+export type NormalizedSlideProps = SlideStructuralInput & SlideStyle;
+export type NormalizedViewProps = AreaStructuralInput & ViewStyle;
+export type NormalizedTextProps = AreaStructuralInput & TextStyle;
+export type NormalizedImageProps = ImageStructuralInput & ImageStyle;
+export type NormalizedShapeProps = AreaStructuralInput & ShapeStyle & { readonly shape: ShapeKind };
+export type SlideNormalizationInput = Partial<SlideStructuralInput> &
   SlideStyle & {
     readonly style?: SlideStyle;
   };
-export type ViewNormalizationInput = Partial<Omit<ViewProps, "style">> &
+export type ViewNormalizationInput = Partial<AreaStructuralInput> &
   ViewStyle & {
     readonly style?: ViewStyle;
   };
-export type TextNormalizationInput = Partial<Omit<TextProps, "style">> &
+export type TextNormalizationInput = Partial<AreaStructuralInput> &
   TextStyle & {
     readonly style?: TextStyle;
   };
-export type ImageNormalizationInput = Partial<Omit<ImageProps, "style">> &
+export type ImageNormalizationInput = Partial<ImageStructuralInput> &
   ImageStyle & {
     readonly style?: ImageStyle;
   };
-export type ShapeNormalizationInput = Partial<Omit<ShapeProps, "style">> &
+export type ShapeNormalizationInput = Partial<ShapeStructuralInput> &
   ShapeStyle & {
     readonly style?: ShapeStyle;
-    readonly shape: ShapeProps["shape"];
   };
 
 function resolveFlexDirection(
@@ -433,6 +455,7 @@ export function normalizeShapeProps(props: ShapeNormalizationInput): NormalizedS
   const resolved: NormalizedShapeProps = {
     ...rest,
     ...style,
+    shape: rest.shape ?? "rect",
   };
   const background = parseBackgroundShorthand(resolved.background);
   const border = parseBorderShorthand(resolved.border);

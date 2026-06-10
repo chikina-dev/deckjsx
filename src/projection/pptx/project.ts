@@ -1,8 +1,9 @@
 import type { DeckOptions } from "../../authoring/index";
 import type { Diagnostics } from "../../diagnostics";
 import type { AssetEntity, SemanticAuthorGraph } from "../../graph";
-import { resolveProjectedLayoutFromGraph } from "../../layout/graph";
+import { buildLayoutInputSnapshot } from "../../layout/input";
 import type { FrameIR } from "../../layout/projected";
+import { resolveProjectedLayout } from "../../layout/resolve";
 import type { ResolvedStyleMap } from "../../style/resolve";
 import { EMU_PER_INCH, POINTS_PER_INCH } from "../../types";
 import { withPackagePartFingerprints } from "./fingerprint";
@@ -51,9 +52,19 @@ function projectGraphToPptxPackageInternal(input: {
     size,
     slideIds,
   });
-  const projectedLayout = input.partial
+  const layoutInput = input.partial
     ? undefined
-    : resolveProjectedLayoutFromGraph(input.options, input.graph, input.resolvedStyles);
+    : buildLayoutInputSnapshot({
+        graph: input.graph,
+        resolvedStyles: input.resolvedStyles,
+        assetProbeArtifacts: input.assets,
+        deckSize: size,
+        diagnostics: input.diagnostics,
+        meta: input.options.meta,
+      });
+  const projectedLayout = layoutInput
+    ? resolveProjectedLayout(input.options, layoutInput.snapshot)
+    : undefined;
   const slideFrame: FrameIR = {
     xEmu: 0,
     yEmu: 0,
@@ -65,6 +76,7 @@ function projectGraphToPptxPackageInternal(input: {
     if (slide?.kind !== "slide") {
       return [];
     }
+    const layoutSlide = projectedLayout?.slides[slideIndex];
     const partId = slidePartIdFor(slide);
     const slideLayoutPart = slideLayoutPartForSlide({
       graph: input.graph,
@@ -72,27 +84,31 @@ function projectGraphToPptxPackageInternal(input: {
       slideLayoutParts: supportParts.slideLayoutParts,
       defaultSlideLayoutPart: supportParts.slideLayoutPart,
     });
+    if (input.partial) {
+      return [
+        partialPptxSlidePartFor({
+          graph: input.graph,
+          resolvedStyles: input.resolvedStyles,
+          slide,
+          slideIndex,
+          slideFrame,
+          slideLayoutPart,
+          slidePartId: partId,
+        }),
+      ];
+    }
+    if (!layoutSlide) {
+      return [];
+    }
+
     return [
-      input.partial
-        ? partialPptxSlidePartFor({
-            graph: input.graph,
-            resolvedStyles: input.resolvedStyles,
-            slide,
-            slideIndex,
-            slideFrame,
-            slideLayoutPart,
-            slidePartId: partId,
-          })
-        : pptxSlidePartFor({
-            graph: input.graph,
-            resolvedStyles: input.resolvedStyles,
-            slide,
-            layoutSlide: projectedLayout?.slides[slideIndex],
-            slideIndex,
-            slideFrame,
-            slideLayoutPart,
-            slidePartId: partId,
-          }),
+      pptxSlidePartFor({
+        layoutSlide,
+        slideIndex,
+        slideFrame,
+        slideLayoutPart,
+        slidePartId: partId,
+      }),
     ];
   });
   const projectedSlidesWithMedia = withCanonicalImageMediaPartIds(projectedSlides, input.assets);

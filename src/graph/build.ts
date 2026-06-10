@@ -65,6 +65,10 @@ function isRecord(
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function hasOwnProp(props: AuthorElementProps, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(props, key);
+}
+
 function keySegment(key: JsxKey | undefined, index: number): string {
   return key === undefined ? `index:${index}` : `key:${String(key)}`;
 }
@@ -95,6 +99,23 @@ function isShapeElement(node: AuthorElementNode): node is AuthorShapeElementNode
 
 function templateAreaValueFor(node: AuthorElementNode): AuthorElementPropValue | undefined {
   return "area" in node.props ? node.props.area : undefined;
+}
+
+function supportedPropNamesFor(node: AuthorElementNode): ReadonlySet<string> {
+  if (node.source.kind === "slide") {
+    return new Set(["name", "template", "className", "style"]);
+  }
+
+  switch (node.source.tag) {
+    case "span":
+      return new Set(["className", "style"]);
+    case "img":
+      return new Set(["className", "style", "area", "src", "data"]);
+    case "shape":
+      return new Set(["className", "style", "area", "shape"]);
+    default:
+      return new Set(["className", "style", "area"]);
+  }
 }
 
 function sourceFor(context: BuildContext): SourceOrigin {
@@ -163,49 +184,14 @@ function classRefsFor(value: AuthorElementPropValue): readonly StyleClassRef[] |
   return names.length === 0 ? undefined : names.map((name, index) => ({ name, index }));
 }
 
-function directStyleProps(props: AuthorElementProps): StyleDeclaration | undefined {
-  const directStyle: StyleDeclaration = Object.fromEntries(
-    Object.entries(props).filter(
-      ([key]) =>
-        key !== "children" &&
-        key !== "className" &&
-        key !== "data" &&
-        key !== "area" &&
-        key !== "name" &&
-        key !== "shape" &&
-        key !== "src" &&
-        key !== "style" &&
-        key !== "template",
-    ),
-  );
-
-  return Object.keys(directStyle).length === 0 ? undefined : directStyle;
-}
-
 function sourceKeyFor(source: SourceOrigin | undefined): string {
   return !source || source.kind === "root" ? "root" : source.sourceIdentity;
 }
 
 function mergedAuthoredStyle(props: AuthorElementProps): StyleDeclaration | undefined {
-  const directStyle = directStyleProps(props);
   const inlineStyle = props.style;
 
-  if (directStyle === undefined) {
-    return isRecord(inlineStyle) ? Object.fromEntries(Object.entries(inlineStyle)) : undefined;
-  }
-
-  if (
-    inlineStyle !== undefined &&
-    (typeof inlineStyle !== "object" || inlineStyle === null || Array.isArray(inlineStyle))
-  ) {
-    return undefined;
-  }
-
-  const merged: StyleDeclaration = {
-    ...directStyle,
-    ...(isRecord(inlineStyle) ? inlineStyle : undefined),
-  };
-  return merged;
+  return isRecord(inlineStyle) ? Object.fromEntries(Object.entries(inlineStyle)) : undefined;
 }
 
 function styleRefFor(
@@ -253,12 +239,149 @@ function invalidStructure(
   });
 }
 
+function authoringPropDiagnostic(input: {
+  code: string;
+  title: string;
+  path: string;
+  message: string;
+  help?: readonly string[];
+}): Diagnostic {
+  return diagnostic({
+    severity: "error",
+    code: input.code,
+    title: input.title,
+    message: input.message,
+    labels: [{ path: input.path, message: input.message }],
+    ...(input.help ? { help: input.help } : {}),
+  });
+}
+
+function validateAuthoringProps(state: BuildState, node: AuthorElementNode, path: string): void {
+  const supported = supportedPropNamesFor(node);
+  const propPath = node.source.kind === "slide" ? `${path}.options` : `${path}.props`;
+  for (const key of Object.keys(node.props)) {
+    if (!supported.has(key)) {
+      const target = node.source.kind === "slide" ? "slide declaration option" : "authoring prop";
+      addDiagnostic(
+        state,
+        authoringPropDiagnostic({
+          code: "E_COMPILE_UNSUPPORTED_AUTHORING_PROP",
+          title: `unsupported ${target}`,
+          path: `${propPath}.${key}`,
+          message: `${key} is not supported in the current deckjsx authoring interface.`,
+        }),
+      );
+    }
+  }
+
+  if (hasOwnProp(node.props, "style")) {
+    const style = node.props.style;
+    if (style !== undefined && !isRecord(style)) {
+      addDiagnostic(
+        state,
+        authoringPropDiagnostic({
+          code: "E_COMPILE_INVALID_STYLE_PROP",
+          title: "style prop is invalid",
+          path: `${propPath}.style`,
+          message: "The style prop must be an object when it is provided.",
+        }),
+      );
+    }
+  }
+
+  if (isShapeElement(node) && node.props.shape !== undefined) {
+    if (
+      node.props.shape !== "rect" &&
+      node.props.shape !== "ellipse" &&
+      node.props.shape !== "line"
+    ) {
+      addDiagnostic(
+        state,
+        authoringPropDiagnostic({
+          code: "E_COMPILE_INVALID_SHAPE_PROP",
+          title: "shape prop is invalid",
+          path: `${propPath}.shape`,
+          message: "The shape prop must be rect, ellipse, or line.",
+        }),
+      );
+    }
+  }
+
+  if (isSlideElement(node)) {
+    if (node.props.name !== undefined && typeof node.props.name !== "string") {
+      addDiagnostic(
+        state,
+        authoringPropDiagnostic({
+          code: "E_COMPILE_INVALID_SLIDE_NAME_OPTION",
+          title: "slide name option is invalid",
+          path: `${propPath}.name`,
+          message: "The slide declaration name option must be a string when it is provided.",
+        }),
+      );
+    }
+
+    if (node.props.template !== undefined && typeof node.props.template !== "string") {
+      addDiagnostic(
+        state,
+        authoringPropDiagnostic({
+          code: "E_COMPILE_INVALID_SLIDE_TEMPLATE_OPTION",
+          title: "slide template option is invalid",
+          path: `${propPath}.template`,
+          message: "The slide declaration template option must be a template name string.",
+        }),
+      );
+    }
+  }
+}
+
 function assetForImage(
   state: BuildState,
   idMaterial: readonly string[],
   props: ImageNodeProps,
   path: string,
 ): AssetEntityId | undefined {
+  const hasSrc = props.src !== undefined;
+  const hasData = props.data !== undefined;
+
+  if (hasSrc && typeof props.src !== "string") {
+    addDiagnostic(
+      state,
+      authoringPropDiagnostic({
+        code: "E_COMPILE_INVALID_IMAGE_SOURCE_PROP",
+        title: "image src prop is invalid",
+        path: `${path}.props.src`,
+        message: "The img src prop must be a string when it is provided.",
+      }),
+    );
+    return undefined;
+  }
+
+  if (hasData && typeof props.data !== "string") {
+    addDiagnostic(
+      state,
+      authoringPropDiagnostic({
+        code: "E_COMPILE_INVALID_IMAGE_SOURCE_PROP",
+        title: "image data prop is invalid",
+        path: `${path}.props.data`,
+        message: "The img data prop must be a string when it is provided.",
+      }),
+    );
+    return undefined;
+  }
+
+  if (typeof props.src === "string" && typeof props.data === "string") {
+    addDiagnostic(
+      state,
+      authoringPropDiagnostic({
+        code: "E_COMPILE_AMBIGUOUS_IMAGE_SOURCE_PROP",
+        title: "image source props are ambiguous",
+        path: `${path}.props`,
+        message: "Use either img src or img data, not both.",
+      }),
+    );
+    return undefined;
+  }
+
   if (typeof props.src !== "string" && typeof props.data !== "string") {
     addDiagnostic(
       state,
@@ -684,6 +807,7 @@ function buildNode(
   const material = [...nodeContext.parentMaterial, segment];
   const id = graphNodeId(material);
   const path = `${nodeContext.path} > ${sourceName(node)}[${keySegment(node.key, index)}]`;
+  validateAuthoringProps(state, node, path);
 
   if (kind === "textRun") {
     if (!context.inline) {

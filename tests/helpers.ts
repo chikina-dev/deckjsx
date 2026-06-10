@@ -2,7 +2,6 @@ import { Buffer } from "node:buffer";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { strFromU8, unzipSync } from "fflate";
 import {
   isPptxContentTypesPart,
   isPptxMediaPart,
@@ -17,6 +16,80 @@ import type {
 } from "../src/projection/pptx/model.ts";
 
 export type RenderedNode = PptxElement;
+export type Unzipped = Record<string, Uint8Array>;
+
+const ZIP_TEXT_DECODER = new TextDecoder();
+
+function assertZipRange(bytes: Uint8Array, offset: number, length: number, context: string): void {
+  if (offset < 0 || length < 0 || offset > bytes.byteLength - length) {
+    throw new Error(`Truncated ZIP archive while reading ${context}.`);
+  }
+}
+
+function readUint16(bytes: Uint8Array, offset: number, context: string): number {
+  assertZipRange(bytes, offset, 2, context);
+  return bytes[offset]! | (bytes[offset + 1]! << 8);
+}
+
+function readUint32(bytes: Uint8Array, offset: number, context: string): number {
+  assertZipRange(bytes, offset, 4, context);
+  return (
+    (bytes[offset]! |
+      (bytes[offset + 1]! << 8) |
+      (bytes[offset + 2]! << 16) |
+      (bytes[offset + 3]! << 24)) >>>
+    0
+  );
+}
+
+export function strFromU8(bytes: Uint8Array): string {
+  return ZIP_TEXT_DECODER.decode(bytes);
+}
+
+export function unzipSync(bytes: Uint8Array): Unzipped {
+  const entries: Unzipped = {};
+  let offset = 0;
+
+  while (offset + 4 <= bytes.byteLength) {
+    const signature = readUint32(bytes, offset, `ZIP signature at offset ${offset}`);
+    if (signature === 0x02014b50 || signature === 0x06054b50) {
+      break;
+    }
+    if (signature !== 0x04034b50) {
+      throw new Error(`Unsupported ZIP local header signature at offset ${offset}.`);
+    }
+
+    assertZipRange(bytes, offset, 30, `local header at offset ${offset}`);
+    const method = readUint16(bytes, offset + 8, `compression method at offset ${offset}`);
+    const compressedSize = readUint32(bytes, offset + 18, `compressed size at offset ${offset}`);
+    const uncompressedSize = readUint32(
+      bytes,
+      offset + 22,
+      `uncompressed size at offset ${offset}`,
+    );
+    const pathLength = readUint16(bytes, offset + 26, `file name length at offset ${offset}`);
+    const extraLength = readUint16(bytes, offset + 28, `extra field length at offset ${offset}`);
+    const pathStart = offset + 30;
+    const dataStart = pathStart + pathLength + extraLength;
+    const dataEnd = dataStart + compressedSize;
+    assertZipRange(bytes, pathStart, pathLength, `file name at offset ${offset}`);
+    assertZipRange(bytes, pathStart + pathLength, extraLength, `extra field at offset ${offset}`);
+    const path = strFromU8(bytes.slice(pathStart, pathStart + pathLength));
+
+    if (method !== 0) {
+      throw new Error(`ZIP entry ${path} is not store-only.`);
+    }
+    if (compressedSize !== uncompressedSize) {
+      throw new Error(`ZIP entry ${path} has mismatched stored sizes.`);
+    }
+    assertZipRange(bytes, dataStart, compressedSize, `stored data for ZIP entry ${path}`);
+
+    entries[path] = bytes.slice(dataStart, dataEnd);
+    offset = dataEnd;
+  }
+
+  return entries;
+}
 
 export type PptxPartByKind<K extends PptxKnownPackagePart["kind"]> = Extract<
   PptxKnownPackagePart,

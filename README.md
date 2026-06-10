@@ -13,10 +13,9 @@ JSX
   -> Output Writer
 ```
 
-This project is being designed as a compiler, not as a thin `PptxGenJS` wrapper.
-The API uses a class-based compiler with callback-based `.slide()`, synchronous `.compile()`, async
-`.project()`, and async `.render()`. Authoring uses typed JSX elements with CSS-like style and class
-semantics.
+This project is designed as a presentation compiler. The API uses a class-based compiler with
+callback-based `.slide()`, synchronous `.compile()`, async `.project()`, and async `.render()`.
+Authoring uses typed JSX elements with CSS-like style and class semantics.
 
 The implementation preserves the compiler model with explicit module boundaries for authoring,
 semantic graph construction, style resolution, output projection, writer adapters, and runtime
@@ -28,66 +27,88 @@ output.
 npm install deckjsx
 ```
 
-The package currently targets PPTX output through deckjsx's direct PPTX writer.
+The package currently targets PPTX output through deckjsx's direct PPTX writer. The public authoring
+surface is `deckjsx`; explicit writer selection lives in `deckjsx/adapter`; inspection helpers live
+in `deckjsx/inspect`.
 
 ## Usage
 
 ```tsx
-import { Deck } from "deckjsx";
+import { Deck, StyleSheet, Theme } from "deckjsx";
 
 const deck = new Deck({
   layout: { width: 13.333, height: 7.5, unit: "in" },
   meta: { title: "Quarterly Review", author: "deckjsx" },
+  templates: {
+    report: {
+      areas: {
+        title: { kind: "title", frame: { x: 0.7, y: 0.5, width: 11.9, height: 0.8 } },
+        body: { frame: { x: 0.7, y: 1.5, width: 11.9, height: 4.9 } },
+        footer: { frame: { x: 0.7, y: 6.9, width: 11.9, height: 0.3 } },
+      },
+    },
+  },
+  theme: new Theme({
+    defaults: {
+      h1: { fontFamily: "Aptos Display", fontSize: 28, fontWeight: 700, color: "#0F172A" },
+      p: { fontFamily: "Aptos", fontSize: 18, color: "#334155", fit: "shrink" },
+    },
+  }),
 });
 
-deck.slide(
-  { name: "Quarterly Review", style: { backgroundColor: "#F8FAFC" } },
-  ({ composition }) => (
-    <main
-      style={{
-        x: 0.7,
-        y: 0.5,
-        width: 11.9,
-        height: 6.3,
-        display: "grid",
-        gridTemplateRows: ["0.9in", "1fr", "0.4in"],
-        rowGap: 0.25,
-      }}
-    >
-      <header>
-        <h1 style={{ width: "100%", height: 0.6, fontSize: 28, fontWeight: 700, color: "#0F172A" }}>
-          Quarterly Review
-        </h1>
-      </header>
+deck.useStyles(
+  new StyleSheet({
+    classes: {
+      review: { backgroundColor: "#F8FAFC" },
+      title: { target: "h1.title", style: { width: "100%", height: 0.6 } },
+      contentGrid: {
+        target: "section.contentGrid",
+        style: { display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 0.35 },
+      },
+      lead: { target: "p.lead", style: { lineHeight: 1.2 } },
+      chartFrame: { backgroundColor: "#E0F2FE", borderRadius: 0.15, padding: 0.25 },
+      chart: { width: "100%", height: "100%", fit: "contain" },
+      footerText: {
+        target: "p.footerText",
+        style: { width: "100%", height: 0.3, fontSize: 11, color: "#64748B", textAlign: "right" },
+      },
+    },
+  }),
+);
 
-      <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 0.35 }}>
-        <p style={{ fontSize: 18, color: "#334155", fit: "shrink" }}>
+deck.slide(
+  { name: "Quarterly Review", template: "report", className: "review" },
+  ({ composition, template }) => (
+    <main>
+      <h1 area={template.title} className="title">
+        Quarterly Review
+      </h1>
+
+      <section area={template.body} className="contentGrid" style={{ columnGap: 0.45 }}>
+        <p className="lead" style={{ color: "#1E293B" }}>
           Author slides with typed JSX, inspect the projected document model, and render PPTX files.
         </p>
-        <figure style={{ backgroundColor: "#E0F2FE", borderRadius: 0.15, padding: 0.25 }}>
-          <img src="chart.png" style={{ width: "100%", height: "100%", fit: "contain" }} />
+        <figure className="chartFrame">
+          <img src="chart.png" className="chart" />
         </figure>
       </section>
 
-      <footer>
-        <p
-          style={{
-            width: "100%",
-            height: 0.3,
-            fontSize: 11,
-            color: "#64748B",
-            textAlign: "right",
-          }}
-        >
-          {composition.slideIndex + 1} / {composition.totalSlides}
-        </p>
-      </footer>
+      <p area={template.footer} className="footerText">
+        {composition.slideIndex + 1} / {composition.totalSlides}
+      </p>
     </main>
   ),
 );
 
-const project = await deck.project();
-await deck.render({ output: "quarterly-review.pptx" });
+const projected = await deck.project();
+if (!projected.ok) {
+  console.warn(projected.diagnostics.items);
+}
+
+const rendered = await deck.render({ output: "quarterly-review.pptx" });
+if (!rendered.ok) {
+  throw new Error("PPTX render failed");
+}
 ```
 
 Use `deck.compile()` for authoring semantics, `await deck.project()` for output-facing inspection,
@@ -98,8 +119,8 @@ skipped with `await deck.project({ inspection: "none" })` or
 `await deck.render({ inspection: "none" })`.
 
 The default render path uses deckjsx's built-in direct PPTX writer. If an explicit writer adapter is
-needed, import `pptx()` from `deckjsx/adapter`; writer internals such as XML emitters, ZIP settings,
-and sinks are intentionally not part of the public API.
+needed, import `pptx()` from `deckjsx/adapter`. Writer internals such as XML emitters, ZIP assembly,
+and output sinks are intentionally not part of the public API.
 
 ```tsx
 import { pptx } from "deckjsx/adapter";
@@ -136,14 +157,88 @@ Text-like lowercase elements compile to text boxes:
 Image lowercase elements compile to images and require either `src` or `data`:
 
 ```tsx
-<img src="diagram.png" style={{ width: 4, height: 2.5, fit: "contain" }} />
+<img src="diagram.png" className="diagram" />
 ```
 
 The lowercase `shape` element compiles to PPTX shapes:
 
 ```tsx
-<shape shape="rect" style={{ width: 2, height: 1, fill: "#2563EB" }} />
+<shape shape="rect" className="accentBlock" />
 ```
+
+## Layout, Style, And Templates
+
+`deckjsx` keeps layout, style, and templates as separate authoring ideas even when they are written
+through JSX and CSS-like objects.
+
+- Layout describes where things are and how children flow: deck slide size, `x`, `y`, `width`,
+  `height`, `left`, `top`, `right`, `bottom`, `display`, flex, grid, gaps, padding, and stacking
+  order. Project resolves these values into concrete frames and paint order.
+- Style describes how resolved boxes are drawn: fills, borders, shadows, opacity, rotation, text
+  color, font, alignment, bullets, links, image fitting, and background layers.
+- Templates describe reusable slide structure: named areas such as `title`, `body`, `media`, or
+  `footer` that authored JSX can target without exposing PowerPoint placeholder ids.
+
+Reusable layout and appearance should usually live in `StyleSheet` classes and `Theme` defaults.
+Use the JSX `style` prop for slide-local variations, data-dependent overrides, or one-off values
+that should stay close to the authored element. Direct style props exist in the current v0.8 surface,
+but they are not the preferred HTML/CSS-like authoring form and are planned to be removed in v0.8.1.
+
+Templates should be used when the same semantic slide regions repeat across slides; layout should be
+used for per-slide geometry and flow; visual style should be used for appearance after the geometry
+is known.
+
+## Style Cascade
+
+In deckjsx, cascade means the per-element process that turns defaults, theme defaults, stylesheet
+classes, and inline authoring styles into one resolved style snapshot for Project. It is CSS-like,
+but it is not a full browser CSS engine and does not mean every property automatically inherits from
+parent elements.
+
+For each style-capable element, values are resolved in this order:
+
+1. Element defaults, such as default text box behavior.
+2. `Theme` defaults for the authored tag, such as `p`, `h1`, `div`, `span`, or `img`.
+3. Matching `StyleSheet` class rules registered with `deck.useStyles()`.
+4. Authored inline style from the JSX `style` object.
+
+Later layers replace earlier layers property by property. The v0.8 authoring surface still accepts
+some direct style props, but new examples should prefer `style={{ ... }}` for inline values because
+direct style props are planned for removal in v0.8.1.
+
+```tsx
+import { Deck, StyleSheet, Theme } from "deckjsx";
+
+const deck = new Deck({
+  layout: { width: 13.333, height: 7.5, unit: "in" },
+  theme: new Theme({
+    defaults: {
+      p: { color: "#334155", fontSize: 18 },
+    },
+  }),
+});
+
+deck.useStyles(
+  new StyleSheet({
+    classes: {
+      muted: { color: "#64748B" },
+      title: { target: "p.title", style: { color: "#0F172A", fontSize: 28, fontWeight: 700 } },
+    },
+  }),
+);
+
+deck.slide(() => <p className="muted title">Revenue</p>);
+```
+
+In this example, `fontSize`, `fontWeight`, and `color` come from the matching `title` class, and the
+theme default supplies any remaining `p` defaults. `className`
+token order is preserved for inspection, but it is not the priority rule for conflicting class
+styles. Class conflicts are resolved by selector specificity first, then stylesheet registration and
+rule order. Supported selectors are intentionally small: class selectors, tag/class compounds, and
+descendant selectors such as `.title`, `p.title`, or `.card .caption`.
+
+Style cascade is source-local. A mounted child deck resolves its own theme and stylesheets against
+its own slides, which keeps sandboxed and HMR-style composition predictable.
 
 ## Slide Templates
 
@@ -217,7 +312,7 @@ nodes. Inline rich text uses `span` inside text-like elements:
 
 ```tsx
 <p>
-  Revenue grew <span style={{ color: "#16A34A", fontWeight: 700 }}>12%</span>.
+  Revenue grew <span className="positiveDelta">12%</span>.
 </p>
 ```
 
@@ -229,9 +324,9 @@ the slide, so authors can build panels with local coordinates. Percentage length
 the parent frame as their reference.
 
 ```tsx
-<div style={{ x: 1, y: 1, width: 6, height: 3 }}>
-  <p style={{ x: "10%", y: "20%", width: "50%", height: "25%" }}>local percent frame</p>
-  <p style={{ left: "55%", top: "10%", right: "10%", bottom: "60%" }}>inset frame</p>
+<div className="panel">
+  <p className="localPercentFrame">local percent frame</p>
+  <p className="insetFrame">inset frame</p>
 </div>
 ```
 
@@ -260,15 +355,11 @@ from custom projections fail before Render emits bytes.
 ```bash
 vp install
 vp check
-bun run build
-npm ci --prefix sample
-npm run --prefix sample smoke
+vp build
 vp test
 bun run benchmark:pptx -- --iterations 1 --strict
 bun run verify:render -- --skip-raster
-npm run --prefix .github/compat/pptxgenjs compare
 ```
 
 For output or public-surface changes, keep the direct PPTX writer as the documented built-in path.
-`pptxgenjs` should appear only in isolated regression tooling, not in runtime dependencies or public
-adapter examples.
+Use render verification and XML/package inspection to catch regressions in emitted PPTX structure.

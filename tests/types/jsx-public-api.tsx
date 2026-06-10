@@ -192,7 +192,6 @@ const assemblyEntrySummary = {
   requirement: "required",
   required: true,
   requirementReason: "slide is part of the presentation",
-  compression: "default",
   status: "reused",
   reason: "buildArtifactFingerprintMatched",
   reasonDetails: { kind: "buildArtifactFingerprintMatched", matchedBuild: assemblyBuildSummary },
@@ -202,7 +201,6 @@ const assemblyEntrySummary = {
     requirement: "required",
     required: true,
     requirementReason: "slide is part of the presentation",
-    compression: "default",
   },
   final: {
     status: "reused",
@@ -223,6 +221,7 @@ void assemblyReasonDetails;
 const assemblySummaryPublicShapeAssertions = {
   entryDoesNotExposeBuildArtifact: true,
   entryDoesNotExposeZipEntry: true,
+  entryDoesNotExposeCompression: true,
   entryDoesNotExposeXml: true,
   buildDoesNotExposeBytes: true,
   buildDoesNotExposeZipCompressionOptions: true,
@@ -233,6 +232,9 @@ const assemblySummaryPublicShapeAssertions = {
   >;
   entryDoesNotExposeZipEntry: Assert<
     "zipEntry" extends keyof RenderAssemblyPlanEntrySummary ? false : true
+  >;
+  entryDoesNotExposeCompression: Assert<
+    "compression" extends keyof RenderAssemblyPlanEntrySummary ? false : true
   >;
   entryDoesNotExposeXml: Assert<"xml" extends keyof RenderAssemblyPlanEntrySummary ? false : true>;
   buildDoesNotExposeBytes: Assert<"bytes" extends keyof RenderAssemblyBuildSummary ? false : true>;
@@ -325,7 +327,7 @@ void (
   <>
     <div className={clsxLikeClassName} style={{ x: 1, y: 1, width: 4, height: 2 }}>
       <p className={{ title: true }}>Hello</p>
-      <p tabStops={readonlyTabStops}>Tabs</p>
+      <p style={{ tabStops: readonlyTabStops }}>Tabs</p>
       <img src="image.png" className="image" />
       <shape shape="rect" className={["shape", { active: true }]} />
     </div>

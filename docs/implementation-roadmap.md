@@ -30,6 +30,10 @@ should land as a separate minor version:
 - `0.6`: Project/Render pipeline, result-first stage APIs, and Pptx Package Model
 - `0.7`: slide declarations and Deck templates
 - `0.8`: direct PPTX output projection and writer, replacing the required `pptxgenjs` path
+- `0.8.1`: writer responsibility cleanup after the direct PPTX writer migration, keeping public APIs
+  stable while deepening internal writer Modules
+- `0.8.x`: deckjsx-owned layout solver hardening for CSS-like layout correctness, with external
+  engines used only as optional verification oracles
 - `0.9`: HMR-oriented compilation/runtime
 
 Patch releases should be reserved for bug fixes, compatibility fixes, and documentation updates
@@ -5737,6 +5741,489 @@ Compatibility and ecosystem:
   dependencies, and core source tree so `pptxgenjs` can remain an isolated CI oracle without
   returning to the published product surface.
 
+## 0.8.x Layout Solver Ownership
+
+### Goal
+
+Harden CSS-like layout correctness while keeping layout as a deckjsx-owned projection concern.
+deckjsx should not make `typeflex`, `flexily`, Taffy, Yoga, Crater, or another external layout engine
+the main runtime implementation. External engines may be useful as verification oracles, but they
+must not define the public authoring vocabulary, the durable projection shape, or the package's
+runtime dependency graph.
+
+The active layout direction is:
+
+```text
+Semantic Author Graph
+  + Resolved Styles
+  + Template Area Anchors
+  + Asset Metadata
+  -> deckjsx-owned Projected Layout
+  -> PptxPackageModel / future PdfDocumentModel
+```
+
+Do not introduce a solver-oriented Layout IR. A layout solver may create short-lived working
+structures while computing a slide, but those structures are implementation details and should be
+discarded after producing deckjsx-owned projected layout nodes. HMR and sandbox invalidation should
+continue to key off graph node identity, style entity identity, template area identity, asset
+metadata, and projected layout fingerprints rather than off an external solver tree.
+
+### Ownership Rules
+
+- Keep the runtime layout solver self-owned in TypeScript. The deckjsx solver is responsible for the
+  supported CSS-like subset: absolute/local containing blocks, flex, grid, stack-like flow,
+  percentages, gaps, padding, min/max constraints, paint order, and projected fallback metadata.
+- Keep cascade, theme defaults, stylesheet class resolution, template placement, z-index-like paint
+  order, diagnostics, asset probing, and output-specific projection outside any external solver
+  vocabulary.
+- Do not add `typeflex`, `flexily`, Taffy, Yoga, Crater, or similar engines as root runtime
+  dependencies for core layout.
+- Do not expose a public `layoutEngine`, `solver`, `taffy`, `yoga`, `typeflex`, `flexily`, or
+  solver-specific option.
+- Do not shape `ProjectedLayout*`, `PptxPackageModel`, or a future `PdfDocumentModel` around an
+  external engine's node ids, style enums, rounding behavior, or unsupported-feature vocabulary.
+- If an experiment adapter is created, keep it in test/dev tooling or a clearly isolated internal
+  comparison harness. It should consume existing graph/resolved-style/template/asset context,
+  produce comparable frame snapshots, and then disappear from the production projection path.
+
+### Verification Strategy
+
+CSS-like layout bugs are expected unless the supported subset is tested as a product contract. The
+main solver should be deckjsx-owned, but verification can use multiple independent signals:
+
+- Add focused fixtures for each supported layout behavior: local containing blocks, percentage
+  frames, inset frames, flex direction/wrap/grow/shrink/order, grid tracks/spans, gap/padding,
+  absolute children inside flow containers, z-index-like paint order, and template area placement.
+- Compare projected frames semantically, not by serialized object equality. Use stable tolerances for
+  unit conversion and rounding so PPTX and future PDF projection can share expectations without
+  hiding meaningful geometry drift.
+- Use Taffy or another independent engine only as an optional oracle for cases it can express
+  cleanly. Oracle checks should live in CI/test tooling, not in runtime code, and should document
+  when deckjsx intentionally differs because of PPTX/PDF semantics, template anchors, source-local
+  cascade, or unsupported fallback behavior.
+- When an oracle requires WASM, keep that dependency workflow-local or dev-only. It should not affect
+  multi-runtime guarantees for the published package.
+- Keep direct deckjsx fixtures as the source of truth. If Taffy, typeflex, flexily, or another oracle
+  disagrees, the test should force a review of the supported-subset expectation rather than
+  automatically treating the oracle as correct.
+- Preserve diagnostics for supported-but-degraded CSS-like behavior. If Project can still produce a
+  structurally valid PPTX/PDF projection, unsupported fidelity should be reported as warning metadata
+  rather than a render blocker.
+
+### Non-Goals
+
+- Do not replace the deckjsx layout solver with Taffy, Yoga, typeflex, flexily, Crater, browser DOM
+  layout, or any other external engine.
+- Do not add a solver-specific persistent IR between Semantic Author Graph and projected layout.
+- Do not make external-engine compatibility a public product goal. The product goal is correct
+  deckjsx projection for its documented CSS-like subset.
+- Do not treat the external oracle as a reason to loosen deckjsx tests. The oracle is a second pair
+  of eyes; the self-owned solver still needs explicit regression coverage.
+
+## 0.8.1 Writer Architecture Cleanup
+
+### Goal
+
+Make the direct PPTX writer easier to reason about, test, and evolve after the v0.8.0 migration.
+The goal is not to add a new output model or revive Presentation IR as a required stage. The active
+architecture remains:
+
+```text
+Semantic Author Graph
+  -> shared projected snapshots
+  -> Pptx Package Model
+  -> Output Writer
+```
+
+Future output formats such as PDF should get their own Projected Document Model, such as a
+`PdfDocumentModel`, rather than forcing PPTX and PDF through a single Presentation IR. Shared
+projection work should live in reusable projected snapshots, such as resolved layout, paint order,
+asset metadata, and unsupported-semantic fallback metadata, when those snapshots have a clear
+cross-output meaning.
+
+v0.8.1 should focus on turning the current writer implementation into deeper internal Modules with
+small Interfaces. It should keep public Authoring Interface, Adapter Interface, and Inspection
+Interface behavior stable.
+
+v0.8.1 should also clean up the HTML/CSS-like authoring surface by removing direct style props from
+public JSX intrinsic elements. Structural and semantic props such as `className`, `style`,
+`children`, `area`, `src`, `data`, and `shape` remain direct props, but style and layout values
+should be authored through `style`, `StyleSheet` classes, `Theme` defaults, or Template Areas.
+
+Compression is explicitly deferred from the v0.8.1 cleanup. The core writer should prefer a
+store-only ZIP path over retaining a runtime compression dependency for a small slice of functionality.
+Future compression can be reintroduced behind an internal compression adapter or optional package once
+size/performance trade-offs are measured against real decks.
+
+### Architecture Review Findings
+
+- The direct writer now follows the right direction for ZIP compatibility: deckjsx owns ZIP package
+  structure instead of letting a generic ZIP streaming class decide Office-facing metadata. The
+  remaining runtime `fflate` usage is small enough that v0.8.1 should remove it from the core writer
+  rather than preserve compression as an implementation dependency.
+- `fflate.Zip` should not be used for final PPTX output because its streaming ZIP path emits data
+  descriptors that can be valid ZIP but unreliable for LibreOffice PPTX media import.
+- The current `renderPptxPackage()` function is too large as an internal composite node. It owns
+  package validation, package-part ordering, Build Artifact reuse, media byte resolution, XML/media
+  part materialization, Assembly Plan construction, ZIP emission, sink topology, output side-effect
+  handling, and Render Result shaping.
+- This is not primarily a problem with `PptxPackageModel`. The model can stay the PPTX Projected
+  Document Model. The main problem is that the Output Writer Composite Node has not yet been split
+  into meaningful internal nodes.
+- Avoid introducing a generic Presentation IR between Semantic Author Graph and Pptx Package Model
+  just to reduce writer complexity. That would likely become a shallow pass-through or force
+  PPTX-specific package topology, relationships, theme/layout parts, media reuse, and z-order back
+  into writer-side reinterpretation.
+
+### Required Cleanup
+
+- Treat `src/writers/pptx/` as the public-internal PPTX Writer Composite Node. Its external
+  identity remains the writer adapter implementation that consumes `PptxPackageModel` and returns a
+  Render Result artifact. Its internal files should own separate semantic graphs rather than making
+  `renderPptxPackage()` the only control point.
+- Split package validation and render blocking from package-part materialization. Validation should
+  produce a package validation snapshot or diagnostics before any writer effect starts.
+- Split package-part materialization from Assembly Plan construction. A materialization pass should
+  turn each package part into a materialized result: rebuilt bytes, reused Build Artifact, missing
+  required bytes, failed emitter, or media-byte failure. Assembly Plan construction should then map
+  those results plus projected order, path, requirement, and ZIP entry policy into final entries.
+- Keep package-part Build Artifact reuse independent from future ZIP compression policy. v0.8.1 can
+  store entries without compression; a later compression change may force ZIP reassembly but should
+  not invalidate reusable XML/support/media part bytes by itself.
+- Keep media byte handling at the Asset Loading Boundary and writer media materialization seam.
+  `PptxPackageModel` should continue to carry media identity, metadata, relationships, paths, and
+  dependency fingerprints, not raw media bytes.
+- Keep Render Result shaping separate from ZIP emission. ZIP source failures, collecting sink
+  failures, and runtime output side-effect failures should remain distinguishable.
+- Remove public direct style props from JSX intrinsic element types in v0.8.1. Examples that should
+  become invalid include `<div x={1}>`, `<p color="red">`, and
+  `<section display="grid" columnGap={0.3}>`. Keep the same values valid through
+  `style={{ ... }}` and `StyleSheet` class definitions.
+- Update normalization so runtime JavaScript inputs no longer treat style-capable direct props as
+  authored style. Runtime validation should diagnose or ignore them consistently according to the
+  public authoring contract, while TypeScript users should get type errors.
+- Update README, skill docs, type tests, and fixtures so normal authoring uses `Theme`,
+  `StyleSheet`/`className`, `style`, and Template Areas rather than direct style props.
+
+### ZIP Module Cleanup
+
+- Make the PPTX ZIP writer a deep internal Module instead of a tactical compatibility patch.
+- Keep ZIP structure policy in deckjsx-owned code: local headers, central directory entries,
+  end-of-central-directory records, fixed metadata, CRC values, ZIP32 limits, offsets, and file name
+  encoding.
+- Remove runtime `fflate` usage from the core writer in v0.8.1 if ZIP entries are store-only. Use
+  the platform `TextEncoder` for ZIP path encoding and keep CRC32 in deckjsx-owned code.
+- Defer DEFLATE compression. Do not implement a custom DEFLATE encoder in v0.8.1, and do not keep
+  `fflate` solely to preserve compressed XML entries before compression has proven product value.
+- Future compression, if needed, should live behind an internal adapter or optional package. It must
+  not expose numeric compression levels, stream classes, or library-specific configuration through
+  public options or inspection DTOs.
+- Keep streaming ZIP as an internal implementation strategy. The ZIP module should consume ordered
+  Assembly Plan entries and write chunks to sinks, while the public Render API still returns artifact
+  bytes and optional output metadata.
+- Make ZIP tests assert Office-compatible structure, including absence of data descriptors for final
+  PPTX entries, fixed deterministic metadata, correct CRC/size fields in local headers and central
+  directory entries, and stable store-only behavior for XML and media entries.
+
+### Writer Module Shape
+
+The v0.8.1 refactor should prefer meaningful internal Modules over ceremony. A likely shape is:
+
+```text
+src/writers/pptx/
+  index or adapter entry
+  render-orchestrator
+  validation-gate
+  materialize/
+    package-part-materializer
+    media-materializer
+    xml-part-materializer
+    build-artifact-reuse
+  assembly/
+    assembly-plan
+    assembly-diagnostics
+    assembly-summary
+  zip/
+    zip32-emitter
+    crc32
+    sinks
+  xml/
+    part-emission-dispatch
+    slide/support/package/text/picture/shape emitters
+```
+
+This folder sketch is not a required file list. It is a responsibility map. Do not create wrapper
+files that only forward calls. A file should exist only when it owns a real snapshot, command,
+effect boundary, validation rule, serialization policy, or failure boundary.
+
+### Layered DAG Constraints
+
+- Keep the external graph acyclic:
+
+```text
+Semantic Author Graph
+  -> PPTX Projection Composite Node
+  -> Pptx Package Model
+  -> PPTX Writer Composite Node
+  -> Rendered Artifact
+```
+
+- Internal cycles are allowed only if contained inside the PPTX Writer Composite Node and hidden
+  behind snapshots, commands, or effects.
+- For one concern, keep one final control owner:
+  - package-part requirement and order policy belong to projection/package metadata;
+  - materialization status belongs to the writer materialization node;
+  - ZIP entry storage policy belongs to Assembly Plan/ZIP policy;
+  - future compression policy belongs to an internal compression adapter, not to projection or
+    package-part byte generation;
+  - output side-effect policy belongs to the runtime output/sink boundary;
+  - public success remains derived from diagnostics and artifact availability.
+- Do not let writer internals import projection helper modules in ways that make projection policy
+  run during Render. Writers serialize projected fields; they should not reinterpret graph, layout,
+  CSS-like paint, template, or media topology.
+- Do not expose ZIP sinks, XML emitters, Build Artifact storage, Assembly Plan builders, compression
+  adapters, or `fflate` settings through `deckjsx`, `deckjsx/adapter`, or `deckjsx/inspect`.
+
+### Validation
+
+- Keep the v0.8.0 public-surface guards passing. Generated declarations must not expose writer
+  internals, ZIP helpers, sink topology, XML emitters, Build Artifacts, Asset Artifacts, or low-level
+  `fflate` vocabulary.
+- Add focused unit tests for the deepened internal writer Modules:
+  - package validation gate returns Render diagnostics before any ZIP/sink write;
+  - part materialization reports rebuilt, reused, missing, and failed entries without constructing
+    final ZIP bytes;
+  - Assembly Plan construction is deterministic and uses projected Package Part Order Keys;
+  - ZIP32 emitter writes Office-compatible local headers and central directory records without a
+    runtime ZIP/compression dependency;
+  - sink topology preserves artifact bytes when a path side-effect sink fails after ZIP source
+    success.
+- Keep GitHub Actions render verification as a required regression gate. LibreOffice conversion
+  failures should fail at the conversion step with a clear diagnostic rather than surfacing later as
+  rasterization errors.
+- Keep benchmark categories separate enough to explain performance: cold Project, asset probe/load,
+  cold materialization, warm Build Artifact reuse, ZIP assembly, collecting sink, and runtime path
+  side effect.
+
+### Non-Goals
+
+- Do not add a public streaming ZIP mode.
+- Do not add a public `zipWriter`, `sink`, `compressionLevel`, or `fflate` option.
+- Do not keep direct style props as an alternate public spelling for CSS-like values after v0.8.1.
+- Do not preserve `fast`, `balanced`, or `small` as no-op compression behavior. Either remove or
+  narrow public compression vocabulary during v0.8.1 while the package is still pre-1.0, or keep only
+  a truthful store-only option if compatibility requires an option shape.
+- Do not implement DEFLATE compression in deckjsx core during v0.8.1.
+- Do not implement ZIP64 in deckjsx core during v0.8.1.
+- Do not make a generic Presentation IR the required route to `PptxPackageModel` or future
+  `PdfDocumentModel`.
+- Do not move media bytes into `PptxPackageModel`.
+- Do not introduce an XML-shaped model below `PptxPackageModel`.
+- Do not expose public `LayoutInputSnapshot` or `ProjectedLayoutSnapshot` inspection APIs in v0.8.1.
+- Do not add public HMR APIs in v0.8.1; only preserve internal invalidation boundaries that make
+  later HMR work cleaner.
+- Do not add Direct Style Prop migration aliases, compatibility flags, or no-op compatibility paths.
+- Do not preserve AuthorNode compatibility APIs, runtime markers, or conversion helpers.
+- Do not add a PDF projection in v0.8.1.
+- Do not chase full CSS layout parity in v0.8.1; preserve unsupported semantics through diagnostics
+  and layout/project inspection rollups where practical.
+- Do not refactor by folder shape alone. Split only when the new Module has a meaningful Interface
+  and improves locality or leverage.
+
+### Resolved v0.8.1 cleanup decisions
+
+- Remove the public `compression` render option, the `PptxCompressionMode` public type, and
+  compression/storage fields from public Render Assembly summaries. v0.8.1 should not report an
+  always-`store` field just to preserve a shape that no longer carries useful information.
+- Treat the direct PPTX writer's ZIP output as store-only in v0.8.1. Remove the runtime `fflate`
+  dependency, use deckjsx-owned ZIP32 local headers, central directory records, EOCD records, CRC32,
+  deterministic metadata, fixed sizes, and platform `TextEncoder` path encoding. ZIP64 and DEFLATE
+  compression are non-goals.
+- Accept larger PPTX artifacts in v0.8.1 as the cost of deterministic store-only ZIP output,
+  simpler failure boundaries, and a smaller dependency graph. Record benchmark and artifact-size
+  observations, but do not make size growth alone a release blocker.
+- Remove public Direct Style Props from JSX intrinsic element types and Slide Declaration options.
+  Slide Declaration options should be limited to `name`, `template`, `className`, and `style`; slide
+  appearance belongs in `style`, StyleSheet classes, Theme Defaults, or Template Areas.
+- Fix the `span` intrinsic typing while tightening Direct Style Props. `span` should use
+  `IntrinsicSpanProps`, support only `className` and `style`, reject `area` and Direct Style Props,
+  and leave span placement validation to graph construction.
+- Runtime JavaScript inputs that use props outside the current authoring contract should produce
+  Compile diagnostics rather than JSX-runtime throws when the value can still be preserved in the
+  Author Tree. Use `E_COMPILE_UNSUPPORTED_AUTHORING_PROP` for unsupported props and describe them as
+  unsupported in the current authoring interface, not as migration-only removed props.
+- Emit unsupported authoring prop diagnostics per prop, not as one node-level aggregate. A node with
+  `x`, `y`, and `foo` should produce three `E_COMPILE_UNSUPPORTED_AUTHORING_PROP` diagnostics with
+  paths pointing at `.props.x`, `.props.y`, and `.props.foo`.
+- Apply the same per-key diagnostic rule to Slide Declaration options. Unsupported options such as
+  `background` or `x` should each produce `E_COMPILE_UNSUPPORTED_AUTHORING_PROP` with paths pointing
+  at the slide declaration option, such as `.options.background`; wording may say unsupported slide
+  declaration option while using the same diagnostic code.
+- Validate supported Slide Declaration option values separately from unsupported options. `name`
+  accepts missing/default handling and strings, with explicit non-string values reported through a
+  slide-name option diagnostic such as `E_COMPILE_INVALID_SLIDE_NAME_OPTION`; `template` accepts
+  missing/undefined and valid template references, with invalid values reported through existing
+  template diagnostics or `E_COMPILE_INVALID_SLIDE_TEMPLATE_OPTION`; `style` uses the same style-prop
+  validation as JSX nodes; and `className` uses the same className validation as JSX nodes.
+- Supported prop names should continue to use prop-specific validation. Use
+  `E_COMPILE_INVALID_STYLE_PROP` for non-object `style` values, including `null`, while treating an
+  absent `style` prop or explicit `style={undefined}` as no authored inline style; use
+  `E_COMPILE_INVALID_SHAPE_PROP` for unsupported `shape` values; and use
+  `E_COMPILE_INVALID_IMAGE_SOURCE_PROP` for explicit non-string `img` `src` or `data` values.
+- Treat explicit `img` `src` and `data` together as ambiguous image source input. Use a dedicated
+  diagnostic such as `E_COMPILE_AMBIGUOUS_IMAGE_SOURCE_PROP`, treat `src={undefined}` and
+  `data={undefined}` as absent, and avoid choosing a priority that would make Asset Identity or Media
+  Allocation Key depend on an implicit conflict rule.
+- Treat `shape` as a supported structural prop. Missing `shape` or explicit `shape={undefined}`
+  should use the existing default shape, while unsupported strings or non-string values should
+  produce `E_COMPILE_INVALID_SHAPE_PROP`.
+- Treat `area` as a supported structural prop. Missing `area` or explicit `area={undefined}` means no
+  Template Area Reference. Strings, `null`, plain objects, numbers, wrong-deck references, or other
+  invalid values should use the existing Template Area Reference diagnostics such as
+  `E_TEMPLATE_AREA_REF_INVALID` rather than unsupported-prop diagnostics.
+- Treat `children` as Author Tree child shape rather than as a style/structural prop. Prop validation
+  should not emit unsupported-prop diagnostics for `children`; child placement, primitive text, empty
+  values, arrays, fragments, or unsupported child objects belong to JSX normalization and graph
+  construction diagnostics.
+- Treat `className` as a supported prop with its existing clsx-like normalization and validation,
+  not as an unsupported prop. `undefined`, `null`, `false`, and empty strings are empty class input;
+  strings, arrays, and boolean object maps are supported; invalid className value shapes should use
+  className-specific validation rather than `E_COMPILE_UNSUPPORTED_AUTHORING_PROP`.
+- Keep `StyleEntity.authored` shape stable. Stop merging Direct Style Props into
+  `StyleEntity.authored.style`; only the `style` prop should populate authored style, while
+  `className` continues to populate Style Class References.
+- Keep partial Semantic Author Graph construction where possible after authoring diagnostics, but do
+  not feed invalid style, shape, image source, or unsupported direct props into downstream style,
+  asset, or projection state.
+- When an authoring node has unsupported props, keep the node and its children in the partial graph
+  when the supported portion is still meaningful. Drop only the unsupported prop values from graph,
+  style, layout, and asset state, while preserving supported props such as `style` and `className`.
+- Treat the current AuthorNode-based layout bridge as a v0.8.0 migration artifact. v0.8.1 should
+  move toward `Semantic Author Graph + Resolved Style Snapshot + Template Area relationships + deck
+size -> Projected Layout Snapshot` without replaying authoring-shaped props through internal
+  AuthorNodes.
+- Remove the legacy AuthorNode representation instead of merely avoiding it in the main
+  Project/Render path. Keeping AuthorNode helpers or guards in the codebase creates another internal
+  authoring-shaped entry point that future cleanup would have to delete again.
+- Narrow JSX runtime marker state to Author Tree only. Remove `"deckjsx.author-node"` from
+  `DeckJsxElement.$$typeof`, remove AuthorNode guards such as `isAuthorNode`, `isSlideNode`, and
+  `isContentNode`, remove conversion helpers such as `toAuthorNode` and `toAuthorJsxNode`, and treat
+  invalid slide roots as Author Tree or component-return validation diagnostics instead of
+  AuthorNode-specific cases.
+- Keep composition resolution focused on normalizing slide factory results into Author
+  Tree-compatible slide children. `resolveComposition` should not contain AuthorNode checks; it may
+  accept fragments, arrays, primitive text leaves, and empty values according to the Author Tree
+  contract, while unsupported plain objects, Promises, or other non-JSX objects become Compile
+  diagnostics. Semantic placement and implicit text conversion should remain graph-builder
+  responsibilities.
+- Keep Projected Layout Snapshot as a shared internal node under `layout/`, not a PPTX-specific
+  helper hidden inside `projection/pptx`. PPTX projection consumes the layout snapshot; it should not
+  make PDF or future formats depend on PPTX internals.
+- Introduce an internal Layout Input Snapshot between graph/style/asset/template state and Projected
+  Layout Snapshot. This input snapshot should carry only semantic node kind, graph/source
+  provenance, layout-relevant resolved style values, structural layout data such as area/shape/image
+  references, template area frame/kind, asset probe dimensions, and ordered child/text-run inputs.
+  It should not carry Author Tree props, AuthorNode values, public NodeProps, unresolved
+  `className`, or live `ResolvedStyleMap` references.
+- Split layout modules by ownership rather than by historical helper names. Candidate shape:
+  `layout/input.ts` owns Layout Input Snapshot types and construction inputs; `layout/projected.ts`
+  owns Projected Layout Snapshot types and solver results; `layout/values.ts` or
+  `layout/visual-values.ts` owns shared value objects such as `FrameIR`, `FillIR`, `TextStyleIR`,
+  and `ImageSourceIR` while keeping their existing names for v0.8.1. `projection/pptx/model.ts` may
+  reference shared value types, but should continue to own PPTX identities, relationships, package
+  parts, and drawing payloads rather than embedding `ProjectedLayoutNode` as its primary payload.
+- Put Layout Input Snapshot construction in the layout module, such as `layout/input.ts` or
+  `layout/build-input.ts`, behind a single entry point like `buildLayoutInputSnapshot({ graph,
+resolvedStyles, templates, assetProbeArtifacts, deckSize, diagnostics })`. This builder should map
+  graph nodes to layout input nodes, copy only needed resolved style values, resolve Template Area
+  frames and kinds, attach image probe dimensions, block invalid authoring data from flowing into
+  layout, and return layout-stage diagnostics. PPTX project orchestration should call this boundary
+  rather than constructing layout inputs itself.
+- Preserve explicit bypass semantics for predefined artifacts. The normal `Deck.project()` path runs
+  composition/compile -> graph -> resolved styles -> asset probe -> Layout Input Snapshot ->
+  Projected Layout Snapshot -> Pptx Package Model. A `defineGraph()` artifact starts from the
+  predefined graph and recomputes resolved styles, asset probe, layout input, projected layout, and
+  package projection downstream. A `defineProjection()` artifact starts from the predefined Pptx
+  Package Model, bypasses graph/style/asset/layout construction, runs package/render validation, and
+  may omit layout rollup summary fields.
+- Keep Project Result layout summary minimal while Projected Layout Snapshot remains internal. A
+  summary may include slide count, projected node count, filtered node count, generated layer count,
+  and unsupported-semantics count. Do not expose the full Projected Layout Snapshot, per-node frames,
+  rich text run payloads, asset dimensions, layout version fields, or Projected Layout Identity lists
+  through ordinary Project Result fields in v0.8.1.
+- Move cross-output visual layer generation upstream into Projected Layout Snapshot. PPTX projection
+  should map layout nodes and generated visual layers into Pptx Drawing Nodes, placeholder/layout
+  parts, relationships, and package identities; it should not re-run style normalization, layout
+  resolution, paint-layer generation, visibility filtering, rich-text run construction, or media
+  topology discovery from graph/authoring props.
+- Use the layered-DAG cleanup to strengthen types rather than merely move files. Authoring props,
+  Author Tree props, resolved style values, layout input snapshots, Projected Layout results, Pptx
+  Package Model payloads, writer materialization results, and final Render artifacts should be
+  distinct typed boundaries when their lifecycle, invalidation trigger, failure boundary, or reuse
+  value differs.
+- Preserve separate invalidation key spaces for future HMR even though v0.8.1 does not implement HMR
+  itself. Author Tree changes are keyed by source/factory execution and JSX structural identity;
+  Semantic Author Graph changes by Graph Identity and semantic payload; Resolved Style changes by
+  Style Entity, Theme, StyleSheet, defaults, and inline style inputs; Layout Input Snapshot changes by
+  graph node, layout-relevant resolved style, Template Area, asset probe dimensions, and deck size;
+  Projected Layout Snapshot changes by layout input identity and solver result payload; Pptx Package
+  Model changes by Package Part Identity, layout snapshot identities, media allocation keys, and PPTX
+  projection payload; writer materialization changes by package-part fingerprint and XML/media/support
+  materialization inputs.
+- Stop making layout normalization depend on public `SlideProps`, `ViewProps`, `TextProps`,
+  `ImageProps`, or `ShapeProps`. Normalization should consume internal resolved style/layout inputs
+  plus explicit structural data such as image source or shape kind.
+- Retire or rename the ambiguous `compiler/normalization` ownership. Split normalization by
+  meaningful node responsibility, such as style value normalization and layout input normalization,
+  rather than keeping a broad compiler utility that accepts both authoring props and resolved style
+  snapshots.
+- Split diagnostics by the same stage boundaries. Authoring prop validation produces Compile
+  diagnostics; style value validation and style resolution produce Compile/style-resolution
+  diagnostics; layout capability or CSS-like layout semantics produce Project diagnostics attached to
+  Layout Input Snapshot or Projected Layout Snapshot context; PPTX expressibility produces Project
+  diagnostics attached to Pptx Package Model paths. PPTX projection should not validate authoring
+  props, and layout should not validate public NodeProps.
+- Keep one PPTX render orchestrator as the control owner for stage ordering and Render Result
+  shaping, while splitting validation, package-part materialization, Build Artifact reuse,
+  Assembly Plan construction, ZIP emission, sinks, and output side effects into smaller internal
+  nodes.
+- Run the validation gate before materialization, media loading, ZIP emission, or sink/output side
+  effects. Validation errors should return diagnostics, an empty assembly summary, no artifact, and
+  no writer effects.
+- Keep Build Artifact reuse decisions inside materialization. Assembly should consume
+  materialization results and produce deterministic entries and summaries; ZIP should serialize final
+  entries only.
+- Allow tests to source-deep-import internal writer modules to verify responsibility boundaries, but
+  keep those modules out of the published package export map and generated public declarations.
+- Required v0.8.1 gates include `vp check`, `vp test`, public-surface guards for export map,
+  generated declarations, dependencies, and `fflate` absence, focused ZIP32 structure tests, focused
+  authoring prop diagnostics tests, sample smoke, and the render verification gate. Benchmarks should
+  be recorded, with only obvious regressions treated as blockers.
+- Strengthen public-surface guards for the cleanup. Generated declarations and public barrels should
+  not expose `AuthorNode`, `PptxCompressionMode`, the public `compression` render option,
+  `ProjectedLayoutDocument`, `LayoutInputSnapshot`, ZIP helpers, sink topology, XML emitters, writer
+  materialization helpers, or Build Artifact storage helpers. Dependency/source guards should verify
+  that `fflate` is absent and that `deckjsx.author-node` no longer appears in `src/**`. Historical
+  mentions in `docs/**` and roadmap context may remain.
+- Add focused v0.8.1 tests by boundary: authoring unsupported-prop tests for Direct Style Props,
+  unknown props, per-prop diagnostics, partial graph behavior, Slide Declaration options, `style`,
+  `className`, `area`, `shape`, `img` source props, and `children`; layout input snapshot tests that
+  prove graph/style/template/assets can become layout input without AuthorNode, public props,
+  unresolved class names, or live ResolvedStyleMap references; projected layout snapshot tests for
+  display-none filtering, visibility-hidden retention, generated visual layers, and rich text runs;
+  PPTX projection-from-layout-snapshot tests that prove projection consumes layout snapshots instead
+  of returning to AuthorNode or broad normalization helpers; public-surface guards for `fflate`,
+  compression, AuthorNode, and layout snapshots; and writer/ZIP tests for store-only ZIP32, CRC32,
+  validation gates, and sink failure behavior.
+- Recommended implementation order: remove public compression and Direct Style Prop type surface;
+  add authoring prop diagnostics; build the Layout Input Snapshot footing; remove AuthorNode types,
+  guards, and the graph-to-AuthorNode layout bridge; reconnect the existing layout solver as Layout
+  Input Snapshot -> Projected Layout Snapshot; move visual layer generation, rich text construction,
+  visibility filtering, and layout-derived paint data into Projected Layout Snapshot; make PPTX
+  projection consume Projected Layout Snapshot instead of re-running style/layout normalization;
+  retire or split `compiler/normalization`; move ZIP to store-only without `fflate`; split PPTX writer
+  responsibilities; then update docs, release review, and version metadata.
+
 ## 0.9 Hot Module Replacement
 
 ### Goal
@@ -5812,7 +6299,10 @@ preview UI if needed.
    projection behavior.
 6. `0.8` should add the direct PPTX projection and writer after the public output pipeline shape is
    already clear.
-7. `0.9` should come after source-aware graph compilation and at least one output projection/writer
+7. `0.8.1` should clean up writer responsibility after the direct PPTX writer migration, especially
+   Output Writer internal nodes, ZIP structure ownership, Assembly Plan construction, and
+   materialization/reuse seams.
+8. `0.9` should come after source-aware graph compilation and at least one output projection/writer
    path can preserve identity well enough for incremental rebuilds.
 
 ## Compatibility Policy Before 1.0

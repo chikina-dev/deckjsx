@@ -9,7 +9,6 @@ import {
   type CssJustifySelf,
   type ViewStyle,
 } from "../style/types";
-import type { ViewProps } from "../authoring/index";
 import {
   isDeckLengthString,
   parseLengthToken,
@@ -884,7 +883,7 @@ export function parseGridShorthand(value: CssGridShorthand | undefined): {
 }
 
 export function resolveGridContainerAuthoring(
-  props: ViewProps,
+  props: ViewStyle,
 ): Pick<
   ViewStyle,
   | "display"

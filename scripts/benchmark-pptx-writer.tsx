@@ -417,7 +417,6 @@ function zipEntriesFromBuildArtifacts(input: {
     | readonly {
         readonly packagePartId?: string;
         readonly path: string;
-        readonly compression: "default" | "store";
       }[]
     | undefined;
 }): PptxZipEntry[] {
@@ -427,9 +426,7 @@ function zipEntriesFromBuildArtifacts(input: {
       artifactsByPartId,
       packagePartId: entry.packagePartId,
     });
-    return artifact
-      ? [{ path: entry.path, bytes: artifact.bytes, compression: entry.compression }]
-      : [];
+    return artifact ? [{ path: entry.path, bytes: artifact.bytes }] : [];
   });
 }
 
@@ -506,14 +503,14 @@ async function runFixture(fixture: BenchmarkFixture, iterations: number): Promis
   }
 
   const coldMs = await measure(iterations, async () => {
-    const result = await renderPptxPackage(projection, { compression: "fast" });
+    const result = await renderPptxPackage(projection);
     if (!result.artifact) {
       throw new Error(`${fixture.name} cold writer failed.`);
     }
     zipBytes = result.artifact.bytes.byteLength;
   });
 
-  const cold = await renderPptxPackage(projection, { compression: "fast" });
+  const cold = await renderPptxPackage(projection);
   const buildArtifactsByPartId = buildArtifactMap(cold.buildArtifacts);
   const zipEntries = zipEntriesFromBuildArtifacts({
     artifacts: cold.buildArtifacts,
@@ -521,7 +518,7 @@ async function runFixture(fixture: BenchmarkFixture, iterations: number): Promis
   });
   zipEntryCount = zipEntries.length;
   const zipAssemblyMs = await measure(iterations, async () => {
-    const bytes = createPptxZipBytesFromEntries(zipEntries, { compression: "fast" });
+    const bytes = createPptxZipBytesFromEntries(zipEntries);
     if (bytes.byteLength === 0) {
       throw new Error(`${fixture.name} ZIP assembly produced no bytes.`);
     }
@@ -530,7 +527,7 @@ async function runFixture(fixture: BenchmarkFixture, iterations: number): Promis
   const warmMs = await measure(iterations, async () => {
     const result = await renderPptxPackage(
       projection,
-      { compression: "fast" },
+      {},
       { pptxBuildArtifactsByPartId: buildArtifactsByPartId },
     );
     if (!result.artifact) {
