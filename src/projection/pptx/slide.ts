@@ -32,6 +32,7 @@ import type {
   TextRunIR,
   TextStyleIR,
 } from "../../layout/projected";
+import { normalizeProjectedImageFit, unsupportedObjectFitSemantics } from "../../layout/image-fit";
 import { parseSpacing, parseSpacingInPoints } from "../../layout/spacing";
 import { resolveBackgroundBoxFrames } from "../../style/background";
 import { normalizeColor } from "../../style/color";
@@ -848,6 +849,7 @@ function compileImage(
 
   const resolved = frameFromProps(props, parentFrame, undefined, context);
   const frame = frameToFrameIR(resolved);
+  const fit = normalizeProjectedImageFit(props.fit);
   const shadowResult = parseShadowSafely({ property: "boxShadow", value: props.boxShadow });
   const hyperlink = props.href
     ? {
@@ -866,6 +868,7 @@ function compileImage(
       ...unsupportedTransformSemantics(props),
       ...unsupportedCompositingSemantics(props),
       ...unsupportedOpacityStackingContextSemantics(props),
+      ...unsupportedObjectFitSemantics(props.fit),
       ...shadowResult.unsupportedSemantics,
     ],
   });
@@ -876,7 +879,7 @@ function compileImage(
     mediaPartId: mediaPartIdForElement(base.id),
     sourceFrame: frame,
     source: assetSource(asset),
-    fit: props.fit ?? "contain",
+    fit,
     objectPosition: parseObjectPositionValue(props.objectPosition, frame),
     ...(parseImageCrop(props.crop) ? { crop: parseImageCrop(props.crop) } : {}),
     transparency: props.transparency,

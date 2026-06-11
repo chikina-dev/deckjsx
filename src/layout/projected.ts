@@ -55,6 +55,7 @@ export type ProjectedUnsupportedSemanticFeature =
   | "filter"
   | "image"
   | "isolation"
+  | "layout"
   | "outline"
   | "opacity"
   | "shadow"

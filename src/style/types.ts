@@ -1,13 +1,25 @@
+export type CssWideKeyword = "initial" | "inherit" | "unset" | "revert" | "revert-layer";
 export type DeckLength =
   | number
-  | `${number}${"in" | "pt" | "px" | "%" | "em" | "rem" | "vh" | "vw" | "ch"}`;
+  | CssWideKeyword
+  | `${number}${"in" | "cm" | "mm" | "q" | "pt" | "pc" | "px" | "%" | "em" | "rem" | "vh" | "vw" | "vmin" | "vmax" | "ch"}`;
 export type DeckPointLength =
   | number
-  | `${number}${"pt" | "in" | "px" | "em" | "rem" | "vh" | "vw" | "ch"}`;
+  | CssWideKeyword
+  | `${number}${"in" | "cm" | "mm" | "q" | "pt" | "pc" | "px" | "em" | "rem" | "vh" | "vw" | "vmin" | "vmax" | "ch"}`;
 export type CssLetterSpacing = DeckPointLength | "normal";
-export type CssAspectRatio = number | `${number}/${number}` | `${number} / ${number}`;
+export type CssAspectRatio =
+  | number
+  | "auto"
+  | `${number}`
+  | `${number}/${number}`
+  | `${number} / ${number}`;
 export type CssBoxSizing = "border-box" | "content-box";
-export type Spacing = DeckLength | readonly [DeckLength, DeckLength, DeckLength, DeckLength];
+export type CssSpacingShorthand = `${string} ${string}`;
+export type Spacing =
+  | DeckLength
+  | CssSpacingShorthand
+  | readonly [DeckLength, DeckLength, DeckLength, DeckLength];
 export type StackAxis = "horizontal" | "vertical";
 export type StackAlignment = "start" | "center" | "end";
 export type LayoutMode = "absolute" | "stack" | "grid";
@@ -26,7 +38,7 @@ export type StrokeLineJoin = "miter" | "round" | "bevel";
 export type VerticalAlign = "top" | "middle" | "bottom";
 export type TextFit = "none" | "shrink" | "resize";
 export type CssDisplay = "flex" | "block" | "grid" | "none";
-export type CssPosition = "absolute" | "relative";
+export type CssPosition = "static" | "absolute" | "relative";
 export type CssVisibility = "visible" | "hidden";
 export type CssOverflow = "visible" | "hidden";
 export type CssFlexDirection = "row" | "column";
@@ -275,9 +287,11 @@ export type TextStyle = FrameAuthorProps &
     wrap?: boolean;
   };
 
+export type ImageFit = "contain" | "cover" | "stretch" | "fill";
+
 export type ImageStyle = FrameAuthorProps & {
-  fit?: "contain" | "cover" | "stretch";
-  objectFit?: "contain" | "cover" | "stretch";
+  fit?: ImageFit;
+  objectFit?: ImageFit;
   objectPosition?: CssObjectPosition;
   crop?: ImageCropAuthoring;
   href?: string;
@@ -480,6 +494,18 @@ export const VIEW_STYLE_KEYS = [
   "gridAutoColumns",
   "gridAutoRows",
   "gridAutoFlow",
+] as const;
+
+export const SLIDE_STYLE_KEYS = [
+  "background",
+  "backgroundImage",
+  "backgroundColor",
+  "backgroundTransparency",
+  "backgroundPosition",
+  "backgroundSize",
+  "backgroundRepeat",
+  "backgroundClip",
+  "backgroundOrigin",
 ] as const;
 
 export const TEXT_STYLE_KEYS = [

@@ -1,7 +1,12 @@
 import type { TextStyleIR } from "../layout/projected";
 import type { JsxNode } from "../authoring/index";
 import { POINTS_PER_INCH } from "../types";
-import { DEFAULT_FONT_SIZE_PT, parsePointValue, type LengthResolutionContext } from "./length";
+import {
+  DEFAULT_FONT_SIZE_PT,
+  isCssWideKeyword,
+  parsePointValue,
+  type LengthResolutionContext,
+} from "./length";
 import type { TextStyle, TextTabStopAuthoring } from "./types";
 
 type TextDecorationResolution = {
@@ -39,7 +44,7 @@ export function resolveLineHeight(
   lineHeight: TextStyle["lineHeight"] | undefined,
   context?: LengthResolutionContext,
 ): Pick<TextStyle, "lineSpacing" | "lineSpacingMultiple"> {
-  if (lineHeight === undefined || lineHeight === "normal") {
+  if (lineHeight === undefined || lineHeight === "normal" || isCssWideKeyword(lineHeight)) {
     return {};
   }
 
@@ -58,7 +63,7 @@ export function resolveCharacterSpacing(
   charSpacing: TextStyle["charSpacing"] | TextStyle["letterSpacing"] | undefined,
   context?: LengthResolutionContext,
 ): number | undefined {
-  if (charSpacing === undefined) {
+  if (charSpacing === undefined || isCssWideKeyword(charSpacing)) {
     return undefined;
   }
 

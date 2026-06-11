@@ -14,6 +14,7 @@ import { createDiagnostics, diagnostic, type Diagnostics } from "../../diagnosti
 import type { SemanticAuthorGraph, SemanticNode } from "../../graph";
 import type { Frame } from "../../layout/frame";
 import type { EdgeStrokeIR, StrokeIR } from "../../layout/projected";
+import { unsupportedCssWideKeywordSemantic, unsupportedSemantic } from "../../layout/unsupported";
 import type {
   PptxPackageModel,
   PptxUnsupportedSemantic,
@@ -32,12 +33,13 @@ import {
   type StyleDeclaration,
   type StyleDeclarationValue,
 } from "../../style/types";
+import { hasCssWideKeywordToken } from "../../style/defaulting";
 import type {
   ResolvedStyle,
   ResolvedStyleDeclaration,
   ResolvedStyleMap,
 } from "../../style/resolve";
-import { parseShadowShorthand } from "../../style/shadow";
+import { hasShadowSpreadRadius, parseShadowShorthand } from "../../style/shadow";
 import {
   parseOutlineShorthand,
   parseStrokeLineCap,
@@ -192,39 +194,30 @@ function errorReason(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-type SemanticProjectionValue = StyleDeclarationValue | null | undefined;
-
-function semanticValue(value: Exclude<SemanticProjectionValue, null | undefined>): string {
-  return typeof value === "string" ? value : JSON.stringify(value);
-}
-
-function unsupportedSemantic(input: {
-  feature: PptxUnsupportedSemanticFeature;
-  property: string;
-  value: SemanticProjectionValue;
-  error: unknown;
-  fallback?: PptxUnsupportedSemantic["fallback"];
-}): PptxUnsupportedSemantic | undefined {
-  if (input.value === undefined || input.value === null || input.value === "") {
-    return undefined;
-  }
-  return {
-    feature: input.feature,
-    property: input.property,
-    value: semanticValue(input.value),
-    reason: errorReason(input.error),
-    ...(input.fallback ? { fallback: input.fallback } : {}),
-  };
-}
-
 export function parseShadowSafely(input: { property: string; value: string | undefined }): {
   readonly shadow?: ReturnType<typeof parseShadowShorthand>;
   readonly unsupportedSemantics: readonly PptxUnsupportedSemantic[];
 } {
   try {
+    const shadow = parseShadowShorthand(input.value);
+    const unsupported = hasShadowSpreadRadius(input.value)
+      ? unsupportedSemantic({
+          feature: "shadow",
+          property: input.property,
+          value: input.value,
+          error: new Error(
+            `CSS shadow spread radius is not projected by the current PPTX shadow model: ${input.value}`,
+          ),
+          fallback: {
+            strategy: "preserveAuthoredValueOnly",
+            preserves: ["projectedShadowWithoutSpread"],
+            missing: ["cssShadowSpreadRadius"],
+          },
+        })
+      : undefined;
     return {
-      shadow: parseShadowShorthand(input.value),
-      unsupportedSemantics: [],
+      shadow,
+      unsupportedSemantics: unsupported ? [unsupported] : [],
     };
   } catch (error) {
     const unsupported = unsupportedSemantic({
@@ -383,6 +376,44 @@ function isStrokeIntentionallyNone(props: PptxStrokeProjectionProps): boolean {
   );
 }
 
+function unsupportedStrokeCssWideKeywordSemantics(
+  props: PptxStrokeProjectionProps,
+): readonly PptxUnsupportedSemantic[] {
+  const unsupported: PptxUnsupportedSemantic[] = [];
+  const properties: Array<keyof PptxStrokeProjectionProps> = [
+    "borderWidth",
+    "borderTopWidth",
+    "borderRightWidth",
+    "borderBottomWidth",
+    "borderLeftWidth",
+    "strokeWidth",
+  ];
+
+  for (const property of properties) {
+    if (!hasCssWideKeywordToken(props[property])) {
+      continue;
+    }
+
+    const semantic = unsupportedCssWideKeywordSemantic(property, props[property]);
+    if (semantic) {
+      unsupported.push(semantic);
+    }
+  }
+
+  return unsupported;
+}
+
+function unsupportedOutlineCssWideKeywordSemantics(
+  props: PptxStrokeProjectionProps,
+): readonly PptxUnsupportedSemantic[] {
+  if (!hasCssWideKeywordToken(props.outlineWidth)) {
+    return [];
+  }
+
+  const semantic = unsupportedCssWideKeywordSemantic("outlineWidth", props.outlineWidth);
+  return semantic ? [semantic] : [];
+}
+
 function unsupportedStrokeFallback(
   props: PptxStrokeProjectionProps,
   error: unknown,
@@ -409,6 +440,8 @@ export function resolveNodeStrokesSafely(
   readonly edgeStrokes?: EdgeStrokeIR;
   readonly unsupportedSemantics: readonly PptxUnsupportedSemantic[];
 } {
+  const cssWideSemantics = unsupportedStrokeCssWideKeywordSemantics(props);
+
   try {
     const strokes = resolveNodeStrokes(props as Parameters<typeof resolveNodeStrokes>[0], context);
     if (
@@ -421,16 +454,21 @@ export function resolveNodeStrokesSafely(
         props,
         new Error("No PPTX stroke could be produced from the authored stroke input."),
       );
-      return { ...strokes, unsupportedSemantics: semantic ? [semantic] : [] };
+      return {
+        ...strokes,
+        unsupportedSemantics: semantic ? [semantic, ...cssWideSemantics] : cssWideSemantics,
+      };
     }
 
     return {
       ...strokes,
-      unsupportedSemantics: [],
+      unsupportedSemantics: cssWideSemantics,
     };
   } catch (error) {
     const semantic = unsupportedStrokeFallback(props, error);
-    return { unsupportedSemantics: semantic ? [semantic] : [] };
+    return {
+      unsupportedSemantics: semantic ? [semantic, ...cssWideSemantics] : cssWideSemantics,
+    };
   }
 }
 
@@ -445,6 +483,8 @@ export function outlineStrokeSafely(
     return { unsupportedSemantics: [] };
   }
 
+  const cssWideSemantics = unsupportedOutlineCssWideKeywordSemantics(props);
+
   try {
     const outlineInput = parseOutlineShorthand(props.outline);
     const outline = toStroke(
@@ -458,7 +498,7 @@ export function outlineStrokeSafely(
       context,
     );
     if (outline) {
-      return { outline, unsupportedSemantics: [] };
+      return { outline, unsupportedSemantics: cssWideSemantics };
     }
     const input = outlineFallbackInput(props);
     const semantic = unsupportedSemantic({
@@ -472,7 +512,9 @@ export function outlineStrokeSafely(
         missing: ["pptxOutline"],
       },
     });
-    return { unsupportedSemantics: semantic ? [semantic] : [] };
+    return {
+      unsupportedSemantics: semantic ? [semantic, ...cssWideSemantics] : cssWideSemantics,
+    };
   } catch (error) {
     const input = outlineFallbackInput(props);
     const semantic = unsupportedSemantic({
@@ -486,7 +528,9 @@ export function outlineStrokeSafely(
         missing: ["pptxOutline"],
       },
     });
-    return { unsupportedSemantics: semantic ? [semantic] : [] };
+    return {
+      unsupportedSemantics: semantic ? [semantic, ...cssWideSemantics] : cssWideSemantics,
+    };
   }
 }
 

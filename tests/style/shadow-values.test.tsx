@@ -106,4 +106,50 @@ describe("shadow-values", () => {
       }),
     );
   });
+
+  test("project preserves shadow spread radius as unsupported fallback metadata", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Shadow spread" }, () => (
+      <>
+        <div
+          style={{
+            x: 1,
+            y: 1,
+            width: 2,
+            height: 1,
+            boxShadow: "4px 8px 12px 6px rgba(15, 23, 42, 0.3)",
+          }}
+        />
+      </>
+    ));
+
+    const result = await deck.project();
+    const [view] = result.projection!.slides[0].payload.drawing.children;
+
+    expect(result.ok).toBe(true);
+    expect(view?.kind).toBe("group");
+    if (!view || view.kind !== "group") {
+      throw new Error("Expected group node.");
+    }
+    expect(view.shadow).toMatchObject({ color: "0F172A", opacity: 0.3, blurPt: 9 });
+    expect(view.unsupportedSemantics).toContainEqual(
+      expect.objectContaining({
+        feature: "shadow",
+        property: "boxShadow",
+        value: "4px 8px 12px 6px rgba(15, 23, 42, 0.3)",
+        fallback: expect.objectContaining({
+          strategy: "preserveAuthoredValueOnly",
+          preserves: expect.arrayContaining(["projectedShadowWithoutSpread"]),
+          missing: expect.arrayContaining(["cssShadowSpreadRadius"]),
+        }),
+      }),
+    );
+    expect(result.summary?.unsupportedSemantics).toContainEqual(
+      expect.objectContaining({
+        feature: "shadow",
+        property: "boxShadow",
+      }),
+    );
+  });
 });

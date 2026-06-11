@@ -237,6 +237,11 @@ styles. Class conflicts are resolved by selector specificity first, then stylesh
 rule order. Supported selectors are intentionally small: class selectors, tag/class compounds, and
 descendant selectors such as `.title`, `p.title`, or `.card .caption`.
 
+Inline `span` text runs inherit text-related parent values such as `color`, `fontFamily`,
+`fontSize`, `fontWeight`, `lineHeight`, `letterSpacing`, `direction`, and wrapping controls. The
+inherited values are visible in resolved-style inspection; Project avoids duplicating inherited-only
+run styles when the parent text box already carries the concrete PPTX text body style.
+
 Style cascade is source-local. A mounted child deck resolves its own theme and stylesheets against
 its own slides, which keeps sandboxed and HMR-style composition predictable.
 
@@ -312,9 +317,12 @@ guess.
 When an `img` has probed intrinsic `width` and `height`, layout uses that ratio if the author did
 not provide `aspectRatio`. This means an image with only `width` can derive its projected height,
 and an image with only `height` can derive its projected width. Author `aspectRatio` still wins for
-intentional crops, logos, or placeholder boxes.
+intentional crops, logos, or placeholder boxes. `aspectRatio: "auto"` is accepted as the CSS-like
+spelling for no authored ratio.
 
-For foreground images, use `objectFit` / `fit`, `objectPosition`, and `crop`:
+For foreground images, use `objectFit` / `fit`, `objectPosition`, and `crop`. `objectFit: "fill"`
+uses the same projection as deckjsx's `stretch` fit; unsupported CSS values such as `"none"` and
+`"scale-down"` are preserved as diagnostics and fall back to `contain`:
 
 ```tsx
 <img src="hero.png" style={{ x: 1, y: 1, width: 4 }} />
@@ -377,20 +385,23 @@ from custom projections fail before Render emits bytes.
 deckjsx intentionally stays close to HTML/CSS naming, but the current v0.8 layout engine is a slide
 layout solver, not a browser. These are the defaults most likely to surprise CSS authors:
 
-| Area             | deckjsx v0.8 behavior                                                                                    | Browser expectation                                            | Guidance                                                                          |
-| ---------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Block views      | `display: "block"` is a local containing block; children without flow layout can overlap.                | Block formatting creates vertical flow.                        | Use flex/grid with `gap`, templates, or explicit `x`/`y`.                         |
-| Flex             | `display: "flex"` defaults to row and cross-axis stretch.                                                | Same for the supported subset.                                 | Prefer flex for simple rows/columns.                                              |
-| Sizing           | Frames are zero-sized unless explicit size, insets, layout, or image ratio supplies one.                 | Many elements have intrinsic or content-based size.            | Give text and boxes a projected `width`/`height` unless flex/grid stretches them. |
-| Text measurement | Stack/grid do not measure wrapped text to push later siblings.                                           | Browser layout uses measured content.                          | Use declared heights or `fit: "shrink"` for text boxes.                           |
-| Units            | Layout numbers are inches; font-size-like numbers are points.                                            | CSS unitless numbers are property-specific.                    | Use strings for CSS-like units when supported, or keep numeric domains explicit.  |
-| Text spacing     | `letterSpacing` accepts `normal` or point lengths; paragraph before/after spacing accepts point lengths. | CSS text spacing uses property-specific length rules.          | Prefer `px`, `pt`, `em`, or `rem` when porting CSS-like text spacing.             |
-| Box sizing       | Containers, text, and shapes default to `border-box`.                                                    | CSS initial is `content-box`.                                  | This is deliberate for slide geometry.                                            |
-| Border radius    | Single-value `borderRadius` supports percentages against the projected short side.                       | CSS supports richer per-corner radii.                          | `borderRadius: "50%"` works for capsule-like PPTX geometry.                       |
-| Grid             | Missing tracks fill the available grid content frame.                                                    | CSS implicit tracks default to `auto`.                         | Declare tracks for precise dashboards.                                            |
-| Images           | Foreground images default to contain/center and can use probed natural ratio.                            | `<img>` has intrinsic layout behavior in normal document flow. | Use one axis plus probed dimensions, or set both axes for a fixed box.            |
-| Shapes           | Shapes default to visible white fill with no stroke.                                                     | CSS boxes are transparent unless styled.                       | Use `fill: "transparent"` or a `div` when you need a layout/debug box.            |
-| zIndex           | Simple projected paint-order number.                                                                     | CSS stacking contexts and `auto`.                              | Use it for slide paint order, not browser compositing semantics.                  |
+| Area              | deckjsx v0.8 behavior                                                                                                                                               | Browser expectation                                            | Guidance                                                                               |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Block views       | `display: "block"` creates a local containing block and vertically flows unpositioned children; explicit frame props still opt into local absolute placement.       | Block formatting creates vertical flow.                        | Use ordinary block flow for simple stacks; use flex/grid or explicit frames for decks. |
+| Flex              | `display: "flex"` defaults to row and cross-axis stretch.                                                                                                           | Same for the supported subset.                                 | Prefer flex for simple rows/columns.                                                   |
+| Sizing            | Block-flow text gets available width and a line-height based height; explicit/local absolute boxes still need size, insets, layout stretch, or image ratio.         | Many elements have intrinsic or content-based size.            | Use declared sizes for precise PPTX geometry; rely on block defaults for simple text.  |
+| Text measurement  | Stack/grid do not measure wrapped text to push later siblings.                                                                                                      | Browser layout uses measured content.                          | Use declared heights or `fit: "shrink"` for text boxes.                                |
+| Units             | Layout numbers are inches; font-size-like numbers are points. Strings support common CSS units including `cm`, `mm`, `Q`, `pc`, `vmin`, and `vmax`.                 | CSS unitless numbers are property-specific.                    | Use strings for CSS-like units when supported, or keep numeric domains explicit.       |
+| CSS-wide keywords | `initial`, `inherit`, `unset`, `revert`, and `revert-layer` fall back to supported-subset defaults with diagnostics where full cascade/reset semantics are missing. | CSS has full cascade defaulting semantics.                     | Prefer ordinary omission for defaults; inspect diagnostics when using reset keywords.  |
+| Text spacing      | `letterSpacing` accepts `normal` or point lengths; paragraph before/after spacing accepts point lengths.                                                            | CSS text spacing uses property-specific length rules.          | Prefer `px`, `pt`, `em`, or `rem` when porting CSS-like text spacing.                  |
+| Style keys        | Unsupported CSS-like property names produce nonblocking compile warnings and remain visible in graph inspection.                                                    | Browsers ignore invalid declarations after parsing rules.      | Use supported style keys; expect warnings for `flex`, `flexFlow`, or logical aliases.  |
+| Box sizing        | Containers, text, and shapes default to `border-box`.                                                                                                               | CSS initial is `content-box`.                                  | This is deliberate for slide geometry.                                                 |
+| Border radius     | Single-value `borderRadius` supports percentages against the projected short side.                                                                                  | CSS supports richer per-corner radii.                          | `borderRadius: "50%"` works for capsule-like PPTX geometry.                            |
+| Shadows           | One shadow layer projects offset/blur/color; spread radius is preserved as unsupported fallback metadata.                                                           | CSS box-shadow supports spread and multiple layers.            | Avoid relying on spread for exact PPTX output; Project diagnostics preserve it.        |
+| Grid              | Missing tracks fill the available grid content frame.                                                                                                               | CSS implicit tracks default to `auto`.                         | Declare tracks for precise dashboards.                                                 |
+| Images            | Foreground images default to contain/center and can use probed natural ratio.                                                                                       | `<img>` has intrinsic layout behavior in normal document flow. | Use one axis plus probed dimensions, or set both axes for a fixed box.                 |
+| Shapes            | Shapes default to visible white fill with no stroke.                                                                                                                | CSS boxes are transparent unless styled.                       | Use `fill: "transparent"` or a `div` when you need a layout/debug box.                 |
+| zIndex            | Simple projected paint-order number.                                                                                                                                | CSS stacking contexts and `auto`.                              | Use it for slide paint order, not browser compositing semantics.                       |
 
 ## Development
 

@@ -6228,24 +6228,27 @@ resolvedStyles, templates, assetProbeArtifacts, deckSize, diagnostics })`. This 
 
 ### Goal
 
-Use the 26-slide DoS report production feedback from v0.8.0 as the next patch-line hardening pass.
-The main theme is not broad CSS parity; it is making the currently advertised CSS-like subset harder
-to misuse silently. v0.8.2 should prioritize layout defaults, degenerate frame handling, diagnostics,
-CSS-like property handling, and README/skill examples that match the implementation users actually
-experience. First-class video support is intentionally moved to v0.8.3 so v0.8.2 can finish the
-non-video hardening work.
+Use the 26-slide DoS report production feedback from v0.8.0 as the next patch-line compatibility
+pass. The main theme is not full browser parity; it is making the CSS-like subset behave like CSS
+where deckjsx exposes CSS names. v0.8.2 should prioritize defaults, auto sizing, normal-flow block
+layout, degenerate frame prevention, diagnostics, numeric/unit parsing, and image positioning
+ergonomics. Requiring explicit sizes to avoid empty output is not an acceptable fix for a CSS-like
+default. First-class video support is intentionally moved to v0.8.3 so v0.8.2 can finish the
+non-video compatibility work.
+
+The detailed HTML/CSS compatibility audit for this scope is recorded in
+`docs/reviews/v0.8.2-html-css-compatibility-audit.md`.
 
 ### Current Code Findings
 
 - View-like elements still default to `display: "block"` plus `layout: "absolute"` through
-  `ELEMENT_DEFAULTS.container` and `normalizeViewProps()`. In the current solver, block containers
-  do not perform browser-like block flow; children without explicit placement share the same local
-  origin, and margins do not create vertical document flow. This matches the feedback that plain
-  nested `div` content can overlap.
-- `display: "flex"` maps to stack layout, but the stack path does not currently default
-  `alignItems` to `stretch`. For a column flex container, a child text node without an authored
-  `width` estimates cross size as `0`, so it can project a zero-width frame and disappear or trip
-  later writer checks. Grid item self-alignment already defaults to stretch through
+  `ELEMENT_DEFAULTS.container` and `normalizeViewProps()`, but the current v0.8.2 slice now treats
+  unpositioned block children as normal-flow entries through `compileBlockFlowChildren()`. Explicit
+  frame props remain the slide-oriented opt-in for local absolute placement.
+- Implemented in the current v0.8.2 preparation slice: `display: "flex"` maps to stack layout while
+  defaulting to row direction and cross-axis stretch. A column flex child without an authored
+  `width` now stretches to the available content width unless explicit cross-size or self-alignment
+  says otherwise. Grid item self-alignment already defaults to stretch through
   `resolveGridSelfAlignment()`.
 - Implemented in the current v0.8.2 preparation slice: `display: "flex"` now defaults to row
   direction when neither `direction` nor `flexDirection` is authored, and its cross-axis alignment
@@ -6269,16 +6272,19 @@ non-video hardening work.
   `roundRect` adjustment to `50000`, and `borderRadius` / shape `radius` now resolve percentage
   values against the projected short side. This makes CSS-like `borderRadius: "50%"` produce the
   expected capsule-style geometry instead of falling through a zero base.
-- Frame defaults are zero-sized unless placement, explicit `width`/`height`, both-side insets, or a
-  layout algorithm supplies a size. `frameFromProps()` does not do intrinsic content sizing for text,
-  images, shapes, or views. This is the broader root of several "invisible unless sized" reports,
-  not only a flex-specific issue.
+- Frame defaults are still zero-sized for explicit/local absolute boxes unless placement, explicit
+  `width`/`height`, both-side insets, or a layout algorithm supplies a size. Implemented in the
+  current v0.8.2 preparation slice: block-flow text receives available inline size and a
+  line-height-based block size, and images can derive a missing axis from probed natural aspect
+  ratio. Exact wrapped text measurement and full intrinsic sizing remain future work.
 - `boxSizing` defaults to `border-box` for containers, text, and shapes. That is useful for slide
   geometry, but it differs from the CSS initial `content-box` value and should be called out as a
   deliberate deckjsx default.
-- `position` is not full CSS positioned layout. In stack layout, `position: "absolute"` removes an
-  entry from normal stack flow; `position: "relative"` mostly means the node stays in flow. Relative
-  offset semantics are not implemented as browser `position: relative` behavior.
+- `position` is not full CSS positioned layout. Implemented in the current v0.8.2 preparation slice:
+  element defaults now use CSS-like `position: "static"`, and `position: "absolute"` removes an entry
+  from normal stack flow. Implemented in the current slice: `position: "relative"` now keeps the node
+  in block/flex/grid flow and applies `top` / `right` / `bottom` / `left` / `inset` / `x` / `y` as a
+  visual offset without changing the sibling flow position.
 - Grid defaults are deck-oriented. Missing templates resolve to tracks that fill the available grid
   content frame, and implicit `gridAutoRows` / `gridAutoColumns` fall back to `1fr`-like behavior
   rather than CSS `auto` tracks. Grid item stretch is implemented, but the track defaults should be
@@ -6294,6 +6300,20 @@ non-video hardening work.
 - Numeric length defaults are intentionally split by domain: `DeckLength` numbers are inches, while
   point-like text values remain points. Existing docs mention this, but v0.8.2 docs should place it
   near the other non-CSS gotchas because most CSS lengths are unitless only for special properties.
+- Implemented in the current v0.8.2 preparation slice: CSS-wide keywords (`initial`, `inherit`,
+  `unset`, `revert`, and `revert-layer`) are accepted by length-capable public style types and do
+  not become explicit zero sizes. The projection fallback uses the supported-subset initial/default
+  behavior and records `layout` unsupported semantics with `missing: ["cssWideKeywordCascade"]` for
+  layout and text length-like properties. Full CSS inheritance/reset semantics remain follow-up work.
+- Implemented in the current v0.8.2 preparation slice: resolved styles now inherit text-related
+  properties from parent text nodes into inline `span` / text-run nodes. The inherited values are
+  visible in resolved-style inspection while layout projection avoids duplicating inherited-only run
+  style when the parent text box already carries the concrete PPTX text body style.
+- Implemented in the current v0.8.2 preparation slice: shared CSS length parsing now supports common
+  absolute units `cm`, `mm`, `Q`, and `pc`, plus viewport `vmin` and `vmax`, across layout lengths,
+  point-like text values, stroke widths/dash arrays, and shadow lengths. CSS math functions and the
+  remaining font-relative units such as `lh`, `rlh`, `ex`, `cap`, and `ic` are still out of scope for
+  this slice.
 - `zIndex` is a simple projected paint-order number with effective default `0`; it is not CSS
   `z-index: auto` and does not model browser stacking contexts except for the explicit fallback
   warnings already recorded for opacity/transform/compositing cases.
@@ -6314,14 +6334,68 @@ non-video hardening work.
 - Implemented in the current v0.8.2 preparation slice: invalid authored `objectPosition` values on
   foreground images preserve the centered fallback but now carry an unsupported-semantic record so
   inspection can show the fallback instead of silently hiding the authored value.
+- Implemented in the current v0.8.2 preparation slice: layout projection now records
+  unsupported-but-valid CSS layout values as `layout` unsupported semantics instead of silently
+  reducing them to the nearest supported behavior. Covered properties include display values outside
+  `block` / `flex` / `grid` / `none`, overflow values outside `visible` / `hidden`, positioned
+  values outside `static` / `relative` / `absolute`, reverse flex direction/wrap values,
+  baseline/safe/unsafe alignment grammar, and named or negative CSS grid line placement.
 
 ### Required Fixes
 
-- Make flex/stack cross-axis default behavior match the documented CSS-like expectation where
-  practical. A column flex child without explicit `width` should stretch to the available content
-  width unless an explicit cross size, aspect-ratio dependency, or self-alignment says otherwise.
-  Add focused layout tests for text, view, image, and shape children in row and column flex
-  containers.
+- Completed for the current slice: implement CSS-like defaulting for the supported subset instead of
+  treating missing layout values as deck-specific zeroes. Element defaults now behave more like a
+  small UA stylesheet for the supported subset: supported view-like tags create block boxes, `p` and
+  headings have readable text defaults, and inherited text properties such as color, font family,
+  font size, line height, direction, and letter spacing flow into text runs.
+- Completed for the current slice: implement normal-flow block layout for unpositioned block
+  children. A plain nested `<div><p>...</p><p>...</p></div>` now produces vertically flowing,
+  non-overlapping frames without explicit child `x`, `y`, `width`, or `height`. `layout: "absolute"`
+  and explicit frame props remain the slide-oriented opt-in for local absolute positioning.
+- Completed for the current slice: add the v0.8.2 `auto`/intrinsic sizing subset. Unspecified block
+  inline size stretches to available content width; simple text has a line-height based intrinsic
+  block size; images use probed intrinsic dimensions and natural aspect ratio where available.
+  Exact wrapped text measurement, full CSS intrinsic keywords, and intrinsic contribution to every
+  layout mode remain future work.
+- Completed for the current slice: audit numeric public style handling against CSS. Unitless numbers
+  remain valid for numeric CSS domains such as `lineHeight`, `flexGrow`, `flexShrink`, opacity,
+  order, and ratios. CSS-like length-capable fields now share the documented legacy compatibility
+  policy: layout numbers remain inches, point-like text numbers remain points, and string values
+  provide the CSS-like unit path.
+- Completed for the current slice: support CSS-like spacing shorthand strings for `margin`,
+  `padding`, and `inset`: one-, two-, three-, and four-value forms. `auto` margins no longer fail
+  spacing parsing; deckjsx uses a zero fallback and records `layout` unsupported semantics until full
+  CSS auto-margin distribution is implemented.
+- Completed for the current slice: fix property-specific percentage bases. `padding`, `margin`,
+  `gap`, `rowGap`, and `columnGap` now resolve percentages against real containing dimensions in the
+  active layout paths rather than a silent zero base.
+- Completed for the current slice: reconcile CSS positioning semantics. `static` is the conceptual
+  default, `absolute` removes entries from flow, and `relative` is in-flow layout plus visual offset.
+  `auto` inset values no longer fail length parsing; deckjsx treats them as unspecified in the
+  supported layout fallback and records `layout` unsupported semantics. Docs keep `x` / `y`
+  documented as deck-specific frame aliases rather than browser CSS properties.
+- Completed for the current slice: define the v0.8.2 logical-axis scope. `writingMode` and
+  `direction` remain text-body projection inputs only; text nodes with `direction: "rtl"` or
+  vertical `writingMode` preserve PPTX text-body direction while recording `layout` unsupported
+  semantics for missing logical layout-axis and logical start/end mapping.
+- Completed for the current slice: make flex/stack cross-axis default behavior match the documented
+  CSS-like expectation where practical. A column flex child without explicit `width` stretches to
+  the available content width unless an explicit cross size, aspect-ratio dependency, or
+  self-alignment says otherwise. Focused layout tests cover text, view, image, and shape children in
+  row and column flex containers.
+- Completed for the current slice: add a CSS grammar diagnostic pass for supported property names
+  with unsupported valid values:
+  display values outside the v0.8.2 subset, overflow `auto` / `scroll` / `clip`, alignment
+  `normal` / baseline / safe / unsafe values, flex reverse directions and shorthands, grid named or
+  negative lines, and lossy shadow forms such as spread or multiple layers. The layout subset now
+  emits projected `layout` unsupported-semantic records for display, overflow, position,
+  flex-direction, flex-wrap, alignment, grid placement, auto insets, auto margins, and text logical
+  layout axes. The same diagnostic path now records CSS-wide keyword fallback for layout and text
+  length-like properties. Compile now also emits nonblocking warnings for unsupported CSS-like style
+  property names such as `flex`, `flexFlow`, and logical spacing keys when they arrive through
+  JavaScript or unsafe casts. Shadow spread radius now preserves the projected offset/blur/color
+  shadow while recording missing `cssShadowSpreadRadius`; background/text-decoration lossy-value
+  coverage remains in their existing style-specific fallback paths or follow-up diagnostics.
 - Completed for the current slice: add degenerate frame diagnostics before writer emission. Zero
   width/height for non-line drawings is a package validation error; line shapes may keep one zero
   axis but not both. Render blocks artifact creation before any output side effect when these errors
@@ -6329,94 +6403,110 @@ non-video hardening work.
 - Completed for the current slice: add an output safety regression test that renders to an existing
   non-empty file, forces a render failure with no artifact, and proves the file is left untouched
   while the result has error diagnostics and no artifact.
-- Document block-layout reality. README and skill docs should state that `display: "block"` is a
-  containing-block/absolute-local mode in v0.8.x, not browser block flow; use flex/grid with `gap`
-  or explicit `x`/`y` for vertical composition. Examples with multiple children inside a card should
-  use flex/grid or explicit coordinates.
-- Add a "non-CSS behaviors / gotchas" section to the English and Japanese deckjsx skills covering:
-  block containers do not create vertical flow, text needs a projected width unless its layout mode
-  stretches it, stack/grid use declared sizes rather than measured wrapped text, and numeric
-  `lineHeight` is a multiplier in current code.
-- Audit all skill and README asset-loader snippets so `AssetLoader.load()` returns
-  `AssetLoadResult` with top-level `bytes`, not a nested `source` object.
+- Completed for the current slice: update README and repo skill docs with a compatibility table that
+  names the supported CSS subset, documented deckjsx extensions, remaining diagnostics, text-run
+  inheritance, CSS-wide keyword fallback, expanded units, image positioning guidance, and shadow
+  spread fallback metadata.
+- Completed for the current slice: audit README and repo skill asset-loader snippets so
+  `AssetLoader.load()` returns `AssetLoadResult` with top-level `bytes`, not a nested `source`
+  object.
 - Completed for the current slice: tighten `borderRadius` behavior by resolving percentage radius
   values against the projected short side and covering capsule clamp output in writer tests.
 - Completed for the current slice: broaden `letterSpacing` to CSS-like point lengths and `normal`,
   add public type coverage, and cover emitted PPTX character spacing XML.
 - Completed for the current slice: broaden `paragraphSpacingBefore` and `paragraphSpacingAfter` to
   CSS-like point lengths, add public type coverage, and cover emitted PPTX paragraph spacing XML.
-- Add a default-semantics audit table to README and skill docs. For every CSS-looking default that
-  intentionally differs from browsers, record the deckjsx value, the browser/CSS expectation, and
-  whether the v0.8.2 action is "change", "diagnose", or "document". Include at least frame sizing,
-  block layout, flex stretch, grid tracks, box sizing, position, image/background sizing, shape fill,
-  units, and z-index.
-- Audit image positioning ergonomics. Current support is already meaningful but fragmented:
+- Completed for the current slice: add default-semantics audit guidance to README and repo skill
+  docs, covering frame sizing, block layout, flex stretch, grid tracks, box sizing, image/background
+  sizing, shape fill, units, CSS-wide keyword fallback, shadow spread fallback, and z-index.
+- Completed for the current slice: audit image positioning ergonomics. Current support is meaningful
+  but intentionally split:
   authored `img` accepts `fit` / `objectFit`, `objectPosition`, and explicit `crop`; background
   image layers accept CSS-like `backgroundSize`, `backgroundPosition`, `backgroundRepeat`,
-  `backgroundClip`, `backgroundOrigin`, and shorthand layer lists. v0.8.2 should document these as
-  one image-positioning model, add examples for the common "cover with focal point", "contain with
-  alignment", "manual crop", and "background image inside padded card" cases, and make the same
-  mental model visible in skill docs.
-- Tighten the `img` versus `background-image` vocabulary split. `img` uses `objectFit` /
-  `objectPosition` plus `crop`, while background layers use `backgroundSize` /
-  `backgroundPosition` and have repeat/origin/clip semantics. If both are intentionally different,
-  docs should explain when to use each. If they should feel interchangeable, add aliases or helper
-  examples rather than making users rediscover the split.
+  `backgroundClip`, `backgroundOrigin`, and shorthand layer lists. README and repo skill docs now
+  document natural aspect images, cover/focal-point style placement, foreground `img` controls, and
+  background-layer controls.
+- Completed for the current slice: tighten the `img` versus `background-image` vocabulary split.
+  `img` uses `objectFit` / `objectPosition` plus `crop`, while background layers use
+  `backgroundSize` / `backgroundPosition` and repeat/origin/clip semantics. Docs explain when to use
+  each rather than implying they are interchangeable.
 - Completed for the current slice: invalid authored foreground `objectPosition` values now preserve
   a centered fallback and carry an unsupported-semantic record. Further crop/focal-point helper
   aliases remain future v0.8.x ergonomics work.
-- Keep object-position parsing consistent across layout and PPTX projection paths. The current code
-  has image/background positioning support in the layout/background helpers and older PPTX projection
-  helpers; v0.8.2 should make sure supported forms such as `right 25% bottom 10%`, percentages,
-  keywords, and length offsets behave identically for normal project/render and any defined
-  projection or compatibility path.
+- Completed for the current slice: keep object-position parsing consistent across foreground images
+  and background helpers for the supported forms, including `right 25% bottom 10%`, percentages,
+  keywords, and length offsets. Invalid foreground `objectPosition` values now preserve a centered
+  fallback with unsupported-semantic metadata.
 - Implemented in the current v0.8.2 preparation slice: `img` layout now derives a missing projected
   axis from probed intrinsic `width` / `height` when the author has not supplied `aspectRatio`.
   Authored `aspectRatio` still wins for deliberate overrides.
-- Add image sizing presets or examples for common cases: "natural aspect with fixed width",
+- Completed for the current slice: add image sizing presets or examples for common cases:
+  "natural aspect with fixed width",
   "natural aspect with fixed height", "fill this box with cover", "fit this box with contain",
-  "crop to focal point", and "use as background layer behind text". These should be in README and
-  both skill docs, because this is exactly the kind of thing agents will otherwise improvise
-  inconsistently.
-- Decide whether `aspectRatio: "auto"` or an explicit helper such as `fit: "natural"` belongs in the
-  public authoring model. If not, document the intended spelling clearly, such as
-  `style={{ width: 4 }}` deriving height for images after v0.8.2 intrinsic sizing, or
-  `style={{ width: 4, aspectRatio: "16 / 9" }}` for non-image boxes.
-- Add diagnostics for image layout when intrinsic size is required but unavailable. A loader missing
-  dimensions already produces asset diagnostics for package projection; v0.8.2 should ensure the
-  layout-facing message also explains when missing dimensions prevent natural aspect-ratio sizing or
-  `contain` / `cover` calculations.
-- Review whether `crop` should get friendlier aliases. The current explicit-edge crop model is
-  precise, but users often think in focal point plus zoom. A future-friendly v0.8.x API could keep
-  `crop` as the low-level source-rectangle input while adding documented recipes or aliases for
-  `zoom`, `focalPoint`, or `objectPosition`-driven cover crops if those map cleanly to PPTX
-  `srcRect`.
+  "crop to focal point", and "use as background layer behind text". README and both repo skill docs
+  now carry the common image positioning patterns so agent-authored decks do not need to improvise
+  them.
+- Completed for the current slice: decide the public authoring model for automatic aspect ratio.
+  `aspectRatio: "auto"` is accepted as the CSS-like spelling for no authored ratio, while
+  `style={{ width: 4 }}` derives height for images after v0.8.2 intrinsic sizing and
+  `style={{ width: 4, aspectRatio: "16 / 9" }}` remains the explicit non-image/override pattern.
+- Completed in the current slice: accept `objectFit: "fill"` as the CSS spelling for deckjsx's
+  existing `stretch` image projection. CSS `object-fit: none` and `scale-down` now preserve the
+  authored value as unsupported semantic metadata and fall back to `contain`; exact projection
+  remains future work because it needs natural-size comparison and a precise PPTX source-rectangle
+  policy.
+- Completed for the current slice: add diagnostics for image layout when intrinsic size is required
+  but unavailable. Project/media validation already reports missing projected dimensions for image
+  and background `contain` / `cover` calculations before Render.
+- Future v0.8.x: review whether `crop` should get friendlier aliases. The current explicit-edge crop
+  model is precise, but users often think in focal point plus zoom. A future-friendly v0.8.x API
+  could keep `crop` as the low-level source-rectangle input while adding documented recipes or
+  aliases for `zoom`, `focalPoint`, or `objectPosition`-driven cover crops if those map cleanly to
+  PPTX `srcRect`.
+- Future v0.8.x: revisit element background defaults separately from slide background defaults. CSS
+  element backgrounds default to natural sizing and repeat behavior, while current deckjsx image
+  layers default toward presentation-style stretch/no-repeat. v0.8.2 documents this as a
+  deck-specific default; changing defaults or adding explicit presets should be a separate
+  compatibility decision.
 
 ### Validation
 
-- Add focused layout tests for:
+- Completed for the current slice: focused layout tests cover:
+  - normal-flow block children lay out vertically without explicit child coordinates or sizes;
+  - plain text in a block container gets a non-zero projected frame from defaults;
+  - percentage padding, margin, and gaps resolve against documented non-zero bases;
+  - CSS `position` defaults keep nodes in normal flow, while `absolute` removes them from flow;
+  - `position: relative` offsets visual frames without moving later flow siblings;
+  - `auto` insets and margins do not crash length parsing and emit fallback diagnostics;
+  - `writingMode` / `direction` limitations are diagnosed or documented in inspection output;
+    completed for text nodes whose text-body direction is projected but logical layout axes are not;
   - column flex text without width stretches to parent content width;
   - row flex text without height stretches to parent content height when appropriate;
-  - block container children without flex/grid remain overlapping/local absolute by documented
-    design, or fail if v0.8.2 chooses to implement block flow;
   - grid default stretch remains intact while flex default stretch is added;
-  - wrapped text overflow does not claim auto-height support.
-- Add render tests for:
+  - unsupported exact wrapped text measurement produces a clear diagnostic instead of a zero frame or
+    a false claim of exact browser layout.
+- Completed for the current slice: value-grammar tests cover unsupported-but-valid CSS inputs in the
+  v0.8.2 scope: display values outside the supported subset, overflow `auto` / `scroll` / `clip`,
+  baseline and safe/unsafe alignment, flex reverse and shorthand/property-name values, grid
+  named/negative line placement, auto insets and margins, text `writingMode` / `direction`
+  logical-axis limitations, and shadow spread fallback metadata.
+- Completed for the current slice: render tests cover:
   - degenerate projected frames produce element-origin diagnostics;
   - failed render does not create or truncate `output`;
   - numeric `lineHeight` stays `lineSpacingMultiple`;
   - `letterSpacing`, `paragraphSpacingBefore` / `paragraphSpacingAfter`, and `borderRadius`
     unsupported/supported inputs follow the documented policy.
-- Run `vp check`, `vp test`, sample smoke, and the render verification workflow before cutting
-  v0.8.2.
+- Required release gates before cutting v0.8.2: `vp check`, `vp test`, sample smoke, strict PPTX
+  benchmark, and render verification.
 
 ### Non-Goals
 
-- Do not implement full browser block formatting context in v0.8.2 unless the scope stays small
-  enough to preserve the patch release. It is acceptable to document block-as-local-absolute and
-  reserve real block flow for a later layout release.
-- Do not add a text measurement engine or `height: auto` for wrapped text in v0.8.2. Record the
-  desired behavior, add honest docs, and keep the current declared-height layout model explicit.
+- Do not implement full browser parity in v0.8.2. The scope is the CSS-like subset deckjsx already
+  exposes: defaults, normal-flow block layout, supported flex/grid behavior, supported values/units,
+  and diagnostics for unsupported valid CSS.
+- Do not build a browser engine or full text shaping engine in v0.8.2. Implement enough intrinsic
+  sizing to avoid empty default frames, and diagnose the cases that need exact wrapped text
+  measurement beyond the supported subset.
 - Do not expose public layout snapshots or solver internals while adding diagnostics. The user-facing
   contract remains stage results, diagnostics, summaries, and inspection surfaces already planned for
   the 0.8 line.

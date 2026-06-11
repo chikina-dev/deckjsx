@@ -79,7 +79,7 @@ function tryParsePointToken(value: string): number | undefined {
     return 0;
   }
 
-  if (!isDeckPointLengthString(value) || !/^-?(?:\d+|\d*\.\d+)(?:pt|in|px)$/i.test(value)) {
+  if (!isDeckPointLengthString(value)) {
     return undefined;
   }
 
@@ -144,4 +144,37 @@ export function parseShadowShorthand(value?: string): ShadowIR | undefined {
     offsetPt,
     angle: angle % 360,
   };
+}
+
+export function hasShadowSpreadRadius(value?: string): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.toLowerCase() === "none") {
+    return false;
+  }
+
+  const layers = splitTopLevelCommaList(trimmed);
+  if (layers.length !== 1) {
+    return false;
+  }
+
+  const [layer] = layers;
+  if (layer === undefined) {
+    return false;
+  }
+
+  const tokens = splitCssValueTokens(layer);
+  const filtered = tokens.filter((token) => token.toLowerCase() !== "inset");
+  const lengths = filtered.filter((token) => {
+    if (parseCssColor(token)) {
+      return false;
+    }
+
+    return tryParsePointToken(token) !== undefined;
+  });
+
+  return lengths.length === 4;
 }

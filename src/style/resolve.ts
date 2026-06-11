@@ -22,10 +22,11 @@ import type { StyleDeclaration, StyleDeclarationValue } from "./types";
 export type ResolvedStyleDeclaration = StyleDeclaration;
 export type ResolvedStyleValue = StyleDeclarationValue;
 
-export type ResolvedStyleLayer = "default" | "theme" | "class" | "style";
+export type ResolvedStyleLayer = "default" | "inherited" | "theme" | "class" | "style";
 
 export type ResolvedStyleSource =
   | { readonly layer: "default" }
+  | { readonly layer: "inherited"; readonly parentId: GraphNodeId }
   | { readonly layer: "theme"; readonly defaultKey: string }
   | {
       readonly layer: "class";
@@ -97,12 +98,54 @@ function applyProperties(
   });
 }
 
+const INHERITED_STYLE_KEYS = new Set<keyof StyleDeclaration>([
+  "charSpacing",
+  "color",
+  "direction",
+  "fontFamily",
+  "fontSize",
+  "fontStyle",
+  "fontWeight",
+  "italic",
+  "letterSpacing",
+  "lineHeight",
+  "overflowWrap",
+  "strike",
+  "textAlign",
+  "textTransform",
+  "underline",
+  "whiteSpace",
+  "wordBreak",
+  "writingMode",
+]);
+
+function applyInheritedProperties(
+  parentId: GraphNodeId | undefined,
+  parent: ResolvedStyle | undefined,
+  properties: Record<string, ResolvedStyleProperty>,
+): void {
+  if (parentId === undefined || parent === undefined) {
+    return;
+  }
+
+  for (const key of INHERITED_STYLE_KEYS) {
+    const property = parent.properties[key];
+    if (property?.value !== undefined) {
+      properties[key] = {
+        value: property.value,
+        source: { layer: "inherited", parentId },
+      };
+    }
+  }
+}
+
 function resolvedStyleFor(
   node: SemanticNode,
   entity: StyleEntity | undefined,
   registry: StyleClassRegistry,
   theme: Theme | undefined,
   context: SelectorContext,
+  inherited: { parentId?: GraphNodeId; style?: ResolvedStyle },
   diagnostics: Diagnostic[],
 ): ResolvedStyle {
   const properties: Record<string, ResolvedStyleProperty> = {};
@@ -112,6 +155,8 @@ function resolvedStyleFor(
   if (defaults) {
     applyProperties(defaults, { layer: "default" }, properties);
   }
+
+  applyInheritedProperties(inherited.parentId, inherited.style, properties);
 
   const themeDefaults = node.authoredTag && theme ? themeInput(theme).defaults : undefined;
   const themeDefault = node.authoredTag ? themeDefaults?.[node.authoredTag] : undefined;
@@ -206,9 +251,10 @@ export function resolveStyles(
   const stylesheets = classesBySource(roots);
   const themes = themesBySource(roots);
   const registries = new Map<string, StyleClassRegistry>();
+  const parentById = parentMapFor(graph);
   const selectorContext: SelectorContext = {
     graph,
-    parentById: parentMapFor(graph),
+    parentById,
     classNamesByNodeId: classNamesByNodeIdFor(graph),
   };
   const resolvedStyles = new Map<GraphNodeId, ResolvedStyle>();
@@ -221,9 +267,14 @@ export function resolveStyles(
     diagnostics.push(...sourceThemeDiagnostics(sourceKey, theme));
   });
 
-  graph.nodes.forEach((node) => {
+  const resolveNode = (node: SemanticNode): ResolvedStyle | undefined => {
     if (!isStyleCapableNode(node)) {
-      return;
+      return undefined;
+    }
+
+    const existing = resolvedStyles.get(node.id);
+    if (existing) {
+      return existing;
     }
 
     const sourceKey = sourceKeyFor(node.origin.source);
@@ -234,10 +285,24 @@ export function resolveStyles(
       registries.set(sourceKey, registry);
     }
 
-    resolvedStyles.set(
-      node.id,
-      resolvedStyleFor(node, entity, registry, themes.get(sourceKey), selectorContext, diagnostics),
+    const parentId = parentById.get(node.id);
+    const parent = parentId ? graph.nodes.get(parentId) : undefined;
+    const inherited = parent ? resolveNode(parent) : undefined;
+    const resolved = resolvedStyleFor(
+      node,
+      entity,
+      registry,
+      themes.get(sourceKey),
+      selectorContext,
+      { parentId, style: inherited },
+      diagnostics,
     );
+    resolvedStyles.set(node.id, resolved);
+    return resolved;
+  };
+
+  graph.nodes.forEach((node) => {
+    resolveNode(node);
   });
 
   return {

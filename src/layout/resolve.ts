@@ -75,7 +75,7 @@ import {
   type GridTemplateResolution,
   type NamedGridArea,
 } from "./grid";
-import { parseSpacing, parseSpacingInPoints } from "./spacing";
+import { parseSpacing, parseSpacingAllowAuto, parseSpacingInPoints } from "./spacing";
 import {
   buildStackLines,
   resolveCrossGap,
@@ -95,7 +95,18 @@ import {
   type BackgroundBoxFrames,
 } from "../style/background";
 import { normalizeColor } from "../style/color";
-import { parseLength, parsePointValue, type LengthResolutionContext } from "../style/length";
+import {
+  isCssWideKeyword,
+  parseLength,
+  parsePointValue,
+  type LengthResolutionContext,
+} from "../style/length";
+import {
+  authoredLengthOrUndefined,
+  hasAuthoredLength,
+  hasAutoToken,
+  hasCssWideKeywordToken,
+} from "../style/defaulting";
 import {
   parseOutlineShorthand,
   parseStrokeLineCap,
@@ -103,7 +114,7 @@ import {
   resolveNodeStrokes,
   toStroke,
 } from "../style/stroke";
-import { parseShadowShorthand } from "../style/shadow";
+import { hasShadowSpreadRadius, parseShadowShorthand } from "../style/shadow";
 import { parseTransformOrigin, parseTransformShorthand } from "../style/transform";
 import {
   extractText,
@@ -116,6 +127,8 @@ import {
   resolveUnderlineStyle,
 } from "../style/typography";
 import { EMU_PER_INCH, POINTS_PER_INCH } from "../types";
+import { normalizeProjectedImageFit, unsupportedObjectFitSemantics } from "./image-fit";
+import { unsupportedCssWideKeywordSemantic, unsupportedSemantic } from "./unsupported";
 
 type IdGenerator = {
   nextSlide(): string;
@@ -160,33 +173,30 @@ function errorReason(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function unsupportedSemantic(input: {
-  feature: ProjectedUnsupportedSemantic["feature"];
-  property: string;
-  value: StyleDeclarationValue | null | undefined;
-  error: unknown;
-  fallback?: ProjectedUnsupportedSemantic["fallback"];
-}): ProjectedUnsupportedSemantic | undefined {
-  if (input.value === undefined || input.value === null || input.value === "") {
-    return undefined;
-  }
-  return {
-    feature: input.feature,
-    property: input.property,
-    value: typeof input.value === "string" ? input.value : JSON.stringify(input.value),
-    reason: errorReason(input.error),
-    ...(input.fallback ? { fallback: input.fallback } : {}),
-  };
-}
-
 function parseShadowShorthandOrIgnore(input: { property: string; value?: string }): {
   readonly shadow?: ShadowIR;
   readonly unsupportedSemantics: readonly ProjectedUnsupportedSemantic[];
 } {
   try {
+    const shadow = parseShadowShorthand(input.value);
+    const unsupported = hasShadowSpreadRadius(input.value)
+      ? unsupportedSemantic({
+          feature: "shadow",
+          property: input.property,
+          value: input.value,
+          error: new Error(
+            `CSS shadow spread radius is not projected by the current PPTX shadow model: ${input.value}`,
+          ),
+          fallback: {
+            strategy: "preserveAuthoredValueOnly",
+            preserves: ["projectedShadowWithoutSpread"],
+            missing: ["cssShadowSpreadRadius"],
+          },
+        })
+      : undefined;
     return {
-      shadow: parseShadowShorthand(input.value),
-      unsupportedSemantics: [],
+      shadow,
+      unsupportedSemantics: unsupported ? [unsupported] : [],
     };
   } catch (error) {
     const unsupported = unsupportedSemantic({
@@ -553,6 +563,528 @@ const BLEND_MODE_FALLBACK_REASON =
 const ISOLATION_FALLBACK_REASON =
   "CSS isolation creates a compositing group; v0.8 preserves the authored isolation input but does not yet evaluate isolated compositing groups.";
 
+const CSS_LAYOUT_UNSUPPORTED_VALUE_REASON =
+  "This CSS layout value is valid CSS but is outside the current deckjsx v0.8.2 layout subset; deckjsx preserves the authored value for inspection and falls back to the closest supported layout behavior.";
+
+const CSS_SUPPORTED_DISPLAY_VALUES = new Set(["block", "flex", "grid", "none"]);
+const CSS_SUPPORTED_OVERFLOW_VALUES = new Set(["visible", "hidden"]);
+const CSS_SUPPORTED_POSITION_VALUES = new Set(["static", "relative", "absolute"]);
+const CSS_SUPPORTED_FLEX_DIRECTION_VALUES = new Set(["row", "column"]);
+const CSS_SUPPORTED_FLEX_WRAP_VALUES = new Set(["nowrap", "wrap"]);
+const CSS_SUPPORTED_SELF_ALIGNMENT_VALUES = new Set([
+  "auto",
+  "start",
+  "flex-start",
+  "center",
+  "end",
+  "flex-end",
+  "stretch",
+]);
+const CSS_SUPPORTED_CONTENT_ALIGNMENT_VALUES = new Set([
+  "start",
+  "flex-start",
+  "center",
+  "end",
+  "flex-end",
+  "stretch",
+  "space-between",
+  "space-around",
+  "space-evenly",
+]);
+
+type CssLayoutDiagnosticsProps = {
+  readonly display?: unknown;
+  readonly overflow?: unknown;
+  readonly position?: unknown;
+  readonly flexDirection?: unknown;
+  readonly flexWrap?: unknown;
+  readonly alignSelf?: unknown;
+  readonly justifySelf?: unknown;
+  readonly placeSelf?: unknown;
+  readonly alignItems?: unknown;
+  readonly justifyItems?: unknown;
+  readonly placeItems?: unknown;
+  readonly alignContent?: unknown;
+  readonly justifyContent?: unknown;
+  readonly placeContent?: unknown;
+  readonly gridColumnStart?: unknown;
+  readonly gridColumnEnd?: unknown;
+  readonly gridRowStart?: unknown;
+  readonly gridRowEnd?: unknown;
+  readonly gridColumn?: unknown;
+  readonly gridRow?: unknown;
+  readonly gridArea?: unknown;
+  readonly inset?: unknown;
+  readonly left?: unknown;
+  readonly top?: unknown;
+  readonly right?: unknown;
+  readonly bottom?: unknown;
+  readonly x?: unknown;
+  readonly y?: unknown;
+  readonly width?: unknown;
+  readonly height?: unknown;
+  readonly minWidth?: unknown;
+  readonly minHeight?: unknown;
+  readonly maxWidth?: unknown;
+  readonly maxHeight?: unknown;
+  readonly padding?: unknown;
+  readonly paddingTop?: unknown;
+  readonly paddingRight?: unknown;
+  readonly paddingBottom?: unknown;
+  readonly paddingLeft?: unknown;
+  readonly margin?: unknown;
+  readonly marginTop?: unknown;
+  readonly marginRight?: unknown;
+  readonly marginBottom?: unknown;
+  readonly marginLeft?: unknown;
+  readonly gap?: unknown;
+  readonly rowGap?: unknown;
+  readonly columnGap?: unknown;
+  readonly fontSize?: unknown;
+  readonly lineHeight?: unknown;
+  readonly charSpacing?: unknown;
+  readonly letterSpacing?: unknown;
+  readonly paragraphSpacingBefore?: unknown;
+  readonly paragraphSpacingAfter?: unknown;
+  readonly textIndent?: unknown;
+  readonly borderWidth?: unknown;
+  readonly borderTopWidth?: unknown;
+  readonly borderRightWidth?: unknown;
+  readonly borderBottomWidth?: unknown;
+  readonly borderLeftWidth?: unknown;
+  readonly outlineWidth?: unknown;
+  readonly strokeWidth?: unknown;
+};
+
+type CssLayoutDiagnosticsProperty = keyof CssLayoutDiagnosticsProps;
+
+function normalizedCssKeyword(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  return normalized || undefined;
+}
+
+function unsupportedCssLayoutValueSemantic(
+  property: string,
+  value: unknown,
+  missing: readonly string[],
+): ProjectedUnsupportedSemantic | undefined {
+  return unsupportedSemantic({
+    feature: "layout",
+    property,
+    value,
+    error: new Error(CSS_LAYOUT_UNSUPPORTED_VALUE_REASON),
+    fallback: {
+      strategy: "preserveAuthoredValueOnly",
+      preserves: ["authoredValue"],
+      missing,
+    },
+  });
+}
+
+function addUnsupportedKeywordSemantic(input: {
+  readonly unsupported: ProjectedUnsupportedSemantic[];
+  readonly props: CssLayoutDiagnosticsProps;
+  readonly property: CssLayoutDiagnosticsProperty;
+  readonly supported: ReadonlySet<string>;
+  readonly missing: readonly string[];
+}) {
+  const value = normalizedCssKeyword(input.props[input.property]);
+  if (value === undefined || input.supported.has(value) || isCssWideKeyword(value)) {
+    return;
+  }
+
+  const semantic = unsupportedCssLayoutValueSemantic(
+    input.property,
+    input.props[input.property],
+    input.missing,
+  );
+  if (semantic) {
+    input.unsupported.push(semantic);
+  }
+}
+
+function hasUnsupportedAlignmentTokens(value: unknown, supported: ReadonlySet<string>): boolean {
+  const normalized = normalizedCssKeyword(value);
+  if (normalized === undefined) {
+    return false;
+  }
+
+  if (isCssWideKeyword(normalized)) {
+    return false;
+  }
+
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) {
+    return false;
+  }
+
+  if (tokens[0] === "safe" || tokens[0] === "unsafe") {
+    return true;
+  }
+
+  if (
+    tokens.length >= 2 &&
+    ((tokens[0] === "first" && tokens[1] === "baseline") ||
+      (tokens[0] === "last" && tokens[1] === "baseline"))
+  ) {
+    return true;
+  }
+
+  return tokens.some((token) => !supported.has(token));
+}
+
+function hasUnsupportedGridLineValue(value: unknown): boolean {
+  if (value === undefined || value === null) {
+    return false;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value < 1;
+  }
+
+  const normalized = normalizedCssKeyword(value);
+  if (normalized === undefined || normalized === "auto") {
+    return false;
+  }
+
+  if (isCssWideKeyword(normalized)) {
+    return false;
+  }
+
+  return !/^(?:span\s+\d+|\d+)$/.test(normalized);
+}
+
+function hasUnsupportedGridPlacementValue(value: unknown, allowNamedArea: boolean): boolean {
+  if (value === undefined || value === null) {
+    return false;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value < 1;
+  }
+
+  const normalized = normalizedCssKeyword(value);
+  if (normalized === undefined || normalized === "auto") {
+    return false;
+  }
+
+  if (isCssWideKeyword(normalized)) {
+    return false;
+  }
+
+  if (allowNamedArea && !normalized.includes("/")) {
+    return false;
+  }
+
+  const linePattern = String.raw`(?:\d+|span\s+\d+)`;
+  const placementPattern = new RegExp(
+    String.raw`^(?:${linePattern}|${linePattern}\s*/\s*${linePattern})$`,
+  );
+  return !placementPattern.test(normalized);
+}
+
+function unsupportedCssLayoutValueSemantics(
+  props: CssLayoutDiagnosticsProps,
+): readonly ProjectedUnsupportedSemantic[] {
+  const unsupported: ProjectedUnsupportedSemantic[] = [];
+
+  const cssWideKeywordChecks: Array<CssLayoutDiagnosticsProperty> = [
+    "display",
+    "overflow",
+    "position",
+    "flexDirection",
+    "flexWrap",
+    "alignSelf",
+    "justifySelf",
+    "placeSelf",
+    "alignItems",
+    "justifyItems",
+    "placeItems",
+    "alignContent",
+    "justifyContent",
+    "placeContent",
+    "inset",
+    "top",
+    "right",
+    "bottom",
+    "left",
+    "x",
+    "y",
+    "width",
+    "height",
+    "minWidth",
+    "minHeight",
+    "maxWidth",
+    "maxHeight",
+    "padding",
+    "paddingTop",
+    "paddingRight",
+    "paddingBottom",
+    "paddingLeft",
+    "margin",
+    "marginTop",
+    "marginRight",
+    "marginBottom",
+    "marginLeft",
+    "gap",
+    "rowGap",
+    "columnGap",
+    "fontSize",
+    "lineHeight",
+    "charSpacing",
+    "letterSpacing",
+    "paragraphSpacingBefore",
+    "paragraphSpacingAfter",
+    "textIndent",
+    "borderWidth",
+    "borderTopWidth",
+    "borderRightWidth",
+    "borderBottomWidth",
+    "borderLeftWidth",
+    "outlineWidth",
+    "strokeWidth",
+  ];
+  for (const property of cssWideKeywordChecks) {
+    if (!hasCssWideKeywordToken(props[property])) {
+      continue;
+    }
+    const semantic = unsupportedCssWideKeywordSemantic(property, props[property]);
+    if (semantic) {
+      unsupported.push(semantic);
+    }
+  }
+
+  addUnsupportedKeywordSemantic({
+    unsupported,
+    props,
+    property: "display",
+    supported: CSS_SUPPORTED_DISPLAY_VALUES,
+    missing: ["cssDisplayBehavior"],
+  });
+  addUnsupportedKeywordSemantic({
+    unsupported,
+    props,
+    property: "overflow",
+    supported: CSS_SUPPORTED_OVERFLOW_VALUES,
+    missing: ["cssOverflowBehavior"],
+  });
+  addUnsupportedKeywordSemantic({
+    unsupported,
+    props,
+    property: "position",
+    supported: CSS_SUPPORTED_POSITION_VALUES,
+    missing: ["cssPositionBehavior"],
+  });
+  addUnsupportedKeywordSemantic({
+    unsupported,
+    props,
+    property: "flexDirection",
+    supported: CSS_SUPPORTED_FLEX_DIRECTION_VALUES,
+    missing: ["reverseFlexOrdering"],
+  });
+  addUnsupportedKeywordSemantic({
+    unsupported,
+    props,
+    property: "flexWrap",
+    supported: CSS_SUPPORTED_FLEX_WRAP_VALUES,
+    missing: ["reverseFlexLinePacking"],
+  });
+
+  const alignmentChecks: Array<{
+    property: CssLayoutDiagnosticsProperty;
+    supported: ReadonlySet<string>;
+    missing: readonly string[];
+  }> = [
+    {
+      property: "alignSelf",
+      supported: CSS_SUPPORTED_SELF_ALIGNMENT_VALUES,
+      missing: ["cssBoxAlignment"],
+    },
+    {
+      property: "justifySelf",
+      supported: CSS_SUPPORTED_SELF_ALIGNMENT_VALUES,
+      missing: ["cssBoxAlignment"],
+    },
+    {
+      property: "placeSelf",
+      supported: CSS_SUPPORTED_SELF_ALIGNMENT_VALUES,
+      missing: ["cssBoxAlignment"],
+    },
+    {
+      property: "alignItems",
+      supported: CSS_SUPPORTED_SELF_ALIGNMENT_VALUES,
+      missing: ["cssBoxAlignment"],
+    },
+    {
+      property: "justifyItems",
+      supported: CSS_SUPPORTED_SELF_ALIGNMENT_VALUES,
+      missing: ["cssBoxAlignment"],
+    },
+    {
+      property: "placeItems",
+      supported: CSS_SUPPORTED_SELF_ALIGNMENT_VALUES,
+      missing: ["cssBoxAlignment"],
+    },
+    {
+      property: "alignContent",
+      supported: CSS_SUPPORTED_CONTENT_ALIGNMENT_VALUES,
+      missing: ["cssContentDistribution"],
+    },
+    {
+      property: "justifyContent",
+      supported: CSS_SUPPORTED_CONTENT_ALIGNMENT_VALUES,
+      missing: ["cssContentDistribution"],
+    },
+    {
+      property: "placeContent",
+      supported: CSS_SUPPORTED_CONTENT_ALIGNMENT_VALUES,
+      missing: ["cssContentDistribution"],
+    },
+  ];
+
+  for (const check of alignmentChecks) {
+    if (!hasUnsupportedAlignmentTokens(props[check.property], check.supported)) {
+      continue;
+    }
+    const semantic = unsupportedCssLayoutValueSemantic(
+      check.property,
+      props[check.property],
+      check.missing,
+    );
+    if (semantic) {
+      unsupported.push(semantic);
+    }
+  }
+
+  const gridLineChecks: Array<CssLayoutDiagnosticsProperty> = [
+    "gridColumnStart",
+    "gridColumnEnd",
+    "gridRowStart",
+    "gridRowEnd",
+  ];
+  for (const property of gridLineChecks) {
+    if (!hasUnsupportedGridLineValue(props[property])) {
+      continue;
+    }
+    const semantic = unsupportedCssLayoutValueSemantic(property, props[property], [
+      "cssGridNamedOrNegativeLineResolution",
+    ]);
+    if (semantic) {
+      unsupported.push(semantic);
+    }
+  }
+
+  const gridPlacementChecks: Array<{
+    property: CssLayoutDiagnosticsProperty;
+    allowNamedArea: boolean;
+  }> = [
+    { property: "gridColumn", allowNamedArea: false },
+    { property: "gridRow", allowNamedArea: false },
+    { property: "gridArea", allowNamedArea: true },
+  ];
+  for (const check of gridPlacementChecks) {
+    if (!hasUnsupportedGridPlacementValue(props[check.property], check.allowNamedArea)) {
+      continue;
+    }
+    const semantic = unsupportedCssLayoutValueSemantic(check.property, props[check.property], [
+      "cssGridNamedOrNegativeLineResolution",
+    ]);
+    if (semantic) {
+      unsupported.push(semantic);
+    }
+  }
+
+  const insetChecks: Array<CssLayoutDiagnosticsProperty> = [
+    "inset",
+    "top",
+    "right",
+    "bottom",
+    "left",
+    "x",
+    "y",
+  ];
+  for (const property of insetChecks) {
+    if (!hasAutoToken(props[property])) {
+      continue;
+    }
+    const semantic = unsupportedCssLayoutValueSemantic(property, props[property], [
+      "cssAutoInsetResolution",
+    ]);
+    if (semantic) {
+      unsupported.push(semantic);
+    }
+  }
+
+  const marginChecks: Array<CssLayoutDiagnosticsProperty> = [
+    "margin",
+    "marginTop",
+    "marginRight",
+    "marginBottom",
+    "marginLeft",
+  ];
+  for (const property of marginChecks) {
+    if (!hasAutoToken(props[property])) {
+      continue;
+    }
+    const semantic = unsupportedCssLayoutValueSemantic(property, props[property], [
+      "cssAutoMarginResolution",
+    ]);
+    if (semantic) {
+      unsupported.push(semantic);
+    }
+  }
+
+  return unsupported;
+}
+
+const CSS_LOGICAL_LAYOUT_AXIS_FALLBACK_REASON =
+  "CSS writing-mode and direction remap logical layout axes; deckjsx v0.8.2 projects them to PPTX text body direction but still resolves layout, spacing, insets, and start/end alignment on physical axes.";
+
+function unsupportedTextLogicalLayoutSemantics(props: {
+  readonly direction?: "ltr" | "rtl";
+  readonly writingMode?: "horizontal-tb" | "vertical-rl" | "vertical-lr";
+}): readonly ProjectedUnsupportedSemantic[] {
+  const unsupported: ProjectedUnsupportedSemantic[] = [];
+  if (props.direction === "rtl") {
+    const semantic = unsupportedSemantic({
+      feature: "layout",
+      property: "direction",
+      value: props.direction,
+      error: new Error(CSS_LOGICAL_LAYOUT_AXIS_FALLBACK_REASON),
+      fallback: {
+        strategy: "preserveAuthoredValueOnly",
+        preserves: ["textBodyDirection"],
+        missing: ["logicalLayoutAxes", "cssLogicalStartEndMapping"],
+      },
+    });
+    if (semantic) {
+      unsupported.push(semantic);
+    }
+  }
+
+  if (props.writingMode !== undefined && props.writingMode !== "horizontal-tb") {
+    const semantic = unsupportedSemantic({
+      feature: "layout",
+      property: "writingMode",
+      value: props.writingMode,
+      error: new Error(CSS_LOGICAL_LAYOUT_AXIS_FALLBACK_REASON),
+      fallback: {
+        strategy: "preserveAuthoredValueOnly",
+        preserves: ["textBodyDirection"],
+        missing: ["logicalLayoutAxes", "cssLogicalStartEndMapping"],
+      },
+    });
+    if (semantic) {
+      unsupported.push(semantic);
+    }
+  }
+
+  return unsupported;
+}
+
 function unsupportedGroupOpacitySemantics(props: {
   readonly opacity?: number;
 }): readonly ProjectedUnsupportedSemantic[] {
@@ -798,6 +1330,8 @@ type ResolvedGridContainerSpec = {
 type SpacingTuple = [number, number, number, number];
 
 const EMPTY_SPACING: SpacingTuple = [0, 0, 0, 0];
+const DEFAULT_TEXT_FONT_SIZE_PT = 18;
+const DEFAULT_NORMAL_LINE_HEIGHT_MULTIPLE = 1.2;
 
 function createIdGenerator(): IdGenerator {
   let slideCount = 0;
@@ -1069,13 +1603,17 @@ function resolveAlignContentOffset(
 
   return { offsetEmu: 0, extraGapEmu: 0, extraSizeEmu: 0 };
 }
-function getChildPadding(node: LayoutChildNode, context?: LengthResolutionContext) {
+function getChildPadding(
+  node: LayoutChildNode,
+  context?: LengthResolutionContext,
+  percentageBaseEmu = 0,
+) {
   switch (node.kind) {
     case "view":
-      return parseSpacing(node.props.padding, context);
+      return parseSpacing(node.props.padding, context, percentageBaseEmu);
     case "text": {
       const { props } = node;
-      return parseSpacing(props.padding, getTextLengthContext(props, context));
+      return parseSpacing(props.padding, getTextLengthContext(props, context), percentageBaseEmu);
     }
     case "image":
       return EMPTY_SPACING;
@@ -1107,6 +1645,54 @@ function resolveChildMainLength(node: LayoutChildNode, axis: StackAxis): DeckLen
   return node.props[axis === "horizontal" ? "width" : "height"];
 }
 
+function resolveTextFontSizePt(
+  props: NormalizedTextProps,
+  context?: LengthResolutionContext,
+): number {
+  return parsePointValue(props.fontSize, DEFAULT_TEXT_FONT_SIZE_PT, context);
+}
+
+function resolveTextLineHeightPt(
+  props: NormalizedTextProps,
+  context?: LengthResolutionContext,
+): number {
+  const fontSizePt = resolveTextFontSizePt(props, context);
+  if (props.lineHeight === undefined || props.lineHeight === "normal") {
+    return fontSizePt * DEFAULT_NORMAL_LINE_HEIGHT_MULTIPLE;
+  }
+  if (typeof props.lineHeight === "number") {
+    return fontSizePt * props.lineHeight;
+  }
+  return parsePointValue(props.lineHeight, fontSizePt * DEFAULT_NORMAL_LINE_HEIGHT_MULTIPLE, {
+    ...context,
+    fontSizePt,
+  });
+}
+
+function estimateTextAutoContentSize(
+  node: Extract<LayoutChildNode, { kind: "text" }>,
+  dimension: "width" | "height",
+  parent: Frame,
+  context?: LengthResolutionContext,
+): number {
+  const textContext = getTextLengthContext(node.props, context);
+  const [paddingTop, , paddingBottom] = parseSpacing(
+    node.props.padding,
+    textContext,
+    parent.widthEmu,
+  );
+
+  if (dimension === "width") {
+    return parent.widthEmu;
+  }
+
+  return (
+    (resolveTextLineHeightPt(node.props, textContext) / POINTS_PER_INCH) * EMU_PER_INCH +
+    paddingTop +
+    paddingBottom
+  );
+}
+
 function estimateChildContentSize(
   node: LayoutChildNode,
   dimension: "width" | "height",
@@ -1121,14 +1707,22 @@ function estimateChildContentSize(
   const basis = dimension === "width" ? parent.widthEmu : parent.heightEmu;
   const directValue =
     isMainDimension && mainAxis ? resolveChildMainLength(node, mainAxis) : node.props[dimension];
+  const authoredValue = authoredLengthOrUndefined(directValue);
 
-  if (directValue !== undefined) {
+  if (authoredValue !== undefined) {
     return inflateSpecifiedBoxSize(
-      parseLength(directValue, basis, 0, getNodeLengthContext(node, context)),
+      parseLength(authoredValue, basis, 0, getNodeLengthContext(node, context)),
       node.kind === "image" ? "border-box" : (node.props.boxSizing ?? "border-box"),
-      getChildPadding(node, context),
+      getChildPadding(node, context, parent.widthEmu),
       dimension,
     );
+  }
+
+  if (node.kind === "text") {
+    if (dimension === "width" && mainAxis === "horizontal") {
+      return 0;
+    }
+    return estimateTextAutoContentSize(node, dimension, parent, context);
   }
 
   if (aspectRatio === undefined) {
@@ -1144,13 +1738,14 @@ function estimateChildContentSize(
     oppositeIsMain && mainAxis
       ? resolveChildMainLength(node, mainAxis)
       : node.props[oppositeDimension];
+  const authoredOppositeValue = authoredLengthOrUndefined(oppositeValue);
 
-  if (oppositeValue === undefined) {
+  if (authoredOppositeValue === undefined) {
     return 0;
   }
 
   const oppositeSize = parseLength(
-    oppositeValue,
+    authoredOppositeValue,
     oppositeBasis,
     0,
     getNodeLengthContext(node, context),
@@ -1160,22 +1755,30 @@ function estimateChildContentSize(
   return inflateSpecifiedBoxSize(
     derivedSize,
     node.kind === "image" ? "border-box" : (node.props.boxSizing ?? "border-box"),
-    getChildPadding(node, context),
+    getChildPadding(node, context, parent.widthEmu),
     dimension,
   );
 }
-function getNodeMargin(node: LayoutChildNode, context?: LengthResolutionContext) {
+function getNodeMargin(
+  node: LayoutChildNode,
+  context?: LengthResolutionContext,
+  percentageBaseEmu = 0,
+) {
   switch (node.kind) {
     case "view":
-      return parseSpacing(node.props.margin, context);
+      return parseSpacingAllowAuto(node.props.margin, context, percentageBaseEmu);
     case "text": {
       const { props } = node;
-      return parseSpacing(props.margin, getTextLengthContext(props, context));
+      return parseSpacingAllowAuto(
+        props.margin,
+        getTextLengthContext(props, context),
+        percentageBaseEmu,
+      );
     }
     case "image":
-      return parseSpacing(node.props.margin, context);
+      return parseSpacingAllowAuto(node.props.margin, context, percentageBaseEmu);
     case "shape":
-      return parseSpacing(node.props.margin, context);
+      return parseSpacingAllowAuto(node.props.margin, context, percentageBaseEmu);
   }
 }
 
@@ -1185,7 +1788,7 @@ function estimateChildMainSize(
   parent: Frame,
   context?: LengthResolutionContext,
 ) {
-  const [top, right, bottom, left] = getNodeMargin(node, context);
+  const [top, right, bottom, left] = getNodeMargin(node, context, parent.widthEmu);
   const margin = axis === "horizontal" ? left + right : top + bottom;
   return (
     estimateChildContentSize(
@@ -1204,7 +1807,7 @@ function estimateChildCrossSize(
   parent: Frame,
   context?: LengthResolutionContext,
 ) {
-  const [top, right, bottom, left] = getNodeMargin(node, context);
+  const [top, right, bottom, left] = getNodeMargin(node, context, parent.widthEmu);
   const margin = axis === "horizontal" ? top + bottom : left + right;
   return (
     estimateChildContentSize(
@@ -1217,7 +1820,7 @@ function estimateChildCrossSize(
   );
 }
 function shouldStretchGridDimension(node: LayoutChildNode, dimension: "width" | "height") {
-  if (node.props[dimension] !== undefined) {
+  if (hasAuthoredLength(node.props[dimension])) {
     return false;
   }
 
@@ -1227,7 +1830,7 @@ function shouldStretchGridDimension(node: LayoutChildNode, dimension: "width" | 
   }
 
   const oppositeDimension = dimension === "width" ? "height" : "width";
-  return node.props[oppositeDimension] === undefined;
+  return !hasAuthoredLength(node.props[oppositeDimension]);
 }
 function resolveChildGridPlacements(
   node: LayoutChildNode,
@@ -1292,6 +1895,7 @@ function resolveGridContainerSpec(
   const [paddingTop, paddingRight, paddingBottom, paddingLeft] = parseSpacing(
     options.padding,
     context,
+    parentFrame.widthEmu,
   );
   const contentX = parentFrame.xEmu + paddingLeft;
   const contentY = parentFrame.yEmu + paddingTop;
@@ -1303,8 +1907,8 @@ function resolveGridContainerSpec(
     widthEmu: contentWidth,
     heightEmu: contentHeight,
   };
-  const columnGapEmu = parseLength(options.columnGap ?? options.rowGap, 0, 0, context);
-  const rowGapEmu = parseLength(options.rowGap ?? options.columnGap, 0, 0, context);
+  const columnGapEmu = parseLength(options.columnGap ?? options.rowGap, contentWidth, 0, context);
+  const rowGapEmu = parseLength(options.rowGap ?? options.columnGap, contentHeight, 0, context);
   const placeItems = parsePlaceItems(options.placeItems);
   const placeContent = parsePlaceContent(options.placeContent);
   const namedAreas = parseGridTemplateAreas(options.gridTemplateAreas);
@@ -1572,7 +2176,11 @@ function compileGridChildren(
     placements
       .map((placement) => {
         const { child, row, column, rowSpan, columnSpan } = placement;
-        const [marginTop, marginRight, marginBottom, marginLeft] = getNodeMargin(child, context);
+        const [marginTop, marginRight, marginBottom, marginLeft] = getNodeMargin(
+          child,
+          context,
+          spec.contentWidth,
+        );
         const cellWidth =
           stretchedColumnTracks
             .slice(column - 1, column - 1 + columnSpan)
@@ -1656,6 +2264,129 @@ function compileGridChildren(
   );
 }
 
+function hasExplicitFrameInput(child: LayoutChildNode): boolean {
+  const { props } = child;
+  const relativePosition = props.position === "relative";
+  return (
+    props.position === "absolute" ||
+    props.area !== undefined ||
+    (!relativePosition &&
+      (hasAuthoredLength(props.x) ||
+        hasAuthoredLength(props.y) ||
+        (hasCssWideKeywordToken(props.inset) === false && props.inset !== undefined) ||
+        hasAuthoredLength(props.left) ||
+        hasAuthoredLength(props.top) ||
+        hasAuthoredLength(props.right) ||
+        hasAuthoredLength(props.bottom))) ||
+    hasAuthoredLength(props.width) ||
+    hasAuthoredLength(props.height)
+  );
+}
+
+function compileBlockFlowChildren(
+  authorChildren: LayoutChildNode[],
+  parentFrame: Frame,
+  idGenerator: IdGenerator,
+  options: Pick<ViewStyle, "padding" | "gap" | "rowGap" | "columnGap">,
+  clipRect?: ClipRect,
+  context?: LengthResolutionContext,
+  resolutionOptions?: ProjectedLayoutResolutionOptions,
+): ProjectedLayoutNode[] {
+  const [paddingTop, paddingRight, paddingBottom, paddingLeft] = parseSpacing(
+    options.padding,
+    context,
+    parentFrame.widthEmu,
+  );
+  const contentFrame: Frame = {
+    xEmu: parentFrame.xEmu + paddingLeft,
+    yEmu: parentFrame.yEmu + paddingTop,
+    widthEmu: Math.max(parentFrame.widthEmu - paddingLeft - paddingRight, 0),
+    heightEmu: Math.max(parentFrame.heightEmu - paddingTop - paddingBottom, 0),
+  };
+  const blockGapEmu = resolveMainGap(
+    "vertical",
+    options.gap,
+    options.rowGap,
+    options.columnGap,
+    context,
+    contentFrame.heightEmu,
+  );
+  let cursorY = contentFrame.yEmu;
+  const flowNodes: ProjectedLayoutNode[] = [];
+
+  for (const child of authorChildren) {
+    const [marginTop, marginRight, marginBottom, marginLeft] = getNodeMargin(
+      child,
+      context,
+      contentFrame.widthEmu,
+    );
+    const childWidth =
+      authoredLengthOrUndefined(child.props.width) === undefined
+        ? Math.max(contentFrame.widthEmu - marginLeft - marginRight, 0)
+        : estimateChildContentSize(child, "width", contentFrame, undefined, context);
+    const childHeight = estimateChildContentSize(
+      child,
+      "height",
+      contentFrame,
+      "vertical",
+      context,
+    );
+    const placement: Placement = {
+      xEmu: contentFrame.xEmu + marginLeft,
+      yEmu: cursorY + marginTop,
+      widthEmu: childWidth,
+      heightEmu: childHeight,
+    };
+
+    const compiledNode = compileNode(
+      child,
+      contentFrame,
+      idGenerator,
+      placement,
+      clipRect,
+      context,
+      resolutionOptions,
+    );
+    if (compiledNode) {
+      flowNodes.push(compiledNode);
+    }
+    cursorY += marginTop + childHeight + marginBottom + blockGapEmu;
+  }
+
+  return flowNodes;
+}
+
+function compileAbsoluteChildren(
+  authorChildren: LayoutChildNode[],
+  parentFrame: Frame,
+  idGenerator: IdGenerator,
+  options: Pick<ViewStyle, "padding" | "gap" | "rowGap" | "columnGap">,
+  clipRect?: ClipRect,
+  context?: LengthResolutionContext,
+  resolutionOptions?: ProjectedLayoutResolutionOptions,
+): ProjectedLayoutNode[] {
+  const flowChildren = authorChildren.filter((child) => !hasExplicitFrameInput(child));
+  const absoluteChildren = authorChildren.filter(hasExplicitFrameInput);
+  const flowNodes = compileBlockFlowChildren(
+    flowChildren,
+    parentFrame,
+    idGenerator,
+    options,
+    clipRect,
+    context,
+    resolutionOptions,
+  );
+  const absoluteNodes = absoluteChildren
+    .map((child) =>
+      compileNode(child, parentFrame, idGenerator, undefined, clipRect, context, resolutionOptions),
+    )
+    .filter((node): node is ProjectedLayoutNode => node !== null);
+
+  return sortNodesForPaint(
+    [...flowNodes, ...absoluteNodes].sort((left, right) => left.siblingOrder - right.siblingOrder),
+  );
+}
+
 function compileChildren(
   children: ReadonlyArray<LayoutInputContentNode>,
   parentFrame: Frame,
@@ -1726,43 +2457,29 @@ function compileChildren(
   }
 
   if (layout !== "stack") {
-    return sortNodesForPaint(
-      authorChildren
-        .map((child) =>
-          compileNode(
-            child,
-            parentFrame,
-            idGenerator,
-            undefined,
-            clipRect,
-            context,
-            resolutionOptions,
-          ),
-        )
-        .filter((node): node is ProjectedLayoutNode => node !== null),
+    return compileAbsoluteChildren(
+      authorChildren,
+      parentFrame,
+      idGenerator,
+      {
+        padding: options.padding,
+        gap: options.gap,
+        rowGap: options.rowGap,
+        columnGap: options.columnGap,
+      },
+      clipRect,
+      context,
+      resolutionOptions,
     );
   }
 
   const direction = options.direction ?? "vertical";
   const defaultAlignItems =
     options.alignItems ?? (options.display === "flex" ? "stretch" : undefined);
-  const mainGapEmu = resolveMainGap(
-    direction,
-    options.gap,
-    options.rowGap,
-    options.columnGap,
-    context,
-  );
-  const crossGapEmu = resolveCrossGap(
-    direction,
-    options.gap,
-    options.rowGap,
-    options.columnGap,
-    context,
-  );
   const [paddingTop, paddingRight, paddingBottom, paddingLeft] = parseSpacing(
     options.padding,
     context,
+    parentFrame.widthEmu,
   );
   const contentX = parentFrame.xEmu + paddingLeft;
   const contentY = parentFrame.yEmu + paddingTop;
@@ -1774,6 +2491,22 @@ function compileChildren(
     widthEmu: contentWidth,
     heightEmu: contentHeight,
   };
+  const mainGapEmu = resolveMainGap(
+    direction,
+    options.gap,
+    options.rowGap,
+    options.columnGap,
+    context,
+    direction === "horizontal" ? contentWidth : contentHeight,
+  );
+  const crossGapEmu = resolveCrossGap(
+    direction,
+    options.gap,
+    options.rowGap,
+    options.columnGap,
+    context,
+    direction === "horizontal" ? contentHeight : contentWidth,
+  );
   const stackEntries: Array<StackEntry<LayoutChildNode>> = authorChildren.map(
     (child, sourceIndex) => ({
       child,
@@ -1798,7 +2531,7 @@ function compileChildren(
   const lines = buildStackLines(
     flowEntries,
     direction,
-    parentFrame,
+    contentFrame,
     availableMain,
     mainGapEmu,
     options.flexWrap,
@@ -1821,7 +2554,7 @@ function compileChildren(
     const mainAllocations = resolveFlexMainAllocations(
       line,
       direction,
-      parentFrame,
+      contentFrame,
       availableMain,
       mainGapEmu,
       stackMetrics,
@@ -1847,8 +2580,12 @@ function compileChildren(
       }
 
       const { child } = entry;
-      const childCross = estimateChildCrossSize(child, direction, parentFrame, context);
-      const [marginTop, marginRight, marginBottom, marginLeft] = getNodeMargin(child, context);
+      const childCross = estimateChildCrossSize(child, direction, contentFrame, context);
+      const [marginTop, marginRight, marginBottom, marginLeft] = getNodeMargin(
+        child,
+        context,
+        contentFrame.widthEmu,
+      );
       const alignSelf = parsePlaceSelf(child.props.placeSelf).alignSelf ?? child.props.alignSelf;
       let alignment = alignSelf === "auto" ? defaultAlignItems : (alignSelf ?? defaultAlignItems);
       if (alignment === "flex-start") {
@@ -1964,7 +2701,7 @@ function compileGroupNode(
     visibleFrame,
     strokes.stroke,
     strokes.edgeStrokes,
-    parseSpacing(props.padding, context),
+    parseSpacing(props.padding, context, visibleFrame.widthEmu),
   );
   const backgroundFill = resolveBackgroundLayersOrEmpty(
     backgroundInput(props),
@@ -1983,6 +2720,7 @@ function compileGroupNode(
   );
   const clip = clippingMetadata(originalFrame, clipRect, visibleFrame);
   const unsupportedSemantics = [
+    ...unsupportedCssLayoutValueSemantics(props),
     ...unsupportedTransformSemantics(props),
     ...unsupportedTransformStackingContextSemantics(props),
     ...unsupportedCompositingSemantics(props),
@@ -2068,7 +2806,7 @@ function textStyleFromProps(
   const textDirection = resolveTextDirection(props.writingMode);
   const tabStops = resolveTabStops(props.tabStops, textLengthContext);
   const fontSizePt =
-    props.fontSize === undefined
+    props.fontSize === undefined || isCssWideKeyword(props.fontSize)
       ? undefined
       : parsePointValue(props.fontSize, 0, textLengthContext);
 
@@ -2185,6 +2923,98 @@ function clippingMetadata(
   };
 }
 
+function textFramePropsWithFallback(
+  props: NormalizedTextProps,
+  placement: Placement | undefined,
+  context?: LengthResolutionContext,
+): NormalizedTextProps {
+  let resolved = props;
+  const hasAuthoredWidth = authoredLengthOrUndefined(props.width) !== undefined;
+  const hasAuthoredHeight = authoredLengthOrUndefined(props.height) !== undefined;
+  const hasAuthoredInset = props.inset !== undefined && !hasCssWideKeywordToken(props.inset);
+  const hasAuthoredLeft = authoredLengthOrUndefined(props.left) !== undefined;
+  const hasAuthoredRight = authoredLengthOrUndefined(props.right) !== undefined;
+  const hasAuthoredTop = authoredLengthOrUndefined(props.top) !== undefined;
+  const hasAuthoredBottom = authoredLengthOrUndefined(props.bottom) !== undefined;
+  const hasAuthoredX = authoredLengthOrUndefined(props.x) !== undefined;
+
+  if (placement?.widthEmu === undefined && !hasAuthoredWidth && !hasAuthoredInset) {
+    if (!hasAuthoredRight && (hasAuthoredX || hasAuthoredLeft)) {
+      resolved = { ...resolved, right: 0 };
+    } else if (!hasAuthoredLeft && hasAuthoredRight) {
+      resolved = { ...resolved, left: 0 };
+    } else if (!hasAuthoredLeft && !hasAuthoredRight) {
+      resolved = { ...resolved, width: "100%" };
+    }
+  }
+
+  if (
+    placement?.heightEmu === undefined &&
+    !hasAuthoredHeight &&
+    !hasAuthoredInset &&
+    !(hasAuthoredTop && hasAuthoredBottom)
+  ) {
+    resolved = {
+      ...resolved,
+      height: `${resolveTextLineHeightPt(props, context)}pt`,
+    };
+  }
+
+  return resolved;
+}
+
+function usesTextLineHeightFallback(
+  props: NormalizedTextProps,
+  placement: Placement | undefined,
+): boolean {
+  const hasAuthoredHeight = authoredLengthOrUndefined(props.height) !== undefined;
+  const hasAuthoredInset = props.inset !== undefined && !hasCssWideKeywordToken(props.inset);
+  const hasAuthoredTop = authoredLengthOrUndefined(props.top) !== undefined;
+  const hasAuthoredBottom = authoredLengthOrUndefined(props.bottom) !== undefined;
+  return (
+    placement?.heightEmu === undefined &&
+    !hasAuthoredHeight &&
+    !hasAuthoredInset &&
+    !(hasAuthoredTop && hasAuthoredBottom)
+  );
+}
+
+function textMayNeedWrappedMeasurement(text: string, props: NormalizedTextProps): boolean {
+  if (!text || props.wrap === false) {
+    return false;
+  }
+
+  return text.includes("\n") || text.trim().length > 80;
+}
+
+function unsupportedWrappedTextMeasurementSemantics(input: {
+  readonly props: NormalizedTextProps;
+  readonly placement?: Placement;
+  readonly text: string;
+}): readonly ProjectedUnsupportedSemantic[] {
+  if (
+    !usesTextLineHeightFallback(input.props, input.placement) ||
+    !textMayNeedWrappedMeasurement(input.text, input.props)
+  ) {
+    return [];
+  }
+
+  const semantic = unsupportedSemantic({
+    feature: "layout",
+    property: "height",
+    value: "auto",
+    error: new Error(
+      "Exact wrapped text measurement is not part of the v0.8.2 layout subset; deckjsx uses a line-height based auto-height fallback.",
+    ),
+    fallback: {
+      strategy: "preserveAuthoredValueOnly",
+      preserves: ["availableInlineSize", "lineHeightAutoHeight"],
+      missing: ["wrappedTextMeasurement"],
+    },
+  });
+  return semantic ? [semantic] : [];
+}
+
 function compileTextNode(
   node: Extract<LayoutChildNode, { kind: "text" }>,
   parentFrame: Frame,
@@ -2195,7 +3025,8 @@ function compileTextNode(
 ): ProjectedLayoutText | null {
   const { props } = node;
   const textLengthContext = getTextLengthContext(props, context);
-  const resolved = frameFromProps(props, parentFrame, placement, textLengthContext);
+  const frameProps = textFramePropsWithFallback(props, placement, textLengthContext);
+  const resolved = frameFromProps(frameProps, parentFrame, placement, textLengthContext);
   const strokes = resolveNodeStrokesOrFallback(props, textLengthContext);
   const shadow = parseShadowShorthandOrIgnore({
     property: props.textShadow !== undefined ? "textShadow" : "boxShadow",
@@ -2210,6 +3041,7 @@ function compileTextNode(
     : undefined;
   const style = textStyleFromProps(props, textLengthContext);
   const runs = extractRichTextRuns(node.source.children, props.textTransform, textLengthContext);
+  const text = runs.map((run) => run.text).join("");
 
   const originalFrame = {
     xEmu: resolved.xEmu,
@@ -2227,7 +3059,7 @@ function compileTextNode(
     visibleFrame,
     strokes.stroke,
     strokes.edgeStrokes,
-    parseSpacing(props.padding, textLengthContext),
+    parseSpacing(props.padding, textLengthContext, visibleFrame.widthEmu),
   );
   const backgroundFill = resolveBackgroundLayersOrEmpty(
     backgroundInput(props),
@@ -2246,6 +3078,8 @@ function compileTextNode(
   );
   const clip = clippingMetadata(originalFrame, clipRect, visibleFrame);
   const unsupportedSemantics = [
+    ...unsupportedCssLayoutValueSemantics(props),
+    ...unsupportedTextLogicalLayoutSemantics(props),
     ...unsupportedTransformSemantics(props),
     ...unsupportedCompositingSemantics(props),
     ...unsupportedOpacityStackingContextSemantics(props),
@@ -2254,6 +3088,11 @@ function compileTextNode(
       rotation: resolved.rotation,
       flipH: resolved.flipH,
       flipV: resolved.flipV,
+    }),
+    ...unsupportedWrappedTextMeasurementSemantics({
+      props,
+      placement,
+      text,
     }),
     ...strokes.unsupportedSemantics,
     ...outline.unsupportedSemantics,
@@ -2276,7 +3115,7 @@ function compileTextNode(
     flipV: resolved.flipV,
     ...(unsupportedSemantics.length ? { unsupportedSemantics } : {}),
     content: {
-      text: runs.map((run) => run.text).join(""),
+      text,
       ...(runs.length > 1 || runs.some((run) => run.style) ? { runs } : {}),
     },
     style,
@@ -2302,6 +3141,7 @@ function compileImageNode(
   context?: LengthResolutionContext,
 ): ProjectedLayoutNode | null {
   const { props } = node;
+  const fit = normalizeProjectedImageFit(props.fit);
   const resolved = frameFromProps(props, parentFrame, placement, context);
   const shadow = parseShadowShorthandOrIgnore({ property: "boxShadow", value: props.boxShadow });
   const objectPosition = parseObjectPosition(props.objectPosition, {
@@ -2333,6 +3173,7 @@ function compileImageNode(
   }
   const clip = clippingMetadata(originalFrame, clipRect, visibleFrame);
   const unsupportedSemantics = [
+    ...unsupportedCssLayoutValueSemantics(props),
     ...unsupportedTransformSemantics(props),
     ...unsupportedCompositingSemantics(props),
     ...unsupportedOpacityStackingContextSemantics(props),
@@ -2347,13 +3188,14 @@ function compileImageNode(
       rotation: resolved.rotation,
       flipH: resolved.flipH,
       flipV: resolved.flipV,
-      fit: props.fit,
+      fit,
       hasExplicitCrop: crop !== undefined,
     }),
     ...unsupportedObjectPositionSemantics({
       value: props.objectPosition,
       resolved: objectPosition,
     }),
+    ...unsupportedObjectFitSemantics(props.fit),
     ...shadow.unsupportedSemantics,
   ];
 
@@ -2372,7 +3214,7 @@ function compileImageNode(
     flipH: resolved.flipH,
     flipV: resolved.flipV,
     ...(unsupportedSemantics.length ? { unsupportedSemantics } : {}),
-    fit: props.fit ?? "contain",
+    fit,
     ...(objectPosition ? { objectPosition } : {}),
     ...(crop ? { crop } : {}),
     transparency: normalizeTransparency(props.transparency),
@@ -2437,6 +3279,7 @@ function compileShapeNode(
   );
   const clip = clippingMetadata(originalFrame, clipRect, visibleFrame);
   const unsupportedSemantics = [
+    ...unsupportedCssLayoutValueSemantics(props),
     ...unsupportedTransformSemantics(props),
     ...unsupportedCompositingSemantics(props),
     ...unsupportedOpacityStackingContextSemantics(props),
@@ -2531,16 +3374,25 @@ function compileSlide(
     slideProps.backgroundOrigin,
     slideProps.backgroundClip,
   );
-  const nodes = root.children
+  const children = root.children
     .map(
       (child, siblingOrder): LayoutChildNode =>
         layoutChildFromNode(child, siblingOrder, lengthContext),
     )
-    .filter((child) => child.props.display !== "none")
-    .map((child) =>
-      compileNode(child, slideFrame, idGenerator, undefined, undefined, lengthContext),
-    )
-    .filter((node): node is ProjectedLayoutNode => node !== null);
+    .filter((child) => child.props.display !== "none");
+  const nodes = compileAbsoluteChildren(
+    children,
+    slideFrame,
+    idGenerator,
+    {
+      padding: undefined,
+      gap: undefined,
+      rowGap: undefined,
+      columnGap: undefined,
+    },
+    undefined,
+    lengthContext,
+  );
 
   return {
     id: idGenerator.nextSlide(),
@@ -2550,7 +3402,7 @@ function compileSlide(
     ...(backgroundFill.backgroundLayers
       ? { backgroundLayers: backgroundFill.backgroundLayers }
       : {}),
-    nodes: sortNodesForPaint(nodes),
+    nodes,
   };
 }
 

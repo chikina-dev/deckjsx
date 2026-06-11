@@ -191,6 +191,11 @@ For class rules, `className` token order is not the conflict priority. Selector 
 first, then stylesheet registration/rule order. Use the supported selector subset: `.class`,
 `tag.class`, compound class selectors, and descendant selectors such as `.card .caption`.
 
+Inline `span` text runs inherit text-related parent values such as `color`, `fontFamily`,
+`fontSize`, `fontWeight`, `lineHeight`, `letterSpacing`, `direction`, and wrapping controls.
+Resolved-style inspection records the inherited source, while layout projection avoids duplicating
+inherited-only run styles when the parent text box already carries the concrete PPTX text body style.
+
 Cascade is source-local. Mounted decks keep their own theme and stylesheets, which is important for
 sandboxed composition and HMR-like reuse. Do not describe cascade as generic parent-to-child CSS
 inheritance unless a specific projected behavior actually implements that inheritance.
@@ -233,12 +238,14 @@ When an `img` has probed intrinsic `width` and `height`, deckjsx derives the mis
 from that natural ratio unless the author supplied `aspectRatio`. Good default patterns are
 `style={{ width: 4 }}` for natural-aspect images, a fixed `width` / `height` plus
 `objectFit: "cover"` for media boxes, and `style={{ width: 4, aspectRatio: "16 / 9" }}` for
-non-image placeholders or deliberate overrides.
+non-image placeholders or deliberate overrides. `aspectRatio: "auto"` means no authored ratio.
 
 Use `objectFit` / `fit`, `objectPosition`, and `crop` for foreground `img` elements. Use
 `background`, `backgroundSize`, `backgroundPosition`, `backgroundRepeat`, `backgroundClip`, and
 `backgroundOrigin` for decorative or underlay images on view-like boxes. Do not mix the two
-vocabularies in examples unless the comparison is intentional.
+vocabularies in examples unless the comparison is intentional. `objectFit: "fill"` is accepted as
+the CSS spelling for deckjsx's `stretch` projection. Unsupported CSS values such as `"none"` and
+`"scale-down"` are diagnostics with a `contain` fallback until natural-size projection is modeled.
 
 ## Slide Templates
 
@@ -273,24 +280,34 @@ deck.slide({ template: "report" }, ({ template }) => (
 
 deckjsx is HTML/CSS-like, but v0.8 is a slide layout solver rather than a browser engine.
 
-- `display: "block"` is a local containing block in v0.8.x. It does not create browser-like
-  vertical block flow, so unsized/unpositioned children can overlap. Use flex/grid with `gap`,
-  templates, or explicit `x`/`y` for composition.
+- `display: "block"` creates a local containing block and vertically flows unpositioned children.
+  Explicit frame props such as `x`, `y`, `left`, or `top` still opt into local absolute placement.
 - `display: "flex"` defaults to CSS-like row direction and cross-axis stretch. The deck-specific
   `layout: "stack"` default remains vertical.
-- Frames are zero-sized unless explicit `width` / `height`, insets, flex/grid stretch, or image
-  intrinsic ratio supplies a size. Give text boxes a projected width and height unless a layout mode
-  stretches them.
+- Block-flow text gets the available width and a line-height based height. Explicit/local absolute
+  boxes still need `width` / `height`, insets, flex/grid stretch, or image intrinsic ratio when they
+  are not participating in block flow.
 - Stack and grid use declared sizes and ratios; they do not measure wrapped text and push later
   siblings. Use declared heights and `fit: "shrink"` for text-heavy slides.
 - Numeric layout lengths are inches. Font-size-like numbers are points. Numeric `lineHeight` is a
-  multiplier, not points.
+  multiplier, not points. CSS-like strings support common units such as `cm`, `mm`, `Q`, `pc`,
+  `vmin`, and `vmax` in addition to earlier `in`, `pt`, `px`, `%`, `em`, `rem`, `vh`, `vw`, and
+  `ch` support.
+- CSS-wide keywords (`initial`, `inherit`, `unset`, `revert`, and `revert-layer`) fall back to the
+  supported-subset default behavior with diagnostics where full CSS cascade/reset semantics are
+  missing.
+- Unsupported CSS-like style property names produce nonblocking compile warnings and remain visible
+  in graph inspection. Expect warnings for `flex`, `flexFlow`, logical spacing/sizing aliases, and
+  richer CSS properties that deckjsx has not modeled yet.
 - `letterSpacing` accepts `normal`, numbers as points, and CSS-like point lengths such as `px`,
   `pt`, `em`, and `rem`.
 - `paragraphSpacingBefore` and `paragraphSpacingAfter` accept numbers as points and CSS-like point
   lengths such as `px`, `pt`, `em`, and `rem`.
 - Single-value `borderRadius` accepts percentages against the projected short side, so
   `borderRadius: "50%"` is the capsule-style spelling.
+- One `boxShadow` / `textShadow` layer projects offset, blur, and color. CSS spread radius is
+  preserved as unsupported fallback metadata because the current PPTX shadow model does not render
+  spread geometry.
 - Containers, text, and shapes default to `boxSizing: "border-box"` for slide geometry. Shapes are
   visible white-filled PPTX primitives unless styled.
 - Grid defaults fill the available grid content frame rather than behaving like browser implicit

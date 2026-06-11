@@ -64,6 +64,7 @@ const UNSUPPORTED_SEMANTIC_FEATURES = [
   "filter",
   "image",
   "isolation",
+  "layout",
   "outline",
   "opacity",
   "shadow",
