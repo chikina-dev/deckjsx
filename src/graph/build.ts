@@ -12,7 +12,15 @@ import type {
 import type { ImageNodeProps } from "../authoring/props";
 import type { ComposedAuthorRoot, SourceSlotOrigin } from "../composition/types";
 import { createDiagnostics, diagnostic, type Diagnostic, type Diagnostics } from "../diagnostics";
-import type { StyleDeclaration } from "../style/types";
+import {
+  IMAGE_STYLE_KEYS,
+  SHAPE_STYLE_KEYS,
+  SLIDE_STYLE_KEYS,
+  TEXT_RUN_STYLE_KEYS,
+  TEXT_STYLE_KEYS,
+  VIEW_STYLE_KEYS,
+  type StyleDeclaration,
+} from "../style/types";
 import { isTemplateAreaRef, templateRefValue, type SlideTemplateSet } from "../templates";
 import { assetEntityId, graphNodeId, styleEntityId } from "./identity";
 import { semanticKindForTag, semanticRoleForTag } from "./roles";
@@ -115,6 +123,31 @@ function supportedPropNamesFor(node: AuthorElementNode): ReadonlySet<string> {
       return new Set(["className", "style", "area", "shape"]);
     default:
       return new Set(["className", "style", "area"]);
+  }
+}
+
+function supportedStyleNamesFor(node: AuthorElementNode): ReadonlySet<string> {
+  if (node.source.kind === "slide") {
+    return new Set(SLIDE_STYLE_KEYS);
+  }
+
+  switch (node.source.tag) {
+    case "span":
+      return new Set(TEXT_RUN_STYLE_KEYS);
+    case "img":
+      return new Set(IMAGE_STYLE_KEYS);
+    case "shape":
+      return new Set(SHAPE_STYLE_KEYS);
+    case "p":
+    case "h1":
+    case "h2":
+    case "h3":
+    case "h4":
+    case "h5":
+    case "h6":
+      return new Set(TEXT_STYLE_KEYS);
+    default:
+      return new Set(VIEW_STYLE_KEYS);
   }
 }
 
@@ -256,6 +289,28 @@ function authoringPropDiagnostic(input: {
   });
 }
 
+function unsupportedStylePropDiagnostic(input: {
+  path: string;
+  property: string;
+  tag: string;
+}): Diagnostic {
+  return diagnostic({
+    severity: "warning",
+    code: "W_COMPILE_UNSUPPORTED_STYLE_PROP",
+    title: "unsupported style property",
+    message: `Style property "${input.property}" is not supported by the deckjsx CSS-like style subset for ${input.tag}.`,
+    labels: [
+      {
+        path: input.path,
+        message: `${input.property} is outside the supported deckjsx style property subset.`,
+      },
+    ],
+    help: [
+      "Use a supported deckjsx style key, or keep this value in your own data layer until deckjsx adds that CSS property.",
+    ],
+  });
+}
+
 function validateAuthoringProps(state: BuildState, node: AuthorElementNode, path: string): void {
   const supported = supportedPropNamesFor(node);
   const propPath = node.source.kind === "slide" ? `${path}.options` : `${path}.props`;
@@ -286,6 +341,25 @@ function validateAuthoringProps(state: BuildState, node: AuthorElementNode, path
           message: "The style prop must be an object when it is provided.",
         }),
       );
+    }
+
+    if (isRecord(style)) {
+      const supportedStyleNames = supportedStyleNamesFor(node);
+      const tag = sourceName(node);
+      Object.keys(style).forEach((key) => {
+        if (supportedStyleNames.has(key)) {
+          return;
+        }
+
+        addDiagnostic(
+          state,
+          unsupportedStylePropDiagnostic({
+            path: `${propPath}.style.${key}`,
+            property: key,
+            tag,
+          }),
+        );
+      });
     }
   }
 

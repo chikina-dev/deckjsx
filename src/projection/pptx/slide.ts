@@ -227,6 +227,41 @@ function parseImageCrop(
   };
 }
 
+function normalizeProjectedImageFit(value: unknown): "contain" | "cover" | "stretch" {
+  if (value === "cover" || value === "contain" || value === "stretch" || value === "fill") {
+    return value === "fill" ? "stretch" : value;
+  }
+
+  return "contain";
+}
+
+function unsupportedObjectFitSemantics(value: unknown): readonly PptxUnsupportedSemantic[] {
+  if (
+    value === undefined ||
+    value === "cover" ||
+    value === "contain" ||
+    value === "stretch" ||
+    value === "fill"
+  ) {
+    return [];
+  }
+
+  return [
+    {
+      feature: "image",
+      property: "objectFit",
+      value: typeof value === "string" ? value : JSON.stringify(value),
+      reason:
+        "CSS object-fit values none and scale-down require natural-size comparison that is outside the current deckjsx v0.8.2 image projection subset.",
+      fallback: {
+        strategy: "preserveAuthoredValueOnly",
+        preserves: ["authoredObjectFit"],
+        missing: ["cssObjectFitNaturalSize"],
+      },
+    },
+  ];
+}
+
 function parseObjectPositionValue(
   objectPosition: string | undefined,
   frame: { widthEmu: number; heightEmu: number },
@@ -848,6 +883,7 @@ function compileImage(
 
   const resolved = frameFromProps(props, parentFrame, undefined, context);
   const frame = frameToFrameIR(resolved);
+  const fit = normalizeProjectedImageFit(props.fit);
   const shadowResult = parseShadowSafely({ property: "boxShadow", value: props.boxShadow });
   const hyperlink = props.href
     ? {
@@ -866,6 +902,7 @@ function compileImage(
       ...unsupportedTransformSemantics(props),
       ...unsupportedCompositingSemantics(props),
       ...unsupportedOpacityStackingContextSemantics(props),
+      ...unsupportedObjectFitSemantics(props.fit),
       ...shadowResult.unsupportedSemantics,
     ],
   });
@@ -876,7 +913,7 @@ function compileImage(
     mediaPartId: mediaPartIdForElement(base.id),
     sourceFrame: frame,
     source: assetSource(asset),
-    fit: props.fit ?? "contain",
+    fit,
     objectPosition: parseObjectPositionValue(props.objectPosition, frame),
     ...(parseImageCrop(props.crop) ? { crop: parseImageCrop(props.crop) } : {}),
     transparency: props.transparency,

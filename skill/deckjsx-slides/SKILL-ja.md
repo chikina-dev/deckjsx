@@ -170,6 +170,11 @@ deckjsx は HTML/CSS-like なので layout property も `style` に書きます�
 
 class rule では `className` token order は conflict priority ではありません。まず selector specificity が勝ち、次に stylesheet registration / rule order が効きます。使う selector は `.class`、`tag.class`、compound class selector、`.card .caption` のような descendant selector の範囲に留めます。
 
+inline `span` の text run は、親 text の `color`、`fontFamily`、`fontSize`、`fontWeight`、
+`lineHeight`、`letterSpacing`、`direction`、wrap 系 control などの text-related value を継承します。
+resolved-style inspection では inherited source が見えますが、layout projection では親 text box が
+具体的な PPTX text body style を持っている場合、inherited-only の run style を重複して焼き増ししません。
+
 cascade は source-local です。mounted deck は自分の theme と stylesheet で解決されるため、sandbox 的な composition や HMR 的な再利用が予測しやすくなります。実際に projection がその継承を実装している場合を除き、cascade を一般的な parent-to-child CSS inheritance として説明しないでください。
 
 ## Assets
@@ -206,11 +211,15 @@ Project は `probe()` を使って dimensions と media metadata を projected m
 いなければ、その自然比から不足している投影軸を補います。自然比で置きたい画像は
 `style={{ width: 4 }}`、固定枠に切り抜きたい画像は `width` / `height` と
 `objectFit: "cover"`、画像ではない placeholder や意図的な上書きは
-`style={{ width: 4, aspectRatio: "16 / 9" }}` を使います。
+`style={{ width: 4, aspectRatio: "16 / 9" }}` を使います。`aspectRatio: "auto"` は
+authored ratio なしという CSS-like な指定として扱います。
 
 前景の `img` には `objectFit` / `fit`、`objectPosition`、`crop` を使います。装飾や下敷きの画像は
 view-like box の `background`、`backgroundSize`、`backgroundPosition`、`backgroundRepeat`、
 `backgroundClip`、`backgroundOrigin` で扱います。比較が目的でない限り、この2つの語彙を例の中で混ぜないでください。
+`objectFit: "fill"` は deckjsx の `stretch` projection に対する CSS spelling として受けます。
+`"none"` や `"scale-down"` のような未対応の CSS 値は、自然サイズ projection を実装するまでは
+diagnostics に残して `contain` fallback にします。
 
 ## Slide Templates
 
@@ -243,14 +252,17 @@ deck.slide({ template: "report" }, ({ template }) => (
 
 deckjsx は HTML/CSS-like ですが、v0.8 はブラウザエンジンではなくスライド用の layout solver です。
 
-- `display: "block"` は v0.8.x では local containing block です。browser-like な縦の block flow は作らないため、サイズや位置のない子要素は重なることがあります。composition には flex/grid と `gap`、template、または明示的な `x` / `y` を使います。
+- `display: "block"` は local containing block を作り、position/座標指定のない子要素を縦に flow します。`x`、`y`、`left`、`top` などの明示 frame prop は local absolute placement への opt-in として扱います。
 - `display: "flex"` は CSS-like に row direction と cross-axis stretch を default にします。deck 固有の `layout: "stack"` default は vertical のままです。
-- frame は明示的な `width` / `height`、inset、flex/grid stretch、または画像の自然比がない限り zero-size です。layout mode が stretch しない text box には projected width と height を与えます。
+- block-flow の text は利用可能な幅と line-height based の高さを得ます。block flow に参加しない explicit/local absolute box には、明示的な `width` / `height`、inset、flex/grid stretch、または画像の自然比が必要です。
 - stack/grid は宣言済みのサイズと比率を使います。wrapped text を測って後続要素を押し下げるわけではありません。text-heavy なスライドでは宣言済み height と `fit: "shrink"` を使います。
-- numeric layout length は inches、font-size-like な数値は points です。numeric `lineHeight` は points ではなく multiplier です。
+- numeric layout length は inches、font-size-like な数値は points です。numeric `lineHeight` は points ではなく multiplier です。CSS-like string は従来の `in`、`pt`、`px`、`%`、`em`、`rem`、`vh`、`vw`、`ch` に加えて、`cm`、`mm`、`Q`、`pc`、`vmin`、`vmax` も受けます。
+- CSS-wide keyword (`initial`、`inherit`、`unset`、`revert`、`revert-layer`) は、full CSS cascade/reset semantics が未実装の箇所では supported subset の default behavior に fallback し、diagnostics に残ります。
+- 未対応の CSS-like style property name は nonblocking compile warning になり、graph inspection では authored style として確認できます。`flex`、`flexFlow`、logical spacing/sizing alias、deckjsx がまだ model 化していない CSS property では warning が出る想定です。
 - `letterSpacing` は `normal`、points としての数値、`px` / `pt` / `em` / `rem` などの CSS-like point length を受けます。
 - `paragraphSpacingBefore` / `paragraphSpacingAfter` は points としての数値と、`px` / `pt` / `em` / `rem` などの CSS-like point length を受けます。
 - single-value の `borderRadius` は projected short side 基準の percentage を受けます。capsule 風にしたい場合は `borderRadius: "50%"` を使います。
+- `boxShadow` / `textShadow` は1 layer の offset、blur、color を投影します。CSS spread radius は現在の PPTX shadow model では再現できないため、unsupported fallback metadata として保存されます。
 - container、text、shape は slide geometry のため `boxSizing: "border-box"` default です。shape は style しなければ白塗りの PPTX primitive として見えます。
 - grid default は browser の implicit `auto` track ではなく、利用可能な grid content frame を埋めます。精密なレイアウトでは tracks を明示します。
 - `zIndex` は projected paint order であり、full CSS stacking context ではありません。

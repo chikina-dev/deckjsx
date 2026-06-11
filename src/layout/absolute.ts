@@ -1,5 +1,11 @@
-import type { CssAspectRatio, CssBoxSizing, DeckLength, Spacing } from "../style/types";
-import { parseLength, type LengthResolutionContext } from "../style/length";
+import type {
+  CssAspectRatio,
+  CssBoxSizing,
+  CssPosition,
+  DeckLength,
+  Spacing,
+} from "../style/types";
+import { isCssWideKeyword, parseLength, type LengthResolutionContext } from "../style/length";
 import {
   applyAffineMatrix,
   matrixTranslatePxToEmu,
@@ -21,7 +27,11 @@ export function parseAspectRatio(value: CssAspectRatio | undefined): number | un
     return value > 0 ? value : undefined;
   }
 
-  const normalized = value.replace(/\s+/g, "");
+  const normalized = value.replace(/\s+/g, "").toLowerCase();
+  if (normalized === "auto") {
+    return undefined;
+  }
+
   if (!normalized.includes("/")) {
     const parsed = Number.parseFloat(normalized);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
@@ -71,6 +81,21 @@ export function inflateSpecifiedBoxSize(
   return valueEmu + (dimension === "width" ? padding[1] + padding[3] : padding[0] + padding[2]);
 }
 
+function nonAutoLength(value: DeckLength | undefined): DeckLength | undefined {
+  if (
+    typeof value === "string" &&
+    (value.trim().toLowerCase() === "auto" || isCssWideKeyword(value))
+  ) {
+    return undefined;
+  }
+
+  return value;
+}
+
+function specifiedLength(value: DeckLength | undefined): DeckLength | undefined {
+  return nonAutoLength(value);
+}
+
 export function frameFromProps(
   props: {
     x?: DeckLength;
@@ -89,6 +114,7 @@ export function frameFromProps(
     minHeight?: DeckLength;
     maxWidth?: DeckLength;
     maxHeight?: DeckLength;
+    position?: CssPosition;
     opacity?: number;
     rotation?: number;
     transform?: string;
@@ -103,12 +129,19 @@ export function frameFromProps(
 ) {
   const transform = parseTransformShorthandOrIgnore(props.transform);
   const resolvedInset = resolveInset(props.inset, props.top, props.right, props.bottom, props.left);
-  const resolvedX = props.x ?? resolvedInset?.left;
-  const resolvedY = props.y ?? resolvedInset?.top;
-  const resolvedRight = resolvedInset?.right;
-  const resolvedBottom = resolvedInset?.bottom;
+  const isRelativePosition = props.position === "relative";
+  const relativeLeft = nonAutoLength(props.x ?? resolvedInset?.left);
+  const relativeTop = nonAutoLength(props.y ?? resolvedInset?.top);
+  const relativeRight = nonAutoLength(resolvedInset?.right);
+  const relativeBottom = nonAutoLength(resolvedInset?.bottom);
+  const specifiedWidth = specifiedLength(props.width);
+  const specifiedHeight = specifiedLength(props.height);
+  const resolvedX = isRelativePosition ? undefined : relativeLeft;
+  const resolvedY = isRelativePosition ? undefined : relativeTop;
+  const resolvedRight = isRelativePosition ? undefined : relativeRight;
+  const resolvedBottom = isRelativePosition ? undefined : relativeBottom;
   const aspectRatio = parseAspectRatio(props.aspectRatio);
-  const padding = parseSpacing(props.padding, context);
+  const padding = parseSpacing(props.padding, context, parent.widthEmu);
   const boxSizing = props.boxSizing ?? "border-box";
   const minWidthEmu = parseLength(props.minWidth, parent.widthEmu, 0, context);
   const minHeightEmu = parseLength(props.minHeight, parent.heightEmu, 0, context);
@@ -130,8 +163,8 @@ export function frameFromProps(
 
   const baseWidth =
     placement?.widthEmu ??
-    (props.width !== undefined
-      ? parseLength(props.width, parent.widthEmu, 0, context)
+    (specifiedWidth !== undefined
+      ? parseLength(specifiedWidth, parent.widthEmu, 0, context)
       : resolvedX !== undefined && resolvedRight !== undefined
         ? Math.max(
             parent.widthEmu -
@@ -142,8 +175,8 @@ export function frameFromProps(
         : 0);
   const baseHeight =
     placement?.heightEmu ??
-    (props.height !== undefined
-      ? parseLength(props.height, parent.heightEmu, 0, context)
+    (specifiedHeight !== undefined
+      ? parseLength(specifiedHeight, parent.heightEmu, 0, context)
       : resolvedY !== undefined && resolvedBottom !== undefined
         ? Math.max(
             parent.heightEmu -
@@ -163,11 +196,11 @@ export function frameFromProps(
   const clampedWidth = clampSize(aspectResolvedWidth, minWidthEmu, maxWidthEmu);
   const clampedHeight = clampSize(aspectResolvedHeight, minHeightEmu, maxHeightEmu);
   const widthUsesSpecifiedBox =
-    props.width !== undefined ||
-    (props.height !== undefined && aspectRatio !== undefined && baseWidth === 0);
+    specifiedWidth !== undefined ||
+    (specifiedHeight !== undefined && aspectRatio !== undefined && baseWidth === 0);
   const heightUsesSpecifiedBox =
-    props.height !== undefined ||
-    (props.width !== undefined && aspectRatio !== undefined && baseHeight === 0);
+    specifiedHeight !== undefined ||
+    (specifiedWidth !== undefined && aspectRatio !== undefined && baseHeight === 0);
   const resolvedWidth =
     placement?.widthEmu !== undefined || !widthUsesSpecifiedBox
       ? clampedWidth
@@ -199,8 +232,21 @@ export function frameFromProps(
           resolvedHeight
         : parent.yEmu;
 
-  let transformedX = placement?.xEmu ?? absoluteX;
-  let transformedY = placement?.yEmu ?? absoluteY;
+  const relativeOffsetX =
+    isRelativePosition && relativeLeft !== undefined
+      ? parseLength(relativeLeft, parent.widthEmu, 0, context)
+      : isRelativePosition && relativeRight !== undefined
+        ? -parseLength(relativeRight, parent.widthEmu, 0, context)
+        : 0;
+  const relativeOffsetY =
+    isRelativePosition && relativeTop !== undefined
+      ? parseLength(relativeTop, parent.heightEmu, 0, context)
+      : isRelativePosition && relativeBottom !== undefined
+        ? -parseLength(relativeBottom, parent.heightEmu, 0, context)
+        : 0;
+
+  let transformedX = (placement?.xEmu ?? absoluteX) + relativeOffsetX;
+  let transformedY = (placement?.yEmu ?? absoluteY) + relativeOffsetY;
   let transformedWidth = resolvedWidth;
   let transformedHeight = resolvedHeight;
   let transformRotation = 0;

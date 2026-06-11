@@ -123,10 +123,11 @@ export function resolveMainGap(
   rowGap: DeckLength | undefined,
   columnGap: DeckLength | undefined,
   context?: LengthResolutionContext,
+  percentageBaseEmu = 0,
 ) {
   return parseLength(
     direction === "horizontal" ? (columnGap ?? gap ?? rowGap) : (rowGap ?? gap ?? columnGap),
-    0,
+    percentageBaseEmu,
     0,
     context,
   );
@@ -138,10 +139,11 @@ export function resolveCrossGap(
   rowGap: DeckLength | undefined,
   columnGap: DeckLength | undefined,
   context?: LengthResolutionContext,
+  percentageBaseEmu = 0,
 ) {
   return parseLength(
     direction === "horizontal" ? (rowGap ?? gap ?? columnGap) : (columnGap ?? gap ?? rowGap),
-    0,
+    percentageBaseEmu,
     0,
     context,
   );

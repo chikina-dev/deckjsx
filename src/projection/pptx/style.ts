@@ -37,7 +37,7 @@ import type {
   ResolvedStyleDeclaration,
   ResolvedStyleMap,
 } from "../../style/resolve";
-import { parseShadowShorthand } from "../../style/shadow";
+import { hasShadowSpreadRadius, parseShadowShorthand } from "../../style/shadow";
 import {
   parseOutlineShorthand,
   parseStrokeLineCap,
@@ -222,9 +222,25 @@ export function parseShadowSafely(input: { property: string; value: string | und
   readonly unsupportedSemantics: readonly PptxUnsupportedSemantic[];
 } {
   try {
+    const shadow = parseShadowShorthand(input.value);
+    const unsupported = hasShadowSpreadRadius(input.value)
+      ? unsupportedSemantic({
+          feature: "shadow",
+          property: input.property,
+          value: input.value,
+          error: new Error(
+            `CSS shadow spread radius is not projected by the current PPTX shadow model: ${input.value}`,
+          ),
+          fallback: {
+            strategy: "preserveAuthoredValueOnly",
+            preserves: ["projectedShadowWithoutSpread"],
+            missing: ["cssShadowSpreadRadius"],
+          },
+        })
+      : undefined;
     return {
-      shadow: parseShadowShorthand(input.value),
-      unsupportedSemantics: [],
+      shadow,
+      unsupportedSemantics: unsupported ? [unsupported] : [],
     };
   } catch (error) {
     const unsupported = unsupportedSemantic({

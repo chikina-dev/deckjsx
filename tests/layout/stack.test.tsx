@@ -126,6 +126,65 @@ describe("stack layout", () => {
     ]);
   });
 
+  test("render resolves percentage padding margins and gaps in flex layout", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Flex percentage spacing" }, () => (
+      <div
+        style={{
+          x: 1,
+          y: 1,
+          width: 6,
+          height: 2,
+          display: "flex",
+          padding: "10%",
+          columnGap: "10%",
+        }}
+      >
+        <p style={{ width: 1, fontSize: 18 }}>A</p>
+        <p style={{ width: 1, fontSize: 18 }}>B</p>
+      </div>
+    ));
+
+    expect(
+      summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+    ).toEqual([
+      {
+        kind: "group",
+        frame: {
+          xEmu: 1 * EMU_PER_INCH,
+          yEmu: 1 * EMU_PER_INCH,
+          widthEmu: 6 * EMU_PER_INCH,
+          heightEmu: 2 * EMU_PER_INCH,
+        },
+        children: [
+          {
+            kind: "text",
+            frame: {
+              xEmu: 1.6 * EMU_PER_INCH,
+              yEmu: 1.6 * EMU_PER_INCH,
+              widthEmu: 1 * EMU_PER_INCH,
+              heightEmu: 0.8 * EMU_PER_INCH,
+            },
+            text: "A",
+            fontSizePt: 18,
+          },
+          {
+            kind: "text",
+            frame: {
+              xEmu: 3.08 * EMU_PER_INCH,
+              yEmu: 1.6 * EMU_PER_INCH,
+              widthEmu: 1 * EMU_PER_INCH,
+              heightEmu: 0.8 * EMU_PER_INCH,
+            },
+            text: "B",
+            fontSizePt: 18,
+          },
+        ],
+      },
+    ]);
+  });
+
   test("render resolves stack layout to absolute frames in the IR", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
@@ -182,6 +241,66 @@ describe("stack layout", () => {
             },
             text: "Second",
             fontSizePt: 20,
+          },
+        ],
+      },
+    ]);
+  });
+
+  test("render offsets relative positioned flex children without changing sibling flow", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Relative flex flow" }, () => (
+      <div
+        style={{
+          x: 1,
+          y: 1,
+          width: 5,
+          height: 2,
+          display: "flex",
+          flexDirection: "row",
+          columnGap: 0.25,
+          padding: 0.5,
+        }}
+      >
+        <p style={{ position: "relative", left: 0.25, top: 0.1, width: 1, fontSize: 18 }}>Offset</p>
+        <p style={{ width: 1, fontSize: 18 }}>Next</p>
+      </div>
+    ));
+
+    expect(
+      summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+    ).toEqual([
+      {
+        kind: "group",
+        frame: {
+          xEmu: 1 * EMU_PER_INCH,
+          yEmu: 1 * EMU_PER_INCH,
+          widthEmu: 5 * EMU_PER_INCH,
+          heightEmu: 2 * EMU_PER_INCH,
+        },
+        children: [
+          {
+            kind: "text",
+            frame: {
+              xEmu: 1.75 * EMU_PER_INCH,
+              yEmu: 1.6 * EMU_PER_INCH,
+              widthEmu: 1 * EMU_PER_INCH,
+              heightEmu: 1 * EMU_PER_INCH,
+            },
+            text: "Offset",
+            fontSizePt: 18,
+          },
+          {
+            kind: "text",
+            frame: {
+              xEmu: 2.75 * EMU_PER_INCH,
+              yEmu: 1.5 * EMU_PER_INCH,
+              widthEmu: 1 * EMU_PER_INCH,
+              heightEmu: 1 * EMU_PER_INCH,
+            },
+            text: "Next",
+            fontSizePt: 18,
           },
         ],
       },
@@ -605,5 +724,96 @@ describe("stack layout", () => {
         ],
       },
     ]);
+  });
+
+  test("render records unsupported flex and alignment css keywords", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Unsupported flex CSS keywords" }, () => (
+      <div
+        style={{
+          x: 1,
+          y: 1,
+          width: 4,
+          height: 2,
+          display: "flex",
+          flexDirection: "row-reverse" as never,
+          flexWrap: "wrap-reverse" as never,
+          justifyContent: "safe center" as never,
+          alignItems: "first baseline" as never,
+        }}
+      >
+        <p style={{ width: 1, fontSize: 18 }}>A</p>
+      </div>
+    ));
+
+    const project = await deck.project();
+    const [group] = project.projection!.slides[0].payload.drawing.children;
+
+    expect(project.ok).toBe(true);
+    expect(group?.unsupportedSemantics).toContainEqual(
+      expect.objectContaining({
+        feature: "layout",
+        property: "flexDirection",
+        value: "row-reverse",
+      }),
+    );
+    expect(group?.unsupportedSemantics).toContainEqual(
+      expect.objectContaining({
+        feature: "layout",
+        property: "flexWrap",
+        value: "wrap-reverse",
+      }),
+    );
+    expect(group?.unsupportedSemantics).toContainEqual(
+      expect.objectContaining({
+        feature: "layout",
+        property: "justifyContent",
+        value: "safe center",
+      }),
+    );
+    expect(group?.unsupportedSemantics).toContainEqual(
+      expect.objectContaining({
+        feature: "layout",
+        property: "alignItems",
+        value: "first baseline",
+      }),
+    );
+  });
+
+  test("render records auto margin fallback instead of failing spacing parsing", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Auto margin fallback" }, () => (
+      <div
+        style={{
+          x: 1,
+          y: 1,
+          width: 4,
+          height: 2,
+          display: "flex",
+          flexDirection: "row",
+        }}
+      >
+        <p style={{ width: 1, height: 0.5, margin: "0 auto" as never, fontSize: 18 }}>Auto</p>
+      </div>
+    ));
+
+    const project = await deck.project();
+    const [group] = project.projection!.slides[0].payload.drawing.children;
+    const [text] = group?.kind === "group" ? group.children : [];
+
+    expect(project.ok).toBe(true);
+    expect(text?.unsupportedSemantics).toContainEqual(
+      expect.objectContaining({
+        feature: "layout",
+        property: "margin",
+        value: JSON.stringify(["0", "auto", "0", "auto"]),
+        fallback: expect.objectContaining({
+          strategy: "preserveAuthoredValueOnly",
+          missing: expect.arrayContaining(["cssAutoMarginResolution"]),
+        }),
+      }),
+    );
   });
 });

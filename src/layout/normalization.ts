@@ -7,6 +7,7 @@ import type {
   CssJustifyContent,
   CssJustifySelf,
   DeckLength,
+  ImageFit,
   ImageStyle,
   ShapeStyle,
   SlideStyle,
@@ -141,6 +142,14 @@ function resolveGap(
   }
 
   return rowGap ?? columnGap;
+}
+
+function normalizeImageFit(value: ImageFit | undefined): ImageFit | undefined {
+  if (value === "fill") {
+    return "stretch";
+  }
+
+  return value;
 }
 
 function isCssAlignSelf(value: string): value is CssAlignSelf {
@@ -428,7 +437,7 @@ export function normalizeImageProps(
     right: inset?.right ?? resolved.right,
     bottom: inset?.bottom ?? resolved.bottom,
     left: inset?.left ?? resolved.left,
-    fit: resolved.fit ?? resolved.objectFit,
+    fit: normalizeImageFit(resolved.fit ?? resolved.objectFit),
     objectPosition: resolved.objectPosition,
     crop: resolved.crop,
     rounding:

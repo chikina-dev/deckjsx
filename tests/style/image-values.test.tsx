@@ -89,4 +89,64 @@ describe("image-values", () => {
       }),
     );
   });
+
+  test("render treats css objectFit fill as stretch", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Object fit fill" }, () => (
+      <img
+        data={WIDE_SVG_DATA_URI}
+        style={{
+          x: 1,
+          y: 1,
+          width: 2,
+          height: 1,
+          objectFit: "fill",
+        }}
+      />
+    ));
+
+    const [imageNode] = (await deck.project()).projection!.slides[0].payload.drawing.children;
+
+    expect(imageNode?.kind).toBe("image");
+    if (imageNode?.kind !== "image") {
+      throw new Error("Expected image node.");
+    }
+    expect(imageNode.fit).toBe("stretch");
+  });
+
+  test("render reports unsupported css objectFit values with a safe fallback", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Object fit unsupported" }, () => (
+      <img
+        data={WIDE_SVG_DATA_URI}
+        style={
+          {
+            x: 1,
+            y: 1,
+            width: 2,
+            height: 1,
+            objectFit: "none",
+          } as never
+        }
+      />
+    ));
+
+    const [imageNode] = (await deck.project()).projection!.slides[0].payload.drawing.children;
+
+    expect(imageNode?.kind).toBe("image");
+    if (imageNode?.kind !== "image") {
+      throw new Error("Expected image node.");
+    }
+    expect(imageNode.fit).toBe("contain");
+    expect(imageNode.unsupportedSemantics).toContainEqual(
+      expect.objectContaining({
+        feature: "image",
+        property: "objectFit",
+        value: "none",
+        fallback: expect.objectContaining({ strategy: "preserveAuthoredValueOnly" }),
+      }),
+    );
+  });
 });

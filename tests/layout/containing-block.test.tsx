@@ -123,7 +123,7 @@ describe(" containing blocks", () => {
             frame: {
               xEmu: toRoundedEmu(1.1),
               yEmu: toRoundedEmu(4.35),
-              widthEmu: toEmu(1.8),
+              widthEmu: toEmu(1.74),
               heightEmu: toEmu(0.32),
             },
             text: "30%",
@@ -132,9 +132,9 @@ describe(" containing blocks", () => {
           {
             kind: "text",
             frame: {
-              xEmu: toEmu(3),
+              xEmu: toEmu(2.94),
               yEmu: toRoundedEmu(4.35),
-              widthEmu: toEmu(2.7),
+              widthEmu: toEmu(2.76),
               heightEmu: toEmu(0.32),
             },
             text: "grow",

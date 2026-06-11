@@ -159,6 +159,68 @@ describe("grid layout", () => {
     ]);
   });
 
+  test("render resolves percentage padding and gaps in grid layout", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Grid percentage spacing" }, () => (
+      <div
+        style={{
+          x: 1,
+          y: 1,
+          width: 8,
+          height: 4,
+          display: "grid",
+          padding: "10%",
+          columnGap: "10%",
+          rowGap: "10%",
+          gridTemplateColumns: "1fr 1fr",
+          gridTemplateRows: "1fr 1fr",
+        }}
+      >
+        <p style={{ gridColumn: 1, gridRow: 1, fontSize: 18 }}>One</p>
+        <p style={{ gridColumn: 2, gridRow: 2, fontSize: 18 }}>Two</p>
+      </div>
+    ));
+
+    expect(
+      summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+    ).toEqual([
+      {
+        kind: "group",
+        frame: {
+          xEmu: 1 * EMU_PER_INCH,
+          yEmu: 1 * EMU_PER_INCH,
+          widthEmu: 8 * EMU_PER_INCH,
+          heightEmu: 4 * EMU_PER_INCH,
+        },
+        children: [
+          {
+            kind: "text",
+            frame: {
+              xEmu: 1.8 * EMU_PER_INCH,
+              yEmu: 1.8 * EMU_PER_INCH,
+              widthEmu: 2.88 * EMU_PER_INCH,
+              heightEmu: (27 * EMU_PER_INCH) / 25,
+            },
+            text: "One",
+            fontSizePt: 18,
+          },
+          {
+            kind: "text",
+            frame: {
+              xEmu: 5.32 * EMU_PER_INCH,
+              yEmu: 3.12 * EMU_PER_INCH,
+              widthEmu: 2.88 * EMU_PER_INCH,
+              heightEmu: (27 * EMU_PER_INCH) / 25,
+            },
+            text: "Two",
+            fontSizePt: 18,
+          },
+        ],
+      },
+    ]);
+  });
+
   test("render supports grid repeat templates and placeContent", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
@@ -1822,5 +1884,63 @@ describe("grid layout", () => {
         ],
       },
     ]);
+  });
+
+  test("render records unsupported css grid line placement values", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Unsupported grid line placement" }, () => (
+      <div
+        style={{
+          x: 1,
+          y: 1,
+          width: 4,
+          height: 2,
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gridTemplateRows: "1fr 1fr",
+        }}
+      >
+        <p
+          style={{
+            gridColumn: "content-start / content-end" as never,
+            gridRowStart: -1 as never,
+            fontSize: 18,
+          }}
+        >
+          Named line
+        </p>
+      </div>
+    ));
+
+    const project = await deck.project();
+    const [group] = project.projection!.slides[0].payload.drawing.children;
+    const [text] = group?.kind === "group" ? group.children : [];
+
+    expect(project.ok).toBe(true);
+    expect(text?.unsupportedSemantics).toContainEqual(
+      expect.objectContaining({
+        feature: "layout",
+        property: "gridRowStart",
+        value: "-1",
+      }),
+    );
+    expect(text?.unsupportedSemantics).toContainEqual(
+      expect.objectContaining({
+        feature: "layout",
+        property: "gridColumn",
+        value: "content-start / content-end",
+        fallback: expect.objectContaining({
+          strategy: "preserveAuthoredValueOnly",
+          missing: expect.arrayContaining(["cssGridNamedOrNegativeLineResolution"]),
+        }),
+      }),
+    );
+    expect(project.summary?.unsupportedSemantics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ feature: "layout", property: "gridRowStart" }),
+        expect.objectContaining({ feature: "layout", property: "gridColumn" }),
+      ]),
+    );
   });
 });

@@ -296,7 +296,7 @@ export function parseStrokeDasharray(
       return Number.parseFloat(token);
     }
 
-    if (/^-?(?:\d+|\d*\.\d+)(?:pt|in|px|em|rem|vh|vw|ch)$/i.test(token)) {
+    if (/^-?(?:\d+|\d*\.\d+)(?:in|cm|mm|q|pt|pc|px|em|rem|vh|vw|vmin|vmax|ch)$/i.test(token)) {
       return parsePointToken(token, 0, context);
     }
 

@@ -125,6 +125,61 @@ describe("style", () => {
     );
   });
 
+  test("warns about unsupported css-like style property names while preserving authored style", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide(() => (
+      <div
+        style={
+          {
+            display: "flex",
+            flex: 1,
+            flexFlow: "row wrap",
+            marginInline: "1rem",
+          } as never
+        }
+      >
+        <p style={{ color: "#111827" }}>Text</p>
+      </div>
+    ));
+
+    const result = deck.compile();
+    const view = values(result.graph?.nodes ?? new Map()).find(
+      (node) => node.kind === "container" && node.authoredTag === "div",
+    );
+
+    expect(result.diagnostics.hasErrors).toBe(false);
+    expect(result.diagnostics.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: "warning",
+          code: "W_COMPILE_UNSUPPORTED_STYLE_PROP",
+          labels: [expect.objectContaining({ path: expect.stringContaining(".style.flex") })],
+        }),
+        expect.objectContaining({
+          severity: "warning",
+          code: "W_COMPILE_UNSUPPORTED_STYLE_PROP",
+          labels: [expect.objectContaining({ path: expect.stringContaining(".style.flexFlow") })],
+        }),
+        expect.objectContaining({
+          severity: "warning",
+          code: "W_COMPILE_UNSUPPORTED_STYLE_PROP",
+          labels: [
+            expect.objectContaining({ path: expect.stringContaining(".style.marginInline") }),
+          ],
+        }),
+      ]),
+    );
+    expect(result.graph?.styles.get(view?.styleRef ?? ("" as never))?.authored.style).toMatchObject(
+      {
+        display: "flex",
+        flex: 1,
+        flexFlow: "row wrap",
+        marginInline: "1rem",
+      },
+    );
+  });
+
   test("inspect mode exposes CSS-like resolved styles without changing the graph", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.useStyles(
@@ -162,6 +217,26 @@ describe("style", () => {
     expect(
       resolved?.appliedClasses.map((source) => source.layer === "class" && source.className),
     ).toEqual(["override", "title"]);
+  });
+
+  test("resolved element defaults use css-like static positioning", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide(() => (
+      <div>
+        <p>Text</p>
+      </div>
+    ));
+
+    const result = deck.compile();
+    const nodes = values(result.graph?.nodes ?? new Map());
+    const container = nodes.find((node) => node.kind === "container" && node.authoredTag === "div");
+    const text = nodes.find((node) => node.kind === "text" && node.authoredTag === "p");
+
+    expect(result.resolvedStyles?.get(container?.id ?? ("" as never))?.style.position).toBe(
+      "static",
+    );
+    expect(result.resolvedStyles?.get(text?.id ?? ("" as never))?.style.position).toBe("static");
   });
 
   test("theme defaults apply between element defaults and authored styles", async () => {
@@ -209,8 +284,57 @@ describe("style", () => {
       className: "title",
     });
     expect(textStyle?.properties.fontFamily?.source).toEqual({ layer: "default" });
-    expect(spanStyle?.style).toMatchObject({ color: "orange" });
+    expect(spanStyle?.style).toMatchObject({ color: "orange", fontFamily: "Aptos", fontSize: 28 });
     expect(spanStyle?.properties.color?.source).toEqual({ layer: "theme", defaultKey: "span" });
+    expect(spanStyle?.properties.fontFamily?.source).toEqual({
+      layer: "inherited",
+      parentId: text?.id,
+    });
+    expect(spanStyle?.properties.fontSize?.source).toEqual({
+      layer: "inherited",
+      parentId: text?.id,
+    });
+  });
+
+  test("span text runs inherit parent text style without requiring explicit run styles", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide(() => (
+      <>
+        <p
+          style={{
+            color: "#2563EB",
+            fontFamily: "Aptos Display",
+            fontSize: 30,
+            lineHeight: 1.4,
+            letterSpacing: "0.04em",
+          }}
+        >
+          Revenue <span style={{ fontWeight: 700 }}>grew</span>
+        </p>
+      </>
+    ));
+
+    const result = deck.compile();
+    const nodes = values(result.graph?.nodes ?? new Map());
+    const text = nodes.find((node) => node.kind === "text" && node.authoredTag === "p");
+    const span = nodes.find((node) => node.kind === "textRun" && node.authoredTag === "span");
+    const spanStyle = result.resolvedStyles?.get(span?.id ?? ("" as never));
+
+    expect(result.diagnostics.hasErrors).toBe(false);
+    expect(spanStyle?.style).toMatchObject({
+      color: "#2563EB",
+      fontFamily: "Aptos Display",
+      fontSize: 30,
+      fontWeight: 700,
+      lineHeight: 1.4,
+      letterSpacing: "0.04em",
+    });
+    expect(spanStyle?.properties.color?.source).toEqual({
+      layer: "inherited",
+      parentId: text?.id,
+    });
+    expect(spanStyle?.properties.fontWeight?.source).toEqual({ layer: "style" });
   });
 
   test("theme composition flows through mounted sources without changing source-local styles", async () => {

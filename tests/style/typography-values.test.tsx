@@ -58,6 +58,18 @@ describe("typography-values", () => {
     expect(rtl.content.text).toBe("RTL link");
     expect(rtl.hyperlink).toEqual({ url: "https://example.com/docs", tooltip: "Open docs" });
     expect(rtl.style.rtlMode).toBe(true);
+    expect(rtl.unsupportedSemantics).toContainEqual(
+      expect.objectContaining({
+        feature: "layout",
+        property: "direction",
+        value: "rtl",
+        fallback: expect.objectContaining({
+          strategy: "preserveAuthoredValueOnly",
+          preserves: expect.arrayContaining(["textBodyDirection"]),
+          missing: expect.arrayContaining(["logicalLayoutAxes", "cssLogicalStartEndMapping"]),
+        }),
+      }),
+    );
 
     expect(superscript?.kind).toBe("text");
     if (!superscript || superscript.kind !== "text") {
@@ -168,6 +180,18 @@ describe("typography-values", () => {
     expect(text.style.underline).toBe(true);
     expect(text.style.underlineStyle).toBe("wavy");
     expect(text.style.underlineColor).toBe("FF6347");
+    expect(text.unsupportedSemantics).toContainEqual(
+      expect.objectContaining({
+        feature: "layout",
+        property: "writingMode",
+        value: "vertical-rl",
+        fallback: expect.objectContaining({
+          strategy: "preserveAuthoredValueOnly",
+          preserves: expect.arrayContaining(["textBodyDirection"]),
+          missing: expect.arrayContaining(["logicalLayoutAxes", "cssLogicalStartEndMapping"]),
+        }),
+      }),
+    );
   });
 
   test("render supports tabStops authoring for text paragraphs", async () => {
