@@ -3,6 +3,79 @@ import { Deck, EMU_PER_INCH } from "../../src/index.ts";
 import { WIDE_SVG_DATA_URI, summarizeNodes } from "../helpers.ts";
 
 describe("absolute layout", () => {
+  test("render gives unsized text a readable default frame", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Unsized text" }, () => <p>Hello</p>);
+
+    const project = await deck.project();
+
+    expect(project.ok).toBe(true);
+    expect(summarizeNodes(project.projection!.slides[0].payload.drawing.children)).toEqual([
+      {
+        kind: "text",
+        frame: {
+          xEmu: 0,
+          yEmu: 0,
+          widthEmu: 10 * EMU_PER_INCH,
+          heightEmu: 0.3 * EMU_PER_INCH,
+        },
+        text: "Hello",
+        fontSizePt: undefined,
+      },
+    ]);
+  });
+
+  test("render flows unpositioned block text inside absolute containers", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Block text flow" }, () => (
+      <div style={{ x: 1, y: 1, width: 2, height: 2, padding: 0.1 }}>
+        <p style={{ fontSize: 18 }}>KPI</p>
+        <p style={{ fontSize: 30 }}>92%</p>
+      </div>
+    ));
+
+    const project = await deck.project();
+
+    expect(project.ok).toBe(true);
+    expect(summarizeNodes(project.projection!.slides[0].payload.drawing.children)).toEqual([
+      {
+        kind: "group",
+        frame: {
+          xEmu: 1 * EMU_PER_INCH,
+          yEmu: 1 * EMU_PER_INCH,
+          widthEmu: 2 * EMU_PER_INCH,
+          heightEmu: 2 * EMU_PER_INCH,
+        },
+        children: [
+          {
+            kind: "text",
+            frame: {
+              xEmu: 1 * EMU_PER_INCH + 0.1 * EMU_PER_INCH,
+              yEmu: 1 * EMU_PER_INCH + 0.1 * EMU_PER_INCH,
+              widthEmu: 1.8 * EMU_PER_INCH,
+              heightEmu: 0.3 * EMU_PER_INCH,
+            },
+            text: "KPI",
+            fontSizePt: 18,
+          },
+          {
+            kind: "text",
+            frame: {
+              xEmu: 1 * EMU_PER_INCH + 0.1 * EMU_PER_INCH,
+              yEmu: 1.4 * EMU_PER_INCH,
+              widthEmu: 1.8 * EMU_PER_INCH,
+              heightEmu: 0.5 * EMU_PER_INCH,
+            },
+            text: "92%",
+            fontSizePt: 30,
+          },
+        ],
+      },
+    ]);
+  });
+
   test("render supports aspectRatio in absolute and stack layout", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 

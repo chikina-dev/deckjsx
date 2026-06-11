@@ -798,6 +798,8 @@ type ResolvedGridContainerSpec = {
 type SpacingTuple = [number, number, number, number];
 
 const EMPTY_SPACING: SpacingTuple = [0, 0, 0, 0];
+const DEFAULT_TEXT_FONT_SIZE_PT = 18;
+const DEFAULT_NORMAL_LINE_HEIGHT_MULTIPLE = 1.2;
 
 function createIdGenerator(): IdGenerator {
   let slideCount = 0;
@@ -1107,6 +1109,50 @@ function resolveChildMainLength(node: LayoutChildNode, axis: StackAxis): DeckLen
   return node.props[axis === "horizontal" ? "width" : "height"];
 }
 
+function resolveTextFontSizePt(
+  props: NormalizedTextProps,
+  context?: LengthResolutionContext,
+): number {
+  return parsePointValue(props.fontSize, DEFAULT_TEXT_FONT_SIZE_PT, context);
+}
+
+function resolveTextLineHeightPt(
+  props: NormalizedTextProps,
+  context?: LengthResolutionContext,
+): number {
+  const fontSizePt = resolveTextFontSizePt(props, context);
+  if (props.lineHeight === undefined || props.lineHeight === "normal") {
+    return fontSizePt * DEFAULT_NORMAL_LINE_HEIGHT_MULTIPLE;
+  }
+  if (typeof props.lineHeight === "number") {
+    return fontSizePt * props.lineHeight;
+  }
+  return parsePointValue(props.lineHeight, fontSizePt * DEFAULT_NORMAL_LINE_HEIGHT_MULTIPLE, {
+    ...context,
+    fontSizePt,
+  });
+}
+
+function estimateTextAutoContentSize(
+  node: Extract<LayoutChildNode, { kind: "text" }>,
+  dimension: "width" | "height",
+  parent: Frame,
+  context?: LengthResolutionContext,
+): number {
+  const textContext = getTextLengthContext(node.props, context);
+  const [paddingTop, , paddingBottom] = parseSpacing(node.props.padding, textContext);
+
+  if (dimension === "width") {
+    return parent.widthEmu;
+  }
+
+  return (
+    (resolveTextLineHeightPt(node.props, textContext) / POINTS_PER_INCH) * EMU_PER_INCH +
+    paddingTop +
+    paddingBottom
+  );
+}
+
 function estimateChildContentSize(
   node: LayoutChildNode,
   dimension: "width" | "height",
@@ -1129,6 +1175,13 @@ function estimateChildContentSize(
       getChildPadding(node, context),
       dimension,
     );
+  }
+
+  if (node.kind === "text") {
+    if (dimension === "width" && mainAxis === "horizontal") {
+      return 0;
+    }
+    return estimateTextAutoContentSize(node, dimension, parent, context);
   }
 
   if (aspectRatio === undefined) {
@@ -1656,6 +1709,122 @@ function compileGridChildren(
   );
 }
 
+function hasExplicitFrameInput(child: LayoutChildNode): boolean {
+  const { props } = child;
+  return (
+    props.position === "absolute" ||
+    props.area !== undefined ||
+    props.x !== undefined ||
+    props.y !== undefined ||
+    props.inset !== undefined ||
+    props.left !== undefined ||
+    props.top !== undefined ||
+    props.right !== undefined ||
+    props.bottom !== undefined ||
+    props.width !== undefined ||
+    props.height !== undefined ||
+    props.aspectRatio !== undefined
+  );
+}
+
+function compileBlockFlowChildren(
+  authorChildren: LayoutChildNode[],
+  parentFrame: Frame,
+  idGenerator: IdGenerator,
+  options: Pick<ViewStyle, "padding" | "gap" | "rowGap" | "columnGap">,
+  clipRect?: ClipRect,
+  context?: LengthResolutionContext,
+  resolutionOptions?: ProjectedLayoutResolutionOptions,
+): ProjectedLayoutNode[] {
+  const [paddingTop, paddingRight, paddingBottom, paddingLeft] = parseSpacing(
+    options.padding,
+    context,
+  );
+  const contentFrame: Frame = {
+    xEmu: parentFrame.xEmu + paddingLeft,
+    yEmu: parentFrame.yEmu + paddingTop,
+    widthEmu: Math.max(parentFrame.widthEmu - paddingLeft - paddingRight, 0),
+    heightEmu: Math.max(parentFrame.heightEmu - paddingTop - paddingBottom, 0),
+  };
+  const blockGapEmu = resolveMainGap(
+    "vertical",
+    options.gap,
+    options.rowGap,
+    options.columnGap,
+    context,
+  );
+  let cursorY = contentFrame.yEmu;
+  const flowNodes: ProjectedLayoutNode[] = [];
+
+  for (const child of authorChildren) {
+    const [marginTop, marginRight, marginBottom, marginLeft] = getNodeMargin(child, context);
+    const childWidth =
+      child.props.width === undefined
+        ? Math.max(contentFrame.widthEmu - marginLeft - marginRight, 0)
+        : estimateChildContentSize(child, "width", contentFrame, undefined, context);
+    const childHeight = estimateChildContentSize(
+      child,
+      "height",
+      contentFrame,
+      "vertical",
+      context,
+    );
+    const placement: Placement = {
+      xEmu: contentFrame.xEmu + marginLeft,
+      yEmu: cursorY + marginTop,
+      widthEmu: childWidth,
+      heightEmu: childHeight,
+    };
+
+    const compiledNode = compileNode(
+      child,
+      contentFrame,
+      idGenerator,
+      placement,
+      clipRect,
+      context,
+      resolutionOptions,
+    );
+    if (compiledNode) {
+      flowNodes.push(compiledNode);
+    }
+    cursorY += marginTop + childHeight + marginBottom + blockGapEmu;
+  }
+
+  return flowNodes;
+}
+
+function compileAbsoluteChildren(
+  authorChildren: LayoutChildNode[],
+  parentFrame: Frame,
+  idGenerator: IdGenerator,
+  options: Pick<ViewStyle, "padding" | "gap" | "rowGap" | "columnGap">,
+  clipRect?: ClipRect,
+  context?: LengthResolutionContext,
+  resolutionOptions?: ProjectedLayoutResolutionOptions,
+): ProjectedLayoutNode[] {
+  const flowChildren = authorChildren.filter((child) => !hasExplicitFrameInput(child));
+  const absoluteChildren = authorChildren.filter(hasExplicitFrameInput);
+  const flowNodes = compileBlockFlowChildren(
+    flowChildren,
+    parentFrame,
+    idGenerator,
+    options,
+    clipRect,
+    context,
+    resolutionOptions,
+  );
+  const absoluteNodes = absoluteChildren
+    .map((child) =>
+      compileNode(child, parentFrame, idGenerator, undefined, clipRect, context, resolutionOptions),
+    )
+    .filter((node): node is ProjectedLayoutNode => node !== null);
+
+  return sortNodesForPaint(
+    [...flowNodes, ...absoluteNodes].sort((left, right) => left.siblingOrder - right.siblingOrder),
+  );
+}
+
 function compileChildren(
   children: ReadonlyArray<LayoutInputContentNode>,
   parentFrame: Frame,
@@ -1726,20 +1895,19 @@ function compileChildren(
   }
 
   if (layout !== "stack") {
-    return sortNodesForPaint(
-      authorChildren
-        .map((child) =>
-          compileNode(
-            child,
-            parentFrame,
-            idGenerator,
-            undefined,
-            clipRect,
-            context,
-            resolutionOptions,
-          ),
-        )
-        .filter((node): node is ProjectedLayoutNode => node !== null),
+    return compileAbsoluteChildren(
+      authorChildren,
+      parentFrame,
+      idGenerator,
+      {
+        padding: options.padding,
+        gap: options.gap,
+        rowGap: options.rowGap,
+        columnGap: options.columnGap,
+      },
+      clipRect,
+      context,
+      resolutionOptions,
     );
   }
 
@@ -2185,6 +2353,38 @@ function clippingMetadata(
   };
 }
 
+function textFramePropsWithFallback(
+  props: NormalizedTextProps,
+  placement: Placement | undefined,
+  context?: LengthResolutionContext,
+): NormalizedTextProps {
+  let resolved = props;
+
+  if (placement?.widthEmu === undefined && props.width === undefined && props.inset === undefined) {
+    if (props.right === undefined && (props.x !== undefined || props.left !== undefined)) {
+      resolved = { ...resolved, right: 0 };
+    } else if (props.left === undefined && props.right !== undefined) {
+      resolved = { ...resolved, left: 0 };
+    } else if (props.left === undefined && props.right === undefined) {
+      resolved = { ...resolved, width: "100%" };
+    }
+  }
+
+  if (
+    placement?.heightEmu === undefined &&
+    props.height === undefined &&
+    props.inset === undefined &&
+    !(props.top !== undefined && props.bottom !== undefined)
+  ) {
+    resolved = {
+      ...resolved,
+      height: `${resolveTextLineHeightPt(props, context)}pt`,
+    };
+  }
+
+  return resolved;
+}
+
 function compileTextNode(
   node: Extract<LayoutChildNode, { kind: "text" }>,
   parentFrame: Frame,
@@ -2195,7 +2395,8 @@ function compileTextNode(
 ): ProjectedLayoutText | null {
   const { props } = node;
   const textLengthContext = getTextLengthContext(props, context);
-  const resolved = frameFromProps(props, parentFrame, placement, textLengthContext);
+  const frameProps = textFramePropsWithFallback(props, placement, textLengthContext);
+  const resolved = frameFromProps(frameProps, parentFrame, placement, textLengthContext);
   const strokes = resolveNodeStrokesOrFallback(props, textLengthContext);
   const shadow = parseShadowShorthandOrIgnore({
     property: props.textShadow !== undefined ? "textShadow" : "boxShadow",
@@ -2531,16 +2732,25 @@ function compileSlide(
     slideProps.backgroundOrigin,
     slideProps.backgroundClip,
   );
-  const nodes = root.children
+  const children = root.children
     .map(
       (child, siblingOrder): LayoutChildNode =>
         layoutChildFromNode(child, siblingOrder, lengthContext),
     )
-    .filter((child) => child.props.display !== "none")
-    .map((child) =>
-      compileNode(child, slideFrame, idGenerator, undefined, undefined, lengthContext),
-    )
-    .filter((node): node is ProjectedLayoutNode => node !== null);
+    .filter((child) => child.props.display !== "none");
+  const nodes = compileAbsoluteChildren(
+    children,
+    slideFrame,
+    idGenerator,
+    {
+      padding: undefined,
+      gap: undefined,
+      rowGap: undefined,
+      columnGap: undefined,
+    },
+    undefined,
+    lengthContext,
+  );
 
   return {
     id: idGenerator.nextSlide(),
@@ -2550,7 +2760,7 @@ function compileSlide(
     ...(backgroundFill.backgroundLayers
       ? { backgroundLayers: backgroundFill.backgroundLayers }
       : {}),
-    nodes: sortNodesForPaint(nodes),
+    nodes,
   };
 }
 
