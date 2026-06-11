@@ -42,6 +42,7 @@ export type {
   CssGridTrack,
   CssJustifyContent,
   CssJustifySelf,
+  CssLetterSpacing,
   CssObjectPosition,
   CssOverflow,
   CssPosition,

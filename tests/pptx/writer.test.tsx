@@ -866,7 +866,9 @@ describe("direct pptx writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "slide-master-layout-payload.pptx");
 
-    deck.slide({ name: "Support payloads" }, () => <p>Support payloads</p>);
+    deck.slide({ name: "Support payloads" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Support payloads</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     deck.defineProjection(
@@ -921,7 +923,9 @@ describe("direct pptx writer", () => {
 
   test("support XML emitters reject malformed theme, master, and layout payloads", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Support payload validation" }, () => <p>Support payloads</p>);
+    deck.slide({ name: "Support payload validation" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Support payloads</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const supportParts = [
@@ -951,7 +955,9 @@ describe("direct pptx writer", () => {
 
   test("support XML emitters reject malformed presentation and property payloads", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Support property validation" }, () => <p>Support properties</p>);
+    deck.slide({ name: "Support property validation" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Support properties</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const supportParts = [
@@ -1012,7 +1018,9 @@ describe("direct pptx writer", () => {
 
   test("presentation XML emitter does not recover a missing support payload from projection globals", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Presentation support part" }, () => <p>Presentation</p>);
+    deck.slide({ name: "Presentation support part" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Presentation</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const presentationPart = projection.parts.find((part) => part.path === "ppt/presentation.xml");
@@ -1027,7 +1035,9 @@ describe("direct pptx writer", () => {
 
   test("presentation XML emitter rejects missing projected size values", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Presentation size validation" }, () => <p>Size</p>);
+    deck.slide({ name: "Presentation size validation" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Size</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const presentationPart = projection.parts.find((part) => part.path === "ppt/presentation.xml");
@@ -1058,8 +1068,12 @@ describe("direct pptx writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "document-properties-payload.pptx");
 
-    deck.slide({ name: "Doc props 1" }, () => <p>One</p>);
-    deck.slide({ name: "Doc props 2" }, () => <p>Two</p>);
+    deck.slide({ name: "Doc props 1" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>One</p>
+    ));
+    deck.slide({ name: "Doc props 2" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Two</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     deck.defineProjection(
@@ -1131,8 +1145,12 @@ describe("direct pptx writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "presentation-payload.pptx");
 
-    deck.slide({ name: "Presentation payload 1" }, () => <p>One</p>);
-    deck.slide({ name: "Presentation payload 2" }, () => <p>Two</p>);
+    deck.slide({ name: "Presentation payload 1" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>One</p>
+    ));
+    deck.slide({ name: "Presentation payload 2" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Two</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const secondSlide = {
@@ -1205,7 +1223,9 @@ describe("direct pptx writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "empty-support-properties-payload.pptx");
 
-    deck.slide({ name: "Support property payload" }, () => <p>Support properties</p>);
+    deck.slide({ name: "Support property payload" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Support properties</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     deck.defineProjection(
@@ -1274,7 +1294,9 @@ describe("direct pptx writer", () => {
     deck.slide({ name: "Template topology", template: "report" }, ({ template }) => (
       <>
         <h1 area={template.title}>Quarterly Review</h1>
-        <section area={template.body}>Performance highlights</section>
+        <section area={template.body}>
+          <p style={{ width: "100%", height: 0.5 }}>Performance highlights</p>
+        </section>
       </>
     ));
 
@@ -1445,7 +1467,9 @@ describe("direct pptx writer", () => {
   test("support XML emitters reject missing projected relationship ids", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
-    deck.slide({ name: "Missing relationship ids" }, () => <p>Relationships</p>);
+    deck.slide({ name: "Missing relationship ids" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Relationships</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const presentationPart = projection.parts.find((part) => part.path === "ppt/presentation.xml");
@@ -1552,7 +1576,9 @@ describe("direct pptx writer", () => {
   test("support XML emitters reject missing projected owner paths", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
-    deck.slide({ name: "Missing owner paths" }, () => <p>Owner paths</p>);
+    deck.slide({ name: "Missing owner paths" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Owner paths</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const presentationPart = projection.parts.find((part) => part.path === "ppt/presentation.xml");
@@ -2108,7 +2134,9 @@ describe("direct pptx writer", () => {
   test("build and assembly helpers require projected package metadata", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
-    deck.slide({ name: "Build metadata validation" }, () => <p>Metadata</p>);
+    deck.slide({ name: "Build metadata validation" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Metadata</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const slidePart = projection.parts.find((part) => part.kind === "slide");
@@ -2242,7 +2270,9 @@ describe("direct pptx writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "manifest-payloads.pptx");
 
-    deck.slide({ name: "Manifest payloads" }, () => <p>Manifest payloads</p>);
+    deck.slide({ name: "Manifest payloads" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Manifest payloads</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     deck.defineProjection(
@@ -2313,7 +2343,9 @@ describe("direct pptx writer", () => {
   test("manifest XML emitters reject malformed content type and relationship payloads", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
-    deck.slide({ name: "Manifest payload validation" }, () => <p>Manifest payloads</p>);
+    deck.slide({ name: "Manifest payload validation" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Manifest payloads</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const manifestParts = [
@@ -2576,7 +2608,9 @@ describe("direct pptx writer", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
     const output = join(tempDir, "theme-reference-serialization.pptx");
 
-    deck.slide({ name: "Theme reference serialization" }, () => <p>Theme reference</p>);
+    deck.slide({ name: "Theme reference serialization" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Theme reference</p>
+    ));
 
     try {
       const project = await deck.project();
@@ -2844,6 +2878,16 @@ describe("direct pptx writer", () => {
           shape="rect"
           style={{ x: 6, y: 1, width: 2, height: 1, fill: "#DCFCE7", radius: 0.375 }}
         />
+        <div
+          style={{
+            x: 1,
+            y: 2.5,
+            width: 2,
+            height: 1,
+            backgroundColor: "#FEE2E2",
+            borderRadius: "50%",
+          }}
+        />
       </>
     ));
 
@@ -2857,6 +2901,7 @@ describe("direct pptx writer", () => {
       const viewBlock = shapeBlocks.find((block) => block.includes('val="F8FAFC"'));
       const textBlock = shapeBlocks.find((block) => block.includes('val="E0F2FE"'));
       const shapeBlock = shapeBlocks.find((block) => block.includes('val="DCFCE7"'));
+      const capsuleBlock = shapeBlocks.find((block) => block.includes('val="FEE2E2"'));
 
       expect(viewBlock).toContain('<a:prstGeom prst="roundRect">');
       expect(viewBlock).toContain('<a:gd name="adj" fmla="val 25000"/>');
@@ -2864,6 +2909,8 @@ describe("direct pptx writer", () => {
       expect(textBlock).toContain('<a:gd name="adj" fmla="val 12500"/>');
       expect(shapeBlock).toContain('<a:prstGeom prst="roundRect">');
       expect(shapeBlock).toContain('<a:gd name="adj" fmla="val 37500"/>');
+      expect(capsuleBlock).toContain('<a:prstGeom prst="roundRect">');
+      expect(capsuleBlock).toContain('<a:gd name="adj" fmla="val 50000"/>');
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
@@ -4564,6 +4611,18 @@ describe("direct pptx writer", () => {
         >
           Paragraph spacing
         </p>
+        <p
+          style={{
+            x: 1,
+            y: 4,
+            width: 4,
+            height: 0.75,
+            paragraphSpacingBefore: "24px",
+            paragraphSpacingAfter: "0.5in",
+          }}
+        >
+          CSS-like paragraph spacing
+        </p>
       </>
     ));
 
@@ -4579,6 +4638,8 @@ describe("direct pptx writer", () => {
       expect(slideXml).toContain('<a:lnSpc><a:spcPct val="150000"/></a:lnSpc>');
       expect(slideXml).toContain('<a:spcBef><a:spcPts val="1200"/></a:spcBef>');
       expect(slideXml).toContain('<a:spcAft><a:spcPts val="1800"/></a:spcAft>');
+      expect(slideXml).toContain('<a:spcBef><a:spcPts val="1800"/></a:spcBef>');
+      expect(slideXml).toContain('<a:spcAft><a:spcPts val="3600"/></a:spcAft>');
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
@@ -4594,6 +4655,12 @@ describe("direct pptx writer", () => {
         <p style={{ x: 1, y: 1, width: 4, height: 0.75, fontSize: 18, letterSpacing: 1.5 }}>
           Spaced text
         </p>
+        <p style={{ x: 1, y: 2, width: 4, height: 0.75, fontSize: 18, letterSpacing: "2px" }}>
+          Pixel spaced text
+        </p>
+        <p style={{ x: 1, y: 3, width: 4, height: 0.75, fontSize: 20, letterSpacing: "0.1em" }}>
+          Em spaced text
+        </p>
       </>
     ));
 
@@ -4606,6 +4673,7 @@ describe("direct pptx writer", () => {
 
       expect(slideXml).toBeDefined();
       expect(slideXml).toContain('spc="150"');
+      expect(slideXml).toContain('spc="200"');
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }

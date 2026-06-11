@@ -262,7 +262,9 @@ const deck = new Deck({
 deck.slide({ template: "report" }, ({ template }) => (
   <main>
     <h1 area={template.title}>Quarterly Review</h1>
-    <section area={template.body}>Performance highlights</section>
+    <section area={template.body}>
+      <p style={{ width: "100%", height: 0.5 }}>Performance highlights</p>
+    </section>
   </main>
 ));
 ```
@@ -307,6 +309,22 @@ If a loader claims an image source but cannot provide dimensions, treat that as 
 retrieval failure and report it through Project diagnostics rather than waiting for the writer to
 guess.
 
+When an `img` has probed intrinsic `width` and `height`, layout uses that ratio if the author did
+not provide `aspectRatio`. This means an image with only `width` can derive its projected height,
+and an image with only `height` can derive its projected width. Author `aspectRatio` still wins for
+intentional crops, logos, or placeholder boxes.
+
+For foreground images, use `objectFit` / `fit`, `objectPosition`, and `crop`:
+
+```tsx
+<img src="hero.png" style={{ x: 1, y: 1, width: 4 }} />
+<img src="portrait.png" style={{ x: 5.3, y: 1, width: 2, height: 2, objectFit: "cover" }} />
+<img src="map.png" style={{ x: 1, y: 3.4, width: 4, height: 1.6, objectPosition: "right 25% bottom 10%" }} />
+```
+
+For decorative or underlay images inside a box, use background layers with `backgroundSize`,
+`backgroundPosition`, `backgroundRepeat`, `backgroundClip`, and `backgroundOrigin`.
+
 Primitive string and number children inside view-like elements are normalized to implicit text
 nodes. Inline rich text uses `span` inside text-like elements:
 
@@ -336,6 +354,10 @@ and simple `gridColumn` / `gridRow` spans resolve to concrete slide coordinates 
 rendering. Absolutely positioned children inside flex or grid containers also use the
 container content frame, including padding, as their containing block.
 
+`display: "flex"` follows CSS-like defaults for the supported subset: row direction when
+`flexDirection` is omitted, and cross-axis stretch when `alignItems` is omitted. The older
+deck-specific `layout: "stack"` default remains vertical.
+
 Use direct slide children when you want slide-global absolute placement. Use children
 inside a view-like element when you want a local, web-like layout region.
 
@@ -349,6 +371,26 @@ Project diagnostics and the inspection surface rather than treated as authoring 
 include the unsupported feature, the projected value, and a fallback strategy describing which values
 were preserved and which behavior is still missing. Malformed projected unsupported-semantic payloads
 from custom projections fail before Render emits bytes.
+
+## CSS-like Defaults And Gotchas
+
+deckjsx intentionally stays close to HTML/CSS naming, but the current v0.8 layout engine is a slide
+layout solver, not a browser. These are the defaults most likely to surprise CSS authors:
+
+| Area             | deckjsx v0.8 behavior                                                                                    | Browser expectation                                            | Guidance                                                                          |
+| ---------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Block views      | `display: "block"` is a local containing block; children without flow layout can overlap.                | Block formatting creates vertical flow.                        | Use flex/grid with `gap`, templates, or explicit `x`/`y`.                         |
+| Flex             | `display: "flex"` defaults to row and cross-axis stretch.                                                | Same for the supported subset.                                 | Prefer flex for simple rows/columns.                                              |
+| Sizing           | Frames are zero-sized unless explicit size, insets, layout, or image ratio supplies one.                 | Many elements have intrinsic or content-based size.            | Give text and boxes a projected `width`/`height` unless flex/grid stretches them. |
+| Text measurement | Stack/grid do not measure wrapped text to push later siblings.                                           | Browser layout uses measured content.                          | Use declared heights or `fit: "shrink"` for text boxes.                           |
+| Units            | Layout numbers are inches; font-size-like numbers are points.                                            | CSS unitless numbers are property-specific.                    | Use strings for CSS-like units when supported, or keep numeric domains explicit.  |
+| Text spacing     | `letterSpacing` accepts `normal` or point lengths; paragraph before/after spacing accepts point lengths. | CSS text spacing uses property-specific length rules.          | Prefer `px`, `pt`, `em`, or `rem` when porting CSS-like text spacing.             |
+| Box sizing       | Containers, text, and shapes default to `border-box`.                                                    | CSS initial is `content-box`.                                  | This is deliberate for slide geometry.                                            |
+| Border radius    | Single-value `borderRadius` supports percentages against the projected short side.                       | CSS supports richer per-corner radii.                          | `borderRadius: "50%"` works for capsule-like PPTX geometry.                       |
+| Grid             | Missing tracks fill the available grid content frame.                                                    | CSS implicit tracks default to `auto`.                         | Declare tracks for precise dashboards.                                            |
+| Images           | Foreground images default to contain/center and can use probed natural ratio.                            | `<img>` has intrinsic layout behavior in normal document flow. | Use one axis plus probed dimensions, or set both axes for a fixed box.            |
+| Shapes           | Shapes default to visible white fill with no stroke.                                                     | CSS boxes are transparent unless styled.                       | Use `fill: "transparent"` or a `div` when you need a layout/debug box.            |
+| zIndex           | Simple projected paint-order number.                                                                     | CSS stacking contexts and `auto`.                              | Use it for slide paint order, not browser compositing semantics.                  |
 
 ## Development
 

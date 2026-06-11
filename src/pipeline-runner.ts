@@ -1213,21 +1213,7 @@ async function prepareRenderOutputSink(adapter: WriterAdapter): Promise<Prepared
     };
   }
 
-  try {
-    return {
-      requested: true,
-      mode: "sink",
-      path: output,
-      sink: outputRuntime.createByteSink({ output }),
-    };
-  } catch (error) {
-    return {
-      requested: true,
-      mode: "sinkCreationFailed",
-      path: output,
-      error,
-    };
-  }
+  return { requested: true, mode: "deferredWrite", path: output };
 }
 
 async function writeRenderedArtifact(input: {

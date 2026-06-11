@@ -62,6 +62,7 @@ const UNSUPPORTED_SEMANTIC_FEATURES = [
   "border",
   "clipping",
   "filter",
+  "image",
   "isolation",
   "outline",
   "opacity",
@@ -675,6 +676,61 @@ function validateDrawingFrame(input: { frame: unknown; path: string }): Diagnost
       );
     }
   });
+  return issues;
+}
+
+function validateDrawingFrameExtent(input: {
+  element: Record<string, unknown>;
+  path: string;
+}): Diagnostics["items"] {
+  const frame = input.element.frame;
+  if (typeof frame !== "object" || frame === null) {
+    return [];
+  }
+
+  const { widthEmu, heightEmu } = frame as Partial<Record<"widthEmu" | "heightEmu", unknown>>;
+  if (
+    typeof widthEmu !== "number" ||
+    typeof heightEmu !== "number" ||
+    !Number.isFinite(widthEmu) ||
+    !Number.isFinite(heightEmu)
+  ) {
+    return [];
+  }
+
+  const isLineShape = input.element.kind === "shape" && input.element.shape === "line";
+  if (isLineShape) {
+    return widthEmu === 0 && heightEmu === 0
+      ? [
+          drawingMetadataDiagnostic({
+            path: `${input.path}.frame`,
+            message: "line shape frame must have a non-zero axis",
+            title: "pptx drawing frame is degenerate",
+          }),
+        ]
+      : [];
+  }
+
+  const issues: Diagnostic[] = [];
+  if (widthEmu === 0) {
+    issues.push(
+      drawingMetadataDiagnostic({
+        path: `${input.path}.frame.widthEmu`,
+        message: "drawing frame width must be greater than zero",
+        title: "pptx drawing frame is degenerate",
+      }),
+    );
+  }
+  if (heightEmu === 0) {
+    issues.push(
+      drawingMetadataDiagnostic({
+        path: `${input.path}.frame.heightEmu`,
+        message: "drawing frame height must be greater than zero",
+        title: "pptx drawing frame is degenerate",
+      }),
+    );
+  }
+
   return issues;
 }
 
@@ -4300,6 +4356,10 @@ function validateDrawingMetadata(input: {
     ...validateDrawingFrame({
       frame: input.element.frame,
       path: `${input.path}.frame`,
+    }),
+    ...validateDrawingFrameExtent({
+      element: input.element,
+      path: input.path,
     }),
     ...(element.opacity === undefined ||
     (typeof element.opacity === "number" &&

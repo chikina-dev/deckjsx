@@ -54,6 +54,21 @@ export function resolveLineHeight(
   };
 }
 
+export function resolveCharacterSpacing(
+  charSpacing: TextStyle["charSpacing"] | TextStyle["letterSpacing"] | undefined,
+  context?: LengthResolutionContext,
+): number | undefined {
+  if (charSpacing === undefined) {
+    return undefined;
+  }
+
+  if (charSpacing === "normal") {
+    return 0;
+  }
+
+  return parsePointValue(charSpacing, 0, context);
+}
+
 export function resolveTextWrap(
   wrap: TextStyle["wrap"] | undefined,
   whiteSpace: TextStyle["whiteSpace"] | undefined,

@@ -4,6 +4,7 @@ import type {
   CssAlignContent,
   CssGridTemplate,
   CssGridTemplateAreas,
+  CssLetterSpacing,
   ClassNameValue,
   CompileResult,
   ProjectResult,
@@ -27,79 +28,6 @@ import { Deck } from "deckjsx";
 
 type Assert<T extends true> = T;
 type IsAssignable<From, To> = [From] extends [To] ? true : false;
-
-type RootPrivateLeakAssertions = {
-  // @ts-expect-error capitalized intermediate authoring components are not root authoring API.
-  Image: typeof import("deckjsx").Image;
-  // @ts-expect-error capitalized intermediate authoring components are not root authoring API.
-  Shape: typeof import("deckjsx").Shape;
-  // @ts-expect-error capitalized intermediate authoring components are not root authoring API.
-  Slide: typeof import("deckjsx").Slide;
-  // @ts-expect-error capitalized intermediate authoring components are not root authoring API.
-  Text: typeof import("deckjsx").Text;
-  // @ts-expect-error capitalized intermediate authoring components are not root authoring API.
-  View: typeof import("deckjsx").View;
-  // @ts-expect-error JSX implementation helper is exposed through jsx-runtime, not root.
-  createElement: typeof import("deckjsx").createElement;
-  // @ts-expect-error JSX Fragment is exposed through jsx-runtime, not root.
-  Fragment: typeof import("deckjsx").Fragment;
-  // @ts-expect-error intermediate component props are not root authoring API.
-  ImageProps: import("deckjsx").ImageProps;
-  // @ts-expect-error intermediate component props are not root authoring API.
-  ShapeProps: import("deckjsx").ShapeProps;
-  // @ts-expect-error intermediate component props are not root authoring API.
-  TextProps: import("deckjsx").TextProps;
-  // @ts-expect-error intermediate component props are not root authoring API.
-  ViewProps: import("deckjsx").ViewProps;
-  // @ts-expect-error internal AuthorNode is not root authoring API.
-  AuthorNode: import("deckjsx").AuthorNode;
-  // @ts-expect-error internal AuthorTreeNode is not root authoring API.
-  AuthorTreeNode: import("deckjsx").AuthorTreeNode;
-  // @ts-expect-error internal AuthorElementNode is not root authoring API.
-  AuthorElementNode: import("deckjsx").AuthorElementNode;
-  // @ts-expect-error the historical pptxgenjs adapter is not root authoring API.
-  pptxgenjs: typeof import("deckjsx").pptxgenjs;
-  // @ts-expect-error detailed PPTX package model types belong to deckjsx/inspect.
-  pptxPackageModel: import("deckjsx").PptxPackageModel;
-  // @ts-expect-error detailed PPTX package part inspection belongs to deckjsx/inspect.
-  pptxPackagePart: import("deckjsx").PptxPackagePart;
-  // @ts-expect-error detailed PPTX drawing nodes belong to deckjsx/inspect.
-  pptxDrawingNode: import("deckjsx").PptxDrawingNode;
-  // @ts-expect-error detailed PPTX relationships belong to deckjsx/inspect.
-  pptxRelationship: import("deckjsx").PptxRelationship;
-  // @ts-expect-error PPTX theme payload inspection belongs to deckjsx/inspect.
-  themePayload: import("deckjsx").PptxThemePartPayload;
-  // @ts-expect-error serialized PPTX identity details belong to deckjsx/inspect.
-  serializedIdentities: import("deckjsx").PptxSerializedIdentities;
-  // @ts-expect-error generated stroke layer inspection belongs to deckjsx/inspect.
-  generatedStrokeLayer: import("deckjsx").PptxGeneratedStrokeLayer;
-  // @ts-expect-error unsupported semantic projection records belong to deckjsx/inspect.
-  unsupportedSemantic: import("deckjsx").PptxUnsupportedSemantic;
-  // @ts-expect-error direct writer XML helpers must not leak through root authoring.
-  xmlWriter: import("deckjsx").XmlChunkWriter;
-  // @ts-expect-error PPTX package build artifacts are render internals, not authoring vocabulary.
-  buildArtifact: import("deckjsx").PptxPackageBuildArtifact;
-  // @ts-expect-error PPTX media payload inspection belongs to deckjsx/inspect.
-  mediaPayload: import("deckjsx").PptxMediaPartPayload;
-  // @ts-expect-error PPTX package dependency inspection belongs to deckjsx/inspect.
-  packageDependencySummary: import("deckjsx").ProjectInspectionPackageDependencySummary;
-  // @ts-expect-error derived projection inspection views belong to deckjsx/inspect.
-  projectInspectionDetails: import("deckjsx").ProjectInspectionDetails;
-  // @ts-expect-error detailed package dependency invalidation view belongs to deckjsx/inspect.
-  packageDependencyInvalidation: import("deckjsx").ProjectInspectionPackageDependencyInvalidation;
-  // @ts-expect-error detailed paint fallback aggregation view belongs to deckjsx/inspect.
-  paintFallbackAggregation: import("deckjsx").ProjectInspectionPaintFallbackAggregation;
-  // @ts-expect-error detailed theme projection view belongs to deckjsx/inspect.
-  themeProjections: import("deckjsx").ProjectInspectionThemeProjection;
-  // @ts-expect-error direct-writer implementation modules are not root public subpaths.
-  writerSubpath: import("deckjsx/writers/pptx");
-  // @ts-expect-error projection implementation modules are not root public subpaths.
-  projectionSubpath: import("deckjsx/projection/pptx");
-  // @ts-expect-error runtime implementation modules are not root public subpaths.
-  runtimeOutputSubpath: import("deckjsx/runtime/node-output");
-};
-declare const rootPrivateLeakAssertions: RootPrivateLeakAssertions;
-void rootPrivateLeakAssertions;
 
 const regressionTypeAssertions = {
   supportedSpan: true,
@@ -145,6 +73,11 @@ readonlyAreas satisfies CssGridTemplateAreas;
 
 const readonlyTabStops = [{ position: "1in", alignment: "right" }] as const;
 readonlyTabStops satisfies readonly TextTabStopAuthoring[];
+
+const cssLetterSpacing = "0.1em" satisfies CssLetterSpacing;
+const normalLetterSpacing = "normal" satisfies CssLetterSpacing;
+void cssLetterSpacing;
+void normalLetterSpacing;
 
 const clsxLikeClassName = [
   "card selected",
@@ -404,7 +337,16 @@ void (<p>{["a", 1, false, null, undefined]}</p>);
 void (
   <div style={{ x: 1, y: 1, width: 4, height: 2 }}>
     Raw text
-    <p style={{ fontSize: 18 }}>Paragraph</p>
+    <p
+      style={{
+        fontSize: 18,
+        letterSpacing: "0.1em",
+        paragraphSpacingBefore: "12px",
+        paragraphSpacingAfter: "0.25in",
+      }}
+    >
+      Paragraph
+    </p>
     <img src="image.png" />
   </div>
 );

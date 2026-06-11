@@ -74,6 +74,57 @@ describe("absolute layout", () => {
     ]);
   });
 
+  test("render derives image aspect ratio from asset probe metadata", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.useAssets({
+      async probe({ source }) {
+        return source.kind === "path" && source.path === "/wide.png"
+          ? { mediaType: "image/png", extension: "png", width: 100, height: 50 }
+          : undefined;
+      },
+    });
+
+    deck.slide({ name: "Natural image aspect ratio" }, () => (
+      <>
+        <img src="/wide.png" style={{ x: 1, y: 1, width: 3 }} />
+        <img src="/wide.png" style={{ x: 5, y: 1, height: 1 }} />
+        <img src="/wide.png" style={{ x: 1, y: 3, width: 2, aspectRatio: 1 }} />
+      </>
+    ));
+
+    const ir = (await deck.project()).projection!;
+
+    expect(summarizeNodes(ir.slides[0].payload.drawing.children)).toEqual([
+      {
+        kind: "image",
+        frame: {
+          xEmu: 1 * EMU_PER_INCH,
+          yEmu: 1 * EMU_PER_INCH,
+          widthEmu: 3 * EMU_PER_INCH,
+          heightEmu: 1.5 * EMU_PER_INCH,
+        },
+      },
+      {
+        kind: "image",
+        frame: {
+          xEmu: 5 * EMU_PER_INCH,
+          yEmu: 1 * EMU_PER_INCH,
+          widthEmu: 2 * EMU_PER_INCH,
+          heightEmu: 1 * EMU_PER_INCH,
+        },
+      },
+      {
+        kind: "image",
+        frame: {
+          xEmu: 1 * EMU_PER_INCH,
+          yEmu: 3 * EMU_PER_INCH,
+          widthEmu: 2 * EMU_PER_INCH,
+          heightEmu: 2 * EMU_PER_INCH,
+        },
+      },
+    ]);
+  });
+
   test("render supports boxSizing content-box", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 

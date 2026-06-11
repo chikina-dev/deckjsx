@@ -229,6 +229,17 @@ the same loader scope for `load()` so bytes, media type, and dimensions come fro
 assumptions. If dimensions cannot be probed, treat that as an asset retrieval failure instead of
 letting the writer guess.
 
+When an `img` has probed intrinsic `width` and `height`, deckjsx derives the missing projected axis
+from that natural ratio unless the author supplied `aspectRatio`. Good default patterns are
+`style={{ width: 4 }}` for natural-aspect images, a fixed `width` / `height` plus
+`objectFit: "cover"` for media boxes, and `style={{ width: 4, aspectRatio: "16 / 9" }}` for
+non-image placeholders or deliberate overrides.
+
+Use `objectFit` / `fit`, `objectPosition`, and `crop` for foreground `img` elements. Use
+`background`, `backgroundSize`, `backgroundPosition`, `backgroundRepeat`, `backgroundClip`, and
+`backgroundOrigin` for decorative or underlay images on view-like boxes. Do not mix the two
+vocabularies in examples unless the comparison is intentional.
+
 ## Slide Templates
 
 Use deck templates when repeated slide structure matters. Templates define named areas in deck
@@ -252,11 +263,39 @@ deck.slide({ template: "report" }, ({ template }) => (
   <main>
     <h1 area={template.title}>Quarterly Review</h1>
     <section area={template.body}>
-      <p>Performance highlights</p>
+      <p style={{ width: "100%", height: 0.5 }}>Performance highlights</p>
     </section>
   </main>
 ));
 ```
+
+## CSS-like Defaults And Gotchas
+
+deckjsx is HTML/CSS-like, but v0.8 is a slide layout solver rather than a browser engine.
+
+- `display: "block"` is a local containing block in v0.8.x. It does not create browser-like
+  vertical block flow, so unsized/unpositioned children can overlap. Use flex/grid with `gap`,
+  templates, or explicit `x`/`y` for composition.
+- `display: "flex"` defaults to CSS-like row direction and cross-axis stretch. The deck-specific
+  `layout: "stack"` default remains vertical.
+- Frames are zero-sized unless explicit `width` / `height`, insets, flex/grid stretch, or image
+  intrinsic ratio supplies a size. Give text boxes a projected width and height unless a layout mode
+  stretches them.
+- Stack and grid use declared sizes and ratios; they do not measure wrapped text and push later
+  siblings. Use declared heights and `fit: "shrink"` for text-heavy slides.
+- Numeric layout lengths are inches. Font-size-like numbers are points. Numeric `lineHeight` is a
+  multiplier, not points.
+- `letterSpacing` accepts `normal`, numbers as points, and CSS-like point lengths such as `px`,
+  `pt`, `em`, and `rem`.
+- `paragraphSpacingBefore` and `paragraphSpacingAfter` accept numbers as points and CSS-like point
+  lengths such as `px`, `pt`, `em`, and `rem`.
+- Single-value `borderRadius` accepts percentages against the projected short side, so
+  `borderRadius: "50%"` is the capsule-style spelling.
+- Containers, text, and shapes default to `boxSizing: "border-box"` for slide geometry. Shapes are
+  visible white-filled PPTX primitives unless styled.
+- Grid defaults fill the available grid content frame rather than behaving like browser implicit
+  `auto` tracks. Declare tracks for precise layouts.
+- `zIndex` is projected paint order, not full CSS stacking-context behavior.
 
 ## Tested Sample Patterns
 

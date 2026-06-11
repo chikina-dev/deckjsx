@@ -1,10 +1,15 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vite-plus/test";
+import type { WriterAdapter } from "../../src/adapter.ts";
+import { createDiagnostics, diagnostic } from "../../src/diagnostics/index.ts";
 import { Deck } from "../../src/index.ts";
 import { PipelineArtifactCollection } from "../../src/pipeline-artifacts.ts";
 import { renderSource } from "../../src/pipeline-runner.ts";
+import type { RenderedArtifact } from "../../src/pipeline.ts";
+import type { PptxPackageModel } from "../../src/projection/pptx/model.ts";
+import { createNodeOutputByteSink, writeNodeOutput } from "../../src/runtime/node-output.ts";
 import { nodeOutputRuntimeStatus } from "../../src/runtime/output.ts";
 
 describe("runtime boundary", () => {
@@ -50,6 +55,123 @@ describe("runtime boundary", () => {
       expect(Array.from(content)).toEqual(Array.from(result.artifact?.bytes ?? []));
       expect(content.subarray(0, 2).toString("utf8")).toBe("PK");
       expect(fileStat.size).toBeGreaterThan(0);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("Node output writer replaces an existing output file without leaving backups", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-runtime-"));
+    const output = join(tempDir, "existing.pptx");
+    const artifact: RenderedArtifact<"pptx"> = {
+      format: "pptx",
+      mediaType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      extension: "pptx",
+      bytes: new Uint8Array([80, 75, 3, 4]),
+    };
+
+    try {
+      await writeFile(output, "previous");
+
+      const written = await writeNodeOutput({ output, artifact });
+      const [content, entries] = await Promise.all([readFile(output), readdir(tempDir)]);
+
+      expect(written).toEqual({ path: output });
+      expect(Array.from(content)).toEqual(Array.from(artifact.bytes));
+      expect(entries).toEqual(["existing.pptx"]);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("Node output byte sink replaces an existing output file without leaving backups", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-runtime-"));
+    const output = join(tempDir, "existing-sink.pptx");
+    const bytes = new Uint8Array([80, 75, 5, 6]);
+
+    try {
+      await writeFile(output, "previous");
+
+      const sink = createNodeOutputByteSink({ output });
+      sink.write(bytes);
+      sink.close?.();
+
+      const [content, entries] = await Promise.all([readFile(output), readdir(tempDir)]);
+      expect(Array.from(content)).toEqual(Array.from(bytes));
+      expect(entries).toEqual(["existing-sink.pptx"]);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("render failure does not truncate an existing output file", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-runtime-"));
+    const output = join(tempDir, "existing.pptx");
+    const original = new TextEncoder().encode("existing output should survive");
+    const adapter: WriterAdapter<PptxPackageModel, "pptx"> = {
+      kind: "deckjsx.writerAdapter",
+      name: "pptx",
+      projectionFormat: "pptx",
+      format: "pptx",
+      options: { output },
+      async render() {
+        return {
+          diagnostics: createDiagnostics([
+            diagnostic({
+              severity: "error",
+              code: "E_TEST_RENDER_FAILED",
+              title: "test render failed",
+              labels: [],
+            }),
+          ]),
+        };
+      },
+    };
+
+    deck.slide({ name: "Runtime output" }, () => <></>);
+
+    try {
+      await writeFile(output, original);
+
+      const result = await deck.render(adapter);
+      const after = await readFile(output);
+
+      expect(result.ok).toBe(false);
+      expect(result.artifact).toBeUndefined();
+      expect(result.output).toBeUndefined();
+      expect(Array.from(after)).toEqual(Array.from(original));
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("degenerate drawing frame diagnostics do not truncate an existing output file", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-runtime-"));
+    const output = join(tempDir, "existing-degenerate.pptx");
+    const original = new TextEncoder().encode("existing output should survive degenerate frame");
+
+    deck.slide({ name: "Degenerate frame" }, () => (
+      <p style={{ x: 1, y: 1, width: 0, height: 0, fontSize: 18 }}>Invisible</p>
+    ));
+
+    try {
+      await writeFile(output, original);
+
+      const result = await deck.render({ output });
+      const after = await readFile(output);
+
+      expect(result.ok).toBe(false);
+      expect(result.artifact).toBeUndefined();
+      expect(result.output).toBeUndefined();
+      expect(result.diagnostics.items).toContainEqual(
+        expect.objectContaining({
+          code: "E_PPTX_PACKAGE_INVALID_DRAWING_METADATA",
+          title: "pptx drawing frame is degenerate",
+        }),
+      );
+      expect(Array.from(after)).toEqual(Array.from(original));
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }

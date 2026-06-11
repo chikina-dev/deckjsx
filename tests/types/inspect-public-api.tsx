@@ -320,6 +320,15 @@ const filterUnsupportedSemantic = {
 filterUnsupportedSemantic.feature satisfies PptxUnsupportedSemanticFeature;
 void filterUnsupportedSemantic;
 
+const imageUnsupportedSemantic = {
+  feature: "image",
+  property: "objectPosition",
+  value: "somewhere",
+  reason: "image positioning fallback",
+} satisfies PptxUnsupportedSemantic;
+imageUnsupportedSemantic.feature satisfies PptxUnsupportedSemanticFeature;
+void imageUnsupportedSemantic;
+
 const blendUnsupportedSemantic = {
   feature: "blend",
   property: "mixBlendMode",
@@ -905,22 +914,3 @@ unsupportedSemanticRecord.elementId satisfies string;
 unsupportedSemanticRecord.slidePartId satisfies PackagePartId;
 unsupportedSemanticRecord.feature satisfies PptxUnsupportedSemanticFeature;
 unsupportedSemanticRecord.paintOrder satisfies PptxPaintOrderInput | undefined;
-
-type InspectPrivateLeakAssertions = {
-  // @ts-expect-error writer byte helpers are not inspection vocabulary.
-  xmlWriter: import("deckjsx/inspect").XmlChunkWriter;
-  // @ts-expect-error ZIP helpers are writer internals, not inspection vocabulary.
-  zipBytes: import("deckjsx/inspect").createPptxZipBytesFromEntries;
-  // @ts-expect-error build artifacts are render pipeline internals, not projected model data.
-  buildArtifact: import("deckjsx/inspect").PptxPackageBuildArtifact;
-  // @ts-expect-error projection asset artifacts are pipeline inputs, not public inspection model.
-  projectionAssetArtifact: import("deckjsx/inspect").PptxProjectionAssetArtifact;
-  // @ts-expect-error direct-writer implementation modules are not inspection public subpaths.
-  writerSubpath: import("deckjsx/writers/pptx");
-  // @ts-expect-error projection internals are not inspection public subpaths.
-  projectionSubpath: import("deckjsx/projection/pptx");
-  // @ts-expect-error runtime output modules are not inspection public subpaths.
-  runtimeOutputSubpath: import("deckjsx/runtime/node-output");
-};
-declare const inspectPrivateLeakAssertions: InspectPrivateLeakAssertions;
-void inspectPrivateLeakAssertions;

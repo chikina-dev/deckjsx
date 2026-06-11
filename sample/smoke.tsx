@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { stat } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { Deck } from "deckjsx";
 
 const deck = new Deck({
@@ -11,7 +12,9 @@ deck.slide(
   { name: "npm tsx html-like smoke", style: { backgroundColor: "#F8FAFC" } },
   ({ composition }) => [
     <header style={{ x: 0.7, y: 0.55, width: 8.5, height: 0.5 }}>
-      <h1 style={{ fontSize: 26, fontWeight: 700, color: "#0F172A" }}>
+      <h1
+        style={{ width: "100%", height: "100%", fontSize: 26, fontWeight: 700, color: "#0F172A" }}
+      >
         deckjsx 0.2 html-like TSX smoke test
       </h1>
     </header>,
@@ -42,7 +45,9 @@ deck.slide(
       />
     </main>,
     <footer style={{ x: 0.7, y: 4.25, width: 8.6, height: 0.35 }}>
-      <p style={{ fontSize: 12, color: "#64748B" }}>HTML-like authoring API</p>
+      <p style={{ width: "100%", height: "100%", fontSize: 12, color: "#64748B" }}>
+        HTML-like authoring API
+      </p>
     </footer>,
   ],
 );
@@ -57,9 +62,12 @@ assert.equal(main?.kind, "group");
 assert.equal(footer?.kind, "group");
 assert.equal(footer.children[0]?.kind, "text");
 
-await deck.render({ output: "output-tsx.pptx" });
+const outputPath = fileURLToPath(new URL("output-tsx.pptx", import.meta.url));
+const renderResult = await deck.render({ output: outputPath });
+assert.equal(renderResult.ok, true, JSON.stringify(renderResult.diagnostics.items, null, 2));
+assert.deepEqual(renderResult.output, { path: outputPath });
 
-const output = await stat("output-tsx.pptx");
+const output = await stat(outputPath);
 assert(output.size > 0);
 
 console.log(`Generated output-tsx.pptx (${output.size} bytes)`);
