@@ -2366,8 +2366,7 @@ function hasExplicitFrameInput(child: LayoutChildNode): boolean {
         hasAuthoredPositionValue(props.right) ||
         hasAuthoredPositionValue(props.bottom))) ||
     hasAuthoredPositionValue(props.width) ||
-    hasAuthoredPositionValue(props.height) ||
-    props.aspectRatio !== undefined
+    hasAuthoredPositionValue(props.height)
   );
 }
 
@@ -2409,7 +2408,7 @@ function compileBlockFlowChildren(
       contentFrame.widthEmu,
     );
     const childWidth =
-      child.props.width === undefined
+      authoredLengthOrUndefined(child.props.width) === undefined
         ? Math.max(contentFrame.widthEmu - marginLeft - marginRight, 0)
         : estimateChildContentSize(child, "width", contentFrame, undefined, context);
     const childHeight = estimateChildContentSize(

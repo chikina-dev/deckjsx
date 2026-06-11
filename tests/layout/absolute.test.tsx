@@ -202,6 +202,94 @@ describe("absolute layout", () => {
     ]);
   });
 
+  test("render treats css-wide block-flow width as not authored when applying margins", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "CSS-wide width flow" }, () => (
+      <div style={{ x: 1, y: 1, width: 4, height: 2 }}>
+        <p style={{ width: "initial", margin: "0 0.25in", fontSize: 18 } as never}>Initial</p>
+      </div>
+    ));
+
+    const project = await deck.project();
+
+    expect(project.ok).toBe(true);
+    expect(summarizeNodes(project.projection!.slides[0].payload.drawing.children)).toEqual([
+      {
+        kind: "group",
+        frame: {
+          xEmu: 1 * EMU_PER_INCH,
+          yEmu: 1 * EMU_PER_INCH,
+          widthEmu: 4 * EMU_PER_INCH,
+          heightEmu: 2 * EMU_PER_INCH,
+        },
+        children: [
+          {
+            kind: "text",
+            frame: {
+              xEmu: 1.25 * EMU_PER_INCH,
+              yEmu: 1 * EMU_PER_INCH,
+              widthEmu: 3.5 * EMU_PER_INCH,
+              heightEmu: 0.3 * EMU_PER_INCH,
+            },
+            text: "Initial",
+            fontSizePt: 18,
+          },
+        ],
+      },
+    ]);
+  });
+
+  test("render keeps aspect-ratio-only block children in normal flow", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Aspect ratio flow" }, () => (
+      <div style={{ x: 1, y: 1, width: 3, height: 2 }}>
+        <p style={{ aspectRatio: "16 / 9", fontSize: 18 }}>Ratio</p>
+        <p style={{ fontSize: 18 }}>Next</p>
+      </div>
+    ));
+
+    const project = await deck.project();
+
+    expect(project.ok).toBe(true);
+    expect(summarizeNodes(project.projection!.slides[0].payload.drawing.children)).toEqual([
+      {
+        kind: "group",
+        frame: {
+          xEmu: 1 * EMU_PER_INCH,
+          yEmu: 1 * EMU_PER_INCH,
+          widthEmu: 3 * EMU_PER_INCH,
+          heightEmu: 2 * EMU_PER_INCH,
+        },
+        children: [
+          {
+            kind: "text",
+            frame: {
+              xEmu: 1 * EMU_PER_INCH,
+              yEmu: 1 * EMU_PER_INCH,
+              widthEmu: 3 * EMU_PER_INCH,
+              heightEmu: 0.3 * EMU_PER_INCH,
+            },
+            text: "Ratio",
+            fontSizePt: 18,
+          },
+          {
+            kind: "text",
+            frame: {
+              xEmu: 1 * EMU_PER_INCH,
+              yEmu: 1.3 * EMU_PER_INCH,
+              widthEmu: 3 * EMU_PER_INCH,
+              heightEmu: 0.3 * EMU_PER_INCH,
+            },
+            text: "Next",
+            fontSizePt: 18,
+          },
+        ],
+      },
+    ]);
+  });
+
   test("render supports css spacing shorthand strings", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
