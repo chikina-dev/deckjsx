@@ -4,6 +4,7 @@ export type DeckLength =
 export type DeckPointLength =
   | number
   | `${number}${"pt" | "in" | "px" | "em" | "rem" | "vh" | "vw" | "ch"}`;
+export type CssLetterSpacing = DeckPointLength | "normal";
 export type CssAspectRatio = number | `${number}/${number}` | `${number} / ${number}`;
 export type CssBoxSizing = "border-box" | "content-box";
 export type Spacing = DeckLength | readonly [DeckLength, DeckLength, DeckLength, DeckLength];
@@ -244,12 +245,12 @@ export type TextStyle = FrameAuthorProps &
     lineSpacing?: number;
     lineSpacingMultiple?: number;
     lineHeight?: DeckPointLength | "normal";
-    paragraphSpacingBefore?: number;
-    paragraphSpacingAfter?: number;
+    paragraphSpacingBefore?: DeckPointLength;
+    paragraphSpacingAfter?: DeckPointLength;
     textIndent?: DeckPointLength;
     tabStops?: readonly TextTabStopAuthoring[];
-    charSpacing?: number;
-    letterSpacing?: number;
+    charSpacing?: DeckPointLength;
+    letterSpacing?: CssLetterSpacing;
     whiteSpace?: "normal" | "nowrap" | "pre" | "pre-wrap" | "pre-line";
     wordBreak?: "normal" | "break-all" | "keep-all" | "break-word";
     overflowWrap?: "normal" | "break-word" | "anywhere";

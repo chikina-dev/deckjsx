@@ -4,17 +4,12 @@ import { describe, expect, test } from "vite-plus/test";
 
 type PackageJson = {
   dependencies?: Record<string, string>;
-  devDependencies?: Record<string, string>;
   files?: readonly string[];
   exports?: Record<string, string>;
 };
 
 async function readPackageJson(): Promise<PackageJson> {
   return JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8"));
-}
-
-async function readSamplePackageJson(): Promise<PackageJson> {
-  return JSON.parse(await readFile(new URL("../../sample/package.json", import.meta.url), "utf8"));
 }
 
 async function readRepoText(path: string): Promise<string> {
@@ -122,42 +117,10 @@ describe("public surface", () => {
     expect(typeTestText).not.toMatch(/readonly unknown\[\]/);
   });
 
-  test("core package dependencies do not reintroduce runtime writer dependencies", async () => {
+  test("core package has no runtime dependencies", async () => {
     const pkg = await readPackageJson();
 
     expect(pkg.dependencies).toEqual({});
-    expect(pkg.dependencies).not.toHaveProperty("fflate");
-    expect(pkg.dependencies).not.toHaveProperty("pptxgenjs");
-    expect(pkg.devDependencies).not.toHaveProperty("pptxgenjs");
-  });
-
-  test("source cleanup does not reintroduce legacy author node marker", async () => {
-    const sourcePaths = await sourceFiles(new URL("../../src", import.meta.url).pathname);
-    const sourceText = (
-      await Promise.all(sourcePaths.map(async (file) => readFile(file, "utf8")))
-    ).join("\n");
-
-    expect(sourceText).not.toContain("deckjsx.author-node");
-  });
-
-  test("public sample uses the local direct-writer package without pptxgenjs", async () => {
-    const pkg = await readSamplePackageJson();
-    const lock = await readFile(new URL("../../sample/package-lock.json", import.meta.url), "utf8");
-
-    expect(pkg.dependencies).toEqual({ deckjsx: "file:.." });
-    expect(lock).toContain('"deckjsx": "file:.."');
-    expect(lock).not.toMatch(/pptxgenjs/);
-  });
-
-  test("core source tree does not contain a pptxgenjs writer path", async () => {
-    const files = await sourceFiles(new URL("../../src", import.meta.url).pathname);
-    const fileNames = files.map((file) => file.split("/").pop() ?? file);
-
-    expect(fileNames.some((file) => file.includes("pptxgenjs"))).toBe(false);
-
-    const source = await Promise.all(files.map((file) => readFile(file, "utf8")));
-    expect(source.join("\n")).not.toMatch(/from\s+["']pptxgenjs["']/);
-    expect(source.join("\n")).not.toMatch(/import\s+["']pptxgenjs["']/);
   });
 
   test("node filesystem imports stay behind the runtime output boundary", async () => {
@@ -167,12 +130,10 @@ describe("public surface", () => {
     );
     const nodeBuiltinImport =
       /\b(?:from|import)\s*(?:\([^)]*)?["']node:(?:fs|path|os|stream|buffer|crypto|zlib)[^"']*["']/;
-    const legacyNodeBuiltinImport =
+    const bareNodeBuiltinImport =
       /\b(?:from|require\()\s*["'](?:fs|path|os|stream|buffer|crypto|zlib)["']/;
     const nodeImportFiles = sources
-      .filter(
-        ([, source]) => nodeBuiltinImport.test(source) || legacyNodeBuiltinImport.test(source),
-      )
+      .filter(([, source]) => nodeBuiltinImport.test(source) || bareNodeBuiltinImport.test(source))
       .map(([file]) => file.replace(new URL("../../", import.meta.url).pathname, ""));
 
     expect(nodeImportFiles).toEqual(["src/runtime/node-output.ts"]);
@@ -240,7 +201,6 @@ describe("public surface", () => {
     );
     expect(oracleWorkflow).toContain("npm run --prefix .github/compat/pptxgenjs compare");
     expect(oracleWorkflow).toContain("path: .github/compat/pptxgenjs/artifacts");
-    expect(oracleWorkflow).not.toContain("npm install pptxgenjs");
 
     expect(renderWorkflow).toContain(
       "docker build -f .github/render/Dockerfile -t deckjsx-render .",

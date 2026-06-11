@@ -53,6 +53,7 @@ export type ProjectedUnsupportedSemanticFeature =
   | "border"
   | "clipping"
   | "filter"
+  | "image"
   | "isolation"
   | "outline"
   | "opacity"

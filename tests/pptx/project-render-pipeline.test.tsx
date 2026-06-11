@@ -489,7 +489,9 @@ describe("project/render pipeline", () => {
 
   test("project can skip inspection summary while preserving projection result shape", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "No project summary" }, () => <p>Projected</p>);
+    deck.slide({ name: "No project summary" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Projected</p>
+    ));
 
     const project = await deck.project({ inspection: "none" });
 
@@ -612,7 +614,9 @@ describe("project/render pipeline", () => {
 
   test("render can skip inspection summary while preserving artifact result shape", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "No render summary" }, () => <p>Rendered</p>);
+    deck.slide({ name: "No render summary" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Rendered</p>
+    ));
 
     const render = await deck.render({ inspection: "none" });
 
@@ -1755,7 +1759,9 @@ describe("project/render pipeline", () => {
 
   test("direct writer validates package part dependency fingerprint metadata shape", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Invalid dependency fingerprints" }, () => <p>dependency</p>);
+    deck.slide({ name: "Invalid dependency fingerprints" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>dependency</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const slidePart = expectPptxPart(projection.parts, "slide");
@@ -1902,7 +1908,9 @@ describe("project/render pipeline", () => {
 
   test("direct writer validates package part relationship metadata shape", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Invalid part relationships" }, () => <p>relationships</p>);
+    deck.slide({ name: "Invalid part relationships" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>relationships</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const slidePart = expectPptxPart(projection.parts, "slide");
@@ -1969,7 +1977,9 @@ describe("project/render pipeline", () => {
 
   test("direct writer validates internal relationship target paths are canonical package paths", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Invalid relationship target path" }, () => <p>target path</p>);
+    deck.slide({ name: "Invalid relationship target path" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>target path</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const rootRelationshipsPart = expectPptxPartByPath(
@@ -2022,7 +2032,9 @@ describe("project/render pipeline", () => {
 
   test("direct writer validates projected relationship targets match target paths", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Mismatched relationship target" }, () => <p>target</p>);
+    deck.slide({ name: "Mismatched relationship target" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>target</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const rootRelationshipsPart = expectPptxPartByPath(
@@ -2075,7 +2087,9 @@ describe("project/render pipeline", () => {
 
   test("direct writer validates relationship target part identities stay in the pptx namespace", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Invalid relationship target identity" }, () => <p>target id</p>);
+    deck.slide({ name: "Invalid relationship target identity" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>target id</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const rootRelationshipsPart = expectPptxPartByPath(
@@ -2138,7 +2152,9 @@ describe("project/render pipeline", () => {
 
   test("direct writer validates package relationship type targets", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Invalid relationship targets" }, () => <p>targets</p>);
+    deck.slide({ name: "Invalid relationship targets" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>targets</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const rootRelationships = expectPptxPartByPath(
@@ -2254,7 +2270,9 @@ describe("project/render pipeline", () => {
 
   test("direct writer validates relationship metadata and payload stay synchronized", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Relationship payload mismatch" }, () => <p>mismatch</p>);
+    deck.slide({ name: "Relationship payload mismatch" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>mismatch</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const rootRelationships = expectPptxPartByPath(
@@ -2451,7 +2469,9 @@ describe("project/render pipeline", () => {
 
   test("direct writer validates package part paths match their OOXML kind family", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Path families" }, () => <p>paths</p>);
+    deck.slide({ name: "Path families" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>paths</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const presentationPart = expectPptxPart(projection.parts, "presentation");
@@ -2554,7 +2574,9 @@ describe("project/render pipeline", () => {
 
   test("direct writer validates package part paths are canonical zip entry paths", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Invalid package paths" }, () => <p>paths</p>);
+    deck.slide({ name: "Invalid package paths" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>paths</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const contentTypesPart = expectPptxPart(projection.parts, "content-types");
@@ -2609,7 +2631,9 @@ describe("project/render pipeline", () => {
 
   test("direct writer validates package part origin metadata shape", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Invalid part origin" }, () => <p>origin</p>);
+    deck.slide({ name: "Invalid part origin" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>origin</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const slidePart = expectPptxPart(projection.parts, "slide");
@@ -2652,7 +2676,9 @@ describe("project/render pipeline", () => {
 
   test("direct writer validates drawing origin metadata shape", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Invalid drawing origin" }, () => <p>origin</p>);
+    deck.slide({ name: "Invalid drawing origin" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>origin</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const slidePart = expectPptxPart(projection.parts, "slide");
@@ -2727,7 +2753,7 @@ describe("project/render pipeline", () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Invalid drawing payload" }, () => (
       <>
-        <p>payload</p>
+        <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>payload</p>
         <img data={SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1, width: 2, height: 1 }} />
       </>
     ));
@@ -2913,7 +2939,7 @@ describe("project/render pipeline", () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Invalid group payload" }, () => (
       <div style={{ x: 1, y: 1, width: 2, height: 1 }}>
-        <p>group child</p>
+        <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>group child</p>
       </div>
     ));
 
@@ -3344,7 +3370,7 @@ describe("project/render pipeline", () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Identity" }, () => (
       <>
-        <p>Stable</p>
+        <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Stable</p>
       </>
     ));
 
@@ -3665,7 +3691,9 @@ describe("project/render pipeline", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
       theme: new Theme({ defaults: { p: { color: "#334155", fontSize: 20 } } }),
     });
-    deck.slide({ name: "Manifest" }, () => <p>Theme default</p>);
+    deck.slide({ name: "Manifest" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Theme default</p>
+    ));
 
     const project = await deck.project();
     const parts = project.projection?.parts ?? [];
@@ -3867,7 +3895,9 @@ describe("project/render pipeline", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
       theme: new Theme({ defaults: { p: { color: "#0F172A", fontSize: 24 } } }),
     });
-    controlDeck.slide({ name: "Manifest" }, () => <p>Theme default</p>);
+    controlDeck.slide({ name: "Manifest" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Theme default</p>
+    ));
     const controlProject = await controlDeck.project();
     const controlThemePayload = controlProject.projection?.parts.find(
       (part) => part.kind === "theme",
@@ -3914,7 +3944,9 @@ describe("project/render pipeline", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
       theme: new Theme({ defaults: { p: { color: "#334155", filter: "blur(2px)" } } }),
     });
-    deck.slide({ name: "Theme unsupported default" }, () => <p>Filtered default</p>);
+    deck.slide({ name: "Theme unsupported default" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Filtered default</p>
+    ));
 
     const project = await deck.project();
     const themePayload = project.projection?.parts.find((part) => part.kind === "theme")
@@ -4071,7 +4103,9 @@ describe("project/render pipeline", () => {
         defaults: { p: { color: "#2563EB", fontFamily: "Aptos", fontSize: 20 } },
       }),
     });
-    deck.slide({ name: "Theme reference choices" }, () => <p>Theme reference</p>);
+    deck.slide({ name: "Theme reference choices" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Theme reference</p>
+    ));
 
     const project = await deck.project();
     const themePayload = project.projection?.parts.find((part) => part.kind === "theme")
@@ -4125,7 +4159,9 @@ describe("project/render pipeline", () => {
         defaults: { p: { color: "#2563EB", filter: "blur(2px)", fontFamily: "Aptos" } },
       }),
     });
-    deck.slide({ name: "Theme detail" }, () => <p>Theme detail</p>);
+    deck.slide({ name: "Theme detail" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Theme detail</p>
+    ));
 
     const summaryProject = await deck.project();
     const detailedProject = await deck.project({ inspection: "details" });
@@ -4181,7 +4217,12 @@ describe("project/render pipeline", () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.useStyles(
       new StyleSheet({
-        classes: { title: { target: "p.title", style: { color: "red", fontSize: 28 } } },
+        classes: {
+          title: {
+            target: "p.title",
+            style: { x: 1, y: 1, width: 4, height: 0.5, color: "red", fontSize: 28 },
+          },
+        },
       }),
     );
     deck.slide({ name: "Styled graph" }, () => (
@@ -4276,7 +4317,9 @@ describe("project/render pipeline", () => {
 
   test("project validates text drawing style payloads before render", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Broken text style" }, () => <p> style</p>);
+    deck.slide({ name: "Broken text style" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}> style</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const slidePart = expectPptxPart(projection.parts, "slide");
@@ -4379,7 +4422,9 @@ describe("project/render pipeline", () => {
 
   test("render validation requires projected text body root values", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Missing text body values" }, () => <p> body values</p>);
+    deck.slide({ name: "Missing text body values" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}> body values</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const slidePart = expectPptxPart(projection.parts, "slide");
@@ -5656,7 +5701,9 @@ describe("project/render pipeline", () => {
 
   test("project validates presentation support relationships required by package topology", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Missing presentation support relationships" }, () => <p>support</p>);
+    deck.slide({ name: "Missing presentation support relationships" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>support</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const presentationPart = expectPptxPart(projection.parts, "presentation");
@@ -5736,7 +5783,9 @@ describe("project/render pipeline", () => {
 
   test("project validates slide master and layout support relationships required by package topology", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Missing master layout relationships" }, () => <p>support</p>);
+    deck.slide({ name: "Missing master layout relationships" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>support</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const slideMaster = expectPptxPart(projection.parts, "slide-master");
@@ -5822,7 +5871,9 @@ describe("project/render pipeline", () => {
 
   test("project validates root package relationships required to open the PPTX package", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Missing root relationships" }, () => <p>root</p>);
+    deck.slide({ name: "Missing root relationships" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>root</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const rootRelationships = expectPptxPartByPath(
@@ -5899,7 +5950,9 @@ describe("project/render pipeline", () => {
 
   test("project validates manifest payloads before render", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Broken manifest payload" }, () => <p>Manifest</p>);
+    deck.slide({ name: "Broken manifest payload" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Manifest</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const presentationPart = expectPptxPart(projection.parts, "presentation");
@@ -6048,7 +6101,9 @@ describe("project/render pipeline", () => {
 
   test("project validates content type override part names are canonical package paths", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Broken content type part name" }, () => <p>Manifest path</p>);
+    deck.slide({ name: "Broken content type part name" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Manifest path</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const slidePart = projection.parts.find((part) => part.kind === "slide")!;
@@ -6101,7 +6156,9 @@ describe("project/render pipeline", () => {
 
   test("project rejects known package relationships marked as external", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "External package relationship" }, () => <p>Relationships</p>);
+    deck.slide({ name: "External package relationship" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Relationships</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const rootRelationships = expectPptxPartByPath(
@@ -6160,7 +6217,9 @@ describe("project/render pipeline", () => {
 
   test("project validates external relationship targets use supported URL schemes", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "External target URL" }, () => <p>Relationships</p>);
+    deck.slide({ name: "External target URL" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Relationships</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const rootRelationships = expectPptxPartByPath(
@@ -6226,7 +6285,9 @@ describe("project/render pipeline", () => {
 
   test("project validates relationship types are known tokens or relationship URIs", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Invalid relationship type" }, () => <p>Relationships</p>);
+    deck.slide({ name: "Invalid relationship type" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Relationships</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const rootRelationships = expectPptxPartByPath(
@@ -6292,7 +6353,9 @@ describe("project/render pipeline", () => {
 
   test("project validates relationships part owners before render", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Orphan relationships" }, () => <p>Relationships</p>);
+    deck.slide({ name: "Orphan relationships" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Relationships</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const orphanRelationshipsPath = "ppt/orphan/_rels/missing.xml.rels";
@@ -7245,7 +7308,9 @@ describe("project/render pipeline", () => {
 
   test("project validates package model size and slides index before render", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Broken package model" }, () => <p>Package model</p>);
+    deck.slide({ name: "Broken package model" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Package model</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const slidePart = projection.slides[0]!;
@@ -7294,7 +7359,9 @@ describe("project/render pipeline", () => {
 
   test("project rejects duplicate package model slide index entries before render", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Duplicate slide index" }, () => <p>Slide index</p>);
+    deck.slide({ name: "Duplicate slide index" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Slide index</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const slidePart = projection.slides[0]!;
@@ -7586,7 +7653,9 @@ describe("project/render pipeline", () => {
 
   test("project validates slide master and layout support payloads before render", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Broken support payloads" }, () => <p>Support payloads</p>);
+    deck.slide({ name: "Broken support payloads" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Support payloads</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     deck.defineProjection({
@@ -7683,7 +7752,9 @@ describe("project/render pipeline", () => {
 
   test("project validates slide master and layout support payload reference part kinds", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Wrong support payload targets" }, () => <p>Support targets</p>);
+    deck.slide({ name: "Wrong support payload targets" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Support targets</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const themePart = expectPptxPart(projection.parts, "theme");
@@ -8225,7 +8296,9 @@ describe("project/render pipeline", () => {
 
   test("project validates drawing node package part ownership before render", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Broken drawing ownership" }, () => <p>ownership</p>);
+    deck.slide({ name: "Broken drawing ownership" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>ownership</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const slidePart = projection.slides[0]!;
@@ -8358,7 +8431,9 @@ describe("project/render pipeline", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
       meta: { title: "Document properties" },
     });
-    deck.slide({ name: "Broken doc props" }, () => <p>Document properties</p>);
+    deck.slide({ name: "Broken doc props" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Document properties</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     deck.defineProjection({
@@ -8443,7 +8518,9 @@ describe("project/render pipeline", () => {
 
   test("project validates extended document property slide count against presentation payload", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Doc props slide count" }, () => <p>Document properties</p>);
+    deck.slide({ name: "Doc props slide count" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Document properties</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     deck.defineProjection({
@@ -8482,7 +8559,9 @@ describe("project/render pipeline", () => {
 
   test("project validates presentation support payloads before render", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Broken presentation payload" }, () => <p>Presentation</p>);
+    deck.slide({ name: "Broken presentation payload" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Presentation</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     deck.defineProjection({
@@ -8536,7 +8615,9 @@ describe("project/render pipeline", () => {
 
   test("project validates presentation support payload slide references target slide parts", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Wrong presentation slide target" }, () => <p>Presentation</p>);
+    deck.slide({ name: "Wrong presentation slide target" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Presentation</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const themePart = expectPptxPart(projection.parts, "theme");
@@ -8576,7 +8657,9 @@ describe("project/render pipeline", () => {
 
   test("project rejects duplicate presentation support payload slide references", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Duplicate presentation slide" }, () => <p>Presentation</p>);
+    deck.slide({ name: "Duplicate presentation slide" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Presentation</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const slidePart = projection.parts.find((part) => part.kind === "slide")!;
@@ -8616,7 +8699,9 @@ describe("project/render pipeline", () => {
 
   test("project validates projected support numeric ids before render", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Broken support numeric ids" }, () => <p>Support ids</p>);
+    deck.slide({ name: "Broken support numeric ids" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Support ids</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     deck.defineProjection({
@@ -8690,8 +8775,12 @@ describe("project/render pipeline", () => {
 
   test("project rejects duplicate presentation slide ids across referenced slide parts", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Duplicate slide id 1" }, () => <p>One</p>);
-    deck.slide({ name: "Duplicate slide id 2" }, () => <p>Two</p>);
+    deck.slide({ name: "Duplicate slide id 1" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>One</p>
+    ));
+    deck.slide({ name: "Duplicate slide id 2" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Two</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const firstSlide = projection.slides[0]!;
@@ -8727,7 +8816,9 @@ describe("project/render pipeline", () => {
 
   test("project validates empty support property payloads before render", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Broken support properties" }, () => <p>Support properties</p>);
+    deck.slide({ name: "Broken support properties" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Support properties</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     deck.defineProjection({
@@ -8791,7 +8882,9 @@ describe("project/render pipeline", () => {
 
   test("project validates theme support payloads before render", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Broken theme payload" }, () => <p>Theme payload</p>);
+    deck.slide({ name: "Broken theme payload" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Theme payload</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     deck.defineProjection({
@@ -8872,7 +8965,9 @@ describe("project/render pipeline", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
       theme: new Theme({ defaults: { p: { color: "#2563EB", fontFamily: "Aptos" } } }),
     });
-    deck.slide({ name: "Broken theme trace" }, () => <p>Theme trace</p>);
+    deck.slide({ name: "Broken theme trace" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Theme trace</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     deck.defineProjection({
@@ -9147,7 +9242,9 @@ describe("project/render pipeline", () => {
 
   test("project validates theme projection trace package references target expected part kinds", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Wrong theme trace references" }, () => <p>Theme trace refs</p>);
+    deck.slide({ name: "Wrong theme trace references" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Theme trace refs</p>
+    ));
 
     const projection = (await deck.project()).projection!;
     const themePart = expectPptxPart(projection.parts, "theme");
@@ -9320,7 +9417,9 @@ describe("project/render pipeline", () => {
 
   test("pipeline artifact invalidation clears stale package part build artifacts", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Build artifact lifecycle" }, () => <p>lifecycle</p>);
+    deck.slide({ name: "Build artifact lifecycle" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>lifecycle</p>
+    ));
     const graph = deck.compile().graph!;
     const projection = (await deck.project()).projection!;
     const render = await renderPptxPackage(projection);
@@ -9385,7 +9484,7 @@ describe("project/render pipeline", () => {
     parent.slide({ name: "Root" }, () => <></>);
     child.slide({ name: "Child" }, () => (
       <>
-        <p>Mounted source</p>
+        <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Mounted source</p>
       </>
     ));
     parent.mount("child", child);

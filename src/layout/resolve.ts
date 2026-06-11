@@ -35,6 +35,7 @@ import type {
   ProjectedLayoutSlide,
   ProjectedLayoutText,
   ProjectedUnsupportedSemantic,
+  ObjectPositionIR,
   EdgeStrokeIR,
   ShadowIR,
   StrokeIR,
@@ -107,6 +108,7 @@ import { parseTransformOrigin, parseTransformShorthand } from "../style/transfor
 import {
   extractText,
   getTextLengthContext,
+  resolveCharacterSpacing,
   resolveLineHeight,
   resolveListStyle,
   resolveTabStops,
@@ -877,7 +879,7 @@ function layoutChildFromNode(
       return {
         kind: "image",
         source: child,
-        props: normalizeImageProps(child.props, context),
+        props: normalizeImagePropsWithIntrinsicAspectRatio(child, context),
         siblingOrder,
         ...(origin ? { origin } : {}),
       };
@@ -890,6 +892,67 @@ function layoutChildFromNode(
         ...(origin ? { origin } : {}),
       };
   }
+}
+
+function normalizeImagePropsWithIntrinsicAspectRatio(
+  child: LayoutInputImage,
+  context?: LengthResolutionContext,
+): NormalizedImageProps {
+  const props = normalizeImageProps(child.props, context);
+
+  if (props.aspectRatio !== undefined) {
+    return props;
+  }
+
+  const width = child.assetProbe?.width;
+  const height = child.assetProbe?.height;
+
+  if (
+    width === undefined ||
+    height === undefined ||
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    return props;
+  }
+
+  return {
+    ...props,
+    aspectRatio: width / height,
+  };
+}
+
+function resolveCornerRadiusEmu(
+  value: DeckLength | undefined,
+  frame: Frame,
+  context?: LengthResolutionContext,
+): number {
+  return parseLength(value, Math.min(frame.widthEmu, frame.heightEmu), 0, context);
+}
+
+function unsupportedObjectPositionSemantics(input: {
+  readonly value?: string;
+  readonly resolved?: ObjectPositionIR;
+}): readonly ProjectedUnsupportedSemantic[] {
+  if (input.value === undefined || input.resolved !== undefined) {
+    return [];
+  }
+
+  const unsupported = unsupportedSemantic({
+    feature: "image",
+    property: "objectPosition",
+    value: input.value,
+    error: new Error("Unsupported objectPosition value."),
+    fallback: {
+      strategy: "preserveAuthoredValueOnly",
+      preserves: ["authoredObjectPosition"],
+      missing: ["pptxObjectPosition"],
+    },
+  });
+
+  return unsupported ? [unsupported] : [];
 }
 
 function parseCropValue(value: number | `${number}%` | undefined): number {
@@ -1601,6 +1664,7 @@ function compileChildren(
   options: Pick<
     ViewStyle,
     | "direction"
+    | "display"
     | "gap"
     | "rowGap"
     | "columnGap"
@@ -1680,6 +1744,8 @@ function compileChildren(
   }
 
   const direction = options.direction ?? "vertical";
+  const defaultAlignItems =
+    options.alignItems ?? (options.display === "flex" ? "stretch" : undefined);
   const mainGapEmu = resolveMainGap(
     direction,
     options.gap,
@@ -1784,10 +1850,7 @@ function compileChildren(
       const childCross = estimateChildCrossSize(child, direction, parentFrame, context);
       const [marginTop, marginRight, marginBottom, marginLeft] = getNodeMargin(child, context);
       const alignSelf = parsePlaceSelf(child.props.placeSelf).alignSelf ?? child.props.alignSelf;
-      let alignment = alignSelf ?? options.alignItems;
-      if (alignment === "auto") {
-        alignment = undefined;
-      }
+      let alignment = alignSelf === "auto" ? defaultAlignItems : (alignSelf ?? defaultAlignItems);
       if (alignment === "flex-start") {
         alignment = "start";
       }
@@ -1958,7 +2021,7 @@ function compileGroupNode(
     ...(strokes.edgeStrokes ? { edgeStrokes: strokes.edgeStrokes } : {}),
     ...(outline.outline ? { outline: outline.outline } : {}),
     ...(shadow.shadow ? { shadow: shadow.shadow } : {}),
-    radiusEmu: parseLength(props.borderRadius, 0, 0, context),
+    radiusEmu: resolveCornerRadiusEmu(props.borderRadius, visibleFrame, context),
     children: compileChildren(
       node.source.children,
       originalFrame,
@@ -1966,6 +2029,7 @@ function compileGroupNode(
       props.layout,
       {
         direction: props.direction,
+        display: props.display,
         gap: props.gap,
         rowGap: props.rowGap,
         columnGap: props.columnGap,
@@ -2023,13 +2087,19 @@ function textStyleFromProps(
     paddingPt: parseSpacingInPoints(props.padding, textLengthContext),
     lineSpacing: props.lineSpacing ?? lineHeight.lineSpacing,
     lineSpacingMultiple: props.lineSpacingMultiple ?? lineHeight.lineSpacingMultiple,
-    paragraphSpacingBefore: props.paragraphSpacingBefore,
-    paragraphSpacingAfter: props.paragraphSpacingAfter,
+    paragraphSpacingBefore:
+      props.paragraphSpacingBefore === undefined
+        ? undefined
+        : parsePointValue(props.paragraphSpacingBefore, 0, textLengthContext),
+    paragraphSpacingAfter:
+      props.paragraphSpacingAfter === undefined
+        ? undefined
+        : parsePointValue(props.paragraphSpacingAfter, 0, textLengthContext),
     ...(props.textIndent === undefined
       ? {}
       : { textIndentPt: parsePointValue(props.textIndent, 0, textLengthContext) }),
     ...(tabStops ? { tabStops } : {}),
-    charSpacing: props.charSpacing,
+    charSpacing: resolveCharacterSpacing(props.charSpacing, textLengthContext),
     ...(list ? { list } : {}),
     fit: props.fit,
     wrap: props.wrap,
@@ -2219,7 +2289,7 @@ function compileTextNode(
     ...(outline.outline ? { outline: outline.outline } : {}),
     ...(shadow.shadow ? { shadow: shadow.shadow } : {}),
     ...(hyperlink ? { hyperlink } : {}),
-    radiusEmu: parseLength(props.borderRadius, 0, 0, textLengthContext),
+    radiusEmu: resolveCornerRadiusEmu(props.borderRadius, visibleFrame, textLengthContext),
   };
 }
 
@@ -2279,6 +2349,10 @@ function compileImageNode(
       flipV: resolved.flipV,
       fit: props.fit,
       hasExplicitCrop: crop !== undefined,
+    }),
+    ...unsupportedObjectPositionSemantics({
+      value: props.objectPosition,
+      resolved: objectPosition,
     }),
     ...shadow.unsupportedSemantics,
   ];
@@ -2400,7 +2474,7 @@ function compileShapeNode(
     ...(outline.outline ? { outline: outline.outline } : {}),
     ...(shadow.shadow ? { shadow: shadow.shadow } : {}),
     ...(hyperlink ? { hyperlink } : {}),
-    radiusEmu: parseLength(props.radius, 0, 0, context),
+    radiusEmu: resolveCornerRadiusEmu(props.radius, visibleFrame, context),
   };
 }
 

@@ -1011,7 +1011,17 @@ async function writeSampleDeck(output: string) {
 
   deck.slide({ name: "deckjsx Sample Report", style: { backgroundColor: "#F8FAFC" } }, () => [
     <header style={{ x: 0.7, y: 0.55, width: 8.4, height: 0.7 }}>
-      <h1 style={{ fontSize: 28, fontWeight: 700, color: "#0F172A" }}>deckjsx Sample Report</h1>
+      <h1
+        style={{
+          width: "100%",
+          height: 0.55,
+          fontSize: 28,
+          fontWeight: 700,
+          color: "#0F172A",
+        }}
+      >
+        deckjsx Sample Report
+      </h1>
     </header>,
     <main
       style={{
@@ -1024,13 +1034,37 @@ async function writeSampleDeck(output: string) {
         columnGap: 0.35,
       }}
     >
-      <section style={{ backgroundColor: "#DBEAFE", padding: 0.22, borderRadius: 0.12 }}>
-        <h2 style={{ fontSize: 18, color: "#1D4ED8" }}>JSX authoring</h2>
-        <p style={{ fontSize: 13, color: "#334155" }}>Write slides with typed TSX.</p>
+      <section
+        style={{
+          backgroundColor: "#DBEAFE",
+          padding: 0.22,
+          borderRadius: 0.12,
+          display: "flex",
+          flexDirection: "column",
+          gap: 0.12,
+        }}
+      >
+        <h2 style={{ width: "100%", height: 0.35, fontSize: 18, color: "#1D4ED8" }}>
+          JSX authoring
+        </h2>
+        <p style={{ width: "100%", height: 0.35, fontSize: 13, color: "#334155" }}>
+          Write slides with typed TSX.
+        </p>
       </section>
-      <section style={{ backgroundColor: "#DCFCE7", padding: 0.22, borderRadius: 0.12 }}>
-        <h2 style={{ fontSize: 18, color: "#15803D" }}>typed TSX</h2>
-        <p style={{ fontSize: 13, color: "#334155" }}>Project then render direct PPTX.</p>
+      <section
+        style={{
+          backgroundColor: "#DCFCE7",
+          padding: 0.22,
+          borderRadius: 0.12,
+          display: "flex",
+          flexDirection: "column",
+          gap: 0.12,
+        }}
+      >
+        <h2 style={{ width: "100%", height: 0.35, fontSize: 18, color: "#15803D" }}>typed TSX</h2>
+        <p style={{ width: "100%", height: 0.35, fontSize: 13, color: "#334155" }}>
+          Project then render direct PPTX.
+        </p>
       </section>
     </main>,
   ]);

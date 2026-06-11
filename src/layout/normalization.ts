@@ -77,6 +77,7 @@ export type ShapeNormalizationInput = Partial<ShapeStructuralInput> &
 function resolveFlexDirection(
   direction: StackAxis | undefined,
   flexDirection: CssFlexDirection | undefined,
+  display: ViewStyle["display"],
 ): StackAxis | undefined {
   if (direction) {
     return direction;
@@ -88,6 +89,10 @@ function resolveFlexDirection(
 
   if (flexDirection === "column") {
     return "vertical";
+  }
+
+  if (display === "flex") {
+    return "horizontal";
   }
 
   return undefined;
@@ -264,7 +269,11 @@ export function normalizeViewProps(props: ViewNormalizationInput): NormalizedVie
   authored.gridAutoColumns = resolved.gridAutoColumns ?? gridContainerAuthoring.gridAutoColumns;
   authored.gridAutoRows = resolved.gridAutoRows ?? gridContainerAuthoring.gridAutoRows;
   authored.gridAutoFlow = resolved.gridAutoFlow ?? gridContainerAuthoring.gridAutoFlow;
-  const direction = resolveFlexDirection(authored.direction, authored.flexDirection);
+  const direction = resolveFlexDirection(
+    authored.direction,
+    authored.flexDirection,
+    authored.display,
+  );
   const inset = resolveInset(
     authored.inset,
     authored.top,
@@ -352,7 +361,8 @@ export function normalizeTextProps(props: TextNormalizationInput): NormalizedTex
     italic: resolved.italic ?? (resolved.fontStyle === "italic" ? true : undefined),
     underline: resolved.underline ?? decoration.underline,
     strike: resolved.strike ?? decoration.strike,
-    charSpacing: resolved.charSpacing ?? resolved.letterSpacing,
+    charSpacing:
+      resolved.charSpacing ?? (resolved.letterSpacing === "normal" ? 0 : resolved.letterSpacing),
     backgroundColor: resolved.backgroundColor ?? background.backgroundColor,
     borderColor: resolved.borderColor ?? border.borderColor,
     borderWidth: resolved.borderWidth ?? border.borderWidth,

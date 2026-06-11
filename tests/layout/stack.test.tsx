@@ -3,6 +3,129 @@ import { Deck, EMU_PER_INCH } from "../../src/index.ts";
 import { summarizeNodes } from "../helpers.ts";
 
 describe("stack layout", () => {
+  test("render defaults display flex to row direction and stretched cross axis", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Flex defaults" }, () => (
+      <>
+        <div
+          style={{
+            x: 1,
+            y: 1,
+            width: 4,
+            height: 2,
+            display: "flex",
+            columnGap: 0.25,
+            padding: 0.5,
+          }}
+        >
+          <p style={{ width: 1, fontSize: 18 }}>A</p>
+          <p style={{ width: 1, fontSize: 18 }}>B</p>
+        </div>
+      </>
+    ));
+
+    expect(
+      summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+    ).toEqual([
+      {
+        kind: "group",
+        frame: {
+          xEmu: 1 * EMU_PER_INCH,
+          yEmu: 1 * EMU_PER_INCH,
+          widthEmu: 4 * EMU_PER_INCH,
+          heightEmu: 2 * EMU_PER_INCH,
+        },
+        children: [
+          {
+            kind: "text",
+            frame: {
+              xEmu: 1.5 * EMU_PER_INCH,
+              yEmu: 1.5 * EMU_PER_INCH,
+              widthEmu: 1 * EMU_PER_INCH,
+              heightEmu: 1 * EMU_PER_INCH,
+            },
+            text: "A",
+            fontSizePt: 18,
+          },
+          {
+            kind: "text",
+            frame: {
+              xEmu: 2.75 * EMU_PER_INCH,
+              yEmu: 1.5 * EMU_PER_INCH,
+              widthEmu: 1 * EMU_PER_INCH,
+              heightEmu: 1 * EMU_PER_INCH,
+            },
+            text: "B",
+            fontSizePt: 18,
+          },
+        ],
+      },
+    ]);
+  });
+
+  test("render stretches column flex children without explicit width", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Column flex stretch" }, () => (
+      <>
+        <div
+          style={{
+            x: 1,
+            y: 1,
+            width: 4,
+            height: 2,
+            display: "flex",
+            flexDirection: "column",
+            rowGap: 0.25,
+            padding: 0.5,
+          }}
+        >
+          <p style={{ height: 0.5, fontSize: 18 }}>A</p>
+          <p style={{ height: 0.5, fontSize: 18 }}>B</p>
+        </div>
+      </>
+    ));
+
+    expect(
+      summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+    ).toEqual([
+      {
+        kind: "group",
+        frame: {
+          xEmu: 1 * EMU_PER_INCH,
+          yEmu: 1 * EMU_PER_INCH,
+          widthEmu: 4 * EMU_PER_INCH,
+          heightEmu: 2 * EMU_PER_INCH,
+        },
+        children: [
+          {
+            kind: "text",
+            frame: {
+              xEmu: 1.5 * EMU_PER_INCH,
+              yEmu: 1.5 * EMU_PER_INCH,
+              widthEmu: 3 * EMU_PER_INCH,
+              heightEmu: 0.375 * EMU_PER_INCH,
+            },
+            text: "A",
+            fontSizePt: 18,
+          },
+          {
+            kind: "text",
+            frame: {
+              xEmu: 1.5 * EMU_PER_INCH,
+              yEmu: 2.125 * EMU_PER_INCH,
+              widthEmu: 3 * EMU_PER_INCH,
+              heightEmu: 0.375 * EMU_PER_INCH,
+            },
+            text: "B",
+            fontSizePt: 18,
+          },
+        ],
+      },
+    ]);
+  });
+
   test("render resolves stack layout to absolute frames in the IR", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 

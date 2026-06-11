@@ -202,6 +202,16 @@ deck.useAssets(appAssets);
 
 Project は `probe()` を使って dimensions と media metadata を projected model に渡します。Render は同じ loader scope で `load()` を使うため、bytes、media type、dimensions が同じ runtime 前提から得られます。dimensions を probe できない場合は writer に推測させず、asset retrieval failure として扱います。
 
+`img` に probe 済みの intrinsic `width` / `height` がある場合、作者が `aspectRatio` を指定して
+いなければ、その自然比から不足している投影軸を補います。自然比で置きたい画像は
+`style={{ width: 4 }}`、固定枠に切り抜きたい画像は `width` / `height` と
+`objectFit: "cover"`、画像ではない placeholder や意図的な上書きは
+`style={{ width: 4, aspectRatio: "16 / 9" }}` を使います。
+
+前景の `img` には `objectFit` / `fit`、`objectPosition`、`crop` を使います。装飾や下敷きの画像は
+view-like box の `background`、`backgroundSize`、`backgroundPosition`、`backgroundRepeat`、
+`backgroundClip`、`backgroundOrigin` で扱います。比較が目的でない限り、この2つの語彙を例の中で混ぜないでください。
+
 ## Slide Templates
 
 繰り返し使うスライド構造がある場合は deck templates を使います。template は deck configuration で named area を定義し、slide factory に渡る typed `template` handle で通常の authored JSX を配置します。
@@ -223,11 +233,27 @@ deck.slide({ template: "report" }, ({ template }) => (
   <main>
     <h1 area={template.title}>Quarterly Review</h1>
     <section area={template.body}>
-      <p>Performance highlights</p>
+      <p style={{ width: "100%", height: 0.5 }}>Performance highlights</p>
     </section>
   </main>
 ));
 ```
+
+## CSS-like defaults と注意点
+
+deckjsx は HTML/CSS-like ですが、v0.8 はブラウザエンジンではなくスライド用の layout solver です。
+
+- `display: "block"` は v0.8.x では local containing block です。browser-like な縦の block flow は作らないため、サイズや位置のない子要素は重なることがあります。composition には flex/grid と `gap`、template、または明示的な `x` / `y` を使います。
+- `display: "flex"` は CSS-like に row direction と cross-axis stretch を default にします。deck 固有の `layout: "stack"` default は vertical のままです。
+- frame は明示的な `width` / `height`、inset、flex/grid stretch、または画像の自然比がない限り zero-size です。layout mode が stretch しない text box には projected width と height を与えます。
+- stack/grid は宣言済みのサイズと比率を使います。wrapped text を測って後続要素を押し下げるわけではありません。text-heavy なスライドでは宣言済み height と `fit: "shrink"` を使います。
+- numeric layout length は inches、font-size-like な数値は points です。numeric `lineHeight` は points ではなく multiplier です。
+- `letterSpacing` は `normal`、points としての数値、`px` / `pt` / `em` / `rem` などの CSS-like point length を受けます。
+- `paragraphSpacingBefore` / `paragraphSpacingAfter` は points としての数値と、`px` / `pt` / `em` / `rem` などの CSS-like point length を受けます。
+- single-value の `borderRadius` は projected short side 基準の percentage を受けます。capsule 風にしたい場合は `borderRadius: "50%"` を使います。
+- container、text、shape は slide geometry のため `boxSizing: "border-box"` default です。shape は style しなければ白塗りの PPTX primitive として見えます。
+- grid default は browser の implicit `auto` track ではなく、利用可能な grid content frame を埋めます。精密なレイアウトでは tracks を明示します。
+- `zIndex` は projected paint order であり、full CSS stacking context ではありません。
 
 ## テスト由来のサンプルパターン
 

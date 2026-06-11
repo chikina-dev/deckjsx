@@ -6224,6 +6224,305 @@ resolvedStyles, templates, assetProbeArtifacts, deckSize, diagnostics })`. This 
   retire or split `compiler/normalization`; move ZIP to store-only without `fflate`; split PPTX writer
   responsibilities; then update docs, release review, and version metadata.
 
+## 0.8.2 DoS Report Feedback Triage
+
+### Goal
+
+Use the 26-slide DoS report production feedback from v0.8.0 as the next patch-line hardening pass.
+The main theme is not broad CSS parity; it is making the currently advertised CSS-like subset harder
+to misuse silently. v0.8.2 should prioritize layout defaults, degenerate frame handling, diagnostics,
+CSS-like property handling, and README/skill examples that match the implementation users actually
+experience. First-class video support is intentionally moved to v0.8.3 so v0.8.2 can finish the
+non-video hardening work.
+
+### Current Code Findings
+
+- View-like elements still default to `display: "block"` plus `layout: "absolute"` through
+  `ELEMENT_DEFAULTS.container` and `normalizeViewProps()`. In the current solver, block containers
+  do not perform browser-like block flow; children without explicit placement share the same local
+  origin, and margins do not create vertical document flow. This matches the feedback that plain
+  nested `div` content can overlap.
+- `display: "flex"` maps to stack layout, but the stack path does not currently default
+  `alignItems` to `stretch`. For a column flex container, a child text node without an authored
+  `width` estimates cross size as `0`, so it can project a zero-width frame and disappear or trip
+  later writer checks. Grid item self-alignment already defaults to stretch through
+  `resolveGridSelfAlignment()`.
+- Implemented in the current v0.8.2 preparation slice: `display: "flex"` now defaults to row
+  direction when neither `direction` nor `flexDirection` is authored, and its cross-axis alignment
+  defaults to stretch. The older `layout: "stack"` default remains vertical so deck-specific stack
+  authoring is not silently reinterpreted as CSS flexbox.
+- Text measurement is not an auto-layout input yet. Stack and grid placement use declared
+  width/height, flex basis, aspect-ratio derivation, tracks, and gaps. They do not measure wrapped
+  text and then push following siblings by the realized text height.
+- Numeric `lineHeight` has already moved in the right direction: `resolveLineHeight()` treats a
+  number as `lineSpacingMultiple`, and tests cover percentage line-spacing XML. v0.8.2 should keep
+  this as a regression guard and update any stale docs/skills that imply numeric line height is
+  points.
+- The README `AssetLoader.load()` example now matches `AssetLoadResult` by returning top-level
+  `bytes`. The deckjsx skill docs still need the same audit because stale skill examples are a
+  product bug for agent-authored decks.
+- Implemented in the current v0.8.2 preparation slice: Direct render now avoids opening path output
+  before the writer produces artifact bytes, and Node path output writes through a temporary file
+  before replacing the requested path. The regression test covers an existing non-empty output file
+  plus a render failure with no artifact, proving the file remains untouched.
+- Implemented in the current v0.8.2 preparation slice: rounded-rectangle emission still clamps PPTX
+  `roundRect` adjustment to `50000`, and `borderRadius` / shape `radius` now resolve percentage
+  values against the projected short side. This makes CSS-like `borderRadius: "50%"` produce the
+  expected capsule-style geometry instead of falling through a zero base.
+- Frame defaults are zero-sized unless placement, explicit `width`/`height`, both-side insets, or a
+  layout algorithm supplies a size. `frameFromProps()` does not do intrinsic content sizing for text,
+  images, shapes, or views. This is the broader root of several "invisible unless sized" reports,
+  not only a flex-specific issue.
+- `boxSizing` defaults to `border-box` for containers, text, and shapes. That is useful for slide
+  geometry, but it differs from the CSS initial `content-box` value and should be called out as a
+  deliberate deckjsx default.
+- `position` is not full CSS positioned layout. In stack layout, `position: "absolute"` removes an
+  entry from normal stack flow; `position: "relative"` mostly means the node stays in flow. Relative
+  offset semantics are not implemented as browser `position: relative` behavior.
+- Grid defaults are deck-oriented. Missing templates resolve to tracks that fill the available grid
+  content frame, and implicit `gridAutoRows` / `gridAutoColumns` fall back to `1fr`-like behavior
+  rather than CSS `auto` tracks. Grid item stretch is implemented, but the track defaults should be
+  documented as deckjsx semantics.
+- Image and background defaults are presentation-oriented, not CSS initial values. `img` defaults to
+  `fit: "contain"` / centered object position; element background images default to no-repeat and
+  stretch when no `backgroundSize` is provided; slide backgrounds default to cover/no-repeat. CSS
+  authors may expect intrinsic image sizing, `background-repeat: repeat`, and
+  `background-size: auto`.
+- Shape defaults are visible by default: `shape` uses white fill with zero stroke unless styled.
+  That is reasonable for a PowerPoint shape primitive, but differs from a transparent CSS box and
+  can surprise users using `shape` as a layout/debug primitive.
+- Numeric length defaults are intentionally split by domain: `DeckLength` numbers are inches, while
+  point-like text values remain points. Existing docs mention this, but v0.8.2 docs should place it
+  near the other non-CSS gotchas because most CSS lengths are unitless only for special properties.
+- `zIndex` is a simple projected paint-order number with effective default `0`; it is not CSS
+  `z-index: auto` and does not model browser stacking contexts except for the explicit fallback
+  warnings already recorded for opacity/transform/compositing cases.
+- Implemented in the current v0.8.2 preparation slice: `letterSpacing` accepts CSS-like point
+  lengths such as `pt`, `px`, `em`, `rem`, `vh`, `vw`, and `ch`, plus `normal`. Numeric values remain
+  point values for backward compatibility, and the resolved value is emitted as PPTX character
+  spacing.
+- Implemented in the current v0.8.2 preparation slice: `paragraphSpacingBefore` and
+  `paragraphSpacingAfter` now accept the same point-like length vocabulary as other text spacing
+  controls. Numeric values remain points for backward compatibility; CSS-like `pt`, `px`, `in`,
+  `em`, `rem`, `vh`, `vw`, and `ch` values are resolved before PPTX text XML emission.
+- Numeric public style audit: the remaining number-only fields are intentionally numeric domains
+  rather than missed CSS lengths. `fontWeight`, `zIndex`, `order`, `flexGrow`, `flexShrink`, grid
+  line/span placement, `listStart`, `rotation`, opacity/transparency fields, `lineSpacing`, and
+  `lineSpacingMultiple` should stay numeric in v0.8.2. CSS-like length-capable fields now include
+  layout lengths, border/outline/stroke widths, font size, line height, text indent, tab stops,
+  letter spacing, and paragraph spacing before/after.
+- Implemented in the current v0.8.2 preparation slice: invalid authored `objectPosition` values on
+  foreground images preserve the centered fallback but now carry an unsupported-semantic record so
+  inspection can show the fallback instead of silently hiding the authored value.
+
+### Required Fixes
+
+- Make flex/stack cross-axis default behavior match the documented CSS-like expectation where
+  practical. A column flex child without explicit `width` should stretch to the available content
+  width unless an explicit cross size, aspect-ratio dependency, or self-alignment says otherwise.
+  Add focused layout tests for text, view, image, and shape children in row and column flex
+  containers.
+- Completed for the current slice: add degenerate frame diagnostics before writer emission. Zero
+  width/height for non-line drawings is a package validation error; line shapes may keep one zero
+  axis but not both. Render blocks artifact creation before any output side effect when these errors
+  are present.
+- Completed for the current slice: add an output safety regression test that renders to an existing
+  non-empty file, forces a render failure with no artifact, and proves the file is left untouched
+  while the result has error diagnostics and no artifact.
+- Document block-layout reality. README and skill docs should state that `display: "block"` is a
+  containing-block/absolute-local mode in v0.8.x, not browser block flow; use flex/grid with `gap`
+  or explicit `x`/`y` for vertical composition. Examples with multiple children inside a card should
+  use flex/grid or explicit coordinates.
+- Add a "non-CSS behaviors / gotchas" section to the English and Japanese deckjsx skills covering:
+  block containers do not create vertical flow, text needs a projected width unless its layout mode
+  stretches it, stack/grid use declared sizes rather than measured wrapped text, and numeric
+  `lineHeight` is a multiplier in current code.
+- Audit all skill and README asset-loader snippets so `AssetLoader.load()` returns
+  `AssetLoadResult` with top-level `bytes`, not a nested `source` object.
+- Completed for the current slice: tighten `borderRadius` behavior by resolving percentage radius
+  values against the projected short side and covering capsule clamp output in writer tests.
+- Completed for the current slice: broaden `letterSpacing` to CSS-like point lengths and `normal`,
+  add public type coverage, and cover emitted PPTX character spacing XML.
+- Completed for the current slice: broaden `paragraphSpacingBefore` and `paragraphSpacingAfter` to
+  CSS-like point lengths, add public type coverage, and cover emitted PPTX paragraph spacing XML.
+- Add a default-semantics audit table to README and skill docs. For every CSS-looking default that
+  intentionally differs from browsers, record the deckjsx value, the browser/CSS expectation, and
+  whether the v0.8.2 action is "change", "diagnose", or "document". Include at least frame sizing,
+  block layout, flex stretch, grid tracks, box sizing, position, image/background sizing, shape fill,
+  units, and z-index.
+- Audit image positioning ergonomics. Current support is already meaningful but fragmented:
+  authored `img` accepts `fit` / `objectFit`, `objectPosition`, and explicit `crop`; background
+  image layers accept CSS-like `backgroundSize`, `backgroundPosition`, `backgroundRepeat`,
+  `backgroundClip`, `backgroundOrigin`, and shorthand layer lists. v0.8.2 should document these as
+  one image-positioning model, add examples for the common "cover with focal point", "contain with
+  alignment", "manual crop", and "background image inside padded card" cases, and make the same
+  mental model visible in skill docs.
+- Tighten the `img` versus `background-image` vocabulary split. `img` uses `objectFit` /
+  `objectPosition` plus `crop`, while background layers use `backgroundSize` /
+  `backgroundPosition` and have repeat/origin/clip semantics. If both are intentionally different,
+  docs should explain when to use each. If they should feel interchangeable, add aliases or helper
+  examples rather than making users rediscover the split.
+- Completed for the current slice: invalid authored foreground `objectPosition` values now preserve
+  a centered fallback and carry an unsupported-semantic record. Further crop/focal-point helper
+  aliases remain future v0.8.x ergonomics work.
+- Keep object-position parsing consistent across layout and PPTX projection paths. The current code
+  has image/background positioning support in the layout/background helpers and older PPTX projection
+  helpers; v0.8.2 should make sure supported forms such as `right 25% bottom 10%`, percentages,
+  keywords, and length offsets behave identically for normal project/render and any defined
+  projection or compatibility path.
+- Implemented in the current v0.8.2 preparation slice: `img` layout now derives a missing projected
+  axis from probed intrinsic `width` / `height` when the author has not supplied `aspectRatio`.
+  Authored `aspectRatio` still wins for deliberate overrides.
+- Add image sizing presets or examples for common cases: "natural aspect with fixed width",
+  "natural aspect with fixed height", "fill this box with cover", "fit this box with contain",
+  "crop to focal point", and "use as background layer behind text". These should be in README and
+  both skill docs, because this is exactly the kind of thing agents will otherwise improvise
+  inconsistently.
+- Decide whether `aspectRatio: "auto"` or an explicit helper such as `fit: "natural"` belongs in the
+  public authoring model. If not, document the intended spelling clearly, such as
+  `style={{ width: 4 }}` deriving height for images after v0.8.2 intrinsic sizing, or
+  `style={{ width: 4, aspectRatio: "16 / 9" }}` for non-image boxes.
+- Add diagnostics for image layout when intrinsic size is required but unavailable. A loader missing
+  dimensions already produces asset diagnostics for package projection; v0.8.2 should ensure the
+  layout-facing message also explains when missing dimensions prevent natural aspect-ratio sizing or
+  `contain` / `cover` calculations.
+- Review whether `crop` should get friendlier aliases. The current explicit-edge crop model is
+  precise, but users often think in focal point plus zoom. A future-friendly v0.8.x API could keep
+  `crop` as the low-level source-rectangle input while adding documented recipes or aliases for
+  `zoom`, `focalPoint`, or `objectPosition`-driven cover crops if those map cleanly to PPTX
+  `srcRect`.
+
+### Validation
+
+- Add focused layout tests for:
+  - column flex text without width stretches to parent content width;
+  - row flex text without height stretches to parent content height when appropriate;
+  - block container children without flex/grid remain overlapping/local absolute by documented
+    design, or fail if v0.8.2 chooses to implement block flow;
+  - grid default stretch remains intact while flex default stretch is added;
+  - wrapped text overflow does not claim auto-height support.
+- Add render tests for:
+  - degenerate projected frames produce element-origin diagnostics;
+  - failed render does not create or truncate `output`;
+  - numeric `lineHeight` stays `lineSpacingMultiple`;
+  - `letterSpacing`, `paragraphSpacingBefore` / `paragraphSpacingAfter`, and `borderRadius`
+    unsupported/supported inputs follow the documented policy.
+- Run `vp check`, `vp test`, sample smoke, and the render verification workflow before cutting
+  v0.8.2.
+
+### Non-Goals
+
+- Do not implement full browser block formatting context in v0.8.2 unless the scope stays small
+  enough to preserve the patch release. It is acceptable to document block-as-local-absolute and
+  reserve real block flow for a later layout release.
+- Do not add a text measurement engine or `height: auto` for wrapped text in v0.8.2. Record the
+  desired behavior, add honest docs, and keep the current declared-height layout model explicit.
+- Do not expose public layout snapshots or solver internals while adding diagnostics. The user-facing
+  contract remains stage results, diagnostics, summaries, and inspection surfaces already planned for
+  the 0.8 line.
+- Do not implement first-class video in v0.8.2. Video belongs to the dedicated v0.8.3 media slice
+  below.
+
+## 0.8.3 Video Media Support
+
+### Goal
+
+Add first-class video authoring and PPTX output support without weakening the existing image/media
+pipeline. The initial target should be practical slide-deck video embedding: an authored video box
+with deterministic package parts, relationships, optional poster/fallback image, diagnostics, and
+render verification. This should not be treated as a background-image variant or an `img` alias.
+
+### Current Code Findings
+
+- The authoring surface has no `video` intrinsic. `AuthoredTag`, JSX prop types, semantic graph
+  roles, layout input, projected layout nodes, and PPTX drawing elements currently distinguish only
+  view/text/image/shape content.
+- `AssetSource`, `AssetProbeResult`, and `AssetLoadResult` are generic enough to carry video bytes,
+  media type, extension, byte length, and hashes, but the Project pipeline currently interprets media
+  through `ImageSourceIR` and image dimensions. There is no duration, poster frame, codec, or
+  playable-media metadata shape.
+- PPTX media package parts are currently image-oriented. `PptxMediaPartPayload.source` and
+  `sources` are typed around `ImageSourceIR`; `isPptxMediaPart()` validates image sources; media
+  allocation keys, extension inference, and metadata inference know image MIME types.
+- Slide relationships currently attach `image` and `hyperlink` relationships for drawing content.
+  Package relationship XML can serialize additional relationship types once modeled, but the
+  projection/writer layers do not yet create video/movie/media relationships or connect them to slide
+  drawing XML.
+- Slide XML emission has a picture path for `PptxPictureElement`; there is no video drawing element,
+  movie non-visual property emission, poster image relationship, or playback-related XML emission.
+- README and deckjsx skill docs describe image assets only. Agent-authored decks therefore have no
+  supported pattern for videos, posters, fallbacks, or "link instead of embed" behavior.
+
+### Proposed Authoring Scope
+
+- Add a lowercase `video` intrinsic rather than overloading `img`. Initial props should be narrow:
+  `src` or `data`, `style`, `className`, `area`, optional `poster`, optional `posterData`, and a
+  small playback-policy shape only when the PPTX mapping is verified. Avoid broad HTML media props
+  until their PPTX behavior is understood.
+- Keep the first supported runtime sources aligned with the asset loader boundary: `data:`,
+  `bytes`, absolute URL-like sources when fetch is available, and loader-resolved paths/app assets.
+  Filesystem and authenticated media remain outside core behind `deck.useAssets(loader)`.
+- Prefer `video/mp4` with `.mp4` as the first compatibility target. Add MIME/extension hooks for
+  other formats only after generated PPTX files open correctly in PowerPoint, Keynote, and
+  LibreOffice or are documented as best-effort.
+- Require or strongly recommend a poster/fallback image for v0.8.x. If poster generation is not in
+  scope, support an authored poster source and produce diagnostics when a playable video has no
+  visible fallback.
+- Decide whether unsupported runtimes should embed video bytes, link to an external video, or render
+  a poster-only fallback. The behavior must be explicit in diagnostics and summaries; it should not
+  silently degrade to a static image.
+
+### Implementation Notes
+
+- Split image-specific vocabulary into media-neutral and image-specific pieces. Candidate shapes:
+  `MediaSourceIR` for data/path/url/bytes-like authored media, `ImageSourceIR` for still images, and
+  `VideoSourceIR` for playable video. Preserve compatibility for existing image APIs.
+- Extend Asset metadata carefully. Image `width`/`height` can stay, but video likely needs optional
+  `durationMs`, `posterWidth`, `posterHeight`, `codec`, and `container` only when a loader can
+  provide them. Do not require core to parse MP4 boxes in the first slice unless needed for package
+  correctness.
+- Add `video` semantic/layout/projected node kinds, or introduce a media node with a discriminant,
+  only if it improves type boundaries. Do not make video masquerade as `image` internally just to
+  reuse drawing code; the writer needs distinct relationship and XML behavior.
+- Extend `PptxElementKind`, `PptxElement`, package media payloads, allocation keys, and media part
+  validation so image and video media parts can share the media package directory while preserving
+  kind-specific metadata and diagnostics.
+- Add PPTX relationship and content-type modeling for video based on real OOXML fixtures generated
+  from PowerPoint/LibreOffice/Keynote, not guessed XML. Keep the relationship type names and slide
+  XML shape as projected package intent before the writer emits bytes.
+- Model poster images as separate image media parts related to the video element when PPTX requires
+  them. Reuse the existing image media pipeline for poster bytes rather than storing poster data
+  inside the video payload.
+- Add writer support behind a focused module, such as `video-xml.ts`, with direct tests for missing
+  relationship ids, malformed video payloads, poster fallback behavior, and stable object ids.
+- Extend render verification with a tiny video fixture and package-level semantic assertions. Raster
+  verification may only see the poster frame, so package/XML assertions are required to prove the
+  embedded playable video is present.
+
+### Validation
+
+- Type tests reject unsupported broad HTML video props until they are intentionally modeled.
+- Asset loader tests cover video probe/load metadata, invalid MIME/extension combinations, byte-load
+  failures, and repeated-source media-part reuse.
+- Projection tests cover video element identity, package part allocation, content-type defaults,
+  slide relationships, poster image relationships, and fallback diagnostics.
+- Writer tests cover emitted relationships/content types, video XML, poster XML, missing relationship
+  failures, and deterministic package output.
+- Manual/opening verification should include at least PowerPoint and LibreOffice for an `.mp4`
+  fixture before calling video support release-ready. Keynote compatibility can be recorded as a
+  separate observation if available.
+
+### Non-Goals
+
+- Do not implement video editing, trimming, transcoding, thumbnail extraction, or codec conversion in
+  core deckjsx.
+- Do not add browser-like `<source>` selection, captions/subtitles, tracks, or streaming controls in
+  the first video slice.
+- Do not silently convert video to a static image. Poster-only fallback is acceptable only when the
+  result diagnostics and docs clearly say the video was not embedded/playable.
+- Do not expose low-level OOXML media controls as public props before there is a stable deckjsx
+  semantic model for them.
+
 ## 0.9 Hot Module Replacement
 
 ### Goal

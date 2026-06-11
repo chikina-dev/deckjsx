@@ -56,4 +56,37 @@ describe("image-values", () => {
       ],
     });
   });
+
+  test("render reports unsupported objectPosition fallbacks", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Invalid image position" }, () => (
+      <img
+        data={WIDE_SVG_DATA_URI}
+        style={{
+          x: 1,
+          y: 1,
+          width: 2,
+          height: 1,
+          objectPosition: "somewhere else",
+        }}
+      />
+    ));
+
+    const [imageNode] = (await deck.project()).projection!.slides[0].payload.drawing.children;
+
+    expect(imageNode?.kind).toBe("image");
+    if (imageNode?.kind !== "image") {
+      throw new Error("Expected image node.");
+    }
+    expect(imageNode.objectPosition).toEqual({ x: 0.5, y: 0.5 });
+    expect(imageNode.unsupportedSemantics).toContainEqual(
+      expect.objectContaining({
+        feature: "image",
+        property: "objectPosition",
+        value: "somewhere else",
+        fallback: expect.objectContaining({ strategy: "preserveAuthoredValueOnly" }),
+      }),
+    );
+  });
 });

@@ -37,10 +37,11 @@ import { resolveBackgroundBoxFrames } from "../../style/background";
 import { normalizeColor } from "../../style/color";
 import { parseLength, parsePointValue, type LengthResolutionContext } from "../../style/length";
 import type { ResolvedStyleMap } from "../../style/resolve";
-import type { ImageCropAuthoring, ImageCropValue, TextStyle } from "../../style/types";
+import type { DeckLength, ImageCropAuthoring, ImageCropValue, TextStyle } from "../../style/types";
 import type { SlideTemplateSet, TemplateAreaKind } from "../../templates";
 import {
   getTextLengthContext,
+  resolveCharacterSpacing,
   resolveLineHeight,
   resolveListStyle,
   resolveTabStops,
@@ -261,6 +262,14 @@ function parseObjectPositionValue(
   };
 }
 
+function resolveCornerRadiusEmu(
+  value: DeckLength | undefined,
+  frame: FrameIR,
+  context?: LengthResolutionContext,
+): number {
+  return parseLength(value, Math.min(frame.widthEmu, frame.heightEmu), 0, context);
+}
+
 function textStyleFromProps(
   props: ReturnType<typeof normalizeTextProps>,
   textLengthContext?: LengthResolutionContext,
@@ -293,13 +302,19 @@ function textStyleFromProps(
     paddingPt: parseSpacingInPoints(props.padding, textLengthContext),
     lineSpacing: props.lineSpacing ?? lineHeight.lineSpacing,
     lineSpacingMultiple: props.lineSpacingMultiple ?? lineHeight.lineSpacingMultiple,
-    paragraphSpacingBefore: props.paragraphSpacingBefore,
-    paragraphSpacingAfter: props.paragraphSpacingAfter,
+    paragraphSpacingBefore:
+      props.paragraphSpacingBefore === undefined
+        ? undefined
+        : parsePointValue(props.paragraphSpacingBefore, 0, textLengthContext),
+    paragraphSpacingAfter:
+      props.paragraphSpacingAfter === undefined
+        ? undefined
+        : parsePointValue(props.paragraphSpacingAfter, 0, textLengthContext),
     ...(props.textIndent === undefined
       ? {}
       : { textIndentPt: parsePointValue(props.textIndent, 0, textLengthContext) }),
     ...(tabStops ? { tabStops } : {}),
-    charSpacing: props.charSpacing,
+    charSpacing: resolveCharacterSpacing(props.charSpacing, textLengthContext),
     ...(list ? { list } : {}),
     fit: props.fit ?? DEFAULT_TEXT_FIT,
     wrap: props.wrap ?? DEFAULT_TEXT_WRAP,
@@ -686,7 +701,7 @@ function compileContainer(
     ...(outlineResult.outline ? { outline: outlineResult.outline } : {}),
     ...(generatedStrokes ? { generatedStrokes } : {}),
     ...(shadowResult.shadow ? { shadow: shadowResult.shadow } : {}),
-    radiusEmu: parseLength(props.borderRadius, 0, 0, context),
+    radiusEmu: resolveCornerRadiusEmu(props.borderRadius, frame, context),
     children: compileChildren(
       graph,
       resolvedStyles,
@@ -803,7 +818,7 @@ function compileText(
     ...(generatedStrokes ? { generatedStrokes } : {}),
     ...(shadowResult.shadow ? { shadow: shadowResult.shadow } : {}),
     ...(hyperlink ? { hyperlink } : {}),
-    radiusEmu: parseLength(props.borderRadius, 0, 0, textLengthContext),
+    radiusEmu: resolveCornerRadiusEmu(props.borderRadius, frame, textLengthContext),
   };
 }
 
@@ -962,7 +977,7 @@ function compileShape(
     ...(generatedStrokes ? { generatedStrokes } : {}),
     ...(shadowResult.shadow ? { shadow: shadowResult.shadow } : {}),
     ...(hyperlink ? { hyperlink } : {}),
-    radiusEmu: parseLength(props.radius, 0, 0, context),
+    radiusEmu: resolveCornerRadiusEmu(props.radius, frame, context),
   };
 }
 
