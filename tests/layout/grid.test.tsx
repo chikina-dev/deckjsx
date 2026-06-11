@@ -159,6 +159,52 @@ describe("grid layout", () => {
     ]);
   });
 
+  test("render treats css-wide grid item sizes as stretch defaults", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Grid css-wide size defaults" }, () => (
+      <div
+        style={{
+          x: 1,
+          y: 1,
+          width: 4,
+          height: 2,
+          display: "grid",
+          gridTemplateColumns: "1fr",
+          gridTemplateRows: "1fr",
+        }}
+      >
+        <div style={{ width: "initial", height: "initial", backgroundColor: "#D1D5DB" } as never} />
+      </div>
+    ));
+
+    expect(
+      summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+    ).toEqual([
+      {
+        kind: "group",
+        frame: {
+          xEmu: 1 * EMU_PER_INCH,
+          yEmu: 1 * EMU_PER_INCH,
+          widthEmu: 4 * EMU_PER_INCH,
+          heightEmu: 2 * EMU_PER_INCH,
+        },
+        children: [
+          {
+            kind: "group",
+            frame: {
+              xEmu: 1 * EMU_PER_INCH,
+              yEmu: 1 * EMU_PER_INCH,
+              widthEmu: 4 * EMU_PER_INCH,
+              heightEmu: 2 * EMU_PER_INCH,
+            },
+            children: [],
+          },
+        ],
+      },
+    ]);
+  });
+
   test("render resolves percentage padding and gaps in grid layout", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 

@@ -155,6 +155,64 @@ describe("stroke-values", () => {
     });
   });
 
+  test("render reports css-wide stroke width fallback", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "CSS-wide stroke width" }, () => (
+      <shape
+        shape="rect"
+        style={
+          {
+            x: 1,
+            y: 1,
+            width: 1.5,
+            height: 0.75,
+            fill: "#F97316",
+            stroke: "#2563EB",
+            strokeWidth: "initial",
+          } as never
+        }
+      />
+    ));
+
+    const result = await deck.project();
+    const shape = result.projection!.slides[0]?.payload.drawing.children[0];
+
+    expect(result.ok).toBe(true);
+    expect(shape?.kind).toBe("shape");
+    if (!shape || shape.kind !== "shape") {
+      throw new Error("Expected shape element.");
+    }
+    expect(shape.stroke).toEqual({
+      color: "2563EB",
+      style: undefined,
+      transparency: undefined,
+      widthPt: 1,
+    });
+    expect(shape.unsupportedSemantics).toContainEqual(
+      expect.objectContaining({
+        feature: "layout",
+        property: "strokeWidth",
+        value: "initial",
+        fallback: expect.objectContaining({
+          strategy: "preserveAuthoredValueOnly",
+          missing: expect.arrayContaining(["cssWideKeywordCascade"]),
+        }),
+      }),
+    );
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        code: "W_PROJECT_UNSUPPORTED_PPTX_SEMANTIC",
+        severity: "warning",
+        notes: expect.arrayContaining([
+          "feature=layout",
+          "property=strokeWidth",
+          "fallbackMissing=cssWideKeywordCascade",
+        ]),
+      }),
+    );
+  });
+
   test("render supports shape dotted stroke shorthand", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 

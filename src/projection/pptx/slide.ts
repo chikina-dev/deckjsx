@@ -32,6 +32,7 @@ import type {
   TextRunIR,
   TextStyleIR,
 } from "../../layout/projected";
+import { normalizeProjectedImageFit, unsupportedObjectFitSemantics } from "../../layout/image-fit";
 import { parseSpacing, parseSpacingInPoints } from "../../layout/spacing";
 import { resolveBackgroundBoxFrames } from "../../style/background";
 import { normalizeColor } from "../../style/color";
@@ -225,41 +226,6 @@ function parseImageCrop(
     bottom: parseCropValue(input.bottom),
     left: parseCropValue(input.left),
   };
-}
-
-function normalizeProjectedImageFit(value: unknown): "contain" | "cover" | "stretch" {
-  if (value === "cover" || value === "contain" || value === "stretch" || value === "fill") {
-    return value === "fill" ? "stretch" : value;
-  }
-
-  return "contain";
-}
-
-function unsupportedObjectFitSemantics(value: unknown): readonly PptxUnsupportedSemantic[] {
-  if (
-    value === undefined ||
-    value === "cover" ||
-    value === "contain" ||
-    value === "stretch" ||
-    value === "fill"
-  ) {
-    return [];
-  }
-
-  return [
-    {
-      feature: "image",
-      property: "objectFit",
-      value: typeof value === "string" ? value : JSON.stringify(value),
-      reason:
-        "CSS object-fit values none and scale-down require natural-size comparison that is outside the current deckjsx v0.8.2 image projection subset.",
-      fallback: {
-        strategy: "preserveAuthoredValueOnly",
-        preserves: ["authoredObjectFit"],
-        missing: ["cssObjectFitNaturalSize"],
-      },
-    },
-  ];
 }
 
 function parseObjectPositionValue(

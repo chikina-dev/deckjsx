@@ -1,6 +1,7 @@
 import type { DeckLength, Spacing } from "../style/types";
 import { EMU_PER_INCH, POINTS_PER_INCH } from "../types";
-import { isCssWideKeyword, parseLength, type LengthResolutionContext } from "../style/length";
+import { authoredLengthOrUndefined } from "../style/defaulting";
+import { parseLength, type LengthResolutionContext } from "../style/length";
 
 function splitSpacingTokens(value: string): string[] {
   const tokens: string[] = [];
@@ -96,14 +97,12 @@ function parseLengthOrAuto(
   fallbackEmu: number,
   context?: LengthResolutionContext,
 ): number {
-  if (
-    typeof value === "string" &&
-    (value.trim().toLowerCase() === "auto" || isCssWideKeyword(value))
-  ) {
+  const authoredValue = authoredLengthOrUndefined(value);
+  if (authoredValue === undefined) {
     return fallbackEmu;
   }
 
-  return parseLength(value, percentageBaseEmu, fallbackEmu, context);
+  return parseLength(authoredValue, percentageBaseEmu, fallbackEmu, context);
 }
 
 export function parseSpacingAllowAuto(

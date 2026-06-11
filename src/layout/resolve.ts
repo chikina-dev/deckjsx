@@ -102,6 +102,12 @@ import {
   type LengthResolutionContext,
 } from "../style/length";
 import {
+  authoredLengthOrUndefined,
+  hasAuthoredLength,
+  hasAutoToken,
+  hasCssWideKeywordToken,
+} from "../style/defaulting";
+import {
   parseOutlineShorthand,
   parseStrokeLineCap,
   parseStrokeLineJoin,
@@ -121,6 +127,8 @@ import {
   resolveUnderlineStyle,
 } from "../style/typography";
 import { EMU_PER_INCH, POINTS_PER_INCH } from "../types";
+import { normalizeProjectedImageFit, unsupportedObjectFitSemantics } from "./image-fit";
+import { unsupportedCssWideKeywordSemantic, unsupportedSemantic } from "./unsupported";
 
 type IdGenerator = {
   nextSlide(): string;
@@ -163,25 +171,6 @@ type LayoutChildNode =
 
 function errorReason(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function unsupportedSemantic(input: {
-  feature: ProjectedUnsupportedSemantic["feature"];
-  property: string;
-  value: StyleDeclarationValue | null | undefined;
-  error: unknown;
-  fallback?: ProjectedUnsupportedSemantic["fallback"];
-}): ProjectedUnsupportedSemantic | undefined {
-  if (input.value === undefined || input.value === null || input.value === "") {
-    return undefined;
-  }
-  return {
-    feature: input.feature,
-    property: input.property,
-    value: typeof input.value === "string" ? input.value : JSON.stringify(input.value),
-    reason: errorReason(input.error),
-    ...(input.fallback ? { fallback: input.fallback } : {}),
-  };
 }
 
 function parseShadowShorthandOrIgnore(input: { property: string; value?: string }): {
@@ -658,6 +647,13 @@ type CssLayoutDiagnosticsProps = {
   readonly paragraphSpacingBefore?: unknown;
   readonly paragraphSpacingAfter?: unknown;
   readonly textIndent?: unknown;
+  readonly borderWidth?: unknown;
+  readonly borderTopWidth?: unknown;
+  readonly borderRightWidth?: unknown;
+  readonly borderBottomWidth?: unknown;
+  readonly borderLeftWidth?: unknown;
+  readonly outlineWidth?: unknown;
+  readonly strokeWidth?: unknown;
 };
 
 type CssLayoutDiagnosticsProperty = keyof CssLayoutDiagnosticsProps;
@@ -678,31 +674,12 @@ function unsupportedCssLayoutValueSemantic(
   return unsupportedSemantic({
     feature: "layout",
     property,
-    value: value as StyleDeclarationValue | null | undefined,
+    value,
     error: new Error(CSS_LAYOUT_UNSUPPORTED_VALUE_REASON),
     fallback: {
       strategy: "preserveAuthoredValueOnly",
       preserves: ["authoredValue"],
       missing,
-    },
-  });
-}
-
-function unsupportedCssWideKeywordSemantic(
-  property: string,
-  value: unknown,
-): ProjectedUnsupportedSemantic | undefined {
-  return unsupportedSemantic({
-    feature: "layout",
-    property,
-    value: value as StyleDeclarationValue | null | undefined,
-    error: new Error(
-      "CSS-wide keywords require cascade/defaulting semantics; deckjsx v0.8.2 falls back to the supported subset initial value and preserves the authored keyword for inspection.",
-    ),
-    fallback: {
-      strategy: "preserveAuthoredValueOnly",
-      preserves: ["authoredValue"],
-      missing: ["cssWideKeywordCascade"],
     },
   });
 }
@@ -809,28 +786,6 @@ function hasUnsupportedGridPlacementValue(value: unknown, allowNamedArea: boolea
   return !placementPattern.test(normalized);
 }
 
-function spacingTokens(value: unknown): readonly unknown[] {
-  if (typeof value === "string") {
-    return value.trim().split(/\s+/).filter(Boolean);
-  }
-
-  if (Array.isArray(value)) {
-    return value;
-  }
-
-  return value === undefined || value === null ? [] : [value];
-}
-
-function hasAutoSpacingToken(value: unknown): boolean {
-  return spacingTokens(value).some(
-    (token) => typeof token === "string" && token.trim().toLowerCase() === "auto",
-  );
-}
-
-function hasCssWideKeywordToken(value: unknown): boolean {
-  return spacingTokens(value).some((token) => isCssWideKeyword(token));
-}
-
 function unsupportedCssLayoutValueSemantics(
   props: CssLayoutDiagnosticsProps,
 ): readonly ProjectedUnsupportedSemantic[] {
@@ -884,6 +839,13 @@ function unsupportedCssLayoutValueSemantics(
     "paragraphSpacingBefore",
     "paragraphSpacingAfter",
     "textIndent",
+    "borderWidth",
+    "borderTopWidth",
+    "borderRightWidth",
+    "borderBottomWidth",
+    "borderLeftWidth",
+    "outlineWidth",
+    "strokeWidth",
   ];
   for (const property of cssWideKeywordChecks) {
     if (!hasCssWideKeywordToken(props[property])) {
@@ -1045,7 +1007,7 @@ function unsupportedCssLayoutValueSemantics(
     "y",
   ];
   for (const property of insetChecks) {
-    if (!hasAutoSpacingToken(props[property])) {
+    if (!hasAutoToken(props[property])) {
       continue;
     }
     const semantic = unsupportedCssLayoutValueSemantic(property, props[property], [
@@ -1064,7 +1026,7 @@ function unsupportedCssLayoutValueSemantics(
     "marginLeft",
   ];
   for (const property of marginChecks) {
-    if (!hasAutoSpacingToken(props[property])) {
+    if (!hasAutoToken(props[property])) {
       continue;
     }
     const semantic = unsupportedCssLayoutValueSemantic(property, props[property], [
@@ -1527,42 +1489,6 @@ function unsupportedObjectPositionSemantics(input: {
   return unsupported ? [unsupported] : [];
 }
 
-function normalizeProjectedImageFit(value: unknown): "contain" | "cover" | "stretch" {
-  if (value === "cover" || value === "contain" || value === "stretch" || value === "fill") {
-    return value === "fill" ? "stretch" : value;
-  }
-
-  return "contain";
-}
-
-function unsupportedObjectFitSemantics(value: unknown): readonly ProjectedUnsupportedSemantic[] {
-  if (
-    value === undefined ||
-    value === "cover" ||
-    value === "contain" ||
-    value === "stretch" ||
-    value === "fill"
-  ) {
-    return [];
-  }
-
-  const unsupported = unsupportedSemantic({
-    feature: "image",
-    property: "objectFit",
-    value: value as StyleDeclarationValue | null | undefined,
-    error: new Error(
-      "CSS object-fit values none and scale-down require natural-size comparison that is outside the current deckjsx v0.8.2 image projection subset.",
-    ),
-    fallback: {
-      strategy: "preserveAuthoredValueOnly",
-      preserves: ["authoredObjectFit"],
-      missing: ["cssObjectFitNaturalSize"],
-    },
-  });
-
-  return unsupported ? [unsupported] : [];
-}
-
 function parseCropValue(value: number | `${number}%` | undefined): number {
   if (value === undefined) {
     return 0;
@@ -1717,17 +1643,6 @@ function resolveChildMainLength(node: LayoutChildNode, axis: StackAxis): DeckLen
   }
 
   return node.props[axis === "horizontal" ? "width" : "height"];
-}
-
-function authoredLengthOrUndefined(value: DeckLength | undefined): DeckLength | undefined {
-  if (
-    typeof value === "string" &&
-    (value.trim().toLowerCase() === "auto" || isCssWideKeyword(value))
-  ) {
-    return undefined;
-  }
-
-  return value;
 }
 
 function resolveTextFontSizePt(
@@ -1905,7 +1820,7 @@ function estimateChildCrossSize(
   );
 }
 function shouldStretchGridDimension(node: LayoutChildNode, dimension: "width" | "height") {
-  if (node.props[dimension] !== undefined) {
+  if (hasAuthoredLength(node.props[dimension])) {
     return false;
   }
 
@@ -1915,7 +1830,7 @@ function shouldStretchGridDimension(node: LayoutChildNode, dimension: "width" | 
   }
 
   const oppositeDimension = dimension === "width" ? "height" : "width";
-  return node.props[oppositeDimension] === undefined;
+  return !hasAuthoredLength(node.props[oppositeDimension]);
 }
 function resolveChildGridPlacements(
   node: LayoutChildNode,
@@ -2352,21 +2267,19 @@ function compileGridChildren(
 function hasExplicitFrameInput(child: LayoutChildNode): boolean {
   const { props } = child;
   const relativePosition = props.position === "relative";
-  const hasAuthoredPositionValue = (value: DeckLength | undefined) =>
-    authoredLengthOrUndefined(value) !== undefined;
   return (
     props.position === "absolute" ||
     props.area !== undefined ||
     (!relativePosition &&
-      (hasAuthoredPositionValue(props.x) ||
-        hasAuthoredPositionValue(props.y) ||
+      (hasAuthoredLength(props.x) ||
+        hasAuthoredLength(props.y) ||
         (hasCssWideKeywordToken(props.inset) === false && props.inset !== undefined) ||
-        hasAuthoredPositionValue(props.left) ||
-        hasAuthoredPositionValue(props.top) ||
-        hasAuthoredPositionValue(props.right) ||
-        hasAuthoredPositionValue(props.bottom))) ||
-    hasAuthoredPositionValue(props.width) ||
-    hasAuthoredPositionValue(props.height)
+        hasAuthoredLength(props.left) ||
+        hasAuthoredLength(props.top) ||
+        hasAuthoredLength(props.right) ||
+        hasAuthoredLength(props.bottom))) ||
+    hasAuthoredLength(props.width) ||
+    hasAuthoredLength(props.height)
   );
 }
 
