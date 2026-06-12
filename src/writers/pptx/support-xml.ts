@@ -228,7 +228,7 @@ export function presentationBytes(
     })
     .open("p:defaultTextStyle")
     .open("a:defPPr")
-    .empty("a:defRPr", { lang: "ja-JP" })
+    .empty("a:defRPr")
     .close("a:defPPr");
 
   for (let level = 1; level <= 9; level += 1) {

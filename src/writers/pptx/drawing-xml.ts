@@ -267,14 +267,7 @@ export function requireProjectedRelationshipId(
   return relationshipId;
 }
 
-export function writeNonVisual(
-  writer: XmlChunkWriter,
-  kind: "pic" | "sp",
-  id: string | undefined,
-  name: string,
-  hyperlinkRelationshipId?: string,
-  hyperlinkTooltip?: string,
-): void {
+export function writerShapeObjectNumericId(id: string | undefined, name: string): number {
   if (typeof id !== "string" || !/^[1-9]\d*$/.test(id)) {
     throw new Error(`${name} must carry a projected positive shape object id.`);
   }
@@ -284,7 +277,18 @@ export function writeNonVisual(
     throw new Error(`${name} must carry a projected positive shape object id.`);
   }
 
-  const numericId = objectId + 1;
+  return objectId + 1;
+}
+
+export function writeNonVisual(
+  writer: XmlChunkWriter,
+  kind: "pic" | "sp",
+  id: string | undefined,
+  name: string,
+  hyperlinkRelationshipId?: string,
+  hyperlinkTooltip?: string,
+): void {
+  const numericId = writerShapeObjectNumericId(id, name);
 
   if (kind === "pic") {
     writer.open("p:nvPicPr").open("p:cNvPr", { id: numericId, name });

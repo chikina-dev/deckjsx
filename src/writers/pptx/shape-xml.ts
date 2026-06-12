@@ -6,6 +6,7 @@ import {
   writeShadow,
   writeShapeProperties,
   writeTransform,
+  writerShapeObjectNumericId,
 } from "./drawing-xml";
 import type { SlideImageRenderContext } from "./picture-xml";
 import {
@@ -45,17 +46,7 @@ function videoShapeObjectId(
   element: Extract<PptxElement, { kind: "video" }>,
   index: number,
 ): number {
-  const id = element.serialized.shapeObjectId;
-  if (typeof id !== "string" || !/^[1-9]\d*$/.test(id)) {
-    throw new Error(`Video ${index} must carry a projected positive shape object id.`);
-  }
-
-  const objectId = Number.parseInt(id, 10);
-  if (!Number.isSafeInteger(objectId) || objectId <= 0) {
-    throw new Error(`Video ${index} must carry a writer-safe shape object id.`);
-  }
-
-  return objectId + 1;
+  return writerShapeObjectNumericId(element.serialized.shapeObjectId, `Video ${index}`);
 }
 
 function writeVideoNonVisual(

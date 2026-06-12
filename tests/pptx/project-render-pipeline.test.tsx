@@ -3489,6 +3489,56 @@ describe("project/render pipeline", () => {
     expect(posterRelationship?.targetPartId).toBe(posterPart?.id);
   });
 
+  test("project validates video poster image relationships before render", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Broken video poster relationship" }, () => (
+      <>
+        <video
+          data={dataUriFromBytes("video/mp4", new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112]))}
+          posterData={dataUriFromBytes("image/png", pngHeaderBytes(2, 1))}
+          style={{ x: 1, y: 1, width: 4, height: 2.25 }}
+        />
+      </>
+    ));
+
+    const projection = (await deck.project()).projection!;
+    const slidePart = projection.slides[0]!;
+    const malformedSlide = {
+      ...slidePart,
+      relationships: slidePart.relationships?.filter(
+        (relationship) => relationship.type !== "image",
+      ),
+    } satisfies PptxSlidePart;
+
+    deck.defineProjection(
+      withFreshPackageFingerprints({
+        ...projection,
+        slides: projection.slides.map((slide) =>
+          slide.id === slidePart.id ? malformedSlide : slide,
+        ),
+        parts: projection.parts.map((part) => (part.id === slidePart.id ? malformedSlide : part)),
+      }),
+    );
+
+    const project = await deck.project();
+    const render = await deck.render();
+
+    expect(project.ok).toBe(false);
+    expect(project.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        code: "E_PPTX_PACKAGE_INVALID_SLIDE_PAYLOAD",
+        labels: expect.arrayContaining([
+          expect.objectContaining({
+            path: expect.stringContaining(".drawing.children.0.posterMediaPartId"),
+            message: expect.stringContaining("missing video poster image relationship"),
+          }),
+        ]),
+      }),
+    );
+    expect(render.ok).toBe(false);
+    expect(render.artifact).toBeUndefined();
+  });
+
   test("render emits playable video xml with poster and embedded media relationships", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Video" }, () => (

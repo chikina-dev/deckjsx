@@ -5553,6 +5553,96 @@ function validateSlideImageRelationships(input: {
       );
     }
 
+    if (!element.posterSource) {
+      issues.push(
+        slidePayloadDiagnostic({
+          path: `${input.path}.posterSource`,
+          message: "missing video poster source",
+        }),
+      );
+      return issues;
+    }
+
+    if (typeof element.posterMediaPartId !== "string" || element.posterMediaPartId.length === 0) {
+      issues.push(
+        slidePayloadDiagnostic({
+          path: `${input.path}.posterMediaPartId`,
+          message: "missing video poster media part id",
+        }),
+      );
+      return issues;
+    }
+
+    const posterPart = input.partsById.get(element.posterMediaPartId);
+    if (!posterPart) {
+      issues.push(
+        slidePayloadDiagnostic({
+          path: `${input.path}.posterMediaPartId`,
+          message: `missing video poster media part ${element.posterMediaPartId}`,
+        }),
+      );
+      return issues;
+    }
+
+    if (posterPart.kind !== "media") {
+      issues.push(
+        slidePayloadDiagnostic({
+          path: `${input.path}.posterMediaPartId`,
+          message: `video poster media part id targets ${posterPart.kind}`,
+        }),
+      );
+    }
+
+    const posterPayload = isRecord(posterPart.payload)
+      ? (posterPart.payload as Readonly<Record<string, unknown>>)
+      : undefined;
+    if (posterPayload?.mediaKind !== undefined && posterPayload.mediaKind !== "image") {
+      issues.push(
+        slidePayloadDiagnostic({
+          path: `${input.path}.posterMediaPartId`,
+          message: "video poster media part id must target image media",
+        }),
+      );
+    }
+
+    const posterSourceKey = imageSourceKeyForValidation(element.posterSource);
+    const posterSourceParts = posterSourceKey
+      ? (mediaPartsBySourceKey(input.partsById).get(posterSourceKey) ?? [])
+      : [];
+    if (!posterSourceParts.some((part) => part.id === element.posterMediaPartId)) {
+      issues.push(
+        slidePayloadDiagnostic({
+          path: `${input.path}.posterSource`,
+          message: `video poster source does not match media part ${element.posterMediaPartId}`,
+        }),
+      );
+    }
+
+    const posterRelationship = relationshipRecords(input.slidePart).find(
+      (item) => item.type === "image" && item.targetPartId === element.posterMediaPartId,
+    );
+    if (!posterRelationship) {
+      issues.push(
+        slidePayloadDiagnostic({
+          path: `${input.path}.posterMediaPartId`,
+          message: `missing video poster image relationship to ${element.posterMediaPartId}`,
+        }),
+      );
+      return issues;
+    }
+
+    if (
+      posterRelationship.targetPath &&
+      normalizedPartPath(posterRelationship.targetPath) !== normalizedPartPath(posterPart.path)
+    ) {
+      issues.push(
+        slidePayloadDiagnostic({
+          path: `${input.path}.posterMediaPartId`,
+          message: `video poster image relationship ${posterRelationship.id} target path does not match media part`,
+        }),
+      );
+    }
+
     return issues;
   }
 
