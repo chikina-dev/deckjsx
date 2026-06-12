@@ -5,6 +5,7 @@ import type {
   SlideStyle,
   TextRunStyle,
   TextStyle,
+  VideoStyle,
   ViewStyle,
 } from "../style/types";
 
@@ -49,6 +50,23 @@ export type TextRunNodeProps = {
 
 export type ImageNodeProps = {
   style?: ImageStyle;
+} & ClassNameAuthorProps &
+  TemplateAreaAuthorProps &
+  (
+    | {
+        src: string;
+        data?: string;
+      }
+    | {
+        src?: string;
+        data: string;
+      }
+  );
+
+export type VideoNodeProps = {
+  style?: VideoStyle;
+  poster?: string;
+  posterData?: string;
 } & ClassNameAuthorProps &
   TemplateAreaAuthorProps &
   (

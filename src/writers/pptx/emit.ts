@@ -29,6 +29,8 @@ import {
   slideLayoutXml,
   slideMasterBytes,
   slideMasterXml,
+  tableStylesBytes,
+  tableStylesXml,
   themeBytes,
   themeXml,
 } from "./support-xml";
@@ -84,6 +86,8 @@ function supportPayloadMessage(part: PptxPackagePartCandidate): string {
       return "Slide layout support parts must carry a structured slide-layout payload.";
     case "slide-master":
       return "Slide master support parts must carry a structured slide-master payload.";
+    case "table-styles":
+      return "table-styles parts must carry a structured table-styles payload.";
     case "theme":
       return "Theme support parts must carry a structured theme payload.";
     case "view-properties":
@@ -155,6 +159,10 @@ export function partXml(
         ? emptyPresentationPropertiesXml(supportPart, "presentation-properties")
         : undefined;
     }
+    case "table-styles": {
+      const supportPart = requireSupportPart(part);
+      return supportPart.kind === "table-styles" ? tableStylesXml(supportPart) : undefined;
+    }
     case "media":
     case "notes-master":
     case "notes-slide":
@@ -219,6 +227,10 @@ export function emitPartBytes(
       return supportPart.kind === "presentation-properties"
         ? emptyPresentationPropertiesBytes(supportPart, "presentation-properties")
         : undefined;
+    }
+    case "table-styles": {
+      const supportPart = requireSupportPart(part);
+      return supportPart.kind === "table-styles" ? tableStylesBytes(supportPart) : undefined;
     }
     default: {
       const content = partXml(part, projection, emitters);

@@ -34,6 +34,7 @@ export type PptxDefaultSupportParts = {
   readonly extendedDocumentPropertiesPart: PptxSupportPart;
   readonly viewPropertiesPart: PptxSupportPart;
   readonly presentationPropertiesPart: PptxSupportPart;
+  readonly tableStylesPart: PptxSupportPart;
 };
 
 const DEFAULT_SLIDE_MASTER_NUMERIC_ID = "2147483648";
@@ -391,6 +392,17 @@ export function defaultPptxSupportParts(input: {
       settings: {},
     } satisfies PptxSupportPartPayload,
   };
+  const tableStylesPart: PptxSupportPart = {
+    id: packageIdentity("support", "table-styles"),
+    category: "support",
+    kind: "table-styles",
+    path: "ppt/tableStyles.xml",
+    payload: {
+      kind: "table-styles",
+      editable: true,
+      defaultStyleId: "{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}",
+    } satisfies PptxSupportPartPayload,
+  };
 
   return {
     contentTypes,
@@ -408,5 +420,6 @@ export function defaultPptxSupportParts(input: {
     extendedDocumentPropertiesPart,
     viewPropertiesPart,
     presentationPropertiesPart,
+    tableStylesPart,
   };
 }

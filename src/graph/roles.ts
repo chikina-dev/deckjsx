@@ -6,6 +6,10 @@ export function semanticKindForTag(tag: AuthoredTag): SemanticNodeKind {
     return "image";
   }
 
+  if (tag === "video") {
+    return "video";
+  }
+
   if (tag === "shape") {
     return "shape";
   }
@@ -42,6 +46,8 @@ export function semanticRoleForTag(tag: AuthoredTag): SemanticRole | undefined {
       return { kind: "heading", level: Number(tag.slice(1)) as 1 | 2 | 3 | 4 | 5 | 6 };
     case "img":
       return { kind: "image" };
+    case "video":
+      return { kind: "video" };
     case "shape":
       return { kind: "shape" };
     case "span":

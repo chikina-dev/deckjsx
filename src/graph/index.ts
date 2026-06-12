@@ -17,6 +17,7 @@ export type {
   SemanticSlideNode,
   SemanticTextNode,
   SemanticTextRunNode,
+  SemanticVideoNode,
   SourceIdentity,
   SourceOrigin,
   StyleClassRef,

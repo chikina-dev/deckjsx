@@ -1,5 +1,5 @@
 import type { Diagnostics } from "../../diagnostics";
-import type { GraphNodeId, SemanticAuthorGraph, SemanticNode } from "../../graph";
+import type { AssetEntityId, GraphNodeId, SemanticAuthorGraph, SemanticNode } from "../../graph";
 import type { ResolvedStyleDeclaration, ResolvedStyleMap } from "../../style/resolve";
 import { walkElements } from "./drawing";
 import { isContentTypesPayload, isInspectableThemePayload, isRecord } from "./package-candidates";
@@ -107,6 +107,11 @@ function effectiveProjectedValues(element: PptxElement): ProjectInspectionResolv
     ...(element.kind === "text" ? { textStyle: element.style } : {}),
     ...(element.kind === "image" ? { imageSource: element.source } : {}),
     ...(element.kind === "image" ? { imageObjectPosition: element.objectPosition } : {}),
+    ...(element.kind === "video" ? { videoSource: element.source } : {}),
+    ...(element.kind === "video" && element.posterSource
+      ? { videoPosterSource: element.posterSource }
+      : {}),
+    ...(element.kind === "video" ? { videoObjectPosition: element.objectPosition } : {}),
     ...(element.unsupportedSemantics?.length
       ? { unsupportedSemantics: element.unsupportedSemantics }
       : {}),
@@ -610,10 +615,16 @@ function rawTextForNode(graph: SemanticAuthorGraph, node: SemanticNode): string 
 }
 
 function originFor(node: SemanticNode): PptxElementOrigin {
+  const videoAssetIds =
+    node.kind === "video"
+      ? [node.assetRef, node.posterAssetRef].filter((id): id is AssetEntityId => id !== undefined)
+      : [];
+
   return {
     graphNodeIds: [node.id],
     ...(node.styleRef ? { styleEntityIds: [node.styleRef] } : {}),
     ...(node.kind === "image" && node.assetRef ? { assetEntityIds: [node.assetRef] } : {}),
+    ...(videoAssetIds.length > 0 ? { assetEntityIds: videoAssetIds } : {}),
     ...(node.origin.source ? { source: node.origin.source } : {}),
   };
 }

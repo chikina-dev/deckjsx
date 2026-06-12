@@ -33,6 +33,7 @@ type PptxManifestParts = {
   readonly extendedDocumentPropertiesPart: PptxPackagePart;
   readonly viewPropertiesPart: PptxPackagePart;
   readonly presentationPropertiesPart: PptxPackagePart;
+  readonly tableStylesPart: PptxPackagePart;
 };
 
 type BuildPptxManifestInput = PptxManifestParts & {
@@ -89,6 +90,8 @@ function mediaContentType(extension: string): string {
       return "image/gif";
     case "svg":
       return "image/svg+xml";
+    case "mp4":
+      return "video/mp4";
     default:
       return "application/octet-stream";
   }
@@ -158,9 +161,16 @@ export function buildPptxManifest(input: BuildPptxManifestInput): PptxManifestPa
       targetPath: input.presentationPropertiesPart.path,
       type: "presentationProperties",
     }),
+    relationship({
+      id: input.serializedId("rId5"),
+      ownerPath: input.presentationPart.path,
+      targetPartId: input.tableStylesPart.id,
+      targetPath: input.tableStylesPart.path,
+      type: "tableStyles",
+    }),
     ...input.slides.map((slide, index) =>
       relationship({
-        id: input.serializedId(`rId${index + 5}`),
+        id: input.serializedId(`rId${index + 6}`),
         ownerPath: input.presentationPart.path,
         targetPartId: slide.id,
         targetPath: slide.path,
@@ -236,6 +246,10 @@ export function buildPptxManifest(input: BuildPptxManifestInput): PptxManifestPa
         input.presentationPropertiesPart,
         "application/vnd.openxmlformats-officedocument.presentationml.presProps+xml",
       ),
+      override(
+        input.tableStylesPart,
+        "application/vnd.openxmlformats-officedocument.presentationml.tableStyles+xml",
+      ),
       ...input.slides.map((slide) =>
         override(slide, "application/vnd.openxmlformats-officedocument.presentationml.slide+xml"),
       ),
@@ -285,5 +299,6 @@ export function buildPptxManifest(input: BuildPptxManifestInput): PptxManifestPa
     extendedDocumentPropertiesPart: input.extendedDocumentPropertiesPart,
     viewPropertiesPart: input.viewPropertiesPart,
     presentationPropertiesPart: input.presentationPropertiesPart,
+    tableStylesPart: input.tableStylesPart,
   };
 }

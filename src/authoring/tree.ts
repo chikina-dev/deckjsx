@@ -6,6 +6,7 @@ import type {
   SlideNodeProps,
   TextNodeProps,
   TextRunNodeProps,
+  VideoNodeProps,
   ViewNodeProps,
 } from "./props";
 
@@ -68,6 +69,10 @@ export type AuthorImageElementNode = AuthorElementNodeBase<
   { readonly kind: "tag"; readonly tag: "img" },
   ImageNodeProps
 >;
+export type AuthorVideoElementNode = AuthorElementNodeBase<
+  { readonly kind: "tag"; readonly tag: "video" },
+  VideoNodeProps
+>;
 export type AuthorShapeElementNode = AuthorElementNodeBase<
   { readonly kind: "tag"; readonly tag: "shape" },
   ShapeNodeProps
@@ -79,6 +84,7 @@ export type AuthorElementNode =
   | AuthorTextElementNode
   | AuthorSpanElementNode
   | AuthorImageElementNode
+  | AuthorVideoElementNode
   | AuthorShapeElementNode;
 
 export type AuthorFragmentNode = {
@@ -177,6 +183,7 @@ type AnyAuthorElementInput =
   | AuthorElementInput<AuthorTextElementNode>
   | AuthorElementInput<AuthorSpanElementNode>
   | RequiredAuthorElementInput<AuthorImageElementNode>
+  | RequiredAuthorElementInput<AuthorVideoElementNode>
   | RequiredAuthorElementInput<AuthorShapeElementNode>;
 
 function buildAuthorElement<
@@ -230,6 +237,12 @@ function isImageElementInput(
   return input.source.kind === "tag" && input.source.tag === "img";
 }
 
+function isVideoElementInput(
+  input: AnyAuthorElementInput,
+): input is RequiredAuthorElementInput<AuthorVideoElementNode> {
+  return input.source.kind === "tag" && input.source.tag === "video";
+}
+
 function isShapeElementInput(
   input: AnyAuthorElementInput,
 ): input is RequiredAuthorElementInput<AuthorShapeElementNode> {
@@ -251,6 +264,9 @@ export function createAuthorElement(
 export function createAuthorElement(
   input: RequiredAuthorElementInput<AuthorImageElementNode>,
 ): AuthorImageElementNode;
+export function createAuthorElement(
+  input: RequiredAuthorElementInput<AuthorVideoElementNode>,
+): AuthorVideoElementNode;
 export function createAuthorElement(
   input: RequiredAuthorElementInput<AuthorShapeElementNode>,
 ): AuthorShapeElementNode;
@@ -288,6 +304,14 @@ export function createAuthorElement(input: AnyAuthorElementInput): AuthorElement
   }
 
   if (isImageElementInput(input)) {
+    return buildAuthorElement({
+      ...input,
+      source: input.source,
+      props: input.props,
+    });
+  }
+
+  if (isVideoElementInput(input)) {
     return buildAuthorElement({
       ...input,
       source: input.source,

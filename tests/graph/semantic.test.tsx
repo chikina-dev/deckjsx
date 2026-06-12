@@ -41,6 +41,56 @@ describe("Semantic Author Graph", () => {
     expect(graph.styles.size).toBeGreaterThanOrEqual(2);
     expect(graph.assets.size).toBe(1);
   });
+
+  test("compile represents video nodes with separate video and poster assets", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Video" }, () => (
+      <>
+        <video src="demo.mp4" poster="demo.png" style={{ x: 1, y: 1, width: 4, height: 2.25 }} />
+      </>
+    ));
+
+    const result = deck.compile();
+    const graph = result.graph!;
+    const nodes = values(graph.nodes);
+    const video = nodes.find((node) => node.kind === "video");
+
+    expect(result.ok).toBe(true);
+    expect(video).toMatchObject({ kind: "video", authoredTag: "video", role: { kind: "video" } });
+    if (video?.kind !== "video" || !video.assetRef || !video.posterAssetRef) {
+      throw new Error("Expected a video node with video and poster asset refs.");
+    }
+    expect(graph.assets.get(video.assetRef)).toMatchObject({
+      kind: "video",
+      source: { kind: "path", path: "demo.mp4" },
+    });
+    expect(graph.assets.get(video.posterAssetRef)).toMatchObject({
+      kind: "image",
+      source: { kind: "path", path: "demo.png" },
+    });
+  });
+
+  test("compile warns when a video poster is omitted", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Video" }, () => (
+      <>
+        <video src="demo.mp4" style={{ x: 1, y: 1, width: 4, height: 2.25 }} />
+      </>
+    ));
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        severity: "warning",
+        code: "W_COMPILE_VIDEO_POSTER_MISSING",
+      }),
+    );
+  });
+
   test("inspect mode returns diagnostics for invalid inline structure without throwing", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 

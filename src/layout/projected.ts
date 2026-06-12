@@ -71,7 +71,8 @@ export type ProjectedUnsupportedFallbackStrategy =
   | "preserveAuthoredValueOnly"
   | "preserveOpacityWithoutCompositedSubtree"
   | "preserveTransformWithoutStackingContext"
-  | "sourceRectBeforeTransform";
+  | "sourceRectBeforeTransform"
+  | "synthesizeFallbackFrame";
 
 export type ProjectedUnsupportedFallback = {
   readonly strategy: ProjectedUnsupportedFallbackStrategy;
@@ -100,6 +101,7 @@ export type ProjectedLayoutNode =
   | ProjectedLayoutGroup
   | ProjectedLayoutText
   | ProjectedLayoutImage
+  | ProjectedLayoutVideo
   | ProjectedLayoutShape;
 
 export type ProjectedLayoutBaseNode = {
@@ -180,6 +182,18 @@ export type ProjectedLayoutImage = ProjectedLayoutBaseNode & {
   rounding?: boolean;
   shadow?: ShadowIR;
   hyperlink?: HyperlinkIR;
+};
+
+export type ProjectedLayoutVideo = ProjectedLayoutBaseNode & {
+  kind: "video";
+  sourceFrame: FrameIR;
+  source: ImageSourceIR;
+  posterSource?: ImageSourceIR;
+  fit: "contain" | "cover" | "stretch";
+  objectPosition?: ObjectPositionIR;
+  transparency?: number;
+  rounding?: boolean;
+  shadow?: ShadowIR;
 };
 
 export type ProjectedLayoutShape = ProjectedLayoutBaseNode & {

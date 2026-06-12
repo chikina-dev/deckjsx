@@ -1,8 +1,19 @@
 import type { PptxElement } from "../../projection/pptx/model";
 import { writeBackgroundLayerElements, writeGeneratedStrokeElements } from "./drawing-layer-xml";
-import { writeNonVisual, writeShapeProperties } from "./drawing-xml";
+import {
+  alphaValue,
+  writeNonVisual,
+  writeShadow,
+  writeShapeProperties,
+  writeTransform,
+} from "./drawing-xml";
 import type { SlideImageRenderContext } from "./picture-xml";
-import { writePictureElement } from "./picture-xml";
+import {
+  imageSourceKey,
+  resolveImageSrcRect,
+  writePictureElement,
+  writeSrcRect,
+} from "./picture-xml";
 import { requireSlideRelationshipId } from "./picture-xml";
 import { writeTextBody } from "./text-xml";
 import { XmlChunkWriter } from "./xml-writer";
@@ -28,6 +39,115 @@ function hyperlinkRelationshipIdFor(
         type: "hyperlink",
       })
     : undefined;
+}
+
+function videoShapeObjectId(
+  element: Extract<PptxElement, { kind: "video" }>,
+  index: number,
+): number {
+  const id = element.serialized.shapeObjectId;
+  if (typeof id !== "string" || !/^[1-9]\d*$/.test(id)) {
+    throw new Error(`Video ${index} must carry a projected positive shape object id.`);
+  }
+
+  const objectId = Number.parseInt(id, 10);
+  if (!Number.isSafeInteger(objectId) || objectId <= 0) {
+    throw new Error(`Video ${index} must carry a writer-safe shape object id.`);
+  }
+
+  return objectId + 1;
+}
+
+function writeVideoNonVisual(
+  writer: XmlChunkWriter,
+  element: Extract<PptxElement, { kind: "video" }>,
+  index: number,
+  videoRelationshipId: string,
+  mediaRelationshipId: string,
+): void {
+  writer
+    .open("p:nvPicPr")
+    .open("p:cNvPr", { id: videoShapeObjectId(element, index), name: `Video ${index}` })
+    .close("p:cNvPr")
+    .open("p:cNvPicPr")
+    .empty("a:picLocks", { noChangeAspect: 1 })
+    .close("p:cNvPicPr")
+    .open("p:nvPr")
+    .empty("a:videoFile", { "r:link": videoRelationshipId })
+    .open("p:extLst")
+    .open("p:ext", { uri: "{DAA4B4D4-6D71-4841-9C94-3DE7FCFB9230}" })
+    .empty("p14:media", {
+      "xmlns:p14": "http://schemas.microsoft.com/office/powerpoint/2010/main",
+      "r:embed": mediaRelationshipId,
+    })
+    .close("p:ext")
+    .close("p:extLst")
+    .close("p:nvPr")
+    .close("p:nvPicPr");
+}
+
+function writeVideoElement(
+  writer: XmlChunkWriter,
+  element: Extract<PptxElement, { kind: "video" }>,
+  index: number,
+  inheritedOpacity: number | undefined,
+  context: SlideImageRenderContext,
+): void {
+  const videoRelationshipId = requireSlideRelationshipId(element.serialized.relationshipId, {
+    context,
+    label: `Video drawing element ${element.id}`,
+    type: "video",
+  });
+  const mediaRelationshipId = requireSlideRelationshipId(element.serialized.mediaRelationshipId, {
+    context,
+    label: `Video drawing element ${element.id}`,
+    type: "media",
+  });
+  const posterSource = element.posterSource;
+  if (!posterSource) {
+    throw new Error(`Video drawing element ${element.id} requires a projected poster source.`);
+  }
+  const posterRelationshipId = requireSlideRelationshipId(
+    context.mediaRelationshipBySource.get(imageSourceKey(posterSource)),
+    {
+      context,
+      label: `Video poster drawing element ${element.id}`,
+      type: "image",
+    },
+  );
+  const transparency = alphaValue(
+    element.transparency,
+    combineOpacity(inheritedOpacity, element.opacity),
+  );
+
+  writer.open("p:pic");
+  writeVideoNonVisual(writer, element, index, videoRelationshipId, mediaRelationshipId);
+  writer.open("p:blipFill").open("a:blip", { "r:embed": posterRelationshipId });
+  if (transparency !== undefined && transparency !== 100000) {
+    writer.empty("a:alphaModFix", { amt: transparency });
+  }
+  writer.close("a:blip");
+  writeSrcRect(
+    writer,
+    resolveImageSrcRect(
+      {
+        ...element,
+        source: posterSource,
+        fit: "stretch",
+      },
+      context,
+      "Video poster",
+    ),
+  );
+  writer.close("p:blipFill");
+  writer.open("p:spPr");
+  writeTransform(writer, element.frame, element.rotation, element.flipH, element.flipV);
+  writer
+    .open("a:prstGeom", { prst: element.rounding ? "roundRect" : "rect" })
+    .empty("a:avLst")
+    .close("a:prstGeom");
+  writeShadow(writer, element.shadow);
+  writer.close("p:spPr").close("p:pic");
 }
 
 export type ShapeElementXmlInput = Pick<
@@ -217,6 +337,9 @@ export function writeDrawingElement(
     }
     case "image":
       writePictureElement(writer, element, index, context, inheritedOpacity);
+      return;
+    case "video":
+      writeVideoElement(writer, element, index, inheritedOpacity, context);
       return;
     case "shape":
       writeShapeElement(writer, element, index, inheritedOpacity, context);

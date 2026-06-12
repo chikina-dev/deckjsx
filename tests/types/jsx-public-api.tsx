@@ -370,6 +370,9 @@ void (
 );
 
 void (<img data="data:image/png;base64,AAAA" />);
+void (<video data="data:video/mp4;base64,AAAA" poster="poster.png" />);
+// @ts-expect-error deckjsx video does not expose browser playback props yet.
+void (<video src="clip.mp4" controls />);
 
 const pptxOutput = { output: "deck.pptx" };
 void pptxOutput;

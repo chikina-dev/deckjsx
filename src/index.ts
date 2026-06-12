@@ -65,6 +65,7 @@ export {
   type IntrinsicPProps,
   type IntrinsicShapeProps,
   type IntrinsicTextTag,
+  type IntrinsicVideoProps,
   type IntrinsicViewTag,
   type LayoutMode,
   type ShapeStyle,
@@ -83,6 +84,8 @@ export {
   type TextTabStopAuthoring,
   type TextTabStopLength,
   type VerticalAlign,
+  type VideoNodeProps,
+  type VideoStyle,
   type ViewStyle,
 } from "./authoring/index";
 export type {

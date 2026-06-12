@@ -109,7 +109,7 @@ export type NodeSummary =
       fontSizePt: number | undefined;
     }
   | {
-      kind: "image" | "shape";
+      kind: "image" | "shape" | "video";
       frame: { xEmu: number; yEmu: number; widthEmu: number; heightEmu: number };
     };
 

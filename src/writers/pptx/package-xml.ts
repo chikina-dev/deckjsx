@@ -15,6 +15,8 @@ const RELATIONSHIP_TYPES: Record<string, string> = {
   extendedProperties:
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties",
   image: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+  media: "http://schemas.microsoft.com/office/2007/relationships/media",
+  video: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/video",
   hyperlink: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
   officeDocument:
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument",
@@ -23,6 +25,7 @@ const RELATIONSHIP_TYPES: Record<string, string> = {
   slide: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide",
   slideLayout: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout",
   slideMaster: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster",
+  tableStyles: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/tableStyles",
   theme: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme",
   viewProperties: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/viewProps",
 };

@@ -2,7 +2,7 @@ import { describe, expect, test } from "vite-plus/test";
 import { pptx, type WriterAdapter } from "../../src/adapter.ts";
 import { createDiagnostics } from "../../src/diagnostics/index.ts";
 import { Deck, StyleSheet, Theme, type RenderInspectionSummary } from "../../src/index.ts";
-import { isPptxSlidePart, isPptxSupportPart } from "../../src/inspect.ts";
+import { isPptxMediaPart, isPptxSlidePart, isPptxSupportPart } from "../../src/inspect.ts";
 import {
   PipelineArtifactCollection,
   type PptxPackageBuildArtifact,
@@ -365,6 +365,7 @@ describe("project/render pipeline", () => {
       "ppt/slideLayouts/_rels/slideLayout1.xml.rels",
       "ppt/viewProps.xml",
       "ppt/presProps.xml",
+      "ppt/tableStyles.xml",
       "ppt/slides/slide1.xml",
       "ppt/slides/_rels/slide1.xml.rels",
     ]);
@@ -3438,6 +3439,148 @@ describe("project/render pipeline", () => {
         reason: "requirementDependency",
         requirementStatus: "conditional",
         requirementCondition: "referencedByRelationship",
+      }),
+    );
+  });
+
+  test("projected video parts keep playable mp4 media and poster image relationships", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Video" }, () => (
+      <>
+        <video
+          data={dataUriFromBytes("video/mp4", new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112]))}
+          posterData={dataUriFromBytes("image/png", pngHeaderBytes(2, 1))}
+          style={{ x: 1, y: 1, width: 4, height: 2.25, objectFit: "contain" }}
+        />
+      </>
+    ));
+
+    const project = await deck.project();
+    const slide = project.projection?.slides[0];
+    const video = slide?.payload.drawing.children.find((element) => element.kind === "video");
+    const videoRelationship = slide?.relationships?.find(
+      (relationship) => relationship.type === "video",
+    );
+    const embeddedMediaRelationship = slide?.relationships?.find(
+      (relationship) => relationship.type === "media",
+    );
+    const posterRelationship = slide?.relationships?.find(
+      (relationship) => relationship.type === "image",
+    );
+    const mediaParts = project.projection?.parts.filter(isPptxMediaPart) ?? [];
+    const videoPart = mediaParts.find((part) => part.payload.mediaKind === "video");
+    const posterPart = mediaParts.find((part) => part.payload.mediaKind === "image");
+
+    expect(project.ok).toBe(true);
+    expect(video?.kind).toBe("video");
+    expect(video?.kind === "video" ? video.mediaPartId : undefined).toBe(videoPart?.id);
+    expect(video?.kind === "video" ? video.posterMediaPartId : undefined).toBe(posterPart?.id);
+    expect(videoPart?.path).toBe("ppt/media/media1.mp4");
+    expect(videoPart?.payload.metadata).toMatchObject({
+      mediaType: "video/mp4",
+      extension: "mp4",
+    });
+    expect(posterPart?.path).toBe("ppt/media/media2.png");
+    expect(videoRelationship?.targetPartId).toBe(videoPart?.id);
+    expect(embeddedMediaRelationship?.targetPartId).toBe(videoPart?.id);
+    expect(video?.kind === "video" ? video.serialized.mediaRelationshipId : undefined).toBe(
+      embeddedMediaRelationship?.id,
+    );
+    expect(posterRelationship?.targetPartId).toBe(posterPart?.id);
+  });
+
+  test("render emits playable video xml with poster and embedded media relationships", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Video" }, () => (
+      <>
+        <video
+          data={dataUriFromBytes("video/mp4", new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112]))}
+          style={{ x: 1, y: 1, width: 4, height: 2.25 }}
+        />
+      </>
+    ));
+
+    const render = await deck.render();
+    const zip = unzipSync(render.artifact?.bytes ?? new Uint8Array());
+    const slideXml = new TextDecoder().decode(zip["ppt/slides/slide1.xml"]);
+    const relsXml = new TextDecoder().decode(zip["ppt/slides/_rels/slide1.xml.rels"]);
+
+    expect(render.ok).toBe(true);
+    expect(render.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        severity: "warning",
+        code: "W_COMPILE_VIDEO_POSTER_MISSING",
+      }),
+    );
+    expect(slideXml).toContain("<a:videoFile");
+    expect(slideXml).toContain("<p14:media");
+    expect(slideXml).toContain('r:embed="rId3"');
+    expect(relsXml).toContain(
+      'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/video"',
+    );
+    expect(relsXml).toContain(
+      'Type="http://schemas.microsoft.com/office/2007/relationships/media"',
+    );
+    expect(relsXml).toContain(
+      'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"',
+    );
+  });
+
+  test("project synthesizes a fallback frame for video without authored size", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Video" }, () => (
+      <>
+        <video
+          data={dataUriFromBytes("video/mp4", new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112]))}
+          posterData={dataUriFromBytes("image/png", pngHeaderBytes(2, 1))}
+        />
+      </>
+    ));
+
+    const project = await deck.project();
+    const video = project.projection?.slides[0]?.payload.drawing.children.find(
+      (element) => element.kind === "video",
+    );
+
+    expect(project.ok).toBe(true);
+    expect(video?.frame).toMatchObject({
+      xEmu: 0,
+      yEmu: 0,
+      widthEmu: 4572000,
+      heightEmu: 2571750,
+    });
+    expect(project.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        severity: "warning",
+        code: "W_PROJECT_UNSUPPORTED_PPTX_SEMANTIC",
+      }),
+    );
+    expect(
+      project.diagnostics.items.some((item) =>
+        item.notes?.some((note) => note === "fallbackStrategy=synthesizeFallbackFrame"),
+      ),
+    ).toBe(true);
+  });
+
+  test("project reports an error for unsupported video formats", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Video" }, () => (
+      <>
+        <video
+          data={dataUriFromBytes("video/webm", new Uint8Array([26, 69, 223, 163]))}
+          posterData={dataUriFromBytes("image/png", pngHeaderBytes(2, 1))}
+          style={{ x: 1, y: 1, width: 4, height: 2.25 }}
+        />
+      </>
+    ));
+
+    const project = await deck.project();
+
+    expect(project.ok).toBe(false);
+    expect(project.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        severity: "error",
+        code: "E_PROJECT_VIDEO_FORMAT_UNSUPPORTED",
       }),
     );
   });

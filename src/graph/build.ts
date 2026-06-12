@@ -7,9 +7,10 @@ import type {
   AuthorSlideElementNode,
   AuthorTextLeaf,
   AuthorTreeNode,
+  AuthorVideoElementNode,
   JsxKey,
 } from "../authoring/tree";
-import type { ImageNodeProps } from "../authoring/props";
+import type { ImageNodeProps, VideoNodeProps } from "../authoring/props";
 import type { ComposedAuthorRoot, SourceSlotOrigin } from "../composition/types";
 import { createDiagnostics, diagnostic, type Diagnostic, type Diagnostics } from "../diagnostics";
 import {
@@ -18,6 +19,7 @@ import {
   SLIDE_STYLE_KEYS,
   TEXT_RUN_STYLE_KEYS,
   TEXT_STYLE_KEYS,
+  VIDEO_STYLE_KEYS,
   VIEW_STYLE_KEYS,
   type StyleDeclaration,
 } from "../style/types";
@@ -101,6 +103,10 @@ function isImageElement(node: AuthorElementNode): node is AuthorImageElementNode
   return node.source.kind === "tag" && node.source.tag === "img";
 }
 
+function isVideoElement(node: AuthorElementNode): node is AuthorVideoElementNode {
+  return node.source.kind === "tag" && node.source.tag === "video";
+}
+
 function isShapeElement(node: AuthorElementNode): node is AuthorShapeElementNode {
   return node.source.kind === "tag" && node.source.tag === "shape";
 }
@@ -119,6 +125,8 @@ function supportedPropNamesFor(node: AuthorElementNode): ReadonlySet<string> {
       return new Set(["className", "style"]);
     case "img":
       return new Set(["className", "style", "area", "src", "data"]);
+    case "video":
+      return new Set(["className", "style", "area", "src", "data", "poster", "posterData"]);
     case "shape":
       return new Set(["className", "style", "area", "shape"]);
     default:
@@ -136,6 +144,8 @@ function supportedStyleNamesFor(node: AuthorElementNode): ReadonlySet<string> {
       return new Set(TEXT_RUN_STYLE_KEYS);
     case "img":
       return new Set(IMAGE_STYLE_KEYS);
+    case "video":
+      return new Set(VIDEO_STYLE_KEYS);
     case "shape":
       return new Set(SHAPE_STYLE_KEYS);
     case "p":
@@ -286,6 +296,25 @@ function authoringPropDiagnostic(input: {
     message: input.message,
     labels: [{ path: input.path, message: input.message }],
     ...(input.help ? { help: input.help } : {}),
+  });
+}
+
+function videoPosterMissingDiagnostic(input: { path: string }): Diagnostic {
+  return diagnostic({
+    severity: "warning",
+    code: "W_COMPILE_VIDEO_POSTER_MISSING",
+    title: "video poster is missing",
+    message:
+      "Video nodes without poster or posterData may render with a black placeholder until the playback renderer loads the media.",
+    labels: [
+      {
+        path: `${input.path}.props`,
+        message: "Add poster or posterData when the first visual frame matters.",
+      },
+    ],
+    help: [
+      "The video is still included as playable media; this warning only covers the static placeholder.",
+    ],
   });
 }
 
@@ -488,6 +517,181 @@ function assetForImage(
     resolution: "unresolved",
   };
   state.assets.set(id, entity);
+  return id;
+}
+
+function mediaSourceFromString(value: string): AssetEntity["source"] {
+  if (/^https?:\/\//i.test(value)) {
+    return { kind: "url", url: value };
+  }
+
+  return { kind: "path", path: value };
+}
+
+function dataMediaType(value: string): string | undefined {
+  const commaIndex = value.indexOf(",");
+  if (!value.startsWith("data:") || commaIndex === -1) {
+    return undefined;
+  }
+
+  const metadata = value.slice(5, commaIndex);
+  return metadata ? metadata.replace(/;base64$/, "") : undefined;
+}
+
+function assetForVideoSource(input: {
+  state: BuildState;
+  idMaterial: readonly string[];
+  props: Pick<VideoNodeProps, "data" | "src">;
+  path: string;
+}): AssetEntityId | undefined {
+  const { state, props, path } = input;
+  const hasSrc = props.src !== undefined;
+  const hasData = props.data !== undefined;
+
+  if (hasSrc && typeof props.src !== "string") {
+    addDiagnostic(
+      state,
+      authoringPropDiagnostic({
+        code: "E_COMPILE_VIDEO_SOURCE_INVALID",
+        title: "video src prop is invalid",
+        path: `${path}.props.src`,
+        message: "The video src prop must be a string when it is provided.",
+      }),
+    );
+    return undefined;
+  }
+
+  if (hasData && typeof props.data !== "string") {
+    addDiagnostic(
+      state,
+      authoringPropDiagnostic({
+        code: "E_COMPILE_VIDEO_SOURCE_INVALID",
+        title: "video data prop is invalid",
+        path: `${path}.props.data`,
+        message: "The video data prop must be a string when it is provided.",
+      }),
+    );
+    return undefined;
+  }
+
+  if (typeof props.src === "string" && typeof props.data === "string") {
+    addDiagnostic(
+      state,
+      authoringPropDiagnostic({
+        code: "E_COMPILE_VIDEO_SOURCE_INVALID",
+        title: "video source props are ambiguous",
+        path: `${path}.props`,
+        message: "Use either video src or video data, not both.",
+      }),
+    );
+    return undefined;
+  }
+
+  if (typeof props.src !== "string" && typeof props.data !== "string") {
+    addDiagnostic(
+      state,
+      authoringPropDiagnostic({
+        code: "E_COMPILE_VIDEO_SOURCE_INVALID",
+        title: "video source is missing",
+        path: `${path}.props`,
+        message: "Video nodes require either src or data.",
+        help: ["Add a src path or data URI to the video."],
+      }),
+    );
+    return undefined;
+  }
+
+  let source: AssetEntity["source"];
+  if (typeof props.src === "string") {
+    source = mediaSourceFromString(props.src);
+  } else {
+    const data = props.data;
+    if (typeof data !== "string") {
+      return undefined;
+    }
+    source = { kind: "data", data };
+  }
+  const id = assetEntityId(input.idMaterial);
+  state.assets.set(id, {
+    id,
+    kind: "video",
+    source,
+    metadata: source.kind === "data" ? { mediaType: dataMediaType(source.data) } : {},
+    resolution: "unresolved",
+  });
+  return id;
+}
+
+function assetForVideoPoster(
+  state: BuildState,
+  idMaterial: readonly string[],
+  props: VideoNodeProps,
+  path: string,
+): AssetEntityId | undefined {
+  const hasPoster = props.poster !== undefined;
+  const hasPosterData = props.posterData !== undefined;
+
+  if (!hasPoster && !hasPosterData) {
+    return undefined;
+  }
+
+  if (hasPoster && typeof props.poster !== "string") {
+    addDiagnostic(
+      state,
+      authoringPropDiagnostic({
+        code: "E_COMPILE_VIDEO_POSTER_INVALID",
+        title: "video poster prop is invalid",
+        path: `${path}.props.poster`,
+        message: "The video poster prop must be a string when it is provided.",
+      }),
+    );
+    return undefined;
+  }
+
+  if (hasPosterData && typeof props.posterData !== "string") {
+    addDiagnostic(
+      state,
+      authoringPropDiagnostic({
+        code: "E_COMPILE_VIDEO_POSTER_INVALID",
+        title: "video posterData prop is invalid",
+        path: `${path}.props.posterData`,
+        message: "The video posterData prop must be a string when it is provided.",
+      }),
+    );
+    return undefined;
+  }
+
+  if (typeof props.poster === "string" && typeof props.posterData === "string") {
+    addDiagnostic(
+      state,
+      authoringPropDiagnostic({
+        code: "E_COMPILE_VIDEO_POSTER_INVALID",
+        title: "video poster props are ambiguous",
+        path: `${path}.props`,
+        message: "Use either video poster or video posterData, not both.",
+      }),
+    );
+    return undefined;
+  }
+
+  let source: AssetEntity["source"];
+  if (typeof props.poster === "string") {
+    source = mediaSourceFromString(props.poster);
+  } else {
+    const data = props.posterData;
+    if (typeof data !== "string") {
+      return undefined;
+    }
+    source = { kind: "data", data };
+  }
+  const id = assetEntityId(idMaterial);
+  state.assets.set(id, {
+    id,
+    kind: "image",
+    source,
+    metadata: source.kind === "data" ? { mediaType: dataMediaType(source.data) } : {},
+    resolution: "unresolved",
+  });
   return id;
 }
 
@@ -925,6 +1129,33 @@ function buildNode(
       ...(assetRef ? { assetRef } : {}),
     });
     return { id, kind: "image" };
+  }
+
+  if (isVideoElement(node)) {
+    if (node.children.length > 0) {
+      addDiagnostic(
+        state,
+        invalidStructure(path, "video cannot have children", "Video nodes are leaf nodes."),
+      );
+    }
+
+    const assetRef = assetForVideoSource({
+      state,
+      idMaterial: material,
+      props: node.props,
+      path,
+    });
+    const posterAssetRef = assetForVideoPoster(state, [...material, "poster"], node.props, path);
+    if (node.props.poster === undefined && node.props.posterData === undefined) {
+      addDiagnostic(state, videoPosterMissingDiagnostic({ path }));
+    }
+    state.nodes.set(id, {
+      ...semanticBase(state, node, id, "video", path, material, nodeContext),
+      kind: "video",
+      ...(assetRef ? { assetRef } : {}),
+      ...(posterAssetRef ? { posterAssetRef } : {}),
+    });
+    return { id, kind: "video" };
   }
 
   if (isShapeElement(node)) {

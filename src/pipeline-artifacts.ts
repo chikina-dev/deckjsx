@@ -340,9 +340,18 @@ export class PipelineArtifactCollection {
         stylesBySourceKey.set(sourceKey, styleIds);
       }
 
-      if (node.kind === "image" && node.assetRef) {
+      const nodeAssetIds =
+        node.kind === "image" && node.assetRef
+          ? [node.assetRef]
+          : node.kind === "video"
+            ? [node.assetRef, node.posterAssetRef].filter(
+                (id): id is AssetEntityId => id !== undefined,
+              )
+            : [];
+
+      if (nodeAssetIds.length > 0) {
         const assetIds = assetsBySourceKey.get(sourceKey) ?? [];
-        assetIds.push(node.assetRef);
+        assetIds.push(...nodeAssetIds);
         assetsBySourceKey.set(sourceKey, assetIds);
       }
     });

@@ -3,6 +3,7 @@ import {
   normalizeShapeProps,
   normalizeSlideProps,
   normalizeTextProps,
+  normalizeVideoProps,
   normalizeViewProps,
   parsePlaceContent,
   parsePlaceItems,
@@ -10,6 +11,7 @@ import {
   type NormalizedImageProps,
   type NormalizedShapeProps,
   type NormalizedTextProps,
+  type NormalizedVideoProps,
   type NormalizedViewProps,
 } from "./normalization";
 import type {
@@ -20,6 +22,7 @@ import type {
   LayoutInputSlide,
   LayoutInputText,
   LayoutInputTextChild,
+  LayoutInputVideo,
   LayoutInputView,
 } from "./input";
 import { frameFromProps, inflateSpecifiedBoxSize, parseAspectRatio } from "./absolute";
@@ -158,6 +161,13 @@ type LayoutChildNode =
       kind: "image";
       source: LayoutInputImage;
       props: NormalizedImageProps;
+      siblingOrder: number;
+      origin?: ProjectedLayoutOrigin;
+    }
+  | {
+      kind: "video";
+      source: LayoutInputVideo;
+      props: NormalizedVideoProps;
       siblingOrder: number;
       origin?: ProjectedLayoutOrigin;
     }
@@ -1364,6 +1374,36 @@ function imageSourceFromProps(props: NormalizedImageProps): ImageSourceIR {
   throw new Error("Image requires either src or data.");
 }
 
+function videoSourceFromProps(props: NormalizedVideoProps): ImageSourceIR {
+  if (props.src) {
+    if (/^https?:\/\//i.test(props.src)) {
+      return { kind: "url", url: props.src };
+    }
+    return { kind: "path", path: props.src };
+  }
+
+  if (props.data) {
+    return { kind: "data", data: props.data };
+  }
+
+  throw new Error("Video requires either src or data.");
+}
+
+function videoPosterSourceFromProps(props: NormalizedVideoProps): ImageSourceIR | undefined {
+  if (props.poster) {
+    if (/^https?:\/\//i.test(props.poster)) {
+      return { kind: "url", url: props.poster };
+    }
+    return { kind: "path", path: props.poster };
+  }
+
+  if (props.posterData) {
+    return { kind: "data", data: props.posterData };
+  }
+
+  return undefined;
+}
+
 function isLayoutInputContentNode(value: unknown): value is LayoutInputContentNode {
   return (
     typeof value === "object" &&
@@ -1372,6 +1412,7 @@ function isLayoutInputContentNode(value: unknown): value is LayoutInputContentNo
     ((value as { kind?: unknown }).kind === "view" ||
       (value as { kind?: unknown }).kind === "text" ||
       (value as { kind?: unknown }).kind === "image" ||
+      (value as { kind?: unknown }).kind === "video" ||
       (value as { kind?: unknown }).kind === "shape")
   );
 }
@@ -1414,6 +1455,14 @@ function layoutChildFromNode(
         kind: "image",
         source: child,
         props: normalizeImagePropsWithIntrinsicAspectRatio(child, context),
+        siblingOrder,
+        ...(origin ? { origin } : {}),
+      };
+    case "video":
+      return {
+        kind: "video",
+        source: child,
+        props: normalizeVideoProps(child.props, context),
         siblingOrder,
         ...(origin ? { origin } : {}),
       };
@@ -1617,6 +1666,8 @@ function getChildPadding(
     }
     case "image":
       return EMPTY_SPACING;
+    case "video":
+      return EMPTY_SPACING;
     case "shape":
       return EMPTY_SPACING;
   }
@@ -1712,7 +1763,9 @@ function estimateChildContentSize(
   if (authoredValue !== undefined) {
     return inflateSpecifiedBoxSize(
       parseLength(authoredValue, basis, 0, getNodeLengthContext(node, context)),
-      node.kind === "image" ? "border-box" : (node.props.boxSizing ?? "border-box"),
+      node.kind === "image" || node.kind === "video"
+        ? "border-box"
+        : (node.props.boxSizing ?? "border-box"),
       getChildPadding(node, context, parent.widthEmu),
       dimension,
     );
@@ -1754,7 +1807,9 @@ function estimateChildContentSize(
     dimension === "width" ? oppositeSize * aspectRatio : oppositeSize / aspectRatio;
   return inflateSpecifiedBoxSize(
     derivedSize,
-    node.kind === "image" ? "border-box" : (node.props.boxSizing ?? "border-box"),
+    node.kind === "image" || node.kind === "video"
+      ? "border-box"
+      : (node.props.boxSizing ?? "border-box"),
     getChildPadding(node, context, parent.widthEmu),
     dimension,
   );
@@ -1776,6 +1831,8 @@ function getNodeMargin(
       );
     }
     case "image":
+      return parseSpacingAllowAuto(node.props.margin, context, percentageBaseEmu);
+    case "video":
       return parseSpacingAllowAuto(node.props.margin, context, percentageBaseEmu);
     case "shape":
       return parseSpacingAllowAuto(node.props.margin, context, percentageBaseEmu);
@@ -3225,6 +3282,165 @@ function compileImageNode(
   };
 }
 
+const DEFAULT_VIDEO_ASPECT_RATIO = 16 / 9;
+
+function isUnspecifiedVideoDimension(value: DeckLength | undefined): boolean {
+  if (value === undefined) {
+    return true;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "auto" || isCssWideKeyword(normalized);
+  }
+
+  return false;
+}
+
+function videoPropsWithFallbackFrame(
+  props: NormalizedVideoProps,
+  parentFrame: Frame,
+): {
+  readonly props: NormalizedVideoProps;
+  readonly missingHeight: boolean;
+  readonly missingWidth: boolean;
+  readonly unsupportedSemantics: readonly ProjectedUnsupportedSemantic[];
+} {
+  const missingWidth = isUnspecifiedVideoDimension(props.width);
+  const missingHeight = isUnspecifiedVideoDimension(props.height);
+
+  if (!missingWidth && !missingHeight) {
+    return { props, missingHeight, missingWidth, unsupportedSemantics: [] };
+  }
+
+  const aspectRatio = parseAspectRatio(props.aspectRatio) ?? DEFAULT_VIDEO_ASPECT_RATIO;
+  const fallbackWidthIn = parentFrame.widthEmu / EMU_PER_INCH / 2;
+  const fallbackProps = {
+    ...props,
+    aspectRatio: props.aspectRatio ?? `${DEFAULT_VIDEO_ASPECT_RATIO}`,
+    ...(missingWidth && missingHeight ? { width: fallbackWidthIn } : {}),
+  };
+
+  return {
+    props: fallbackProps,
+    missingHeight,
+    missingWidth,
+    unsupportedSemantics: [
+      {
+        feature: "layout",
+        property:
+          missingWidth && missingHeight ? "width,height" : missingWidth ? "width" : "height",
+        value: missingWidth && missingHeight ? "auto auto" : "auto",
+        reason:
+          "Video frame size was omitted; deckjsx synthesized a 16:9 fallback frame for the initial playable video projection.",
+        fallback: {
+          strategy: "synthesizeFallbackFrame",
+          preserves: ["playableVideoMedia"],
+          missing: [
+            ...(missingWidth ? ["authoredWidth"] : []),
+            ...(missingHeight ? ["authoredHeight"] : []),
+            ...(props.aspectRatio === undefined ? [`defaultAspectRatio=${aspectRatio}`] : []),
+          ],
+        },
+      },
+    ],
+  };
+}
+
+function compileVideoNode(
+  node: Extract<LayoutChildNode, { kind: "video" }>,
+  parentFrame: Frame,
+  idGenerator: IdGenerator,
+  placement?: Placement,
+  clipRect?: ClipRect,
+  context?: LengthResolutionContext,
+): ProjectedLayoutNode | null {
+  const videoFrame = videoPropsWithFallbackFrame(node.props, parentFrame);
+  const { props } = videoFrame;
+  const fit = normalizeProjectedImageFit(props.fit);
+  const framePlacement =
+    videoFrame.missingWidth || videoFrame.missingHeight
+      ? {
+          ...(placement?.xEmu !== undefined ? { xEmu: placement.xEmu } : {}),
+          ...(placement?.yEmu !== undefined ? { yEmu: placement.yEmu } : {}),
+          ...(!videoFrame.missingWidth && placement?.widthEmu !== undefined
+            ? { widthEmu: placement.widthEmu }
+            : {}),
+          ...(!videoFrame.missingHeight && placement?.heightEmu !== undefined
+            ? { heightEmu: placement.heightEmu }
+            : {}),
+        }
+      : placement;
+  const resolved = frameFromProps(props, parentFrame, framePlacement, context);
+  const shadow = parseShadowShorthandOrIgnore({ property: "boxShadow", value: props.boxShadow });
+  const objectPosition = parseObjectPosition(props.objectPosition, {
+    widthEmu: resolved.widthEmu,
+    heightEmu: resolved.heightEmu,
+  });
+
+  if (!props.src && !props.data) {
+    throw new Error("Video requires either src or data.");
+  }
+
+  const originalFrame = {
+    xEmu: resolved.xEmu,
+    yEmu: resolved.yEmu,
+    widthEmu: resolved.widthEmu,
+    heightEmu: resolved.heightEmu,
+  };
+  const visibleFrame = intersectClipRect(originalFrame, clipRect);
+
+  if (!visibleFrame) {
+    return null;
+  }
+
+  const clip = clippingMetadata(originalFrame, clipRect, visibleFrame);
+  const unsupportedSemantics = [
+    ...unsupportedCssLayoutValueSemantics(props),
+    ...unsupportedTransformSemantics(props),
+    ...unsupportedCompositingSemantics(props),
+    ...unsupportedOpacityStackingContextSemantics(props),
+    ...unsupportedClippingTransformSemantics({
+      clip,
+      rotation: resolved.rotation,
+      flipH: resolved.flipH,
+      flipV: resolved.flipV,
+    }),
+    ...unsupportedObjectPositionSemantics({
+      value: props.objectPosition,
+      resolved: objectPosition,
+    }),
+    ...unsupportedObjectFitSemantics(props.fit),
+    ...shadow.unsupportedSemantics,
+    ...videoFrame.unsupportedSemantics,
+  ];
+  const posterSource = videoPosterSourceFromProps(props);
+
+  return {
+    id: idGenerator.nextNode(),
+    kind: "video",
+    ...(node.origin ? { origin: node.origin } : {}),
+    frame: visibleFrame,
+    siblingOrder: node.siblingOrder,
+    ...(clip ? { clip } : {}),
+    sourceFrame: originalFrame,
+    opacity: resolved.opacity,
+    rotation: resolved.rotation,
+    zIndex: resolved.zIndex,
+    ...(props.visibility !== undefined ? { visibility: props.visibility } : {}),
+    flipH: resolved.flipH,
+    flipV: resolved.flipV,
+    ...(unsupportedSemantics.length ? { unsupportedSemantics } : {}),
+    fit,
+    ...(objectPosition ? { objectPosition } : {}),
+    transparency: normalizeTransparency(props.transparency),
+    rounding: props.rounding,
+    ...(shadow.shadow ? { shadow: shadow.shadow } : {}),
+    source: videoSourceFromProps(props),
+    ...(posterSource ? { posterSource } : {}),
+  };
+}
+
 function compileShapeNode(
   node: Extract<LayoutChildNode, { kind: "shape" }>,
   parentFrame: Frame,
@@ -3345,6 +3561,8 @@ function compileNode(
       return compileTextNode(child, parentFrame, idGenerator, placement, clipRect, context);
     case "image":
       return compileImageNode(child, parentFrame, idGenerator, placement, clipRect, context);
+    case "video":
+      return compileVideoNode(child, parentFrame, idGenerator, placement, clipRect, context);
     case "shape":
       return compileShapeNode(child, parentFrame, idGenerator, placement, clipRect, context);
   }

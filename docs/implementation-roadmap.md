@@ -6547,39 +6547,94 @@ render verification. This should not be treated as a background-image variant or
 
 - Add a lowercase `video` intrinsic rather than overloading `img`. Initial props should be narrow:
   `src` or `data`, `style`, `className`, `area`, optional `poster`, optional `posterData`, and a
-  small playback-policy shape only when the PPTX mapping is verified. Avoid broad HTML media props
-  until their PPTX behavior is understood.
+  small playback-policy shape only when the PPTX mapping is verified. For the first v0.8.3 slice,
+  do not expose broad HTML video props such as `controls`, `autoplay`, `loop`, `muted`, `preload`,
+  `<source>`, `track`, or `crossOrigin`; their renderer-specific behavior needs separate design.
+- Let the first `VideoStyle` share placement and box-fitting vocabulary with images where the
+  behavior is clear, such as `fit` / `objectFit` and `objectPosition`. Do not expose video `crop` in
+  the initial release; source-rectangle behavior for playable video needs renderer-specific
+  validation before it becomes authoring vocabulary.
+- Keep `video` authoring forgiving when size is omitted. If template, flex, grid, stretch, or
+  explicit style values determine the video frame, use that frame. If only one axis is known, derive
+  the other from poster image dimensions when available, then optional video natural dimensions if a
+  loader provided them, then a deterministic 16:9 fallback. If neither axis is known, use a
+  deterministic default video frame and report a Project warning rather than requiring authors to
+  provide `width` and `height` up front.
+- Keep the default video frame policy internal in v0.8.3 rather than exposing a new Deck option or
+  Theme Default. Implement it behind a focused helper so the initial default, such as 16:9 at half
+  the slide width, is not scattered through layout code and can later be connected to Theme or
+  Template defaults if a real authoring need appears.
 - Keep the first supported runtime sources aligned with the asset loader boundary: `data:`,
   `bytes`, absolute URL-like sources when fetch is available, and loader-resolved paths/app assets.
   Filesystem and authenticated media remain outside core behind `deck.useAssets(loader)`.
-- Prefer `video/mp4` with `.mp4` as the first compatibility target. Add MIME/extension hooks for
-  other formats only after generated PPTX files open correctly in PowerPoint, Keynote, and
-  LibreOffice or are documented as best-effort.
-- Require or strongly recommend a poster/fallback image for v0.8.x. If poster generation is not in
-  scope, support an authored poster source and produce diagnostics when a playable video has no
-  visible fallback.
-- Decide whether unsupported runtimes should embed video bytes, link to an external video, or render
-  a poster-only fallback. The behavior must be explicit in diagnostics and summaries; it should not
-  silently degrade to a static image.
+- Do not add built-in core URL fetching for video bytes in v0.8.3. URL-like, filesystem-like, and
+  authenticated media sources are embeddable only when `deck.useAssets(loader)` supplies the required
+  `probe` and `load` behavior; otherwise Project/Render should report that the Playable Video Embed
+  bytes cannot be resolved instead of falling back to an external link.
+- Use PowerPoint-compatible `video/mp4` with `.mp4` as the first Video Compatibility Target. Other
+  formats should remain unsupported until generated PPTX files open correctly in the chosen
+  compatibility target.
+- Treat unsupported or unknown video formats as Project errors for the first slice. Do not silently
+  degrade a requested playable video into a poster-only fallback or external link.
+- Support authored poster/fallback inputs, but keep poster behavior separate from video embedding
+  success. Missing poster input should be a Project warning, not a Project error, because the
+  Playable Video Embed success condition is the embedded playable media structure rather than a
+  deckjsx-owned thumbnail. Missing or renderer-specific poster behavior must not be used as a
+  substitute for an embedded playable video.
+- Keep video diagnostics aligned to stage ownership: Compile reports authoring-shape problems such
+  as unsupported video props or missing/conflicting source props; Project reports unsupported or
+  unknown video formats, invalid probe metadata, missing embeddable resolver scope, and package
+  relationship construction failures; Render reports byte-load failures, invalid load results, and
+  writer serialization failures for already-projected video fields.
+- Public docs and skill guidance should describe renderer-specific differences generically rather
+  than naming individual conversion services. The documented guarantee is that deckjsx writes a
+  playable MP4 media structure for the current Video Compatibility Target, while playback UI,
+  controls, poster display, and conversion behavior may differ between presentation renderers.
 
 ### Implementation Notes
 
 - Split image-specific vocabulary into media-neutral and image-specific pieces. Candidate shapes:
   `MediaSourceIR` for data/path/url/bytes-like authored media, `ImageSourceIR` for still images, and
   `VideoSourceIR` for playable video. Preserve compatibility for existing image APIs.
-- Extend Asset metadata carefully. Image `width`/`height` can stay, but video likely needs optional
-  `durationMs`, `posterWidth`, `posterHeight`, `codec`, and `container` only when a loader can
-  provide them. Do not require core to parse MP4 boxes in the first slice unless needed for package
-  correctness.
+- Extend Asset metadata carefully. Image `width`/`height` can stay. For the first video slice,
+  require only enough metadata to identify and package the playable video target, such as
+  `mediaType: "video/mp4"` and `extension: "mp4"`, with `byteLength` and `hash` used when available
+  for diagnostics and reuse. Treat `durationMs`, `codec`, `container`, and natural video dimensions
+  as optional future metadata rather than v0.8.3 success requirements.
 - Add `video` semantic/layout/projected node kinds, or introduce a media node with a discriminant,
   only if it improves type boundaries. Do not make video masquerade as `image` internally just to
   reuse drawing code; the writer needs distinct relationship and XML behavior.
 - Extend `PptxElementKind`, `PptxElement`, package media payloads, allocation keys, and media part
   validation so image and video media parts can share the media package directory while preserving
   kind-specific metadata and diagnostics.
+- Keep detailed video package vocabulary in the Inspection Interface. `deckjsx/inspect` may expose
+  PPTX video drawing elements, video media payload metadata, playable-media relationships, and poster
+  relationship metadata as part of the Pptx Package Model. The root Authoring Interface should expose
+  only authoring vocabulary such as `video` JSX props and `VideoStyle`, and the Adapter Interface
+  should not become a general video package inspection surface.
+- Make video package consistency a Project/package validation responsibility, not a writer fallback.
+  Validation should reject malformed video media payloads, mismatched media kind/type/extension,
+  missing playable-media relationships, missing poster image relationships when a poster is
+  projected, missing slide relationship entries, and missing required content type entries before
+  Render emits bytes.
 - Add PPTX relationship and content-type modeling for video based on real OOXML fixtures generated
   from PowerPoint/LibreOffice/Keynote, not guessed XML. Keep the relationship type names and slide
   XML shape as projected package intent before the writer emits bytes.
+- Before implementing the writer path, inspect at least one minimal PowerPoint-authored PPTX with an
+  embedded MP4. This is a small grounding fixture, not an exhaustive renderer-compatibility study:
+  confirm the package parts, content types, slide relationships, media relationship names, and the
+  basic slide drawing shape needed to avoid guessed OOXML.
+- Minimal fixture inspection checklist:
+  - identify all video-related package parts, including the embedded MP4 media part and any poster
+    image part PowerPoint creates;
+  - record the content type defaults or overrides needed for MP4 and poster media;
+  - record slide relationship entries for playable video media and poster/image media;
+  - inspect the slide drawing XML shape that represents the video on the slide, including
+    non-visual media properties and relationship id usage;
+  - note any additional support parts or extension-list entries required for PowerPoint to recognize
+    the element as playable video;
+  - confirm which pieces are package-model intent that Project must own versus byte/XML emission
+    details that the writer can serialize from the model.
 - Model poster images as separate image media parts related to the video element when PPTX requires
   them. Reuse the existing image media pipeline for poster bytes rather than storing poster data
   inside the video payload.
@@ -6588,6 +6643,10 @@ render verification. This should not be treated as a background-image variant or
 - Extend render verification with a tiny video fixture and package-level semantic assertions. Raster
   verification may only see the poster frame, so package/XML assertions are required to prove the
   embedded playable video is present.
+- Keep a small fixed MP4 fixture in the repository or render fixtures for deterministic video
+  verification. Release review should include a minimal manual PowerPoint opening check that the
+  generated PPTX embeds and plays the fixture video. LibreOffice and Keynote observations are useful
+  but not required gates for the first Video Compatibility Target.
 
 ### Validation
 
@@ -6598,9 +6657,9 @@ render verification. This should not be treated as a background-image variant or
   slide relationships, poster image relationships, and fallback diagnostics.
 - Writer tests cover emitted relationships/content types, video XML, poster XML, missing relationship
   failures, and deterministic package output.
-- Manual/opening verification should include at least PowerPoint and LibreOffice for an `.mp4`
-  fixture before calling video support release-ready. Keynote compatibility can be recorded as a
-  separate observation if available.
+- Manual/opening verification must include at least PowerPoint for the fixed `.mp4` fixture before
+  calling video support release-ready. LibreOffice and Keynote compatibility can be recorded as
+  separate observations when available, but they are not required gates for v0.8.3.
 
 ### Non-Goals
 
@@ -6612,6 +6671,57 @@ render verification. This should not be treated as a background-image variant or
   result diagnostics and docs clearly say the video was not embedded/playable.
 - Do not expose low-level OOXML media controls as public props before there is a stable deckjsx
   semantic model for them.
+
+## 0.8.4 Table Authoring And Deeper PowerPoint Compatibility
+
+### Goal
+
+Add first-class table authoring while deepening the PPTX support-part and theme generation work that
+v0.8.3 touched only enough to keep PowerPoint from repairing generated files. This should make
+`table` a deckjsx authoring concept, not just an OOXML package artifact, and should turn the current
+PowerPoint compatibility fixes into intentional package-model behavior.
+
+### Follow-Up Notes From v0.8.3
+
+- v0.8.3 may include `ppt/tableStyles.xml` as a minimal PowerPoint compatibility support part even
+  though deckjsx does not yet expose a `table` tag. That file is an empty/default table-style list,
+  comparable to `viewProps.xml` and `presProps.xml`, not a completed table feature.
+- When `table` authoring is added, `tableStyles.xml` should be revisited and likely rewritten as a
+  projected table-style registry/output. The current default style id can remain a fallback, but it
+  should not be treated as the final table-style design.
+- v0.8.3 also thickened PPTX theme `fmtScheme` generation to avoid PowerPoint repair prompts. v0.8.4
+  should review theme, default text style, presentation properties, view properties, and table style
+  support together as a deliberate PowerPoint compatibility layer rather than a set of isolated
+  repair fixes.
+- Avoid landing a giant copied Office theme/template blob as the compatibility strategy. Prefer
+  structured generation from Pptx Package Model payloads, with small defaults and tests that explain
+  which PowerPoint-required support structures are present.
+
+### Proposed Scope
+
+- Add a lowercase `table` intrinsic with explicit child/prop rules. Prefer a narrow first surface,
+  such as rows/cells or a data-driven helper, over broad HTML table parity if the semantics are not
+  ready.
+- Project tables as real PPTX table drawing elements where possible, with deterministic shape ids,
+  relationships only when needed, and package validation for table-specific payloads.
+- Model table styling as deckjsx authoring vocabulary first, then map it into PowerPoint table
+  styles or direct cell formatting. Do not expose raw OOXML table style ids as the primary public
+  API.
+- Promote `ppt/tableStyles.xml` from a minimal compatibility support part into a structured output
+  owned by the PPTX package model when custom or named table styles are needed.
+- Add fixture-based manual verification for PowerPoint opening/editing behavior, including a simple
+  generated table deck that opens without repair and remains editable as a table.
+- Review the theme/support XML generated by deckjsx against PowerPoint-authored fixtures. Keep the
+  writer byte-oriented, but make the model payloads rich enough to explain required support parts,
+  content types, relationships, and default styles.
+
+### Non-Goals
+
+- Do not make v0.8.4 a full HTML table layout engine. The first table slice should support
+  presentation-friendly table authoring and PPTX editability, not browser-complete table layout.
+- Do not turn Pptx Package Model into an editable XML DOM or introduce a second XML-shaped model.
+- Do not treat the v0.8.3 minimal `tableStyles.xml` as a stable public contract. It is an internal
+  compatibility support part until table authoring gives it richer semantics.
 
 ## 0.9 Hot Module Replacement
 

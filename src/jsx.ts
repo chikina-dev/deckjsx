@@ -26,11 +26,13 @@ import type {
   IntrinsicPProps,
   IntrinsicSpanProps,
   IntrinsicShapeProps,
+  IntrinsicVideoProps,
   JsxNode,
   ShapeNodeProps,
   ImageNodeProps,
   TextNodeProps,
   TextRunNodeProps,
+  VideoNodeProps,
   ViewNodeProps,
 } from "./authoring/index";
 
@@ -67,7 +69,7 @@ function splitProps<TProps extends AuthorElementProps>(
 }
 
 function intrinsicElement(
-  type: IntrinsicViewTag | IntrinsicTextTag | "img" | "shape" | "span",
+  type: IntrinsicViewTag | IntrinsicTextTag | "img" | "shape" | "span" | "video",
   propsObject: RuntimeProps,
   children: AuthorTreeChild[],
   key?: JsxKey,
@@ -117,6 +119,17 @@ function intrinsicElement(
     });
   }
 
+  if (type === "video") {
+    const authored = splitProps<VideoNodeProps>(propsObject, children);
+    return createAuthorElement({
+      source: { kind: "tag", tag: type },
+      props: authored.props,
+      children: authored.children,
+      ...(key !== undefined ? { key } : {}),
+      ...(sourceSpan ? { sourceSpan } : {}),
+    });
+  }
+
   const authored = splitProps<ShapeNodeProps>(propsObject, children);
   return createAuthorElement({
     source: { kind: "tag", tag: type },
@@ -152,6 +165,7 @@ export function createElement(
   ...children: ElementChildArgs<IntrinsicSpanProps>
 ): AuthorTreeNode;
 export function createElement(type: "img", props: IntrinsicImgProps): AuthorTreeNode;
+export function createElement(type: "video", props: IntrinsicVideoProps): AuthorTreeNode;
 export function createElement(type: "shape", props: IntrinsicShapeProps): AuthorTreeNode;
 export function createElement(type: string, props: ComponentProps | null): never;
 export function createElement(
@@ -181,7 +195,8 @@ export function createElementWithMetadata(
       isIntrinsicTextTag(type) ||
       type === "img" ||
       type === "shape" ||
-      type === "span"
+      type === "span" ||
+      type === "video"
     ) {
       return intrinsicElement(type, isRecord(props) ? props : {}, children, key, sourceSpan);
     }

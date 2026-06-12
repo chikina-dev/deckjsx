@@ -9,7 +9,7 @@ import { EMU_PER_INCH, POINTS_PER_INCH } from "../../types";
 import { withPackagePartFingerprints } from "./fingerprint";
 import { packageIdentity, serializedId, slidePartIdFor } from "./identity";
 import { buildPptxManifest } from "./manifest";
-import { attachMediaRelationships, mediaPartsFor, withCanonicalImageMediaPartIds } from "./media";
+import { attachMediaRelationships, mediaPartsFor, withCanonicalMediaPartIds } from "./media";
 import type {
   PptxPackageModel,
   PptxPackagePart,
@@ -111,7 +111,7 @@ function projectGraphToPptxPackageInternal(input: {
       }),
     ];
   });
-  const projectedSlidesWithMedia = withCanonicalImageMediaPartIds(projectedSlides, input.assets);
+  const projectedSlidesWithMedia = withCanonicalMediaPartIds(projectedSlides, input.assets);
   const mediaParts = mediaPartsFor(projectedSlidesWithMedia, input.assets);
   const slides = attachMediaRelationships(projectedSlidesWithMedia, mediaParts, input.assets);
   const slideRelationshipParts: PptxPackagePart[] = slides.map((slide, index) => ({
@@ -139,6 +139,7 @@ function projectGraphToPptxPackageInternal(input: {
     extendedDocumentPropertiesPart: supportParts.extendedDocumentPropertiesPart,
     viewPropertiesPart: supportParts.viewPropertiesPart,
     presentationPropertiesPart: supportParts.presentationPropertiesPart,
+    tableStylesPart: supportParts.tableStylesPart,
     slides,
     mediaParts,
     serializedId,
@@ -160,6 +161,7 @@ function projectGraphToPptxPackageInternal(input: {
         manifest.extendedDocumentPropertiesPart,
         manifest.viewPropertiesPart,
         manifest.presentationPropertiesPart,
+        manifest.tableStylesPart,
         ...slides,
         ...slideRelationshipParts,
         ...mediaParts,

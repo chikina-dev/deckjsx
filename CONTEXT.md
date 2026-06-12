@@ -162,6 +162,21 @@ _Avoid_: PPTX media path
 The media reference supplied by authoring, such as a data URI, bytes, an absolute URL, an app-public URL, or a filesystem-like path. It is distinct from a PPTX Media Part, and resolving it into bytes belongs to a multi-runtime asset-loading boundary rather than to graph construction or package projection.
 _Avoid_: media part, package path, resolved image bytes
 
+**Playable Video Embed**:
+An authored video intent whose presentation output should contain playable video media rather than only a poster image, static fallback, or hyperlink to an external video location.
+A poster or fallback image may provide the visible slide surface before playback, but it is not a substitute for the playable embedded media when video embedding is the requested behavior.
+Playable Video Embed means deckjsx projects and writes the PPTX media structure for playback; it does not promise identical playback UI, controls, poster rendering, or conversion behavior across every presentation renderer.
+_Avoid_: linked video, poster-only image, background image variant, renderer compatibility layer
+
+**Video Node**:
+A renderable authored media node for Playable Video Embed. It is separate from Image nodes even when it shares frame, placement, or asset-loading behavior, because playable video has distinct media relationships, package semantics, diagnostics, and writer output.
+_Avoid_: image alias, poster image, linked media
+
+**Video Compatibility Target**:
+A deliberately bounded renderer and media-format target that deckjsx treats as the current playable-video validation scope.
+Video Compatibility Targets let deckjsx support Playable Video Embed incrementally without implying universal video format support or identical behavior in every presentation renderer.
+_Avoid_: all video formats, renderer compatibility layer, transcoding policy
+
 **Asset Loading Boundary**:
 The pipeline resource boundary that resolves Authored Media Sources into reusable metadata and bytes without making deckjsx core depend on one runtime's file system or asset APIs.
 Registered loaders are evaluated before built-in multi-runtime handling and in Deck registration order. The resolver scope that wins Project probing should also be used by Render loading so metadata and bytes are not mixed across different runtime assumptions.
@@ -174,7 +189,7 @@ A Pipeline Artifact that records resolved media metadata and optionally loaded s
 _Avoid_: Asset Entity, Media Part, graph payload, package projection
 
 **Media Allocation Key**:
-The projected key used to decide whether authored media references share one PPTX Media Part. When an Asset Artifact has a content hash, the key is hash-based; otherwise it is based on resolver scope plus Authored Media Source. The key controls Package Part Identity and media part reuse, while package paths such as `ppt/media/media1.png` remain deterministic assembly names assigned from first projected use.
+The projected key used to decide whether authored media references share one PPTX Media Part. When an Asset Artifact has a content hash, the key is hash-based; otherwise it is based on resolver scope plus Authored Media Source. The key also preserves media kind so images, playable videos, and future media families cannot accidentally share a package part only because their source or hash matches. The key controls Package Part Identity and media part reuse, while package paths such as `ppt/media/media1.png` or `ppt/media/media2.mp4` remain deterministic assembly names assigned from first projected use.
 _Avoid_: graph node id, drawing element id, ZIP path as identity, byte cache key
 
 **Pptx Media Projection**:

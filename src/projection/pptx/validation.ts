@@ -82,6 +82,7 @@ const UNSUPPORTED_FALLBACK_STRATEGIES = [
   "preserveOpacityWithoutCompositedSubtree",
   "preserveTransformWithoutStackingContext",
   "sourceRectBeforeTransform",
+  "synthesizeFallbackFrame",
 ] as const;
 
 const THEME_VALUE_GROUPS = ["colorScheme", "fontScheme", "formatScheme", "themeDefaults"] as const;
@@ -138,7 +139,7 @@ const DRAWING_GENERATED_STROKE_ROLES = ["border", "outline"] as const;
 const DRAWING_GENERATED_STROKE_EDGES = ["top", "right", "bottom", "left"] as const;
 const DRAWING_GENERATED_STROKE_SHAPES = ["line", "rect"] as const;
 
-const DRAWING_ELEMENT_KINDS = ["group", "image", "shape", "text"] as const;
+const DRAWING_ELEMENT_KINDS = ["group", "image", "shape", "text", "video"] as const;
 
 const DRAWING_VISIBILITIES = ["hidden", "visible"] as const;
 
@@ -210,6 +211,7 @@ const PACKAGE_PART_KINDS = [
   "slide",
   "slide-layout",
   "slide-master",
+  "table-styles",
   "theme",
   "view-properties",
 ] as const;
@@ -227,6 +229,7 @@ const PACKAGE_PART_ORDER_GROUP_ORDERS = {
   slideLayoutRelationships: 71,
   viewProperties: 75,
   presentationProperties: 76,
+  tableStyles: 77,
   slide: 80,
   slideRelationships: 81,
   media: 90,
@@ -302,6 +305,8 @@ const CONTENT_TYPE_VIEW_PROPERTIES =
   "application/vnd.openxmlformats-officedocument.presentationml.viewProps+xml";
 const CONTENT_TYPE_PRESENTATION_PROPERTIES =
   "application/vnd.openxmlformats-officedocument.presentationml.presProps+xml";
+const CONTENT_TYPE_TABLE_STYLES =
+  "application/vnd.openxmlformats-officedocument.presentationml.tableStyles+xml";
 const CONTENT_TYPE_NOTES_MASTER =
   "application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml";
 const CONTENT_TYPE_NOTES_SLIDE =
@@ -311,19 +316,29 @@ const INTERNAL_RELATIONSHIP_TARGET_KINDS = {
   coreProperties: ["document-properties"],
   extendedProperties: ["document-properties"],
   image: ["media"],
+  media: ["media"],
+  video: ["media"],
   officeDocument: ["presentation"],
   presentationProperties: ["presentation-properties"],
   slide: ["slide"],
   slideLayout: ["slide-layout"],
   slideMaster: ["slide-master"],
+  tableStyles: ["table-styles"],
   theme: ["theme"],
   viewProperties: ["view-properties"],
 } as const satisfies Record<string, readonly PptxPackagePart["kind"][]>;
 
 const KNOWN_RELATIONSHIP_OWNER_TYPES = {
-  presentation: ["presentationProperties", "slide", "slideMaster", "theme", "viewProperties"],
+  presentation: [
+    "presentationProperties",
+    "slide",
+    "slideMaster",
+    "tableStyles",
+    "theme",
+    "viewProperties",
+  ],
   root: ["coreProperties", "extendedProperties", "officeDocument"],
-  slide: ["hyperlink", "image", "slideLayout"],
+  slide: ["hyperlink", "image", "media", "slideLayout", "video"],
   slideLayout: ["slideMaster"],
   slideMaster: ["slideLayout", "theme"],
 } as const satisfies Record<string, readonly string[]>;
@@ -518,6 +533,26 @@ function mediaPayloadDiagnostic(input: {
     message:
       "Pptx media parts must preserve source and metadata values needed by media byte emission and inspection.",
     labels: [{ path: input.path, message: input.message }],
+  });
+}
+
+function unsupportedVideoMediaDiagnostic(input: {
+  path: string;
+  message: string;
+  mediaType?: string;
+  extension?: string;
+}): Diagnostic {
+  return diagnostic({
+    severity: "error",
+    code: "E_PROJECT_VIDEO_FORMAT_UNSUPPORTED",
+    title: "video format is not supported by the pptx projection",
+    message: "The initial pptx video compatibility target only accepts MP4 video media.",
+    labels: [{ path: input.path, message: input.message }],
+    notes: [
+      input.mediaType ? `mediaType=${input.mediaType}` : undefined,
+      input.extension ? `extension=${input.extension}` : undefined,
+    ].filter((note): note is string => note !== undefined),
+    help: ["Use video/mp4 media or an .mp4 source for the video tag."],
   });
 }
 
@@ -1147,6 +1182,47 @@ function validateEmptySupportPropertiesPayload(input: {
       supportPayloadDiagnostic({
         path: `${path}.settings`,
         message: "support properties settings must stay empty until structured settings exist",
+      }),
+    );
+  }
+
+  return issues;
+}
+
+function validateTableStylesPayload(input: { part: PptxPackagePart }): Diagnostics["items"] {
+  const path = `projection.parts.${input.part.id}.payload`;
+  const payload = input.part.payload;
+
+  if (!isRecord(payload)) {
+    return [supportPayloadDiagnostic({ path, message: "invalid table styles payload" })];
+  }
+
+  const record = payload as Readonly<Record<string, unknown>>;
+  const issues: Diagnostic[] = [];
+
+  if (record.kind !== "table-styles") {
+    issues.push(
+      supportPayloadDiagnostic({
+        path: `${path}.kind`,
+        message: "expected table-styles payload",
+      }),
+    );
+  }
+
+  if (record.editable !== true) {
+    issues.push(
+      supportPayloadDiagnostic({
+        path: `${path}.editable`,
+        message: "table styles payload must remain editable",
+      }),
+    );
+  }
+
+  if (typeof record.defaultStyleId !== "string" || record.defaultStyleId.length === 0) {
+    issues.push(
+      supportPayloadDiagnostic({
+        path: `${path}.defaultStyleId`,
+        message: "table styles payload requires defaultStyleId",
       }),
     );
   }
@@ -4313,6 +4389,61 @@ function validateDrawingElementPayload(input: {
     return issues;
   }
 
+  if (element.kind === "video") {
+    if (element.mediaPartId !== undefined && typeof element.mediaPartId !== "string") {
+      issues.push(
+        drawingPayloadDiagnostic({
+          path: `${input.path}.mediaPartId`,
+          message: "invalid media part id",
+        }),
+      );
+    }
+    if (element.posterMediaPartId !== undefined && typeof element.posterMediaPartId !== "string") {
+      issues.push(
+        drawingPayloadDiagnostic({
+          path: `${input.path}.posterMediaPartId`,
+          message: "invalid poster media part id",
+        }),
+      );
+    }
+    issues.push(
+      ...validateDrawingPayloadFrame({
+        value: element.sourceFrame,
+        path: `${input.path}.sourceFrame`,
+        message: "invalid video source frame",
+      }),
+      ...validateDrawingImageSource({ value: element.source, path: `${input.path}.source` }),
+      ...(element.posterSource
+        ? validateDrawingImageSource({
+            value: element.posterSource,
+            path: `${input.path}.posterSource`,
+          })
+        : []),
+      ...(element.fit === "contain" || element.fit === "cover" || element.fit === "stretch"
+        ? []
+        : [drawingPayloadDiagnostic({ path: `${input.path}.fit`, message: "invalid video fit" })]),
+      ...validateDrawingObjectPosition({
+        value: element.objectPosition,
+        path: `${input.path}.objectPosition`,
+      }),
+      ...validateOptionalDrawingTransparencyField({
+        value: element.transparency,
+        path: `${input.path}.transparency`,
+        message: "invalid video transparency",
+      }),
+      ...(element.rounding === undefined || typeof element.rounding === "boolean"
+        ? []
+        : [
+            drawingPayloadDiagnostic({
+              path: `${input.path}.rounding`,
+              message: "invalid video rounding",
+            }),
+          ]),
+      ...validateDrawingShadow({ value: element.shadow, path: `${input.path}.shadow` }),
+    );
+    return issues;
+  }
+
   if (element.kind === "shape") {
     if (element.shape !== "rect" && element.shape !== "ellipse" && element.shape !== "line") {
       issues.push(
@@ -5288,6 +5419,141 @@ function validateSlideImageRelationships(input: {
         partsById: input.partsById,
       }),
     );
+  }
+
+  if (element.kind === "video") {
+    const issues: Diagnostic[] = [];
+    if (typeof element.mediaPartId !== "string" || element.mediaPartId.length === 0) {
+      issues.push(
+        slidePayloadDiagnostic({
+          path: `${input.path}.mediaPartId`,
+          message: "missing video media part id",
+        }),
+      );
+      return issues;
+    }
+
+    const relationshipId = isRecord(element.serialized)
+      ? element.serialized.relationshipId
+      : undefined;
+    if (typeof relationshipId !== "string" || relationshipId.length === 0) {
+      issues.push(
+        slidePayloadDiagnostic({
+          path: `${input.path}.serialized.relationshipId`,
+          message: "missing video relationship id",
+        }),
+      );
+      return issues;
+    }
+
+    const relationship = relationshipRecords(input.slidePart).find(
+      (item) => item.id === relationshipId,
+    );
+    if (!relationship) {
+      issues.push(
+        slidePayloadDiagnostic({
+          path: `${input.path}.serialized.relationshipId`,
+          message: `missing video relationship ${relationshipId}`,
+        }),
+      );
+      return issues;
+    }
+
+    if (relationship.type !== "video") {
+      issues.push(
+        slidePayloadDiagnostic({
+          path: `${input.path}.serialized.relationshipId`,
+          message: `relationship ${relationshipId} is not a video relationship`,
+        }),
+      );
+    }
+
+    if (relationship.targetPartId !== element.mediaPartId) {
+      issues.push(
+        slidePayloadDiagnostic({
+          path: `${input.path}.mediaPartId`,
+          message: `video media part id does not match relationship ${relationshipId}`,
+        }),
+      );
+    }
+
+    const mediaPart = input.partsById.get(element.mediaPartId);
+    if (!mediaPart) {
+      issues.push(
+        slidePayloadDiagnostic({
+          path: `${input.path}.mediaPartId`,
+          message: `missing media part ${element.mediaPartId}`,
+        }),
+      );
+      return issues;
+    }
+
+    if (mediaPart.kind !== "media") {
+      issues.push(
+        slidePayloadDiagnostic({
+          path: `${input.path}.mediaPartId`,
+          message: `video media part id targets ${mediaPart.kind}`,
+        }),
+      );
+    }
+
+    if (
+      relationship.targetPath &&
+      normalizedPartPath(relationship.targetPath) !== normalizedPartPath(mediaPart.path)
+    ) {
+      issues.push(
+        slidePayloadDiagnostic({
+          path: `${input.path}.serialized.relationshipId`,
+          message: `video relationship ${relationshipId} target path does not match media part`,
+        }),
+      );
+    }
+
+    const mediaRelationshipId = isRecord(element.serialized)
+      ? element.serialized.mediaRelationshipId
+      : undefined;
+    if (typeof mediaRelationshipId !== "string" || mediaRelationshipId.length === 0) {
+      issues.push(
+        slidePayloadDiagnostic({
+          path: `${input.path}.serialized.mediaRelationshipId`,
+          message: "missing embedded media relationship id",
+        }),
+      );
+      return issues;
+    }
+
+    const mediaRelationship = relationshipRecords(input.slidePart).find(
+      (item) => item.id === mediaRelationshipId,
+    );
+    if (!mediaRelationship) {
+      issues.push(
+        slidePayloadDiagnostic({
+          path: `${input.path}.serialized.mediaRelationshipId`,
+          message: `missing embedded media relationship ${mediaRelationshipId}`,
+        }),
+      );
+      return issues;
+    }
+
+    if (mediaRelationship.type !== "media") {
+      issues.push(
+        slidePayloadDiagnostic({
+          path: `${input.path}.serialized.mediaRelationshipId`,
+          message: `relationship ${mediaRelationshipId} is not an embedded media relationship`,
+        }),
+      );
+    }
+
+    if (mediaRelationship.targetPartId !== element.mediaPartId) {
+      issues.push(
+        slidePayloadDiagnostic({
+          path: `${input.path}.mediaPartId`,
+          message: `video media part id does not match embedded media relationship ${mediaRelationshipId}`,
+        }),
+      );
+    }
+
+    return issues;
   }
 
   if (element.kind !== "image") {
@@ -6521,6 +6787,8 @@ function mediaContentTypeForExtension(extension: string): string {
       return "image/gif";
     case "svg":
       return "image/svg+xml";
+    case "mp4":
+      return "video/mp4";
     default:
       return "application/octet-stream";
   }
@@ -6546,6 +6814,8 @@ function expectedOverrideContentType(part: PptxPackagePart): string | undefined 
       return CONTENT_TYPE_PRESENTATION;
     case "presentation-properties":
       return CONTENT_TYPE_PRESENTATION_PROPERTIES;
+    case "table-styles":
+      return CONTENT_TYPE_TABLE_STYLES;
     case "slide":
       return CONTENT_TYPE_SLIDE;
     case "slide-layout":
@@ -7160,6 +7430,23 @@ function validatePresentationRelationships(input: {
         }),
       );
     }
+
+    if (
+      candidate.kind === "table-styles" &&
+      !relationshipExists(input.relationships, {
+        type: "tableStyles",
+        targetPartId: candidate.id,
+      })
+    ) {
+      issues.push(
+        missingRequiredRelationshipDiagnostic({
+          ownerPart: input.part,
+          message: "Presentation relationships require a projected tableStyles relationship id.",
+          type: "tableStyles",
+          targetPartId: candidate.id,
+        }),
+      );
+    }
   });
 
   if (isPresentationPayload(input.part.payload)) {
@@ -7513,6 +7800,62 @@ function mediaMetadataRecord(
   return isRecord(payload.metadata) ? payload.metadata : undefined;
 }
 
+function normalizedMetadataString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value.toLowerCase() : undefined;
+}
+
+function validateVideoMediaCompatibility(input: {
+  path: string;
+  pathExtension: string | undefined;
+  payload: Partial<PptxMediaPartPayload>;
+  metadata: Record<string, unknown> | undefined;
+}): Diagnostics["items"] {
+  if (input.payload.mediaKind !== "video") {
+    return [];
+  }
+
+  const mediaType = normalizedMetadataString(input.metadata?.mediaType)?.split(";")[0]?.trim();
+  const extension = normalizedMetadataString(input.metadata?.extension ?? input.pathExtension);
+  const issues: Diagnostic[] = [];
+
+  if (mediaType !== undefined && mediaType !== "video/mp4") {
+    issues.push(
+      unsupportedVideoMediaDiagnostic({
+        path: `${input.path}.metadata.mediaType`,
+        message: "video media type is outside the initial pptx compatibility target",
+        mediaType,
+        ...(extension ? { extension } : {}),
+      }),
+    );
+  }
+
+  if (extension !== undefined && extension !== "mp4") {
+    const extensionPath =
+      input.metadata?.extension !== undefined
+        ? `${input.path}.metadata.extension`
+        : input.path.replace(/\.payload$/, ".path");
+    issues.push(
+      unsupportedVideoMediaDiagnostic({
+        path: extensionPath,
+        message: "video media extension is outside the initial pptx compatibility target",
+        ...(mediaType ? { mediaType } : {}),
+        extension,
+      }),
+    );
+  }
+
+  if (mediaType === undefined && extension === undefined) {
+    issues.push(
+      unsupportedVideoMediaDiagnostic({
+        path: input.path,
+        message: "video media type and extension could not be inferred",
+      }),
+    );
+  }
+
+  return issues;
+}
+
 function validateMediaPayloadConsistency(input: {
   part: PptxPackagePart;
   payload: Partial<PptxMediaPartPayload>;
@@ -7523,6 +7866,19 @@ function validateMediaPayloadConsistency(input: {
   const issues: Diagnostic[] = [];
   const pathExtension = packagePartExtension(input.part);
   const metadataExtension = metadata?.extension;
+
+  if (
+    input.payload.mediaKind !== undefined &&
+    input.payload.mediaKind !== "image" &&
+    input.payload.mediaKind !== "video"
+  ) {
+    issues.push(
+      mediaPayloadDiagnostic({
+        path: `${path}.mediaKind`,
+        message: "invalid media kind",
+      }),
+    );
+  }
 
   if (
     pathExtension &&
@@ -7562,7 +7918,8 @@ function validateMediaPayloadConsistency(input: {
     if (
       typeof allocationKey === "string" &&
       allocationKey.length > 0 &&
-      !allocationKey.startsWith(`hash:${metadata.hash}:`)
+      !allocationKey.startsWith(`hash:${metadata.hash}:`) &&
+      !allocationKey.startsWith(`${input.payload.mediaKind ?? "image"}:hash:${metadata.hash}:`)
     ) {
       issues.push(
         mediaPayloadDiagnostic({
@@ -7598,6 +7955,15 @@ function validateMediaPayloadConsistency(input: {
       value: input.payload.assetEntityId,
       values: input.payload.assetEntityIds,
       label: "media asset id",
+    }),
+  );
+
+  issues.push(
+    ...validateVideoMediaCompatibility({
+      path,
+      pathExtension,
+      payload: input.payload,
+      metadata,
     }),
   );
 
@@ -7855,6 +8221,7 @@ function isPackagePartOrderGroup(value: unknown): boolean {
     value === "slideMaster" ||
     value === "slideMasterRelationships" ||
     value === "slideRelationships" ||
+    value === "tableStyles" ||
     value === "theme" ||
     value === "viewProperties"
   );
@@ -7897,6 +8264,9 @@ function expectedPackagePartOrderGroup(part: PptxPackagePart): PptxPackagePartOr
   }
   if (part.kind === "presentation-properties") {
     return "presentationProperties";
+  }
+  if (part.kind === "table-styles") {
+    return "tableStyles";
   }
   if (part.kind === "slide") {
     return "slide";
@@ -8800,6 +9170,8 @@ function expectedPackagePartPathFamily(part: PptxPackagePart): string | undefine
       return path === "ppt/presentation.xml" ? undefined : "ppt/presentation.xml";
     case "presentation-properties":
       return path === "ppt/presProps.xml" ? undefined : "ppt/presProps.xml";
+    case "table-styles":
+      return path === "ppt/tableStyles.xml" ? undefined : "ppt/tableStyles.xml";
     case "relationships":
       return RELATIONSHIPS_PART_PATH_PATTERNS.some((pattern) => pattern.test(path))
         ? undefined
@@ -9245,6 +9617,10 @@ export function validatePptxPackageConsistency(
 
     if (part.kind === "view-properties" || part.kind === "presentation-properties") {
       issues.push(...validateEmptySupportPropertiesPayload({ part }));
+    }
+
+    if (part.kind === "table-styles") {
+      issues.push(...validateTableStylesPayload({ part }));
     }
 
     if (part.kind === "notes-master" || part.kind === "notes-slide") {

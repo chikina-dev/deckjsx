@@ -6,6 +6,7 @@ import type {
   IntrinsicPProps,
   IntrinsicShapeProps,
   IntrinsicTextTag,
+  IntrinsicVideoProps,
   IntrinsicViewTag,
   JsxNode,
 } from "./authoring/index";
@@ -71,6 +72,13 @@ export function jsxDEV(
 export function jsxDEV(
   type: "img",
   props: IntrinsicImgProps,
+  key?: JsxKey,
+  _isStaticChildren?: boolean,
+  source?: JsxDevSource,
+): DeckJsxElement;
+export function jsxDEV(
+  type: "video",
+  props: IntrinsicVideoProps,
   key?: JsxKey,
   _isStaticChildren?: boolean,
   source?: JsxDevSource,

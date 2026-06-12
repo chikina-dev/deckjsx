@@ -4,10 +4,12 @@ import {
   normalizeShapeProps,
   normalizeSlideProps,
   normalizeTextProps,
+  normalizeVideoProps,
   normalizeViewProps,
   type ShapeNormalizationInput,
   type SlideNormalizationInput,
   type TextNormalizationInput,
+  type VideoNormalizationInput,
   type ViewNormalizationInput,
 } from "../../layout/normalization";
 import { createDiagnostics, diagnostic, type Diagnostics } from "../../diagnostics";
@@ -27,6 +29,7 @@ import {
   SHAPE_STYLE_KEYS,
   TEXT_RUN_STYLE_KEYS,
   TEXT_STYLE_KEYS,
+  VIDEO_STYLE_KEYS,
   VIEW_STYLE_KEYS,
   type BorderStyle,
   type DeckLength,
@@ -118,6 +121,13 @@ export function imageStyleFor(
   resolvedStyles: ResolvedStyleMap,
 ): ImageNormalizationInput {
   return targetStyle<ImageNormalizationInput>(pptxStyleFor(node, resolvedStyles), IMAGE_STYLE_KEYS);
+}
+
+export function videoStyleFor(
+  node: SemanticNode,
+  resolvedStyles: ResolvedStyleMap,
+): VideoNormalizationInput {
+  return targetStyle<VideoNormalizationInput>(pptxStyleFor(node, resolvedStyles), VIDEO_STYLE_KEYS);
 }
 
 export function shapeStyleFor(
@@ -846,6 +856,15 @@ function unsupportedSemanticsForGraphNode(
             .unsupportedSemantics,
         ];
       }
+      case "video": {
+        const props = normalizeVideoProps(videoStyleFor(node, resolvedStyles));
+        return [
+          ...unsupportedTransformSemantics(props),
+          ...unsupportedCompositingSemantics(props),
+          ...parseShadowSafely({ property: "boxShadow", value: props.boxShadow })
+            .unsupportedSemantics,
+        ];
+      }
       case "shape": {
         const props = normalizeShapeProps({
           ...shapeStyleFor(node, resolvedStyles, node.shape),
@@ -959,6 +978,7 @@ export function collectPptxUnsupportedProjectionModelDiagnostics(
           semantic.feature !== "isolation" &&
           semantic.feature !== "outline" &&
           semantic.feature !== "stroke" &&
+          semantic.fallback?.strategy !== "synthesizeFallbackFrame" &&
           !(semantic.feature === "opacity" && semantic.property === "stackingContext") &&
           !(semantic.feature === "transform" && semantic.property === "stackingContext")
         ) {

@@ -307,12 +307,19 @@ function assetProbeInvalidFields(result: AssetProbeResult): readonly string[] {
   return invalidFields;
 }
 
-function missingRequiredAssetProbeFields(probe: AssetProbeResult | undefined): readonly string[] {
+function missingRequiredAssetProbeFields(input: {
+  probe: AssetProbeResult | undefined;
+  assetKind: AssetEntity["kind"];
+}): readonly string[] {
+  if (input.assetKind === "video") {
+    return [];
+  }
+
   const missingFields: string[] = [];
-  if (probe?.width === undefined) {
+  if (input.probe?.width === undefined) {
     missingFields.push("width");
   }
-  if (probe?.height === undefined) {
+  if (input.probe?.height === undefined) {
     missingFields.push("height");
   }
   return missingFields;
@@ -848,7 +855,10 @@ async function resolveAssetArtifacts(input: {
       resolverScope = BUILTIN_ASSET_RESOLVER_SCOPE;
     }
 
-    const missingRequiredFields = missingRequiredAssetProbeFields(probe);
+    const missingRequiredFields = missingRequiredAssetProbeFields({
+      probe,
+      assetKind: asset.kind,
+    });
     if (missingRequiredFields.length > 0) {
       diagnostics.push(
         missingRequiredAssetProbeDiagnostics({
