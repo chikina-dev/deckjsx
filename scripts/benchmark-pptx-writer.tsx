@@ -199,7 +199,7 @@ const fixtures: readonly BenchmarkFixture[] = [
       projectMs: 350,
       projectDetailsMs: 430,
       projectNoInspectionMs: 350,
-      warmProjectMs: 35,
+      warmProjectMs: 30,
       coldWriterMs: 450,
       warmWriterMs: 180,
       zipAssemblyMs: 100,
