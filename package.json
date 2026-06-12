@@ -1,6 +1,6 @@
 {
   "name": "deckjsx",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "Generate PowerPoint presentations from TSX/JSX through a compiler pipeline.",
   "license": "MIT",
   "author": "deckjsx contributors",
