@@ -8,6 +8,7 @@ import type {
   StyleDeclaration,
   TextRunStyle,
   TextStyle,
+  VideoStyle,
   ViewStyle,
 } from "./types";
 
@@ -21,6 +22,7 @@ export const ELEMENT_DEFAULTS: {
   readonly text: TextStyle;
   readonly textRun: TextRunStyle;
   readonly image: ImageStyle;
+  readonly video: VideoStyle;
   readonly shape: ShapeStyle;
 } = {
   slide: {
@@ -122,6 +124,21 @@ export const ELEMENT_DEFAULTS: {
     rounding: false,
     margin: 0,
   },
+  video: {
+    display: "block",
+    visibility: "visible",
+    opacity: 1,
+    rotation: 0,
+    zIndex: 0,
+    overflow: "visible",
+    position: "static",
+    fit: "contain",
+    objectFit: "contain",
+    objectPosition: "50% 50%",
+    transparency: 0,
+    rounding: false,
+    margin: 0,
+  },
   shape: {
     display: "block",
     visibility: "visible",
@@ -157,6 +174,8 @@ export function elementDefaultsFor(node: SemanticNode): StyleDeclaration | undef
       return ELEMENT_DEFAULTS.textRun;
     case "image":
       return ELEMENT_DEFAULTS.image;
+    case "video":
+      return ELEMENT_DEFAULTS.video;
     case "shape":
       return ELEMENT_DEFAULTS.shape;
     case "document":

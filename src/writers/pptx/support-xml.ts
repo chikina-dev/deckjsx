@@ -8,6 +8,7 @@ import type {
   PptxRelationship,
   PptxSlideLayoutPart,
   PptxSlideMasterPart,
+  PptxTableStylesPart,
   PptxThemePartPayload,
   PptxThemePart,
   PptxViewPropertiesPart,
@@ -214,18 +215,62 @@ export function presentationBytes(
     });
   });
 
-  return writer
+  writer
     .close("p:sldIdLst")
     .empty("p:sldSz", {
       cx: emu(size.widthEmu, "presentation.size.widthEmu"),
       cy: emu(size.heightEmu, "presentation.size.heightEmu"),
-      type: "custom",
+      type: size.widthEmu === 9144000 && size.heightEmu === 5143500 ? "screen16x9" : "custom",
     })
     .empty("p:notesSz", {
       cx: emu(size.widthEmu, "presentation.size.widthEmu"),
       cy: emu(size.heightEmu, "presentation.size.heightEmu"),
     })
-    .close("p:presentation")
+    .open("p:defaultTextStyle")
+    .open("a:defPPr")
+    .empty("a:defRPr")
+    .close("a:defPPr");
+
+  for (let level = 1; level <= 9; level += 1) {
+    writer
+      .open(`a:lvl${level}pPr`, {
+        marL: (level - 1) * 457200,
+        algn: "l",
+        defTabSz: 914400,
+        rtl: 0,
+        eaLnBrk: 1,
+        latinLnBrk: 0,
+        hangingPunct: 1,
+      })
+      .open("a:defRPr", {
+        kumimoji: 1,
+        sz: 1800,
+        kern: 1200,
+      })
+      .open("a:solidFill")
+      .empty("a:schemeClr", { val: "tx1" })
+      .close("a:solidFill")
+      .empty("a:latin", { typeface: "+mn-lt" })
+      .empty("a:ea", { typeface: "+mn-ea" })
+      .empty("a:cs", { typeface: "+mn-cs" })
+      .close("a:defRPr")
+      .close(`a:lvl${level}pPr`);
+  }
+
+  return writer.close("p:defaultTextStyle").close("p:presentation").bytes();
+}
+
+export function tableStylesXml(part: PptxTableStylesPart): string {
+  return new TextDecoder().decode(tableStylesBytes(part));
+}
+
+export function tableStylesBytes(part: PptxTableStylesPart): Uint8Array {
+  return new XmlChunkWriter()
+    .declaration()
+    .empty("a:tblStyleLst", {
+      "xmlns:a": DRAWING_ML_NS,
+      def: part.payload.defaultStyleId,
+    })
     .bytes();
 }
 
@@ -254,6 +299,47 @@ function requireThemeColor(payload: PptxThemePartPayload, key: string): string {
   return value;
 }
 
+function schemeFill(
+  writer: XmlChunkWriter,
+  transforms: readonly { readonly name: string; readonly val: number }[] = [],
+): void {
+  writer.open("a:solidFill").open("a:schemeClr", { val: "phClr" });
+  transforms.forEach((transform) => {
+    writer.empty(`a:${transform.name}`, { val: transform.val });
+  });
+  writer.close("a:schemeClr").close("a:solidFill");
+}
+
+function themeLineStyle(writer: XmlChunkWriter, width: number): void {
+  writer
+    .open("a:ln", { w: width, cap: "flat", cmpd: "sng", algn: "ctr" })
+    .open("a:solidFill")
+    .empty("a:schemeClr", { val: "phClr" })
+    .close("a:solidFill")
+    .empty("a:prstDash", { val: "solid" })
+    .empty("a:miter", { lim: 800000 })
+    .close("a:ln");
+}
+
+function themeEffectStyle(writer: XmlChunkWriter, shadow: boolean): void {
+  writer.open("a:effectStyle").open("a:effectLst");
+  if (shadow) {
+    writer
+      .open("a:outerShdw", {
+        blurRad: 57150,
+        dist: 19050,
+        dir: 5400000,
+        algn: "ctr",
+        rotWithShape: 0,
+      })
+      .open("a:srgbClr", { val: "000000" })
+      .empty("a:alpha", { val: 63000 })
+      .close("a:srgbClr")
+      .close("a:outerShdw");
+  }
+  writer.close("a:effectLst").close("a:effectStyle");
+}
+
 export function themeBytes(part: PptxThemePart): Uint8Array {
   const payload = part.payload;
   const writer = new XmlChunkWriter()
@@ -268,44 +354,61 @@ export function themeBytes(part: PptxThemePart): Uint8Array {
     themeColor(writer, name, requireThemeColor(payload, name));
   }
 
-  return writer
+  writer
     .close("a:clrScheme")
     .open("a:fontScheme", { name: requireThemeText(payload.fontScheme.name, "fontScheme.name") })
     .open("a:majorFont")
     .empty("a:latin", {
       typeface: requireThemeText(payload.fontScheme.majorLatin, "fontScheme.majorLatin"),
     })
+    .empty("a:ea", { typeface: "" })
+    .empty("a:cs", { typeface: "" })
     .close("a:majorFont")
     .open("a:minorFont")
     .empty("a:latin", {
       typeface: requireThemeText(payload.fontScheme.minorLatin, "fontScheme.minorLatin"),
     })
+    .empty("a:ea", { typeface: "" })
+    .empty("a:cs", { typeface: "" })
     .close("a:minorFont")
     .close("a:fontScheme")
     .open("a:fmtScheme", {
       name: requireThemeText(payload.formatScheme.name, "formatScheme.name"),
     })
-    .open("a:fillStyleLst")
-    .open("a:solidFill")
-    .empty("a:schemeClr", { val: "phClr" })
-    .close("a:solidFill")
-    .close("a:fillStyleLst")
-    .open("a:lnStyleLst")
-    .open("a:ln", { w: 9525 })
-    .open("a:solidFill")
-    .empty("a:schemeClr", { val: "phClr" })
-    .close("a:solidFill")
-    .close("a:ln")
-    .close("a:lnStyleLst")
-    .open("a:effectStyleLst")
-    .open("a:effectStyle")
-    .empty("a:effectLst")
-    .close("a:effectStyle")
-    .close("a:effectStyleLst")
-    .open("a:bgFillStyleLst")
-    .open("a:solidFill")
-    .empty("a:schemeClr", { val: "phClr" })
-    .close("a:solidFill")
+    .open("a:fillStyleLst");
+
+  schemeFill(writer);
+  schemeFill(writer, [
+    { name: "tint", val: 67000 },
+    { name: "satMod", val: 105000 },
+  ]);
+  schemeFill(writer, [
+    { name: "shade", val: 78000 },
+    { name: "satMod", val: 120000 },
+  ]);
+
+  writer.close("a:fillStyleLst").open("a:lnStyleLst");
+  themeLineStyle(writer, 12700);
+  themeLineStyle(writer, 19050);
+  themeLineStyle(writer, 25400);
+
+  writer.close("a:lnStyleLst").open("a:effectStyleLst");
+  themeEffectStyle(writer, false);
+  themeEffectStyle(writer, false);
+  themeEffectStyle(writer, true);
+
+  writer.close("a:effectStyleLst").open("a:bgFillStyleLst");
+  schemeFill(writer);
+  schemeFill(writer, [
+    { name: "tint", val: 95000 },
+    { name: "satMod", val: 170000 },
+  ]);
+  schemeFill(writer, [
+    { name: "shade", val: 63000 },
+    { name: "satMod", val: 120000 },
+  ]);
+
+  return writer
     .close("a:bgFillStyleLst")
     .close("a:fmtScheme")
     .close("a:themeElements")

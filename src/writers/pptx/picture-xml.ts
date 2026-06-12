@@ -412,7 +412,7 @@ function expandBackgroundImageLayer(
   return tiles;
 }
 
-function resolveImageSrcRect(
+export function resolveImageSrcRect(
   node: SrcRectImageLike,
   context: SlideImageRenderContext,
   label = "Image",
@@ -537,7 +537,7 @@ function resolveImageSrcRect(
   });
 }
 
-function writeSrcRect(writer: XmlChunkWriter, srcRect: ImageSrcRect | undefined): void {
+export function writeSrcRect(writer: XmlChunkWriter, srcRect: ImageSrcRect | undefined): void {
   if (srcRect) {
     writer.empty("a:srcRect", { l: srcRect.l, r: srcRect.r, t: srcRect.t, b: srcRect.b });
     writer.open("a:stretch").empty("a:fillRect").close("a:stretch");

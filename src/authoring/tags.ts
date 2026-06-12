@@ -17,7 +17,8 @@ export type AuthoredTag =
   | "p"
   | "section"
   | "shape"
-  | "span";
+  | "span"
+  | "video";
 
 export type SectioningTag = "article" | "aside" | "footer" | "header" | "main" | "nav" | "section";
 
@@ -62,6 +63,7 @@ export function isAuthoredTag(value: string): value is AuthoredTag {
     isIntrinsicTextTag(value) ||
     value === "img" ||
     value === "shape" ||
-    value === "span"
+    value === "span" ||
+    value === "video"
   );
 }

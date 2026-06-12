@@ -54,6 +54,7 @@ import {
   elementIdentity,
   generatedShapeObjectId,
   mediaPartIdForElement,
+  packageIdentity,
   pptxElementId,
   serializedId,
   shapeObjectId,
@@ -81,6 +82,10 @@ import type {
 const BACKGROUND_LAYER_SHAPE_OBJECT_ID_OFFSET = 50;
 const BACKGROUND_LAYER_SHAPE_OBJECT_ID_STRIDE = 100;
 const DEFAULT_OBJECT_POSITION: ObjectPositionIR = { x: 0.5, y: 0.5 };
+const DEFAULT_VIDEO_POSTER_SOURCE: ImageSourceIR = {
+  kind: "data",
+  data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=",
+};
 const DEFAULT_TEXT_FIT: NonNullable<TextStyleIR["fit"]> = "none";
 const DEFAULT_TEXT_DIRECTION: NonNullable<TextStyleIR["textDirection"]> = "horz";
 const DEFAULT_TEXT_VERTICAL_ALIGN: NonNullable<TextStyleIR["verticalAlign"]> = "top";
@@ -1033,6 +1038,8 @@ function compileElement(input: {
         input.indexPath,
         input.context,
       );
+    case "video":
+      return undefined;
     case "shape":
       return compileShape(
         node,
@@ -1245,6 +1252,23 @@ function mapProjectedLayoutNodeToElement(input: {
         shadow: input.node.shadow,
         hyperlink: input.node.hyperlink,
       };
+    case "video": {
+      const posterSource = input.node.posterSource ?? DEFAULT_VIDEO_POSTER_SOURCE;
+      return {
+        ...base,
+        kind: "video",
+        mediaPartId: mediaPartIdForElement(base.id),
+        posterMediaPartId: packageIdentity("media", `${base.id}:poster`),
+        sourceFrame: input.node.sourceFrame,
+        source: input.node.source,
+        posterSource,
+        fit: input.node.fit,
+        objectPosition: input.node.objectPosition ?? DEFAULT_OBJECT_POSITION,
+        transparency: input.node.transparency,
+        rounding: input.node.rounding,
+        shadow: input.node.shadow,
+      };
+    }
     case "shape": {
       const backgroundLayers = projectBackgroundLayers({
         layers: input.node.backgroundLayers,

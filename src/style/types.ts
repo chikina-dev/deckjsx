@@ -307,6 +307,21 @@ export type ImageStyle = FrameAuthorProps & {
   marginLeft?: DeckLength;
 };
 
+export type VideoStyle = FrameAuthorProps & {
+  fit?: ImageFit;
+  objectFit?: ImageFit;
+  objectPosition?: CssObjectPosition;
+  transparency?: number;
+  rounding?: boolean;
+  borderRadius?: DeckLength;
+  boxShadow?: string;
+  margin?: Spacing;
+  marginTop?: DeckLength;
+  marginRight?: DeckLength;
+  marginBottom?: DeckLength;
+  marginLeft?: DeckLength;
+};
+
 export type ShapeStyle = FrameAuthorProps &
   Omit<BoxStyleAuthorProps, "backgroundColor" | "backgroundTransparency" | "borderRadius"> & {
     background?: string;
@@ -357,6 +372,7 @@ type KnownStyleDeclarationSource =
   | TextStyle
   | TextRunStyle
   | ImageStyle
+  | VideoStyle
   | ShapeStyle;
 type KeysOfUnion<T> = T extends T ? keyof T : never;
 type ValueOfUnion<T, TKey extends PropertyKey> = T extends T
@@ -377,9 +393,11 @@ export type StyleForAuthoredTag<TTag extends string> = TTag extends "span"
   ? TextRunStyle
   : TTag extends "img"
     ? ImageStyle
-    : TTag extends "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p"
-      ? TextStyle
-      : ViewStyle;
+    : TTag extends "video"
+      ? VideoStyle
+      : TTag extends "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p"
+        ? TextStyle
+        : ViewStyle;
 
 export const VIEW_STYLE_KEYS = [
   "opacity",
@@ -626,6 +644,63 @@ export const IMAGE_STYLE_KEYS = [
   "crop",
   "href",
   "tooltip",
+  "transparency",
+  "rounding",
+  "borderRadius",
+  "boxShadow",
+  "margin",
+  "marginTop",
+  "marginRight",
+  "marginBottom",
+  "marginLeft",
+] as const;
+
+export const VIDEO_STYLE_KEYS = [
+  "opacity",
+  "rotation",
+  "transform",
+  "transformOrigin",
+  "filter",
+  "mixBlendMode",
+  "isolation",
+  "zIndex",
+  "flipH",
+  "flipV",
+  "overflow",
+  "alignSelf",
+  "justifySelf",
+  "placeSelf",
+  "position",
+  "order",
+  "flexGrow",
+  "flexShrink",
+  "flexBasis",
+  "gridArea",
+  "gridColumnStart",
+  "gridColumnEnd",
+  "gridRowStart",
+  "gridRowEnd",
+  "gridColumn",
+  "gridRow",
+  "display",
+  "visibility",
+  "x",
+  "y",
+  "inset",
+  "left",
+  "top",
+  "right",
+  "bottom",
+  "width",
+  "height",
+  "aspectRatio",
+  "minWidth",
+  "minHeight",
+  "maxWidth",
+  "maxHeight",
+  "fit",
+  "objectFit",
+  "objectPosition",
   "transparency",
   "rounding",
   "borderRadius",

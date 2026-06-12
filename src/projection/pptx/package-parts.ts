@@ -69,6 +69,9 @@ function packagePartOrderGroup(part: PptxPackagePartCandidate): PptxPackagePartO
   if (part.kind === "presentation-properties") {
     return "presentationProperties";
   }
+  if (part.kind === "table-styles") {
+    return "tableStyles";
+  }
   if (part.kind === "slide") {
     return "slide";
   }
@@ -94,6 +97,7 @@ const PACKAGE_PART_ORDER_GROUP_ORDER = {
   slideLayoutRelationships: 71,
   viewProperties: 75,
   presentationProperties: 76,
+  tableStyles: 77,
   slide: 80,
   slideRelationships: 81,
   media: 90,
@@ -277,7 +281,7 @@ function packagePartRequirement(
   }
 
   if (part.kind === "media") {
-    const dependencies = relationshipPartIdsByTargetPartId.get(part.id) ?? [];
+    const dependencies = [...new Set(relationshipPartIdsByTargetPartId.get(part.id) ?? [])];
     return {
       status: "conditional",
       required: dependencies.length > 0,

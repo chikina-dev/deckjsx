@@ -50,10 +50,11 @@ export type PptxPackagePartKind =
   | "slide"
   | "slide-layout"
   | "slide-master"
+  | "table-styles"
   | "theme"
   | "view-properties";
 
-export type PptxElementKind = "group" | "image" | "shape" | "text";
+export type PptxElementKind = "group" | "image" | "shape" | "text" | "video";
 
 export type PptxElementOrigin = {
   readonly graphNodeIds?: readonly GraphNodeId[];
@@ -64,6 +65,7 @@ export type PptxElementOrigin = {
 
 export type PptxSerializedIdentities = {
   readonly hyperlinkRelationshipId?: PptxSerializedIdentity;
+  readonly mediaRelationshipId?: PptxSerializedIdentity;
   readonly relationshipId?: PptxSerializedIdentity;
   readonly shapeObjectId?: PptxSerializedIdentity;
 };
@@ -181,6 +183,20 @@ export type PptxPictureElement = PptxBaseElement & {
   readonly hyperlink?: HyperlinkIR;
 };
 
+export type PptxVideoElement = PptxBaseElement & {
+  readonly kind: "video";
+  readonly mediaPartId?: PackagePartId;
+  readonly posterMediaPartId?: PackagePartId;
+  readonly sourceFrame: FrameIR;
+  readonly source: ImageSourceIR;
+  readonly posterSource?: ImageSourceIR;
+  readonly fit: "contain" | "cover" | "stretch";
+  readonly objectPosition: ObjectPositionIR;
+  readonly transparency?: number;
+  readonly rounding?: boolean;
+  readonly shadow?: PptxShadow;
+};
+
 export type PptxShapeElement = PptxBaseElement & {
   readonly kind: "shape";
   readonly shape: "rect" | "ellipse" | "line";
@@ -199,7 +215,8 @@ export type PptxElement =
   | PptxGroupElement
   | PptxPictureElement
   | PptxShapeElement
-  | PptxTextElement;
+  | PptxTextElement
+  | PptxVideoElement;
 
 export type PptxEmissionTarget = "slide" | "slideLayout" | "slideMaster";
 
@@ -276,6 +293,7 @@ export type PptxPackagePartOrderGroup =
   | "slideMaster"
   | "slideMasterRelationships"
   | "slideRelationships"
+  | "tableStyles"
   | "theme"
   | "viewProperties";
 
@@ -318,6 +336,7 @@ export type PptxMediaMetadata = {
 };
 
 export type PptxMediaPartPayload = {
+  readonly mediaKind?: "image" | "video";
   readonly source: ImageSourceIR;
   readonly sources: readonly ImageSourceIR[];
   readonly elementId?: PptxElementId;
@@ -567,6 +586,11 @@ export type PptxEmptySupportPartPayload =
       readonly kind: "view-properties";
       readonly editable: true;
       readonly settings: Record<string, never>;
+    }
+  | {
+      readonly kind: "table-styles";
+      readonly editable: true;
+      readonly defaultStyleId: string;
     };
 
 export type PptxNotesPlaceholderPayload =
@@ -645,6 +669,9 @@ export type PptxPresentationPropertiesPart = PptxSupportPartOf<
 export type PptxViewPropertiesPart = PptxSupportPartOf<
   Extract<PptxSupportPartPayload, { readonly kind: "view-properties" }>
 >;
+export type PptxTableStylesPart = PptxSupportPartOf<
+  Extract<PptxSupportPartPayload, { readonly kind: "table-styles" }>
+>;
 export type PptxNotesMasterPart = PptxSupportPartOf<
   Extract<PptxSupportPartPayload, { readonly kind: "notes-master" }>
 >;
@@ -670,6 +697,7 @@ export type PptxSupportPart =
   | PptxPresentationPropertiesPart
   | PptxSlideLayoutPart
   | PptxSlideMasterPart
+  | PptxTableStylesPart
   | PptxThemePart
   | PptxViewPropertiesPart;
 
@@ -944,6 +972,9 @@ export type ProjectInspectionResolvedValues = {
   readonly textStyle?: TextStyleIR;
   readonly imageSource?: ImageSourceIR;
   readonly imageObjectPosition?: ObjectPositionIR;
+  readonly videoSource?: ImageSourceIR;
+  readonly videoPosterSource?: ImageSourceIR;
+  readonly videoObjectPosition?: ObjectPositionIR;
   readonly unsupportedSemantics?: readonly PptxUnsupportedSemantic[];
 };
 

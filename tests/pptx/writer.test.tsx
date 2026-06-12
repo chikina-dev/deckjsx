@@ -1213,6 +1213,8 @@ describe("direct pptx writer", () => {
       expect(presentationXml).toContain('cy="444444"');
       expect(presentationXml).not.toContain('cx="111111"');
       expect(presentationXml).not.toContain('cy="222222"');
+      expect(presentationXml).toContain("<p:defaultTextStyle>");
+      expect(presentationXml).not.toContain('lang="ja-JP"');
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }

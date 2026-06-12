@@ -13,6 +13,7 @@ import type {
   SlideStyle,
   StackAxis,
   TextStyle,
+  VideoStyle,
   ViewStyle,
 } from "../style/types";
 import { resolveGridContainerAuthoring } from "./grid";
@@ -43,6 +44,13 @@ type ImageStructuralInput = AreaStructuralInput & {
   readonly data?: string;
 };
 
+type VideoStructuralInput = AreaStructuralInput & {
+  readonly src?: string;
+  readonly data?: string;
+  readonly poster?: string;
+  readonly posterData?: string;
+};
+
 type ShapeKind = "rect" | "ellipse" | "line";
 
 type ShapeStructuralInput = AreaStructuralInput & {
@@ -53,6 +61,7 @@ export type NormalizedSlideProps = SlideStructuralInput & SlideStyle;
 export type NormalizedViewProps = AreaStructuralInput & ViewStyle;
 export type NormalizedTextProps = AreaStructuralInput & TextStyle;
 export type NormalizedImageProps = ImageStructuralInput & ImageStyle;
+export type NormalizedVideoProps = VideoStructuralInput & VideoStyle;
 export type NormalizedShapeProps = AreaStructuralInput & ShapeStyle & { readonly shape: ShapeKind };
 export type SlideNormalizationInput = Partial<SlideStructuralInput> &
   SlideStyle & {
@@ -69,6 +78,10 @@ export type TextNormalizationInput = Partial<AreaStructuralInput> &
 export type ImageNormalizationInput = Partial<ImageStructuralInput> &
   ImageStyle & {
     readonly style?: ImageStyle;
+  };
+export type VideoNormalizationInput = Partial<VideoStructuralInput> &
+  VideoStyle & {
+    readonly style?: VideoStyle;
   };
 export type ShapeNormalizationInput = Partial<ShapeStructuralInput> &
   ShapeStyle & {
@@ -440,6 +453,46 @@ export function normalizeImageProps(
     fit: normalizeImageFit(resolved.fit ?? resolved.objectFit),
     objectPosition: resolved.objectPosition,
     crop: resolved.crop,
+    rounding:
+      resolved.rounding ??
+      (resolved.borderRadius !== undefined
+        ? parseLength(resolved.borderRadius, 0, 0, context) > 0
+        : undefined),
+    margin: resolveBoxSpacing(
+      resolved.margin,
+      resolved.marginTop,
+      resolved.marginRight,
+      resolved.marginBottom,
+      resolved.marginLeft,
+    ),
+  };
+}
+
+export function normalizeVideoProps(
+  props: VideoNormalizationInput,
+  context?: LengthResolutionContext,
+): NormalizedVideoProps {
+  const { style, ...rest } = props;
+  const resolved: NormalizedVideoProps = {
+    ...rest,
+    ...style,
+  };
+  const inset = resolveInset(
+    resolved.inset,
+    resolved.top,
+    resolved.right,
+    resolved.bottom,
+    resolved.left,
+  );
+
+  return {
+    ...resolved,
+    top: inset?.top ?? resolved.top,
+    right: inset?.right ?? resolved.right,
+    bottom: inset?.bottom ?? resolved.bottom,
+    left: inset?.left ?? resolved.left,
+    fit: normalizeImageFit(resolved.fit ?? resolved.objectFit),
+    objectPosition: resolved.objectPosition,
     rounding:
       resolved.rounding ??
       (resolved.borderRadius !== undefined

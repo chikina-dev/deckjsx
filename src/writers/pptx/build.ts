@@ -17,6 +17,7 @@ const PPTX_EMITTER_FINGERPRINTS: Record<PptxPackagePart["kind"], string> = {
   slide: "deckjsx:pptx-emitter:slide:0.8-generated-strokes",
   "slide-layout": "deckjsx:pptx-emitter:slide-layout:0.8-chunk-skeleton",
   "slide-master": "deckjsx:pptx-emitter:slide-master:0.8-chunk-skeleton",
+  "table-styles": "deckjsx:pptx-emitter:table-styles:0.8-bootstrap",
   theme: "deckjsx:pptx-emitter:theme:0.8-bootstrap",
   "view-properties": "deckjsx:pptx-emitter:view-properties:0.8-bootstrap",
 };

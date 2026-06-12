@@ -15,7 +15,8 @@ export type SemanticNodeKind =
   | "shape"
   | "slide"
   | "text"
-  | "textRun";
+  | "textRun"
+  | "video";
 
 export type SemanticRole =
   | { readonly kind: "document" }
@@ -26,7 +27,8 @@ export type SemanticRole =
   | { readonly kind: "paragraph" }
   | { readonly kind: "heading"; readonly level: 1 | 2 | 3 | 4 | 5 | 6 }
   | { readonly kind: "image" }
-  | { readonly kind: "shape" };
+  | { readonly kind: "shape" }
+  | { readonly kind: "video" };
 
 export type SourceOrigin =
   | { readonly kind: "root" }
@@ -97,6 +99,12 @@ export type SemanticImageNode = BaseSemanticNode & {
   readonly assetRef?: AssetEntityId;
 };
 
+export type SemanticVideoNode = BaseSemanticNode & {
+  readonly kind: "video";
+  readonly assetRef?: AssetEntityId;
+  readonly posterAssetRef?: AssetEntityId;
+};
+
 export type SemanticShapeNode = BaseSemanticNode & {
   readonly kind: "shape";
   readonly shape: "rect" | "ellipse" | "line";
@@ -106,6 +114,7 @@ export type SemanticNode =
   | SemanticContainerNode
   | SemanticDocumentNode
   | SemanticImageNode
+  | SemanticVideoNode
   | SemanticShapeNode
   | SemanticSlideNode
   | SemanticTextNode
@@ -127,7 +136,7 @@ export type StyleEntity = {
 
 export type AssetEntity = {
   readonly id: AssetEntityId;
-  readonly kind: "image";
+  readonly kind: "image" | "video";
   readonly source:
     | { readonly kind: "path"; readonly path: string }
     | { readonly kind: "data"; readonly data: string }

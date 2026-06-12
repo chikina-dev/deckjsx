@@ -62,6 +62,8 @@ function mediaTypeFromExtension(extension: string | undefined): string | undefin
       return "image/gif";
     case "svg":
       return "image/svg+xml";
+    case "mp4":
+      return "video/mp4";
     default:
       return undefined;
   }
@@ -77,6 +79,8 @@ function extensionFromMediaType(mediaType: string | undefined): string | undefin
       return "gif";
     case "image/svg+xml":
       return "svg";
+    case "video/mp4":
+      return "mp4";
     default:
       return undefined;
   }
@@ -94,20 +98,23 @@ function dataMediaType(value: string): string | undefined {
 
 export function mediaAllocationKey(input: {
   source: ImageSourceIR;
+  mediaKind?: "image" | "video";
   assetEntityId?: AssetEntity["id"];
   assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
 }): string {
   const asset = input.assetEntityId ? input.assets?.get(input.assetEntityId) : undefined;
+  const mediaKind = input.mediaKind ?? "image";
   const hash = asset?.probe?.hash;
   if (hash) {
-    return `hash:${hash}:${asset?.probe?.extension ?? asset?.probe?.mediaType ?? imageExtension(input.source)}`;
+    return `${mediaKind}:hash:${hash}:${asset?.probe?.extension ?? asset?.probe?.mediaType ?? imageExtension(input.source)}`;
   }
 
-  return `source:${asset?.resolverScope ?? "deckjsx:builtin"}:${imageSourceKey(input.source)}`;
+  return `${mediaKind}:source:${asset?.resolverScope ?? "deckjsx:builtin"}:${imageSourceKey(input.source)}`;
 }
 
 export function mediaPartIdForSource(input: {
   source: ImageSourceIR;
+  mediaKind?: "image" | "video";
   assetEntityId?: AssetEntity["id"];
   assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
 }): PackagePartId {
@@ -194,6 +201,7 @@ function mediaMetadataFromSource(source: ImageSourceIR): PptxMediaMetadata | und
 
 export function mediaExtension(input: {
   source: ImageSourceIR;
+  mediaKind?: "image" | "video";
   assetEntityId?: AssetEntity["id"];
   assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
 }): string {
@@ -205,6 +213,7 @@ export function mediaExtension(input: {
 
 export function mediaPayloadFor(input: {
   source: ImageSourceIR;
+  mediaKind?: "image" | "video";
   elementId?: PptxElementId;
   assetEntityId?: AssetEntity["id"];
   assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
@@ -218,6 +227,7 @@ export function mediaPayloadFor(input: {
   const allocationKey = mediaAllocationKey(input);
 
   return {
+    mediaKind: input.mediaKind ?? "image",
     source: input.source,
     sources: [input.source],
     ...(input.elementId ? { elementId: input.elementId } : {}),
@@ -336,6 +346,59 @@ export function withCanonicalImageMediaPartIds(
   }));
 }
 
+export function withCanonicalMediaPartIds(
+  slides: readonly PptxSlidePart[],
+  assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>,
+): PptxSlidePart[] {
+  return slides.map((slide) => ({
+    ...slide,
+    payload: {
+      ...slide.payload,
+      drawing: drawingFromElements(
+        mapElements(slideDrawingChildren(slide), (element) => {
+          if (element.kind === "image") {
+            const assetEntityId = element.origin.assetEntityIds?.[0];
+            return {
+              ...element,
+              mediaPartId: mediaPartIdForSource({
+                source: element.source,
+                mediaKind: "image",
+                ...(assetEntityId ? { assetEntityId } : {}),
+                assets,
+              }),
+            };
+          }
+
+          if (element.kind === "video") {
+            const [assetEntityId, posterAssetEntityId] = element.origin.assetEntityIds ?? [];
+            return {
+              ...element,
+              mediaPartId: mediaPartIdForSource({
+                source: element.source,
+                mediaKind: "video",
+                ...(assetEntityId ? { assetEntityId } : {}),
+                assets,
+              }),
+              ...(element.posterSource
+                ? {
+                    posterMediaPartId: mediaPartIdForSource({
+                      source: element.posterSource,
+                      mediaKind: "image",
+                      ...(posterAssetEntityId ? { assetEntityId: posterAssetEntityId } : {}),
+                      assets,
+                    }),
+                  }
+                : {}),
+            };
+          }
+
+          return element;
+        }),
+      ),
+    },
+  }));
+}
+
 export function mediaPartsFor(
   slides: readonly PptxSlidePart[],
   assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>,
@@ -370,12 +433,18 @@ export function mediaPartsFor(
     }
 
     walkElements(slideDrawingChildren(slide), (element) => {
-      if (element.kind !== "image" || !element.mediaPartId) {
+      if (element.kind !== "image" && element.kind !== "video") {
         return;
       }
+
+      if (!element.mediaPartId) {
+        return;
+      }
+
       const assetEntityId = element.origin.assetEntityIds?.[0];
       const payload = mediaPayloadFor({
         source: element.source,
+        mediaKind: element.kind === "video" ? "video" : "image",
         elementId: element.id,
         ...(assetEntityId ? { assetEntityId } : {}),
         assets,
@@ -392,6 +461,7 @@ export function mediaPartsFor(
         kind: "media",
         path: `ppt/media/media${mediaIndex}.${mediaExtension({
           source: element.source,
+          mediaKind: element.kind === "video" ? "video" : "image",
           ...(assetEntityId ? { assetEntityId } : {}),
           assets,
         })}`,
@@ -400,6 +470,42 @@ export function mediaPartsFor(
           ...(element.origin.source ? { source: element.origin.source } : {}),
         },
         payload,
+      });
+      mediaIndex += 1;
+
+      if (element.kind !== "video" || !element.posterSource || !element.posterMediaPartId) {
+        return;
+      }
+
+      const posterAssetEntityId = element.origin.assetEntityIds?.[1];
+      const posterPayload = mediaPayloadFor({
+        source: element.posterSource,
+        mediaKind: "image",
+        elementId: element.id,
+        ...(posterAssetEntityId ? { assetEntityId: posterAssetEntityId } : {}),
+        assets,
+      });
+      const currentPoster = parts.get(element.posterMediaPartId);
+      if (currentPoster) {
+        parts.set(element.posterMediaPartId, mergeMediaPackagePart(currentPoster, posterPayload));
+        return;
+      }
+
+      parts.set(element.posterMediaPartId, {
+        id: element.posterMediaPartId,
+        category: "authored-content",
+        kind: "media",
+        path: `ppt/media/media${mediaIndex}.${mediaExtension({
+          source: element.posterSource,
+          mediaKind: "image",
+          ...(posterAssetEntityId ? { assetEntityId: posterAssetEntityId } : {}),
+          assets,
+        })}`,
+        origin: {
+          ...(element.origin.graphNodeIds ? { graphNodeIds: element.origin.graphNodeIds } : {}),
+          ...(element.origin.source ? { source: element.origin.source } : {}),
+        },
+        payload: posterPayload,
       });
       mediaIndex += 1;
     });
@@ -415,7 +521,7 @@ function withHyperlinkRelationship(input: {
 }): PptxElement {
   const { element } = input;
 
-  if (element.kind === "group" || !element.hyperlink) {
+  if (element.kind === "group" || element.kind === "video" || !element.hyperlink) {
     return element;
   }
 
@@ -451,6 +557,10 @@ function nextSlideRelationshipId(relationships: readonly PptxRelationship[]) {
   return mediaRelationshipId(relationships.length + 1);
 }
 
+function relationshipKey(type: string, mediaPartId: PackagePartId): string {
+  return `${type}:${mediaPartId}`;
+}
+
 export function attachMediaRelationships(
   slides: readonly PptxSlidePart[],
   mediaParts: readonly PptxMediaPart[],
@@ -460,11 +570,12 @@ export function attachMediaRelationships(
 
   return slides.map((slide) => {
     const relationships = [...(slide.relationships ?? [])];
-    const relationshipByMediaPartId = new Map<PackagePartId, PptxRelationship>();
+    const relationshipByMediaPartId = new Map<string, PptxRelationship>();
 
     for (const backgroundImage of backgroundImageLayersForSlide(slide, assets)) {
       const mediaPart = mediaPartById.get(backgroundImage.mediaPartId);
-      if (!mediaPart || relationshipByMediaPartId.has(backgroundImage.mediaPartId)) {
+      const key = relationshipKey("image", backgroundImage.mediaPartId);
+      if (!mediaPart || relationshipByMediaPartId.has(key)) {
         continue;
       }
 
@@ -478,7 +589,7 @@ export function attachMediaRelationships(
         targetPath: mediaPart.path,
         type: "image",
       } satisfies PptxRelationship;
-      relationshipByMediaPartId.set(backgroundImage.mediaPartId, relationship);
+      relationshipByMediaPartId.set(key, relationship);
       relationships.push(relationship);
     }
 
@@ -488,8 +599,9 @@ export function attachMediaRelationships(
       if (nextElement.kind === "image" && nextElement.mediaPartId) {
         const mediaPart = mediaPartById.get(nextElement.mediaPartId);
         if (mediaPart) {
+          const key = relationshipKey("image", nextElement.mediaPartId);
           const relationship =
-            relationshipByMediaPartId.get(nextElement.mediaPartId) ??
+            relationshipByMediaPartId.get(key) ??
             ({
               id: nextSlideRelationshipId(relationships),
               target: projectedRelationshipTarget({
@@ -501,8 +613,8 @@ export function attachMediaRelationships(
               type: "image",
             } satisfies PptxRelationship);
 
-          if (!relationshipByMediaPartId.has(nextElement.mediaPartId)) {
-            relationshipByMediaPartId.set(nextElement.mediaPartId, relationship);
+          if (!relationshipByMediaPartId.has(key)) {
+            relationshipByMediaPartId.set(key, relationship);
             relationships.push(relationship);
           }
 
@@ -513,6 +625,82 @@ export function attachMediaRelationships(
               relationshipId: relationship.id,
             },
           };
+        }
+      }
+
+      if (nextElement.kind === "video" && nextElement.mediaPartId) {
+        const mediaPart = mediaPartById.get(nextElement.mediaPartId);
+        if (mediaPart) {
+          const videoKey = relationshipKey("video", nextElement.mediaPartId);
+          const videoRelationship =
+            relationshipByMediaPartId.get(videoKey) ??
+            ({
+              id: nextSlideRelationshipId(relationships),
+              target: projectedRelationshipTarget({
+                ownerPath: slide.path,
+                targetPath: mediaPart.path,
+              }),
+              targetPartId: mediaPart.id,
+              targetPath: mediaPart.path,
+              type: "video",
+            } satisfies PptxRelationship);
+
+          if (!relationshipByMediaPartId.has(videoKey)) {
+            relationshipByMediaPartId.set(videoKey, videoRelationship);
+            relationships.push(videoRelationship);
+          }
+
+          const mediaKey = relationshipKey("media", nextElement.mediaPartId);
+          const mediaRelationship =
+            relationshipByMediaPartId.get(mediaKey) ??
+            ({
+              id: nextSlideRelationshipId(relationships),
+              target: projectedRelationshipTarget({
+                ownerPath: slide.path,
+                targetPath: mediaPart.path,
+              }),
+              targetPartId: mediaPart.id,
+              targetPath: mediaPart.path,
+              type: "media",
+            } satisfies PptxRelationship);
+
+          if (!relationshipByMediaPartId.has(mediaKey)) {
+            relationshipByMediaPartId.set(mediaKey, mediaRelationship);
+            relationships.push(mediaRelationship);
+          }
+
+          nextElement = {
+            ...nextElement,
+            serialized: {
+              ...nextElement.serialized,
+              relationshipId: videoRelationship.id,
+              mediaRelationshipId: mediaRelationship.id,
+            },
+          };
+        }
+
+        if (nextElement.posterMediaPartId) {
+          const posterPart = mediaPartById.get(nextElement.posterMediaPartId);
+          if (posterPart) {
+            const posterKey = relationshipKey("image", nextElement.posterMediaPartId);
+            const posterRelationship =
+              relationshipByMediaPartId.get(posterKey) ??
+              ({
+                id: nextSlideRelationshipId(relationships),
+                target: projectedRelationshipTarget({
+                  ownerPath: slide.path,
+                  targetPath: posterPart.path,
+                }),
+                targetPartId: posterPart.id,
+                targetPath: posterPart.path,
+                type: "image",
+              } satisfies PptxRelationship);
+
+            if (!relationshipByMediaPartId.has(posterKey)) {
+              relationshipByMediaPartId.set(posterKey, posterRelationship);
+              relationships.push(posterRelationship);
+            }
+          }
         }
       }
 

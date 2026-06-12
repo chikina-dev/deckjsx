@@ -3,6 +3,7 @@ import type {
   ShapeNormalizationInput,
   SlideNormalizationInput,
   TextNormalizationInput,
+  VideoNormalizationInput,
   ViewNormalizationInput,
 } from "./normalization";
 import type { AssetProbeResult } from "../assets";
@@ -14,6 +15,7 @@ import type {
   SemanticAuthorGraph,
   SemanticNode,
   SemanticTextNode,
+  SemanticVideoNode,
   StyleEntityId,
 } from "../graph";
 import type { ResolvedStyleMap } from "../style/resolve";
@@ -82,6 +84,14 @@ export type LayoutInputImage = {
   readonly origin?: ProjectedLayoutOrigin;
 };
 
+export type LayoutInputVideo = {
+  readonly kind: "video";
+  readonly props: VideoNormalizationInput;
+  readonly assetProbe?: LayoutInputAssetProbe;
+  readonly posterAssetProbe?: LayoutInputAssetProbe;
+  readonly origin?: ProjectedLayoutOrigin;
+};
+
 export type LayoutInputShape = {
   readonly kind: "shape";
   readonly props: ShapeNormalizationInput;
@@ -92,6 +102,7 @@ export type LayoutInputContentNode =
   | LayoutInputView
   | LayoutInputText
   | LayoutInputImage
+  | LayoutInputVideo
   | LayoutInputShape;
 
 export type LayoutInputTextChild =
@@ -204,6 +215,10 @@ function collectTextOrigin(
   };
 }
 
+function collectVideoAssetIds(node: SemanticVideoNode): AssetEntityId[] {
+  return [node.assetRef, node.posterAssetRef].filter((id): id is AssetEntityId => id !== undefined);
+}
+
 function layoutOriginFor(
   graph: SemanticAuthorGraph,
   node: SemanticNode,
@@ -225,6 +240,9 @@ function layoutOriginFor(
     graphNodeIds: [node.id],
     ...(node.styleRef ? { styleEntityIds: [node.styleRef] } : {}),
     ...(node.kind === "image" && node.assetRef ? { assetEntityIds: [node.assetRef] } : {}),
+    ...(node.kind === "video" && collectVideoAssetIds(node).length > 0
+      ? { assetEntityIds: collectVideoAssetIds(node) }
+      : {}),
     ...(node.origin.source ? { source: node.origin.source } : {}),
     ...(node.templateAreaRef ? { templateAreaRef: node.templateAreaRef } : {}),
     ...(templateAreaKind ? { templateAreaKind } : {}),
@@ -364,6 +382,32 @@ function layoutInputNodeFromGraph(
         origin: layoutOriginFor(graph, node, templates),
       };
     }
+    case "video": {
+      const props = propsWithTemplateAreaFrame<VideoNormalizationInput>(
+        resolvedStyles,
+        node,
+        templates,
+      );
+      const asset = node.assetRef ? graph.assets.get(node.assetRef) : undefined;
+      if (!asset) {
+        return undefined;
+      }
+      const posterAsset = node.posterAssetRef ? graph.assets.get(node.posterAssetRef) : undefined;
+
+      return {
+        kind: "video",
+        props: {
+          ...props,
+          ...videoSourceProps(asset),
+          ...(posterAsset ? videoPosterSourceProps(posterAsset) : {}),
+        },
+        ...(node.assetRef ? { assetProbe: assetProbeArtifacts?.get(node.assetRef)?.probe } : {}),
+        ...(node.posterAssetRef
+          ? { posterAssetProbe: assetProbeArtifacts?.get(node.posterAssetRef)?.probe }
+          : {}),
+        origin: layoutOriginFor(graph, node, templates),
+      };
+    }
     case "shape": {
       const props = propsWithTemplateAreaFrame<ShapeNormalizationInput>(
         resolvedStyles,
@@ -388,6 +432,24 @@ function imageSourceProps(asset: AssetEntity): Pick<ImageNormalizationInput, "sr
   }
 
   return { src: asset.source.kind === "path" ? asset.source.path : asset.source.url };
+}
+
+function videoSourceProps(asset: AssetEntity): Pick<VideoNormalizationInput, "src" | "data"> {
+  if (asset.source.kind === "data") {
+    return { data: asset.source.data };
+  }
+
+  return { src: asset.source.kind === "path" ? asset.source.path : asset.source.url };
+}
+
+function videoPosterSourceProps(
+  asset: AssetEntity,
+): Pick<VideoNormalizationInput, "poster" | "posterData"> {
+  if (asset.source.kind === "data") {
+    return { posterData: asset.source.data };
+  }
+
+  return { poster: asset.source.kind === "path" ? asset.source.path : asset.source.url };
 }
 
 export function buildLayoutInputSnapshot(input: LayoutInputBuildContext): LayoutInputBuildResult {

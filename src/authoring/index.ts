@@ -7,6 +7,7 @@ import type {
   SlideNodeProps,
   TextNodeProps,
   TextRunNodeProps,
+  VideoNodeProps,
   ViewNodeProps,
 } from "./props";
 
@@ -19,6 +20,7 @@ export type {
   SlideNodeProps,
   TextNodeProps,
   TextRunNodeProps,
+  VideoNodeProps,
   ViewNodeProps,
 } from "./props";
 export type {
@@ -68,6 +70,7 @@ export type {
   TextTabStopAuthoring,
   TextTabStopLength,
   VerticalAlign,
+  VideoStyle,
   ViewStyle,
 } from "../style/types";
 export type {
@@ -138,6 +141,10 @@ export type ImageProps = ImageNodeProps & {
   children?: never;
 };
 
+export type VideoProps = VideoNodeProps & {
+  children?: never;
+};
+
 export type ShapeProps = ShapeNodeProps & {
   children?: never;
 };
@@ -162,6 +169,7 @@ export type IntrinsicSpanProps = TextRunNodeProps &
   };
 
 export type IntrinsicImgProps = ImageProps & IntrinsicKeyProps;
+export type IntrinsicVideoProps = VideoProps & IntrinsicKeyProps;
 export type IntrinsicShapeProps = ShapeProps & IntrinsicKeyProps;
 
 export type IntrinsicViewTag =
@@ -181,6 +189,7 @@ export type DeckJsxIntrinsicElements = {
   img: IntrinsicImgProps;
   shape: IntrinsicShapeProps;
   span: IntrinsicSpanProps;
+  video: IntrinsicVideoProps;
 } & {
   [Tag in IntrinsicViewTag]: IntrinsicDivProps;
 } & {
