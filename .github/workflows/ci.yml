@@ -46,3 +46,6 @@ jobs:
 
       - name: Test
         run: bun run test
+
+      - name: Benchmark direct PPTX writer
+        run: bash .github/scripts/benchmark-pptx-with-diagnostics.sh

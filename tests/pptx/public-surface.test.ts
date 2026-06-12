@@ -163,13 +163,16 @@ describe("public surface", () => {
 
   test("release workflow keeps v0.8 direct-writer gates before publishing", async () => {
     const workflow = await readRepoText(".github/workflows/release.yml");
+    const benchmarkDiagnostics = await readRepoText(
+      ".github/scripts/benchmark-pptx-with-diagnostics.sh",
+    );
     const requiredCommands = [
       "run: bun run check",
       "run: bun run build",
       "run: npm ci --prefix sample",
       "run: npm run --prefix sample smoke",
       "run: bun run test",
-      "run: bun run benchmark:pptx -- --iterations 1 --strict",
+      "run: bash .github/scripts/benchmark-pptx-with-diagnostics.sh",
       "run: bun run verify:render -- --skip-raster",
       "run: npm install --no-audit --no-fund --prefix .github/compat/pptxgenjs",
       "run: npm run --prefix .github/compat/pptxgenjs compare",
@@ -189,6 +192,16 @@ describe("public surface", () => {
     expect(workflow).toContain("dry_run");
     expect(workflow).toContain("npm publish --dry-run --access public");
     expect(workflow).toContain("npm publish --access public");
+
+    expect(benchmarkDiagnostics).toContain("PPTX_BENCHMARK_QUICK_ITERATIONS:-1");
+    expect(benchmarkDiagnostics).toContain("PPTX_BENCHMARK_DEEP_ITERATIONS:-5");
+    expect(benchmarkDiagnostics).toContain(
+      'bun run benchmark:pptx -- --iterations "$quick_iterations" --strict',
+    );
+    expect(benchmarkDiagnostics).toContain(
+      'bun run benchmark:pptx -- --iterations "$deep_iterations" --strict',
+    );
+    expect(benchmarkDiagnostics).toContain("Quick PPTX writer benchmark failed");
   });
 
   test("required generation regression workflows stay isolated from root dependencies", async () => {

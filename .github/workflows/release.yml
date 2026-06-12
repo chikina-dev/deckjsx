@@ -112,7 +112,7 @@ jobs:
         run: bun run test
 
       - name: Benchmark direct PPTX writer
-        run: bun run benchmark:pptx -- --iterations 1 --strict
+        run: bash .github/scripts/benchmark-pptx-with-diagnostics.sh
 
       - name: Verify render fixtures
         run: bun run verify:render -- --skip-raster
