@@ -461,6 +461,35 @@ const packagePartCandidate: PptxPackagePartCandidate = packagePart;
 packagePartCandidate.payload satisfies PptxPackagePartCandidate["payload"];
 void packagePart;
 
+function defaultTextStyleLevel<Level extends 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9>(level: Level) {
+  return {
+    level,
+    marginLeftEmu: (level - 1) * 457200,
+    alignment: "l",
+    defaultTabSizeEmu: 914400,
+    fontSizePt: 18,
+    colorThemeReference: "tx1",
+    latinTypeface: "+mn-lt",
+    eastAsianTypeface: "+mn-ea",
+    complexScriptTypeface: "+mn-cs",
+  } as const;
+}
+
+const defaultTextStyle = {
+  source: "themeProjection",
+  levels: [
+    defaultTextStyleLevel(1),
+    defaultTextStyleLevel(2),
+    defaultTextStyleLevel(3),
+    defaultTextStyleLevel(4),
+    defaultTextStyleLevel(5),
+    defaultTextStyleLevel(6),
+    defaultTextStyleLevel(7),
+    defaultTextStyleLevel(8),
+    defaultTextStyleLevel(9),
+  ],
+} as const;
+
 const supportPart = {
   id: presentationPartId,
   category: "support",
@@ -471,6 +500,7 @@ const supportPart = {
     size: { widthEmu: 9144000, heightEmu: 5143500 },
     slideMasterIds: [{ slideMasterPartId: defaultSupportSlideMasterPartId, id: "2147483648" }],
     slidePartIds: [firstSlidePartId],
+    defaultTextStyle,
   },
 } satisfies PptxSupportPart;
 supportPart.payload.kind satisfies "presentation";

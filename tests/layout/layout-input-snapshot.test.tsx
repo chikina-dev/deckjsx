@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 import { Deck, StyleSheet } from "../../src/index.ts";
 import { buildLayoutInputSnapshot } from "../../src/layout/input.ts";
+import { resolveProjectedLayout } from "../../src/layout/resolve.ts";
 
 function containsMapReference(value: unknown): boolean {
   if (value instanceof Map) {
@@ -91,6 +92,123 @@ describe("layout input snapshot", () => {
         height: 360,
         byteLength: 4096,
       },
+    });
+  });
+
+  test("preserves table-specific structure through layout input and projected layout", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Table" }, () => (
+      <>
+        <table style={{ x: 1, y: 1, width: 6, height: 2, tableLayout: "fixed" }}>
+          <thead>
+            <tr style={{ height: 0.4 }}>
+              <th style={{ width: 3 }}>Metric</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Revenue</td>
+              <td>$10M</td>
+            </tr>
+          </tbody>
+        </table>
+      </>
+    ));
+
+    const compiled = deck.compile();
+    const built = buildLayoutInputSnapshot({
+      graph: compiled.graph!,
+      resolvedStyles: compiled.resolvedStyles!,
+      deckSize: { widthEmu: 9144000, heightEmu: 5143500 },
+    });
+    const tableInput = built.snapshot.slides[0]?.children[0];
+    const projected = resolveProjectedLayout(
+      { layout: { width: 10, height: 5.625, unit: "in" } },
+      built.snapshot,
+    );
+    const table = projected.slides[0]?.nodes[0];
+
+    expect(tableInput).toMatchObject({
+      kind: "table",
+      props: { x: 1, y: 1, width: 6, height: 2, tableLayout: "fixed" },
+      sections: [
+        {
+          kind: "tableSection",
+          sectionKind: "head",
+          rows: [
+            {
+              kind: "tableRow",
+              props: { height: 0.4 },
+              cells: [
+                { kind: "tableCell", cellKind: "header", colSpan: 1, rowSpan: 1 },
+                { kind: "tableCell", cellKind: "header", colSpan: 1, rowSpan: 1 },
+              ],
+            },
+          ],
+        },
+        { kind: "tableSection", sectionKind: "body" },
+      ],
+    });
+    expect(table).toMatchObject({
+      kind: "table",
+      frame: {
+        xEmu: 914400,
+        yEmu: 914400,
+        widthEmu: 5486400,
+        heightEmu: 1828800,
+      },
+    });
+    expect(table && "sections" in table ? table.sections[0] : undefined).toMatchObject({
+      sectionKind: "head",
+      rows: [
+        {
+          cells: [
+            { cellKind: "header", gridColumnIndex: 0, colSpan: 1, rowSpan: 1 },
+            { cellKind: "header", gridColumnIndex: 1, colSpan: 1, rowSpan: 1 },
+          ],
+        },
+      ],
+    });
+  });
+
+  test("projected table layout skips columns occupied by row spans", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Row span" }, () => (
+      <>
+        <table style={{ x: 1, y: 1, width: 6, height: 2, tableLayout: "fixed" }}>
+          <tbody>
+            <tr>
+              <td rowspan={2}>Region</td>
+              <td>Q1</td>
+            </tr>
+            <tr>
+              <td>Q2</td>
+            </tr>
+          </tbody>
+        </table>
+      </>
+    ));
+
+    const compiled = deck.compile();
+    const built = buildLayoutInputSnapshot({
+      graph: compiled.graph!,
+      resolvedStyles: compiled.resolvedStyles!,
+      deckSize: { widthEmu: 9144000, heightEmu: 5143500 },
+    });
+    const projected = resolveProjectedLayout(
+      { layout: { width: 10, height: 5.625, unit: "in" } },
+      built.snapshot,
+    );
+    const table = projected.slides[0]?.nodes[0];
+    const secondRowCell =
+      table?.kind === "table" ? table.sections[0]?.rows[1]?.cells[0] : undefined;
+
+    expect(secondRowCell).toMatchObject({
+      kind: "tableCell",
+      gridColumnIndex: 1,
     });
   });
 });

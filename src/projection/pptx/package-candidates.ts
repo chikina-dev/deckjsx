@@ -1,6 +1,7 @@
 import type {
   PackagePartId,
   PptxContentTypesPayload,
+  PptxDefaultTextStylePayload,
   PptxPackageModel,
   PptxRelationshipsPayload,
   PptxSlideLayoutPartPayload,
@@ -18,6 +19,7 @@ export type PresentationPayloadCandidate = {
     readonly id: string;
   }[];
   readonly slidePartIds: readonly PackagePartId[];
+  readonly defaultTextStyle: PptxDefaultTextStylePayload;
 };
 
 export function isRecord(value: unknown): value is CandidateRecord {
@@ -38,7 +40,10 @@ export function isPresentationPayload(value: unknown): value is PresentationPayl
     value.kind === "presentation" &&
     isRecord(value.size) &&
     Array.isArray(value.slideMasterIds) &&
-    Array.isArray(value.slidePartIds)
+    Array.isArray(value.slidePartIds) &&
+    isRecord(value.defaultTextStyle) &&
+    value.defaultTextStyle.source === "themeProjection" &&
+    Array.isArray(value.defaultTextStyle.levels)
   );
 }
 

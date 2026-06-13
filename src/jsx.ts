@@ -14,8 +14,10 @@ import {
 } from "./authoring/tree";
 import {
   isAuthoredTag,
+  isIntrinsicTableTag,
   isIntrinsicTextTag,
   isIntrinsicViewTag,
+  type IntrinsicTableTag,
   type IntrinsicTextTag,
   type IntrinsicViewTag,
 } from "./authoring/tags";
@@ -26,10 +28,18 @@ import type {
   IntrinsicPProps,
   IntrinsicSpanProps,
   IntrinsicShapeProps,
+  IntrinsicTableCellProps,
+  IntrinsicTableProps,
+  IntrinsicTableRowProps,
+  IntrinsicTableSectionProps,
   IntrinsicVideoProps,
   JsxNode,
   ShapeNodeProps,
   ImageNodeProps,
+  TableCellNodeProps,
+  TableNodeProps,
+  TableRowNodeProps,
+  TableSectionNodeProps,
   TextNodeProps,
   TextRunNodeProps,
   VideoNodeProps,
@@ -69,7 +79,14 @@ function splitProps<TProps extends AuthorElementProps>(
 }
 
 function intrinsicElement(
-  type: IntrinsicViewTag | IntrinsicTextTag | "img" | "shape" | "span" | "video",
+  type:
+    | IntrinsicViewTag
+    | IntrinsicTextTag
+    | IntrinsicTableTag
+    | "img"
+    | "shape"
+    | "span"
+    | "video",
   propsObject: RuntimeProps,
   children: AuthorTreeChild[],
   key?: JsxKey,
@@ -99,6 +116,50 @@ function intrinsicElement(
 
   if (type === "span") {
     const authored = splitProps<TextRunNodeProps>(propsObject, children);
+    return createAuthorElement({
+      source: { kind: "tag", tag: type },
+      props: authored.props,
+      children: authored.children,
+      ...(key !== undefined ? { key } : {}),
+      ...(sourceSpan ? { sourceSpan } : {}),
+    });
+  }
+
+  if (type === "table") {
+    const authored = splitProps<TableNodeProps>(propsObject, children);
+    return createAuthorElement({
+      source: { kind: "tag", tag: type },
+      props: authored.props,
+      children: authored.children,
+      ...(key !== undefined ? { key } : {}),
+      ...(sourceSpan ? { sourceSpan } : {}),
+    });
+  }
+
+  if (type === "thead" || type === "tbody" || type === "tfoot") {
+    const authored = splitProps<TableSectionNodeProps>(propsObject, children);
+    return createAuthorElement({
+      source: { kind: "tag", tag: type },
+      props: authored.props,
+      children: authored.children,
+      ...(key !== undefined ? { key } : {}),
+      ...(sourceSpan ? { sourceSpan } : {}),
+    });
+  }
+
+  if (type === "tr") {
+    const authored = splitProps<TableRowNodeProps>(propsObject, children);
+    return createAuthorElement({
+      source: { kind: "tag", tag: type },
+      props: authored.props,
+      children: authored.children,
+      ...(key !== undefined ? { key } : {}),
+      ...(sourceSpan ? { sourceSpan } : {}),
+    });
+  }
+
+  if (type === "th" || type === "td") {
+    const authored = splitProps<TableCellNodeProps>(propsObject, children);
     return createAuthorElement({
       source: { kind: "tag", tag: type },
       props: authored.props,
@@ -164,6 +225,36 @@ export function createElement(
     | null,
   ...children: ElementChildArgs<IntrinsicSpanProps>
 ): AuthorTreeNode;
+export function createElement(
+  type: "table",
+  props:
+    | (Omit<IntrinsicTableProps, "children"> & Partial<Pick<IntrinsicTableProps, "children">>)
+    | null,
+  ...children: ElementChildArgs<IntrinsicTableProps>
+): AuthorTreeNode;
+export function createElement(
+  type: "thead" | "tbody" | "tfoot",
+  props:
+    | (Omit<IntrinsicTableSectionProps, "children"> &
+        Partial<Pick<IntrinsicTableSectionProps, "children">>)
+    | null,
+  ...children: ElementChildArgs<IntrinsicTableSectionProps>
+): AuthorTreeNode;
+export function createElement(
+  type: "tr",
+  props:
+    | (Omit<IntrinsicTableRowProps, "children"> & Partial<Pick<IntrinsicTableRowProps, "children">>)
+    | null,
+  ...children: ElementChildArgs<IntrinsicTableRowProps>
+): AuthorTreeNode;
+export function createElement(
+  type: "th" | "td",
+  props:
+    | (Omit<IntrinsicTableCellProps, "children"> &
+        Partial<Pick<IntrinsicTableCellProps, "children">>)
+    | null,
+  ...children: ElementChildArgs<IntrinsicTableCellProps>
+): AuthorTreeNode;
 export function createElement(type: "img", props: IntrinsicImgProps): AuthorTreeNode;
 export function createElement(type: "video", props: IntrinsicVideoProps): AuthorTreeNode;
 export function createElement(type: "shape", props: IntrinsicShapeProps): AuthorTreeNode;
@@ -193,6 +284,7 @@ export function createElementWithMetadata(
     if (
       isIntrinsicViewTag(type) ||
       isIntrinsicTextTag(type) ||
+      isIntrinsicTableTag(type) ||
       type === "img" ||
       type === "shape" ||
       type === "span" ||

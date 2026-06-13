@@ -1131,6 +1131,51 @@ function elementOriginFromLayoutOrigin(
   };
 }
 
+function textFromProjectedLayoutNode(node: ProjectedLayoutNode): string {
+  switch (node.kind) {
+    case "text":
+      return node.content.text;
+    case "group":
+      return node.children.map((child) => textFromProjectedLayoutNode(child)).join("");
+    case "table":
+      return node.sections
+        .flatMap((section) => section.rows)
+        .flatMap((row) => row.cells)
+        .map((cell) => cell.children.map((child) => textFromProjectedLayoutNode(child)).join(""))
+        .join("");
+    case "image":
+    case "video":
+    case "shape":
+      return "";
+  }
+}
+
+function unsupportedTableCellContentSemantics(
+  children: readonly PptxElement[],
+): readonly PptxUnsupportedSemantic[] {
+  const unsupportedKinds = [
+    ...new Set(children.filter((child) => child.kind !== "text").map((child) => child.kind)),
+  ];
+  if (unsupportedKinds.length === 0) {
+    return [];
+  }
+
+  return [
+    {
+      feature: "content",
+      property: "tableCell.children",
+      value: unsupportedKinds.join(","),
+      reason:
+        "Native PPTX table cell projection is text-centric in v0.8.4; rich cell content is preserved in the projected model but omitted from the native table XML fallback.",
+      fallback: {
+        strategy: "preserveAuthoredValueOnly",
+        preserves: ["nativeTableStructure", "textContent", "projectedCellChildren"],
+        missing: ["nativeRichCellContent"],
+      },
+    },
+  ];
+}
+
 function mapProjectedLayoutNodeToElement(input: {
   node: ProjectedLayoutNode;
   packagePartId: PackagePartId;
@@ -1203,6 +1248,44 @@ function mapProjectedLayoutNodeToElement(input: {
             indexPath: [...input.indexPath, index],
           }),
         ),
+      };
+    }
+    case "table": {
+      return {
+        ...base,
+        kind: "table",
+        sections: input.node.sections.map((section, sectionIndex) => ({
+          kind: "tableSection",
+          sectionKind: section.sectionKind,
+          rows: section.rows.map((row, rowIndex) => ({
+            kind: "tableRow",
+            frame: row.frame,
+            cells: row.cells.map((cell, cellIndex) => {
+              const children = cell.children.map((child, childIndex) =>
+                mapProjectedLayoutNodeToElement({
+                  node: child,
+                  packagePartId: input.packagePartId,
+                  indexPath: [...input.indexPath, sectionIndex, rowIndex, cellIndex, childIndex],
+                }),
+              );
+              const unsupportedSemantics = unsupportedTableCellContentSemantics(children);
+              return {
+                kind: "tableCell",
+                cellKind: cell.cellKind,
+                gridColumnIndex: cell.gridColumnIndex,
+                colSpan: cell.colSpan,
+                rowSpan: cell.rowSpan,
+                frame: cell.frame,
+                fill: cell.fill,
+                edgeStrokes: cell.edgeStrokes,
+                style: cell.style,
+                text: cell.children.map((child) => textFromProjectedLayoutNode(child)).join(""),
+                children,
+                ...(unsupportedSemantics.length ? { unsupportedSemantics } : {}),
+              };
+            }),
+          })),
+        })),
       };
     }
     case "text": {

@@ -1179,6 +1179,9 @@ describe("direct pptx writer", () => {
                 slideMasterIds: (
                   part.payload as Extract<PptxSupportPartPayload, { readonly kind: "presentation" }>
                 ).slideMasterIds,
+                defaultTextStyle: (
+                  part.payload as Extract<PptxSupportPartPayload, { readonly kind: "presentation" }>
+                ).defaultTextStyle,
                 slidePartIds: [secondSlide.id],
               } satisfies PptxSupportPartPayload,
             };

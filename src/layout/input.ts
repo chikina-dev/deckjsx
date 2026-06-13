@@ -2,6 +2,10 @@ import type {
   ImageNormalizationInput,
   ShapeNormalizationInput,
   SlideNormalizationInput,
+  TableCellNormalizationInput,
+  TableNormalizationInput,
+  TableRowNormalizationInput,
+  TableSectionNormalizationInput,
   TextNormalizationInput,
   VideoNormalizationInput,
   ViewNormalizationInput,
@@ -14,6 +18,10 @@ import type {
   GraphNodeId,
   SemanticAuthorGraph,
   SemanticNode,
+  SemanticTableCellNode,
+  SemanticTableNode,
+  SemanticTableRowNode,
+  SemanticTableSectionNode,
   SemanticTextNode,
   SemanticVideoNode,
   StyleEntityId,
@@ -98,8 +106,41 @@ export type LayoutInputShape = {
   readonly origin?: ProjectedLayoutOrigin;
 };
 
+export type LayoutInputTable = {
+  readonly kind: "table";
+  readonly props: TableNormalizationInput;
+  readonly sections: readonly LayoutInputTableSection[];
+  readonly origin?: ProjectedLayoutOrigin;
+};
+
+export type LayoutInputTableSection = {
+  readonly kind: "tableSection";
+  readonly sectionKind: SemanticTableSectionNode["sectionKind"];
+  readonly props: TableSectionNormalizationInput;
+  readonly rows: readonly LayoutInputTableRow[];
+  readonly origin?: ProjectedLayoutOrigin;
+};
+
+export type LayoutInputTableRow = {
+  readonly kind: "tableRow";
+  readonly props: TableRowNormalizationInput;
+  readonly cells: readonly LayoutInputTableCell[];
+  readonly origin?: ProjectedLayoutOrigin;
+};
+
+export type LayoutInputTableCell = {
+  readonly kind: "tableCell";
+  readonly cellKind: SemanticTableCellNode["cellKind"];
+  readonly colSpan: number;
+  readonly rowSpan: number;
+  readonly props: TableCellNormalizationInput;
+  readonly children: readonly LayoutInputContentNode[];
+  readonly origin?: ProjectedLayoutOrigin;
+};
+
 export type LayoutInputContentNode =
   | LayoutInputView
+  | LayoutInputTable
   | LayoutInputText
   | LayoutInputImage
   | LayoutInputVideo
@@ -304,6 +345,91 @@ function contentChildrenFromGraph(
   });
 }
 
+function tableCellFromGraph(
+  graph: SemanticAuthorGraph,
+  resolvedStyles: ResolvedStyleMap,
+  node: SemanticTableCellNode,
+  assetProbeArtifacts: ReadonlyMap<AssetEntityId, LayoutInputAssetProbeArtifact> | undefined,
+  templates: SlideTemplateSet | undefined,
+): LayoutInputTableCell {
+  return {
+    kind: "tableCell",
+    cellKind: node.cellKind,
+    colSpan: node.colSpan,
+    rowSpan: node.rowSpan,
+    props: resolvedPropsFor<TableCellNormalizationInput>(node, resolvedStyles),
+    children: contentChildrenFromGraph(
+      graph,
+      resolvedStyles,
+      node.children,
+      assetProbeArtifacts,
+      templates,
+    ),
+    origin: layoutOriginFor(graph, node, templates),
+  };
+}
+
+function tableRowFromGraph(
+  graph: SemanticAuthorGraph,
+  resolvedStyles: ResolvedStyleMap,
+  node: SemanticTableRowNode,
+  assetProbeArtifacts: ReadonlyMap<AssetEntityId, LayoutInputAssetProbeArtifact> | undefined,
+  templates: SlideTemplateSet | undefined,
+): LayoutInputTableRow {
+  return {
+    kind: "tableRow",
+    props: resolvedPropsFor<TableRowNormalizationInput>(node, resolvedStyles),
+    cells: node.children.flatMap((childId): LayoutInputTableCell[] => {
+      const child = graph.nodes.get(childId);
+      return child?.kind === "tableCell"
+        ? [tableCellFromGraph(graph, resolvedStyles, child, assetProbeArtifacts, templates)]
+        : [];
+    }),
+    origin: layoutOriginFor(graph, node, templates),
+  };
+}
+
+function tableSectionFromGraph(
+  graph: SemanticAuthorGraph,
+  resolvedStyles: ResolvedStyleMap,
+  node: SemanticTableSectionNode,
+  assetProbeArtifacts: ReadonlyMap<AssetEntityId, LayoutInputAssetProbeArtifact> | undefined,
+  templates: SlideTemplateSet | undefined,
+): LayoutInputTableSection {
+  return {
+    kind: "tableSection",
+    sectionKind: node.sectionKind,
+    props: resolvedPropsFor<TableSectionNormalizationInput>(node, resolvedStyles),
+    rows: node.children.flatMap((childId): LayoutInputTableRow[] => {
+      const child = graph.nodes.get(childId);
+      return child?.kind === "tableRow"
+        ? [tableRowFromGraph(graph, resolvedStyles, child, assetProbeArtifacts, templates)]
+        : [];
+    }),
+    origin: layoutOriginFor(graph, node, templates),
+  };
+}
+
+function tableFromGraph(
+  graph: SemanticAuthorGraph,
+  resolvedStyles: ResolvedStyleMap,
+  node: SemanticTableNode,
+  assetProbeArtifacts: ReadonlyMap<AssetEntityId, LayoutInputAssetProbeArtifact> | undefined,
+  templates: SlideTemplateSet | undefined,
+): LayoutInputTable {
+  return {
+    kind: "table",
+    props: propsWithTemplateAreaFrame<TableNormalizationInput>(resolvedStyles, node, templates),
+    sections: node.children.flatMap((childId): LayoutInputTableSection[] => {
+      const child = graph.nodes.get(childId);
+      return child?.kind === "tableSection"
+        ? [tableSectionFromGraph(graph, resolvedStyles, child, assetProbeArtifacts, templates)]
+        : [];
+    }),
+    origin: layoutOriginFor(graph, node, templates),
+  };
+}
+
 function layoutInputNodeFromGraph(
   graph: SemanticAuthorGraph,
   resolvedStyles: ResolvedStyleMap,
@@ -351,6 +477,8 @@ function layoutInputNodeFromGraph(
         origin: layoutOriginFor(graph, node, templates),
       };
     }
+    case "table":
+      return tableFromGraph(graph, resolvedStyles, node, assetProbeArtifacts, templates);
     case "text": {
       const props = propsWithTemplateAreaFrame<TextNormalizationInput>(
         resolvedStyles,
@@ -421,6 +549,9 @@ function layoutInputNodeFromGraph(
       };
     }
     case "document":
+    case "tableSection":
+    case "tableRow":
+    case "tableCell":
     case "textRun":
       return undefined;
   }

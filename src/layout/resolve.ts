@@ -2,6 +2,10 @@ import {
   normalizeImageProps,
   normalizeShapeProps,
   normalizeSlideProps,
+  normalizeTableCellProps,
+  normalizeTableProps,
+  normalizeTableRowProps,
+  normalizeTableSectionProps,
   normalizeTextProps,
   normalizeVideoProps,
   normalizeViewProps,
@@ -10,6 +14,10 @@ import {
   parsePlaceSelf,
   type NormalizedImageProps,
   type NormalizedShapeProps,
+  type NormalizedTableCellProps,
+  type NormalizedTableProps,
+  type NormalizedTableRowProps,
+  type NormalizedTableSectionProps,
   type NormalizedTextProps,
   type NormalizedVideoProps,
   type NormalizedViewProps,
@@ -20,6 +28,10 @@ import type {
   LayoutInputImage,
   LayoutInputShape,
   LayoutInputSlide,
+  LayoutInputTable,
+  LayoutInputTableCell,
+  LayoutInputTableRow,
+  LayoutInputTableSection,
   LayoutInputText,
   LayoutInputTextChild,
   LayoutInputVideo,
@@ -29,6 +41,7 @@ import { frameFromProps, inflateSpecifiedBoxSize, parseAspectRatio } from "./abs
 import { intersectClipRect, type ClipRect, type Frame, type Placement } from "./frame";
 import type {
   ProjectedLayoutGroup,
+  ProjectedLayoutTable,
   ImageSourceIR,
   ProjectedLayoutClip,
   ProjectedLayoutNode,
@@ -154,6 +167,13 @@ type LayoutChildNode =
       kind: "text";
       source: LayoutInputText;
       props: NormalizedTextProps;
+      siblingOrder: number;
+      origin?: ProjectedLayoutOrigin;
+    }
+  | {
+      kind: "table";
+      source: LayoutInputTable;
+      props: NormalizedTableProps;
       siblingOrder: number;
       origin?: ProjectedLayoutOrigin;
     }
@@ -1410,6 +1430,7 @@ function isLayoutInputContentNode(value: unknown): value is LayoutInputContentNo
     value !== null &&
     "kind" in value &&
     ((value as { kind?: unknown }).kind === "view" ||
+      (value as { kind?: unknown }).kind === "table" ||
       (value as { kind?: unknown }).kind === "text" ||
       (value as { kind?: unknown }).kind === "image" ||
       (value as { kind?: unknown }).kind === "video" ||
@@ -1447,6 +1468,14 @@ function layoutChildFromNode(
         kind: "text",
         source: child,
         props: normalizeTextProps(child.props),
+        siblingOrder,
+        ...(origin ? { origin } : {}),
+      };
+    case "table":
+      return {
+        kind: "table",
+        source: child,
+        props: normalizeTableProps(child.props),
         siblingOrder,
         ...(origin ? { origin } : {}),
       };
@@ -1659,6 +1688,7 @@ function getChildPadding(
 ) {
   switch (node.kind) {
     case "view":
+    case "table":
       return parseSpacing(node.props.padding, context, percentageBaseEmu);
     case "text": {
       const { props } = node;
@@ -1821,6 +1851,7 @@ function getNodeMargin(
 ) {
   switch (node.kind) {
     case "view":
+    case "table":
       return parseSpacingAllowAuto(node.props.margin, context, percentageBaseEmu);
     case "text": {
       const { props } = node;
@@ -2850,6 +2881,359 @@ function compileGroupNode(
   };
 }
 
+type NormalizedTableSection = {
+  source: LayoutInputTableSection;
+  props: NormalizedTableSectionProps;
+  rows: readonly NormalizedTableRow[];
+};
+
+type NormalizedTableRow = {
+  source: LayoutInputTableRow;
+  props: NormalizedTableRowProps;
+  cells: readonly NormalizedTableCell[];
+};
+
+type NormalizedTableCell = {
+  source: LayoutInputTableCell;
+  props: NormalizedTableCellProps;
+};
+
+function normalizeTableSections(
+  sections: readonly LayoutInputTableSection[],
+): readonly NormalizedTableSection[] {
+  return sections.map((section) => ({
+    source: section,
+    props: normalizeTableSectionProps(section.props),
+    rows: section.rows.map((row) => ({
+      source: row,
+      props: normalizeTableRowProps(row.props),
+      cells: row.cells.map((cell) => ({
+        source: cell,
+        props: normalizeTableCellProps(cell.props),
+      })),
+    })),
+  }));
+}
+
+function tableColumnCount(sections: readonly NormalizedTableSection[]): number {
+  let maxColumns = 1;
+  const rowSpanOccupancy: number[] = [];
+
+  for (const section of sections) {
+    for (const row of section.rows) {
+      let columnIndex = 0;
+      for (const cell of row.cells) {
+        while ((rowSpanOccupancy[columnIndex] ?? 0) > 0) {
+          columnIndex += 1;
+        }
+        const colSpan = Math.max(1, cell.source.colSpan);
+        maxColumns = Math.max(maxColumns, columnIndex + colSpan);
+        if (cell.source.rowSpan > 1) {
+          for (let offset = 0; offset < colSpan; offset += 1) {
+            rowSpanOccupancy[columnIndex + offset] = Math.max(
+              rowSpanOccupancy[columnIndex + offset] ?? 0,
+              cell.source.rowSpan,
+            );
+          }
+        }
+        columnIndex += colSpan;
+      }
+      for (let index = 0; index < rowSpanOccupancy.length; index += 1) {
+        rowSpanOccupancy[index] = Math.max(0, (rowSpanOccupancy[index] ?? 0) - 1);
+      }
+    }
+  }
+
+  return maxColumns;
+}
+
+function firstTableRow(
+  sections: readonly NormalizedTableSection[],
+): NormalizedTableRow | undefined {
+  for (const section of sections) {
+    const first = section.rows[0];
+    if (first) {
+      return first;
+    }
+  }
+
+  return undefined;
+}
+
+function resolveTableColumnWidths(input: {
+  tableProps: NormalizedTableProps;
+  sections: readonly NormalizedTableSection[];
+  columnCount: number;
+  widthEmu: number;
+  context?: LengthResolutionContext;
+}): readonly number[] {
+  const { tableProps, sections, columnCount, widthEmu, context } = input;
+  const widths = Array.from({ length: columnCount }, () => 0);
+  const first = firstTableRow(sections);
+
+  if (tableProps.tableLayout === "fixed" && first) {
+    let column = 0;
+    for (const cell of first.cells) {
+      const span = Math.max(1, cell.source.colSpan);
+      if (cell.props.width !== undefined) {
+        const width = parseLength(cell.props.width, widthEmu, 0, context);
+        const perColumn = width / span;
+        for (let offset = 0; offset < span && column + offset < widths.length; offset += 1) {
+          widths[column + offset] = perColumn;
+        }
+      }
+      column += span;
+    }
+  }
+
+  const fixedTotal = widths.reduce((total, width) => total + width, 0);
+  const unsetCount = widths.filter((width) => width <= 0).length;
+  const fallbackWidth = unsetCount > 0 ? Math.max(widthEmu - fixedTotal, 0) / unsetCount : 0;
+
+  return widths.map((width) => (width > 0 ? width : fallbackWidth || widthEmu / columnCount));
+}
+
+function resolveTableRowHeights(input: {
+  rows: readonly NormalizedTableRow[];
+  heightEmu: number;
+  context?: LengthResolutionContext;
+}): readonly number[] {
+  const explicit = input.rows.map((row) =>
+    row.props.height !== undefined
+      ? parseLength(row.props.height, input.heightEmu, 0, input.context)
+      : undefined,
+  );
+  const explicitTotal = explicit.reduce<number>((total, height) => total + (height ?? 0), 0);
+  const autoCount = explicit.filter((height) => height === undefined).length;
+  const autoHeight = autoCount > 0 ? Math.max(input.heightEmu - explicitTotal, 0) / autoCount : 0;
+
+  return explicit.map((height) => height ?? (autoHeight || input.heightEmu / input.rows.length));
+}
+
+function tableCellEdgeStrokesFromResolvedStrokes(input: {
+  readonly stroke?: StrokeIR;
+  readonly edgeStrokes?: EdgeStrokeIR;
+}): EdgeStrokeIR | undefined {
+  if (input.edgeStrokes) {
+    return input.edgeStrokes;
+  }
+  if (!input.stroke) {
+    return undefined;
+  }
+
+  return {
+    top: input.stroke,
+    right: input.stroke,
+    bottom: input.stroke,
+    left: input.stroke,
+  };
+}
+
+function unsupportedTableLayoutSemantics(
+  props: NormalizedTableProps,
+): readonly ProjectedUnsupportedSemantic[] {
+  const semantics: ProjectedUnsupportedSemantic[] = [];
+
+  if (props.tableLayout === undefined || props.tableLayout === "auto") {
+    semantics.push({
+      feature: "layout",
+      property: "tableLayout",
+      value: "auto",
+      reason:
+        "CSS table-layout:auto requires the browser intrinsic table layout algorithm; deckjsx v0.8.4 approximates it with available-width column distribution for native PPTX table projection.",
+      fallback: {
+        strategy: "preserveAuthoredValueOnly",
+        preserves: ["nativeTableStructure", "availableWidthColumnDistribution"],
+        missing: ["browserAutoTableLayout"],
+      },
+    });
+  }
+
+  if (props.borderCollapse === "collapse") {
+    semantics.push({
+      feature: "layout",
+      property: "borderCollapse",
+      value: "collapse",
+      reason:
+        "CSS border-collapse:collapse requires browser border conflict resolution; deckjsx v0.8.4 approximates shared borders with the projected native PPTX cell borders.",
+      fallback: {
+        strategy: "preserveAuthoredValueOnly",
+        preserves: ["nativeTableStructure", "projectedCellBorders"],
+        missing: ["cssBorderConflictResolution"],
+      },
+    });
+  }
+
+  return semantics;
+}
+
+function compileTableNode(
+  node: Extract<LayoutChildNode, { kind: "table" }>,
+  parentFrame: Frame,
+  idGenerator: IdGenerator,
+  placement?: Placement,
+  clipRect?: ClipRect,
+  context?: LengthResolutionContext,
+  resolutionOptions?: ProjectedLayoutResolutionOptions,
+): ProjectedLayoutTable | null {
+  const { props } = node;
+  const resolved = frameFromProps(props, parentFrame, placement, context);
+  const originalFrame: Frame = {
+    xEmu: resolved.xEmu,
+    yEmu: resolved.yEmu,
+    widthEmu: resolved.widthEmu,
+    heightEmu: resolved.heightEmu,
+  };
+  const visibleFrame = intersectClipRect(originalFrame, clipRect);
+
+  if (!visibleFrame) {
+    return null;
+  }
+
+  const sections = normalizeTableSections(node.source.sections);
+  const rows = sections.flatMap((section) => section.rows);
+  const rowHeights = resolveTableRowHeights({
+    rows,
+    heightEmu: visibleFrame.heightEmu,
+    context,
+  });
+  const columnCount = tableColumnCount(sections);
+  const columnWidths = resolveTableColumnWidths({
+    tableProps: props,
+    sections,
+    columnCount,
+    widthEmu: visibleFrame.widthEmu,
+    context,
+  });
+  const clip = clippingMetadata(originalFrame, clipRect, visibleFrame);
+  const unsupportedSemantics = unsupportedTableLayoutSemantics(props);
+  const rowSpanOccupancy = Array.from({ length: columnCount }, () => 0);
+  let rowIndex = 0;
+  let yEmu = visibleFrame.yEmu;
+
+  return {
+    id: idGenerator.nextNode(),
+    kind: "table",
+    ...(node.origin ? { origin: node.origin } : {}),
+    frame: visibleFrame,
+    siblingOrder: node.siblingOrder,
+    ...(clip ? { clip } : {}),
+    opacity: resolved.opacity,
+    rotation: resolved.rotation,
+    zIndex: resolved.zIndex,
+    ...(unsupportedSemantics.length ? { unsupportedSemantics } : {}),
+    ...(props.visibility !== undefined ? { visibility: props.visibility } : {}),
+    flipH: resolved.flipH,
+    flipV: resolved.flipV,
+    sections: sections.map((section) => ({
+      kind: "tableSection",
+      sectionKind: section.source.sectionKind,
+      ...(section.source.origin ? { origin: section.source.origin } : {}),
+      rows: section.rows.map((row) => {
+        const rowHeight = rowHeights[rowIndex] ?? 0;
+        let xEmu = visibleFrame.xEmu;
+        let columnIndex = 0;
+        const advancePastOccupiedColumns = () => {
+          while (rowSpanOccupancy[columnIndex] && columnIndex < columnCount) {
+            xEmu += columnWidths[columnIndex] ?? 0;
+            columnIndex += 1;
+          }
+        };
+        const rowFrame = {
+          xEmu: visibleFrame.xEmu,
+          yEmu,
+          widthEmu: visibleFrame.widthEmu,
+          heightEmu: rowHeight,
+        };
+        const projectedRow = {
+          kind: "tableRow" as const,
+          ...(row.source.origin ? { origin: row.source.origin } : {}),
+          frame: rowFrame,
+          cells: row.cells.map((cell) => {
+            advancePastOccupiedColumns();
+            const gridColumnIndex = columnIndex;
+            const colSpan = Math.max(1, cell.source.colSpan);
+            const cellWidth = columnWidths
+              .slice(columnIndex, columnIndex + colSpan)
+              .reduce((total, width) => total + width, 0);
+            const cellFrame = {
+              xEmu,
+              yEmu,
+              widthEmu: cellWidth,
+              heightEmu: rowHeight * Math.max(1, cell.source.rowSpan),
+            };
+            const textLengthContext = getTextLengthContext(cell.props, context);
+            const cellStrokes = resolveNodeStrokesOrFallback(cell.props, textLengthContext);
+            const cellEdgeStrokes = tableCellEdgeStrokesFromResolvedStrokes(cellStrokes);
+            const cellBackground = resolveBackgroundLayersOrEmpty(
+              backgroundInput(cell.props),
+              cell.props.backgroundTransparency,
+              {
+                widthEmu: cellFrame.widthEmu,
+                heightEmu: cellFrame.heightEmu,
+              },
+              cellFrame,
+              resolveBackgroundBoxFrames(
+                cellFrame,
+                cellStrokes.stroke,
+                cellEdgeStrokes,
+                parseSpacing(cell.props.padding, textLengthContext, cellFrame.widthEmu),
+              ),
+              cell.props.backgroundPosition,
+              cell.props.backgroundSize,
+              cell.props.backgroundRepeat,
+              cell.props.backgroundOrigin,
+              cell.props.backgroundClip,
+            );
+            if (cell.source.rowSpan > 1) {
+              for (
+                let offset = 0;
+                offset < colSpan && gridColumnIndex + offset < rowSpanOccupancy.length;
+                offset += 1
+              ) {
+                rowSpanOccupancy[gridColumnIndex + offset] = Math.max(
+                  rowSpanOccupancy[gridColumnIndex + offset] ?? 0,
+                  cell.source.rowSpan,
+                );
+              }
+            }
+            xEmu += cellWidth;
+            columnIndex += colSpan;
+            return {
+              kind: "tableCell" as const,
+              cellKind: cell.source.cellKind,
+              gridColumnIndex,
+              colSpan: cell.source.colSpan,
+              rowSpan: cell.source.rowSpan,
+              ...(cell.source.origin ? { origin: cell.source.origin } : {}),
+              frame: cellFrame,
+              fill: cellBackground.fill,
+              ...(cellEdgeStrokes ? { edgeStrokes: cellEdgeStrokes } : {}),
+              style: textStyleFromProps(cell.props, textLengthContext),
+              children: compileChildren(
+                cell.source.children,
+                cellFrame,
+                idGenerator,
+                "absolute",
+                {},
+                clipRect,
+                context,
+                resolutionOptions,
+              ),
+            };
+          }),
+        };
+        for (let index = 0; index < rowSpanOccupancy.length; index += 1) {
+          rowSpanOccupancy[index] = Math.max(0, (rowSpanOccupancy[index] ?? 0) - 1);
+        }
+        rowIndex += 1;
+        yEmu += rowHeight;
+        return projectedRow;
+      }),
+    })),
+  };
+}
+
 function textStyleFromProps(
   props: NormalizedTextProps,
   textLengthContext?: LengthResolutionContext,
@@ -3559,6 +3943,16 @@ function compileNode(
       );
     case "text":
       return compileTextNode(child, parentFrame, idGenerator, placement, clipRect, context);
+    case "table":
+      return compileTableNode(
+        child,
+        parentFrame,
+        idGenerator,
+        placement,
+        clipRect,
+        context,
+        resolutionOptions,
+      );
     case "image":
       return compileImageNode(child, parentFrame, idGenerator, placement, clipRect, context);
     case "video":

@@ -22,6 +22,9 @@ import type {
   PptxSlideLayoutPartPayload,
   PptxSlideMasterPartPayload,
   PptxSlidePart,
+  PptxTableCell,
+  PptxTableRow,
+  PptxTableSection,
   PptxThemePartPayload,
   PptxUnsupportedSemantic,
 } from "./model";
@@ -61,6 +64,7 @@ const UNSUPPORTED_SEMANTIC_FEATURES = [
   "blend",
   "border",
   "clipping",
+  "content",
   "filter",
   "image",
   "isolation",
@@ -139,7 +143,7 @@ const DRAWING_GENERATED_STROKE_ROLES = ["border", "outline"] as const;
 const DRAWING_GENERATED_STROKE_EDGES = ["top", "right", "bottom", "left"] as const;
 const DRAWING_GENERATED_STROKE_SHAPES = ["line", "rect"] as const;
 
-const DRAWING_ELEMENT_KINDS = ["group", "image", "shape", "text", "video"] as const;
+const DRAWING_ELEMENT_KINDS = ["group", "image", "shape", "table", "text", "video"] as const;
 
 const DRAWING_VISIBILITIES = ["hidden", "visible"] as const;
 
@@ -621,6 +625,33 @@ function isKnownDrawingClipStrategy(value: unknown): boolean {
   return DRAWING_CLIP_STRATEGIES.some((strategy) => strategy === value);
 }
 
+function isPptxTableElement(value: unknown): value is Extract<PptxElement, { kind: "table" }> {
+  return isRecord(value) && value.kind === "table" && Array.isArray(value.sections);
+}
+
+function visitTableChildElements(
+  element: unknown,
+  path: string,
+  visit: (child: PptxElement, path: string) => void,
+): void {
+  if (!isPptxTableElement(element)) {
+    return;
+  }
+
+  element.sections.forEach((section, sectionIndex) => {
+    section.rows.forEach((row, rowIndex) => {
+      row.cells.forEach((cell, cellIndex) => {
+        cell.children.forEach((child, childIndex) => {
+          visit(
+            child,
+            `${path}.sections.${sectionIndex}.rows.${rowIndex}.cells.${cellIndex}.children.${childIndex}`,
+          );
+        });
+      });
+    });
+  });
+}
+
 function isKnownDrawingMeasurementOverflow(value: unknown): boolean {
   return DRAWING_MEASUREMENT_OVERFLOWS.some((overflow) => overflow === value);
 }
@@ -1003,6 +1034,49 @@ function validatePresentationPayload(input: {
     }
   });
 
+  if (
+    !isRecord(payload.defaultTextStyle) ||
+    payload.defaultTextStyle.source !== "themeProjection" ||
+    !Array.isArray(payload.defaultTextStyle.levels) ||
+    payload.defaultTextStyle.levels.length !== 9
+  ) {
+    issues.push(
+      supportPayloadDiagnostic({
+        path: `${path}.defaultTextStyle`,
+        message: "presentation payload requires structured default text style projection",
+      }),
+    );
+  } else {
+    payload.defaultTextStyle.levels.forEach((level, index) => {
+      if (
+        !isRecord(level) ||
+        level.level !== index + 1 ||
+        typeof level.marginLeftEmu !== "number" ||
+        !Number.isFinite(level.marginLeftEmu) ||
+        typeof level.defaultTabSizeEmu !== "number" ||
+        !Number.isFinite(level.defaultTabSizeEmu) ||
+        typeof level.fontSizePt !== "number" ||
+        !Number.isFinite(level.fontSizePt) ||
+        typeof level.colorThemeReference !== "string" ||
+        level.colorThemeReference.length === 0 ||
+        typeof level.latinTypeface !== "string" ||
+        level.latinTypeface.length === 0 ||
+        typeof level.eastAsianTypeface !== "string" ||
+        level.eastAsianTypeface.length === 0 ||
+        typeof level.complexScriptTypeface !== "string" ||
+        level.complexScriptTypeface.length === 0 ||
+        !["l", "ctr", "r", "just"].includes(String(level.alignment))
+      ) {
+        issues.push(
+          supportPayloadDiagnostic({
+            path: `${path}.defaultTextStyle.levels.${index}`,
+            message: "invalid default text style level",
+          }),
+        );
+      }
+    });
+  }
+
   const seenSlideMasterPartIds = new Set<string>();
   const seenSlideMasterIds = new Set<string>();
   if (payload.slideMasterIds.length === 0) {
@@ -1225,6 +1299,82 @@ function validateTableStylesPayload(input: { part: PptxPackagePart }): Diagnosti
         message: "table styles payload requires defaultStyleId",
       }),
     );
+  }
+
+  if (typeof record.styleName !== "string" || record.styleName.length === 0) {
+    issues.push(
+      supportPayloadDiagnostic({
+        path: `${path}.styleName`,
+        message: "table styles payload requires styleName",
+      }),
+    );
+  }
+
+  if (!isRecord(record.slots)) {
+    issues.push(
+      supportPayloadDiagnostic({
+        path: `${path}.slots`,
+        message: "table styles payload requires structured slots",
+      }),
+    );
+  } else {
+    for (const key of ["wholeTable", "headerRow", "firstColumn", "bandedRows"] as const) {
+      const slot = record.slots[key];
+      if (!isRecord(slot)) {
+        issues.push(
+          supportPayloadDiagnostic({
+            path: `${path}.slots.${key}`,
+            message: "table style slot must be structured",
+          }),
+        );
+        continue;
+      }
+      if (slot.status !== "supported" && slot.status !== "placeholder") {
+        issues.push(
+          supportPayloadDiagnostic({
+            path: `${path}.slots.${key}.status`,
+            message: "table style slot requires supported or placeholder status",
+          }),
+        );
+      }
+      if (
+        slot.status === "placeholder" &&
+        (typeof slot.reason !== "string" || slot.reason.length === 0)
+      ) {
+        issues.push(
+          supportPayloadDiagnostic({
+            path: `${path}.slots.${key}.reason`,
+            message: "placeholder table style slot requires a reason",
+          }),
+        );
+      }
+      if (slot.status === "supported" && isRecord(slot.border)) {
+        if (
+          typeof slot.border.themeReference !== "string" ||
+          slot.border.themeReference.length === 0
+        ) {
+          issues.push(
+            supportPayloadDiagnostic({
+              path: `${path}.slots.${key}.border.themeReference`,
+              message: "supported table style border requires themeReference",
+            }),
+          );
+        }
+        if (
+          slot.border.widthPt !== undefined &&
+          (typeof slot.border.widthPt !== "number" ||
+            !Number.isFinite(slot.border.widthPt) ||
+            slot.border.widthPt < 0)
+        ) {
+          issues.push(
+            supportPayloadDiagnostic({
+              path: `${path}.slots.${key}.border.widthPt`,
+              message: "supported table style border width must be a non-negative number",
+            }),
+          );
+        }
+      }
+    }
   }
 
   return issues;
@@ -1825,6 +1975,16 @@ function validateDrawingUnsupportedSemantics(input: {
       );
     });
   }
+
+  visitTableChildElements(input.element, input.path, (child, childPath) => {
+    issues.push(
+      ...validateDrawingUnsupportedSemantics({
+        part: input.part,
+        element: child,
+        path: childPath,
+      }),
+    );
+  });
 
   return issues;
 }
@@ -3884,6 +4044,14 @@ function collectDrawingElementIds(input: {
       });
     });
   }
+
+  visitTableChildElements(input.element, input.path, (child, childPath) => {
+    collectDrawingElementIds({
+      element: child,
+      path: childPath,
+      entries: input.entries,
+    });
+  });
 }
 
 function collectDrawingAssetEntityIds(input: {
@@ -3915,6 +4083,14 @@ function collectDrawingAssetEntityIds(input: {
       });
     });
   }
+
+  visitTableChildElements(input.element, input.path, (child, childPath) => {
+    collectDrawingAssetEntityIds({
+      element: child,
+      path: childPath,
+      entries: input.entries,
+    });
+  });
 }
 
 function collectDrawingShapeObjectIds(input: {
@@ -3975,6 +4151,14 @@ function collectDrawingShapeObjectIds(input: {
       });
     });
   }
+
+  visitTableChildElements(input.element, input.path, (child, childPath) => {
+    collectDrawingShapeObjectIds({
+      element: child,
+      path: childPath,
+      entries: input.entries,
+    });
+  });
 }
 
 function validateSlideElementIdUniqueness(input: {
@@ -4444,6 +4628,127 @@ function validateDrawingElementPayload(input: {
     return issues;
   }
 
+  if (element.kind === "table") {
+    const tableElement = element as Extract<PptxElement, { kind: "table" }>;
+    if (!Array.isArray(tableElement.sections)) {
+      return [
+        drawingPayloadDiagnostic({
+          path: `${input.path}.sections`,
+          message: "invalid table sections",
+        }),
+      ];
+    }
+
+    tableElement.sections.forEach((section: PptxTableSection, sectionIndex: number) => {
+      if (
+        section.kind !== "tableSection" ||
+        (section.sectionKind !== "head" &&
+          section.sectionKind !== "body" &&
+          section.sectionKind !== "foot") ||
+        !Array.isArray(section.rows)
+      ) {
+        issues.push(
+          drawingPayloadDiagnostic({
+            path: `${input.path}.sections.${sectionIndex}`,
+            message: "invalid table section",
+          }),
+        );
+        return;
+      }
+
+      section.rows.forEach((row: PptxTableRow, rowIndex: number) => {
+        issues.push(
+          ...validateDrawingPayloadFrame({
+            value: row.frame,
+            path: `${input.path}.sections.${sectionIndex}.rows.${rowIndex}.frame`,
+            message: "invalid table row frame",
+          }),
+        );
+        if (row.kind !== "tableRow" || !Array.isArray(row.cells)) {
+          issues.push(
+            drawingPayloadDiagnostic({
+              path: `${input.path}.sections.${sectionIndex}.rows.${rowIndex}`,
+              message: "invalid table row",
+            }),
+          );
+          return;
+        }
+
+        row.cells.forEach((cell: PptxTableCell, cellIndex: number) => {
+          const cellPath = `${input.path}.sections.${sectionIndex}.rows.${rowIndex}.cells.${cellIndex}`;
+          issues.push(
+            ...validateDrawingPayloadFrame({
+              value: cell.frame,
+              path: `${cellPath}.frame`,
+              message: "invalid table cell frame",
+            }),
+          );
+          if (
+            cell.kind !== "tableCell" ||
+            (cell.cellKind !== "header" && cell.cellKind !== "data") ||
+            !Number.isInteger(cell.gridColumnIndex) ||
+            cell.gridColumnIndex < 0 ||
+            !Number.isInteger(cell.colSpan) ||
+            cell.colSpan < 1 ||
+            !Number.isInteger(cell.rowSpan) ||
+            cell.rowSpan < 1 ||
+            typeof cell.text !== "string" ||
+            !Array.isArray(cell.children)
+          ) {
+            issues.push(
+              drawingPayloadDiagnostic({
+                path: cellPath,
+                message: "invalid table cell",
+              }),
+            );
+            return;
+          }
+
+          issues.push(
+            ...validateDrawingFill({ value: cell.fill, path: `${cellPath}.fill` }),
+            ...validateDrawingEdgeStrokes({
+              value: cell.edgeStrokes,
+              path: `${cellPath}.edgeStrokes`,
+            }),
+            ...validateDrawingTextStyle({
+              value: cell.style,
+              path: `${cellPath}.style`,
+              requireTextBodyFields: false,
+            }),
+          );
+          cell.children.forEach((child: PptxElement, childIndex: number) => {
+            issues.push(
+              ...validateDrawingElementPayload({
+                element: child,
+                path: `${cellPath}.children.${childIndex}`,
+              }),
+            );
+          });
+          if (cell.unsupportedSemantics !== undefined) {
+            if (!Array.isArray(cell.unsupportedSemantics)) {
+              issues.push(
+                drawingPayloadDiagnostic({
+                  path: `${cellPath}.unsupportedSemantics`,
+                  message: "invalid table cell unsupported semantics",
+                }),
+              );
+            } else {
+              cell.unsupportedSemantics.forEach((semantic, semanticIndex) => {
+                issues.push(
+                  ...validateUnsupportedSemantic({
+                    semantic,
+                    path: `${cellPath}.unsupportedSemantics.${semanticIndex}`,
+                  }),
+                );
+              });
+            }
+          }
+        });
+      });
+    });
+    return issues;
+  }
+
   if (element.kind === "shape") {
     if (element.shape !== "rect" && element.shape !== "ellipse" && element.shape !== "line") {
       issues.push(
@@ -4586,6 +4891,17 @@ function validateDrawingMetadata(input: {
       );
     });
   }
+
+  visitTableChildElements(input.element, input.path, (child, childPath) => {
+    issues.push(
+      ...validateDrawingMetadata({
+        element: child,
+        path: childPath,
+        requireDrawingNodeMetadata: false,
+        ownerPartId: input.ownerPartId,
+      }),
+    );
+  });
 
   return issues;
 }
@@ -5097,6 +5413,22 @@ function validateSlideHyperlinkRelationships(input: {
     );
   }
 
+  if (element.kind === "table") {
+    return element.sections.flatMap((section, sectionIndex) =>
+      section.rows.flatMap((row, rowIndex) =>
+        row.cells.flatMap((cell, cellIndex) =>
+          cell.children.flatMap((child, childIndex) =>
+            validateSlideHyperlinkRelationships({
+              element: child,
+              path: `${input.path}.sections.${sectionIndex}.rows.${rowIndex}.cells.${cellIndex}.children.${childIndex}`,
+              slidePart: input.slidePart,
+            }),
+          ),
+        ),
+      ),
+    );
+  }
+
   if (!("hyperlink" in element) || !isRecord(element.hyperlink)) {
     return [];
   }
@@ -5358,6 +5690,17 @@ function validateElementBackgroundImageRelationships(input: {
     });
   }
 
+  visitTableChildElements(input.element, input.path, (child, childPath) => {
+    issues.push(
+      ...validateElementBackgroundImageRelationships({
+        element: child,
+        path: childPath,
+        slidePart: input.slidePart,
+        mediaPartsBySource: input.mediaPartsBySource,
+      }),
+    );
+  });
+
   return issues;
 }
 
@@ -5418,6 +5761,23 @@ function validateSlideImageRelationships(input: {
         slidePart: input.slidePart,
         partsById: input.partsById,
       }),
+    );
+  }
+
+  if (element.kind === "table") {
+    return element.sections.flatMap((section, sectionIndex) =>
+      section.rows.flatMap((row, rowIndex) =>
+        row.cells.flatMap((cell, cellIndex) =>
+          cell.children.flatMap((child, childIndex) =>
+            validateSlideImageRelationships({
+              element: child,
+              path: `${input.path}.sections.${sectionIndex}.rows.${rowIndex}.cells.${cellIndex}.children.${childIndex}`,
+              slidePart: input.slidePart,
+              partsById: input.partsById,
+            }),
+          ),
+        ),
+      ),
     );
   }
 

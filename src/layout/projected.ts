@@ -52,6 +52,7 @@ export type ProjectedUnsupportedSemanticFeature =
   | "background"
   | "border"
   | "clipping"
+  | "content"
   | "filter"
   | "image"
   | "isolation"
@@ -99,6 +100,7 @@ export type ProjectedLayoutSlide = {
 
 export type ProjectedLayoutNode =
   | ProjectedLayoutGroup
+  | ProjectedLayoutTable
   | ProjectedLayoutText
   | ProjectedLayoutImage
   | ProjectedLayoutVideo
@@ -155,6 +157,39 @@ export type ProjectedLayoutGroup = ProjectedLayoutBaseNode & {
   outline?: StrokeIR;
   shadow?: ShadowIR;
   radiusEmu?: number;
+};
+
+export type ProjectedLayoutTable = ProjectedLayoutBaseNode & {
+  kind: "table";
+  sections: ReadonlyArray<ProjectedLayoutTableSection>;
+};
+
+export type ProjectedLayoutTableSection = {
+  kind: "tableSection";
+  sectionKind: "head" | "body" | "foot";
+  rows: ReadonlyArray<ProjectedLayoutTableRow>;
+  origin?: ProjectedLayoutOrigin;
+};
+
+export type ProjectedLayoutTableRow = {
+  kind: "tableRow";
+  frame: FrameIR;
+  cells: ReadonlyArray<ProjectedLayoutTableCell>;
+  origin?: ProjectedLayoutOrigin;
+};
+
+export type ProjectedLayoutTableCell = {
+  kind: "tableCell";
+  cellKind: "header" | "data";
+  gridColumnIndex: number;
+  colSpan: number;
+  rowSpan: number;
+  frame: FrameIR;
+  fill?: FillIR;
+  edgeStrokes?: EdgeStrokeIR;
+  style: TextStyleIR;
+  children: ReadonlyArray<ProjectedLayoutNode>;
+  origin?: ProjectedLayoutOrigin;
 };
 
 export type ProjectedLayoutText = ProjectedLayoutBaseNode & {

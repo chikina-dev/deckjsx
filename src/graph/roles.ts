@@ -2,6 +2,22 @@ import type { AuthoredTag } from "../authoring/tags";
 import type { SemanticNodeKind, SemanticRole } from "./types";
 
 export function semanticKindForTag(tag: AuthoredTag): SemanticNodeKind {
+  if (tag === "table") {
+    return "table";
+  }
+
+  if (tag === "thead" || tag === "tbody" || tag === "tfoot") {
+    return "tableSection";
+  }
+
+  if (tag === "tr") {
+    return "tableRow";
+  }
+
+  if (tag === "th" || tag === "td") {
+    return "tableCell";
+  }
+
   if (tag === "img") {
     return "image";
   }
@@ -50,6 +66,20 @@ export function semanticRoleForTag(tag: AuthoredTag): SemanticRole | undefined {
       return { kind: "video" };
     case "shape":
       return { kind: "shape" };
+    case "table":
+      return { kind: "table" };
+    case "thead":
+      return { kind: "tableSection", sectionKind: "head" };
+    case "tbody":
+      return { kind: "tableSection", sectionKind: "body" };
+    case "tfoot":
+      return { kind: "tableSection", sectionKind: "foot" };
+    case "tr":
+      return { kind: "tableRow" };
+    case "th":
+      return { kind: "tableCell", cellKind: "header" };
+    case "td":
+      return { kind: "tableCell", cellKind: "data" };
     case "span":
       return undefined;
   }

@@ -109,6 +109,11 @@ export type NodeSummary =
       fontSizePt: number | undefined;
     }
   | {
+      kind: "table";
+      frame: { xEmu: number; yEmu: number; widthEmu: number; heightEmu: number };
+      children: NodeSummary[];
+    }
+  | {
       kind: "image" | "shape" | "video";
       frame: { xEmu: number; yEmu: number; widthEmu: number; heightEmu: number };
     };
@@ -197,6 +202,18 @@ export function summarizeNodes(nodes: readonly PptxElement[]): NodeSummary[] {
         frame: node.frame,
         text: node.content.text,
         fontSizePt: node.style.fontSizePt,
+      };
+    }
+
+    if (node.kind === "table") {
+      return {
+        kind: node.kind,
+        frame: node.frame,
+        children: summarizeNodes(
+          node.sections.flatMap((section) =>
+            section.rows.flatMap((row) => row.cells.flatMap((cell) => cell.children)),
+          ),
+        ),
       };
     }
 

@@ -38,6 +38,8 @@ export type StrokeLineJoin = "miter" | "round" | "bevel";
 export type VerticalAlign = "top" | "middle" | "bottom";
 export type TextFit = "none" | "shrink" | "resize";
 export type CssDisplay = "flex" | "block" | "grid" | "none";
+export type CssTableLayout = "auto" | "fixed";
+export type CssBorderCollapse = "collapse" | "separate";
 export type CssPosition = "static" | "absolute" | "relative";
 export type CssVisibility = "visible" | "hidden";
 export type CssOverflow = "visible" | "hidden";
@@ -234,6 +236,15 @@ export type ViewStyle = FrameAuthorProps &
     gridAutoFlow?: CssGridAutoFlow;
   };
 
+export type TableStyle = ViewStyle & {
+  tableLayout?: CssTableLayout;
+  borderCollapse?: CssBorderCollapse;
+};
+
+export type TableSectionStyle = ViewStyle;
+
+export type TableRowStyle = ViewStyle;
+
 export type TextStyle = FrameAuthorProps &
   BoxStyleAuthorProps & {
     fontFamily?: string;
@@ -366,9 +377,12 @@ export type TextRunStyle = Pick<
   | "textShadow"
 >;
 
+export type TableCellStyle = TextStyle;
+
 type KnownStyleDeclarationSource =
   | SlideStyle
   | ViewStyle
+  | TableStyle
   | TextStyle
   | TextRunStyle
   | ImageStyle
@@ -395,9 +409,17 @@ export type StyleForAuthoredTag<TTag extends string> = TTag extends "span"
     ? ImageStyle
     : TTag extends "video"
       ? VideoStyle
-      : TTag extends "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p"
-        ? TextStyle
-        : ViewStyle;
+      : TTag extends "table"
+        ? TableStyle
+        : TTag extends "thead" | "tbody" | "tfoot"
+          ? TableSectionStyle
+          : TTag extends "tr"
+            ? TableRowStyle
+            : TTag extends "th" | "td"
+              ? TableCellStyle
+              : TTag extends "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p"
+                ? TextStyle
+                : ViewStyle;
 
 export const VIEW_STYLE_KEYS = [
   "opacity",
@@ -568,6 +590,14 @@ export const TEXT_STYLE_KEYS = [
   "fit",
   "wrap",
 ] as const;
+
+export const TABLE_STYLE_KEYS = [...VIEW_STYLE_KEYS, "tableLayout", "borderCollapse"] as const;
+
+export const TABLE_SECTION_STYLE_KEYS = VIEW_STYLE_KEYS;
+
+export const TABLE_ROW_STYLE_KEYS = VIEW_STYLE_KEYS;
+
+export const TABLE_CELL_STYLE_KEYS = TEXT_STYLE_KEYS;
 
 export const TEXT_RUN_STYLE_KEYS = [
   "fontFamily",

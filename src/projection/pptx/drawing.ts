@@ -15,6 +15,14 @@ export function walkElements(
     visit(element);
     if (element.kind === "group") {
       walkElements(element.children, visit);
+    } else if (element.kind === "table") {
+      element.sections.forEach((section) => {
+        section.rows.forEach((row) => {
+          row.cells.forEach((cell) => {
+            walkElements(cell.children, visit);
+          });
+        });
+      });
     }
   }
 }
@@ -27,6 +35,22 @@ export function mapElements(
     const mapped = map(element);
 
     if (mapped.kind !== "group") {
+      if (mapped.kind === "table") {
+        return {
+          ...mapped,
+          sections: mapped.sections.map((section) => ({
+            ...section,
+            rows: section.rows.map((row) => ({
+              ...row,
+              cells: row.cells.map((cell) => ({
+                ...cell,
+                children: mapElements(cell.children, map),
+              })),
+            })),
+          })),
+        };
+      }
+
       return mapped;
     }
 
@@ -91,6 +115,19 @@ export function walkBackgroundLayers(
 
     if (element.kind === "group") {
       walkBackgroundLayers(element.children, visit, path);
+    } else if (element.kind === "table") {
+      element.sections.forEach((section, sectionIndex) => {
+        section.rows.forEach((row, rowIndex) => {
+          row.cells.forEach((cell, cellIndex) => {
+            walkBackgroundLayers(cell.children, visit, [
+              ...path,
+              sectionIndex,
+              rowIndex,
+              cellIndex,
+            ]);
+          });
+        });
+      });
     }
   }
 }

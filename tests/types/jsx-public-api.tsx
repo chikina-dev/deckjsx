@@ -31,11 +31,29 @@ type IsAssignable<From, To> = [From] extends [To] ? true : false;
 
 const regressionTypeAssertions = {
   supportedSpan: true,
+  supportedTable: true,
+  supportedTableCellSpanProps: true,
+  captionIsNotIntrinsic: true,
+  colgroupIsNotIntrinsic: true,
+  colIsNotIntrinsic: true,
   spanRejectsBoxStyle: true,
   imgRequiresSourceOrData: true,
   imgRejectsChildren: true,
 } satisfies {
   supportedSpan: Assert<IsAssignable<"span", keyof DeckJsxIntrinsicElements>>;
+  supportedTable: Assert<IsAssignable<"table", keyof DeckJsxIntrinsicElements>>;
+  supportedTableCellSpanProps: Assert<
+    IsAssignable<{ colspan: 2; rowspan: 2 }, DeckJsxIntrinsicElements["td"]>
+  >;
+  captionIsNotIntrinsic: Assert<
+    IsAssignable<"caption", keyof DeckJsxIntrinsicElements> extends true ? false : true
+  >;
+  colgroupIsNotIntrinsic: Assert<
+    IsAssignable<"colgroup", keyof DeckJsxIntrinsicElements> extends true ? false : true
+  >;
+  colIsNotIntrinsic: Assert<
+    IsAssignable<"col", keyof DeckJsxIntrinsicElements> extends true ? false : true
+  >;
   spanRejectsBoxStyle: Assert<
     IsAssignable<{ backgroundColor: "red" }, DeckJsxIntrinsicElements["span"]> extends true
       ? false
