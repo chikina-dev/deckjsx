@@ -3,6 +3,10 @@ import type {
   ImageStyle,
   ShapeStyle,
   SlideStyle,
+  TableCellStyle,
+  TableRowStyle,
+  TableSectionStyle,
+  TableStyle,
   TextRunStyle,
   TextStyle,
   VideoStyle,
@@ -85,3 +89,22 @@ export type ShapeNodeProps = {
   shape?: "rect" | "ellipse" | "line";
 } & ClassNameAuthorProps &
   TemplateAreaAuthorProps;
+
+export type TableNodeProps = {
+  style?: TableStyle;
+} & ClassNameAuthorProps &
+  TemplateAreaAuthorProps;
+
+export type TableSectionNodeProps = {
+  style?: TableSectionStyle;
+} & ClassNameAuthorProps;
+
+export type TableRowNodeProps = {
+  style?: TableRowStyle;
+} & ClassNameAuthorProps;
+
+export type TableCellNodeProps = {
+  style?: TableCellStyle;
+  colspan?: number;
+  rowspan?: number;
+} & ClassNameAuthorProps;

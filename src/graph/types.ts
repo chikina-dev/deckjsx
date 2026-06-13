@@ -14,6 +14,10 @@ export type SemanticNodeKind =
   | "image"
   | "shape"
   | "slide"
+  | "table"
+  | "tableCell"
+  | "tableRow"
+  | "tableSection"
   | "text"
   | "textRun"
   | "video";
@@ -28,7 +32,14 @@ export type SemanticRole =
   | { readonly kind: "heading"; readonly level: 1 | 2 | 3 | 4 | 5 | 6 }
   | { readonly kind: "image" }
   | { readonly kind: "shape" }
+  | { readonly kind: "table" }
+  | { readonly kind: "tableSection"; readonly sectionKind: TableSectionKind }
+  | { readonly kind: "tableRow" }
+  | { readonly kind: "tableCell"; readonly cellKind: TableCellKind }
   | { readonly kind: "video" };
+
+export type TableSectionKind = "head" | "body" | "foot";
+export type TableCellKind = "header" | "data";
 
 export type SourceOrigin =
   | { readonly kind: "root" }
@@ -43,7 +54,7 @@ export type SemanticOrigin = {
   readonly path: string;
   readonly source?: SourceOrigin;
   readonly sourceSpan?: SourceSpan;
-  readonly reason?: "primitive-text-in-container";
+  readonly reason?: "primitive-text-in-container" | "table-row-shorthand";
 };
 
 export type SemanticTemplateRef = {
@@ -110,12 +121,40 @@ export type SemanticShapeNode = BaseSemanticNode & {
   readonly shape: "rect" | "ellipse" | "line";
 };
 
+export type SemanticTableNode = BaseSemanticNode & {
+  readonly kind: "table";
+  readonly children: readonly GraphNodeId[];
+};
+
+export type SemanticTableSectionNode = BaseSemanticNode & {
+  readonly kind: "tableSection";
+  readonly sectionKind: TableSectionKind;
+  readonly children: readonly GraphNodeId[];
+};
+
+export type SemanticTableRowNode = BaseSemanticNode & {
+  readonly kind: "tableRow";
+  readonly children: readonly GraphNodeId[];
+};
+
+export type SemanticTableCellNode = BaseSemanticNode & {
+  readonly kind: "tableCell";
+  readonly cellKind: TableCellKind;
+  readonly colSpan: number;
+  readonly rowSpan: number;
+  readonly children: readonly GraphNodeId[];
+};
+
 export type SemanticNode =
   | SemanticContainerNode
   | SemanticDocumentNode
   | SemanticImageNode
   | SemanticVideoNode
   | SemanticShapeNode
+  | SemanticTableNode
+  | SemanticTableSectionNode
+  | SemanticTableRowNode
+  | SemanticTableCellNode
   | SemanticSlideNode
   | SemanticTextNode
   | SemanticTextRunNode;

@@ -1,9 +1,13 @@
-import { isIntrinsicTextTag, isIntrinsicViewTag } from "./tags";
+import { isIntrinsicTableTag, isIntrinsicTextTag, isIntrinsicViewTag } from "./tags";
 import type { AuthoredTag, IntrinsicTextTag, IntrinsicViewTag } from "./tags";
 import type {
   ImageNodeProps,
   ShapeNodeProps,
   SlideNodeProps,
+  TableCellNodeProps,
+  TableNodeProps,
+  TableRowNodeProps,
+  TableSectionNodeProps,
   TextNodeProps,
   TextRunNodeProps,
   VideoNodeProps,
@@ -77,6 +81,22 @@ export type AuthorShapeElementNode = AuthorElementNodeBase<
   { readonly kind: "tag"; readonly tag: "shape" },
   ShapeNodeProps
 >;
+export type AuthorTableElementNode = AuthorElementNodeBase<
+  { readonly kind: "tag"; readonly tag: "table" },
+  TableNodeProps
+>;
+export type AuthorTableSectionElementNode = AuthorElementNodeBase<
+  { readonly kind: "tag"; readonly tag: "thead" | "tbody" | "tfoot" },
+  TableSectionNodeProps
+>;
+export type AuthorTableRowElementNode = AuthorElementNodeBase<
+  { readonly kind: "tag"; readonly tag: "tr" },
+  TableRowNodeProps
+>;
+export type AuthorTableCellElementNode = AuthorElementNodeBase<
+  { readonly kind: "tag"; readonly tag: "th" | "td" },
+  TableCellNodeProps
+>;
 
 export type AuthorElementNode =
   | AuthorSlideElementNode
@@ -85,7 +105,11 @@ export type AuthorElementNode =
   | AuthorSpanElementNode
   | AuthorImageElementNode
   | AuthorVideoElementNode
-  | AuthorShapeElementNode;
+  | AuthorShapeElementNode
+  | AuthorTableElementNode
+  | AuthorTableSectionElementNode
+  | AuthorTableRowElementNode
+  | AuthorTableCellElementNode;
 
 export type AuthorFragmentNode = {
   readonly $$typeof: "deckjsx.author-tree";
@@ -182,6 +206,10 @@ type AnyAuthorElementInput =
   | AuthorElementInput<AuthorViewElementNode>
   | AuthorElementInput<AuthorTextElementNode>
   | AuthorElementInput<AuthorSpanElementNode>
+  | AuthorElementInput<AuthorTableElementNode>
+  | AuthorElementInput<AuthorTableSectionElementNode>
+  | AuthorElementInput<AuthorTableRowElementNode>
+  | AuthorElementInput<AuthorTableCellElementNode>
   | RequiredAuthorElementInput<AuthorImageElementNode>
   | RequiredAuthorElementInput<AuthorVideoElementNode>
   | RequiredAuthorElementInput<AuthorShapeElementNode>;
@@ -249,6 +277,37 @@ function isShapeElementInput(
   return input.source.kind === "tag" && input.source.tag === "shape";
 }
 
+function isTableElementInput(
+  input: AnyAuthorElementInput,
+): input is AuthorElementInput<AuthorTableElementNode> {
+  return input.source.kind === "tag" && input.source.tag === "table";
+}
+
+function isTableSectionElementInput(
+  input: AnyAuthorElementInput,
+): input is AuthorElementInput<AuthorTableSectionElementNode> {
+  return (
+    input.source.kind === "tag" &&
+    (input.source.tag === "thead" || input.source.tag === "tbody" || input.source.tag === "tfoot")
+  );
+}
+
+function isTableRowElementInput(
+  input: AnyAuthorElementInput,
+): input is AuthorElementInput<AuthorTableRowElementNode> {
+  return input.source.kind === "tag" && input.source.tag === "tr";
+}
+
+function isTableCellElementInput(
+  input: AnyAuthorElementInput,
+): input is AuthorElementInput<AuthorTableCellElementNode> {
+  return (
+    input.source.kind === "tag" &&
+    isIntrinsicTableTag(input.source.tag) &&
+    (input.source.tag === "th" || input.source.tag === "td")
+  );
+}
+
 export function createAuthorElement(
   input: AuthorElementInput<AuthorSlideElementNode>,
 ): AuthorSlideElementNode;
@@ -270,6 +329,18 @@ export function createAuthorElement(
 export function createAuthorElement(
   input: RequiredAuthorElementInput<AuthorShapeElementNode>,
 ): AuthorShapeElementNode;
+export function createAuthorElement(
+  input: AuthorElementInput<AuthorTableElementNode>,
+): AuthorTableElementNode;
+export function createAuthorElement(
+  input: AuthorElementInput<AuthorTableSectionElementNode>,
+): AuthorTableSectionElementNode;
+export function createAuthorElement(
+  input: AuthorElementInput<AuthorTableRowElementNode>,
+): AuthorTableRowElementNode;
+export function createAuthorElement(
+  input: AuthorElementInput<AuthorTableCellElementNode>,
+): AuthorTableCellElementNode;
 export function createAuthorElement(input: AnyAuthorElementInput): AuthorElementNode {
   if (isSlideElementInput(input)) {
     return buildAuthorElement({
@@ -324,6 +395,38 @@ export function createAuthorElement(input: AnyAuthorElementInput): AuthorElement
       ...input,
       source: input.source,
       props: input.props,
+    });
+  }
+
+  if (isTableElementInput(input)) {
+    return buildAuthorElement({
+      ...input,
+      source: input.source,
+      props: input.props ?? {},
+    });
+  }
+
+  if (isTableSectionElementInput(input)) {
+    return buildAuthorElement({
+      ...input,
+      source: input.source,
+      props: input.props ?? {},
+    });
+  }
+
+  if (isTableRowElementInput(input)) {
+    return buildAuthorElement({
+      ...input,
+      source: input.source,
+      props: input.props ?? {},
+    });
+  }
+
+  if (isTableCellElementInput(input)) {
+    return buildAuthorElement({
+      ...input,
+      source: input.source,
+      props: input.props ?? {},
     });
   }
 

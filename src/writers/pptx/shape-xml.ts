@@ -2,6 +2,9 @@ import type { PptxElement } from "../../projection/pptx/model";
 import { writeBackgroundLayerElements, writeGeneratedStrokeElements } from "./drawing-layer-xml";
 import {
   alphaValue,
+  pointToEmu,
+  writeColor,
+  writeFill,
   writeNonVisual,
   writeShadow,
   writeShapeProperties,
@@ -139,6 +142,241 @@ function writeVideoElement(
     .close("a:prstGeom");
   writeShadow(writer, element.shadow);
   writer.close("p:spPr").close("p:pic");
+}
+
+function tableShapeObjectId(
+  element: Extract<PptxElement, { kind: "table" }>,
+  index: number,
+): number {
+  return writerShapeObjectNumericId(element.serialized.shapeObjectId, `Table ${index}`);
+}
+
+function tableColumnWidths(element: Extract<PptxElement, { kind: "table" }>): readonly number[] {
+  const firstRow = element.sections.flatMap((section) => section.rows)[0];
+  if (!firstRow || firstRow.cells.length === 0) {
+    return [element.frame.widthEmu];
+  }
+
+  return firstRow.cells.flatMap((cell) => {
+    const span = Math.max(1, cell.colSpan);
+    return Array.from({ length: span }, () => cell.frame.widthEmu / span);
+  });
+}
+
+type TableCellXmlInput = Extract<
+  PptxElement,
+  { kind: "table" }
+>["sections"][number]["rows"][number]["cells"][number];
+
+function tableTextAlign(
+  value: TableCellXmlInput["style"]["textAlign"],
+): "l" | "ctr" | "r" | "just" | undefined {
+  switch (value) {
+    case "left":
+      return "l";
+    case "center":
+      return "ctr";
+    case "right":
+      return "r";
+    case "justify":
+      return "just";
+    default:
+      return undefined;
+  }
+}
+
+function tableVerticalAlign(
+  value: TableCellXmlInput["style"]["verticalAlign"],
+): "t" | "ctr" | "b" | undefined {
+  switch (value) {
+    case "top":
+      return "t";
+    case "middle":
+      return "ctr";
+    case "bottom":
+      return "b";
+    default:
+      return undefined;
+  }
+}
+
+function writeTableCellBorder(
+  writer: XmlChunkWriter,
+  tag: "a:lnL" | "a:lnR" | "a:lnT" | "a:lnB",
+  stroke: NonNullable<TableCellXmlInput["edgeStrokes"]>[keyof NonNullable<
+    TableCellXmlInput["edgeStrokes"]
+  >],
+): void {
+  if (!stroke) {
+    return;
+  }
+
+  writer.open(tag, { w: pointToEmu(stroke.widthPt, "table cell border width") });
+  writer.open("a:solidFill");
+  writeColor(writer, stroke.color, stroke.transparency);
+  writer.close("a:solidFill");
+  if (stroke.style === "dash" || stroke.dashType) {
+    writer.empty("a:prstDash", { val: stroke.dashType ?? "dash" });
+  }
+  writer.close(tag);
+}
+
+function writeTableCellProperties(writer: XmlChunkWriter, cell: TableCellXmlInput): void {
+  writer.open("a:tcPr", {
+    anchor: tableVerticalAlign(cell.style.verticalAlign),
+    marL: pointToEmu(cell.style.paddingPt?.[3], "table cell left padding"),
+    marR: pointToEmu(cell.style.paddingPt?.[1], "table cell right padding"),
+    marT: pointToEmu(cell.style.paddingPt?.[0], "table cell top padding"),
+    marB: pointToEmu(cell.style.paddingPt?.[2], "table cell bottom padding"),
+  });
+  writeFill(writer, cell.fill);
+  writeTableCellBorder(writer, "a:lnL", cell.edgeStrokes?.left);
+  writeTableCellBorder(writer, "a:lnR", cell.edgeStrokes?.right);
+  writeTableCellBorder(writer, "a:lnT", cell.edgeStrokes?.top);
+  writeTableCellBorder(writer, "a:lnB", cell.edgeStrokes?.bottom);
+  writer.close("a:tcPr");
+}
+
+function writeTableCellText(writer: XmlChunkWriter, cell: TableCellXmlInput): void {
+  writer.open("a:txBody").empty("a:bodyPr", { wrap: "square" }).empty("a:lstStyle").open("a:p");
+  const align = tableTextAlign(cell.style.textAlign);
+  if (align) {
+    writer.empty("a:pPr", { algn: align });
+  }
+
+  if (cell.text.length > 0) {
+    writer.open("a:r").open("a:rPr", {
+      lang: "en-US",
+      b: cell.style.fontWeight === "bold" || cell.style.fontWeight === 700 ? 1 : undefined,
+      i: cell.style.italic ? 1 : undefined,
+      sz: cell.style.fontSizePt === undefined ? undefined : Math.round(cell.style.fontSizePt * 100),
+    });
+    if (cell.style.color) {
+      writer.open("a:solidFill");
+      writeColor(writer, cell.style.color);
+      writer.close("a:solidFill");
+    }
+    writer.close("a:rPr").element("a:t", {}, cell.text).close("a:r");
+  }
+
+  writer.close("a:p").close("a:txBody");
+}
+
+function writeMergedTableCell(writer: XmlChunkWriter, merge: "vMerge" | "hMerge"): void {
+  writer
+    .open("a:tc", { [merge]: 1 })
+    .open("a:txBody")
+    .empty("a:bodyPr", { wrap: "square" })
+    .empty("a:lstStyle")
+    .empty("a:p")
+    .close("a:txBody")
+    .empty("a:tcPr")
+    .close("a:tc");
+}
+
+function writeEmptyTableCell(writer: XmlChunkWriter): void {
+  writer
+    .open("a:tc")
+    .open("a:txBody")
+    .empty("a:bodyPr", { wrap: "square" })
+    .empty("a:lstStyle")
+    .empty("a:p")
+    .close("a:txBody")
+    .empty("a:tcPr")
+    .close("a:tc");
+}
+
+function writeTableElement(
+  writer: XmlChunkWriter,
+  element: Extract<PptxElement, { kind: "table" }>,
+  index: number,
+): void {
+  const columns = tableColumnWidths(element);
+  const activeVerticalMerges = Array.from({ length: columns.length }, () => 0);
+  const hasHeaderRow = element.sections.some(
+    (section) => section.sectionKind === "head" && section.rows.length > 0,
+  );
+  const hasMultipleBodyRows =
+    element.sections
+      .filter((section) => section.sectionKind === "body")
+      .reduce((total, section) => total + section.rows.length, 0) > 1;
+
+  writer
+    .open("p:graphicFrame")
+    .open("p:nvGraphicFramePr")
+    .open("p:cNvPr", { id: tableShapeObjectId(element, index), name: `Table ${index}` })
+    .close("p:cNvPr")
+    .open("p:cNvGraphicFramePr")
+    .empty("a:graphicFrameLocks", { noGrp: 1 })
+    .close("p:cNvGraphicFramePr")
+    .empty("p:nvPr")
+    .close("p:nvGraphicFramePr");
+  writeTransform(writer, element.frame, element.rotation, element.flipH, element.flipV);
+  writer
+    .open("a:graphic")
+    .open("a:graphicData", { uri: "http://schemas.openxmlformats.org/drawingml/2006/table" })
+    .open("a:tbl")
+    .open("a:tblPr", {
+      firstRow: hasHeaderRow ? 1 : undefined,
+      bandRow: hasMultipleBodyRows ? 1 : undefined,
+    })
+    .element("a:tableStyleId", {}, "{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}")
+    .close("a:tblPr")
+    .open("a:tblGrid");
+
+  columns.forEach((width) => {
+    writer.empty("a:gridCol", { w: Math.round(width) });
+  });
+  writer.close("a:tblGrid");
+
+  element.sections.forEach((section) => {
+    section.rows.forEach((row) => {
+      writer.open("a:tr", { h: Math.round(row.frame.heightEmu) });
+      const cellsByColumn = new Map(row.cells.map((cell) => [cell.gridColumnIndex, cell]));
+      let columnIndex = 0;
+      while (columnIndex < columns.length) {
+        const cell = cellsByColumn.get(columnIndex);
+        if (cell) {
+          writer.open("a:tc", {
+            gridSpan: cell.colSpan > 1 ? cell.colSpan : undefined,
+            rowSpan: cell.rowSpan > 1 ? cell.rowSpan : undefined,
+          });
+          writeTableCellText(writer, cell);
+          writeTableCellProperties(writer, cell);
+          writer.close("a:tc");
+          if (cell.rowSpan > 1) {
+            for (
+              let offset = 0;
+              offset < cell.colSpan && columnIndex + offset < activeVerticalMerges.length;
+              offset += 1
+            ) {
+              activeVerticalMerges[columnIndex + offset] = Math.max(
+                activeVerticalMerges[columnIndex + offset] ?? 0,
+                cell.rowSpan,
+              );
+            }
+          }
+          for (let offset = 1; offset < cell.colSpan; offset += 1) {
+            writeMergedTableCell(writer, "hMerge");
+          }
+          columnIndex += Math.max(1, cell.colSpan);
+          continue;
+        }
+        if ((activeVerticalMerges[columnIndex] ?? 0) > 0) {
+          writeMergedTableCell(writer, "vMerge");
+        } else {
+          writeEmptyTableCell(writer);
+        }
+        columnIndex += 1;
+      }
+      for (let mergeIndex = 0; mergeIndex < activeVerticalMerges.length; mergeIndex += 1) {
+        activeVerticalMerges[mergeIndex] = Math.max(0, (activeVerticalMerges[mergeIndex] ?? 0) - 1);
+      }
+      writer.close("a:tr");
+    });
+  });
+
+  writer.close("a:tbl").close("a:graphicData").close("a:graphic").close("p:graphicFrame");
 }
 
 export type ShapeElementXmlInput = Pick<
@@ -334,6 +572,9 @@ export function writeDrawingElement(
       return;
     case "shape":
       writeShapeElement(writer, element, index, inheritedOpacity, context);
+      return;
+    case "table":
+      writeTableElement(writer, element, index);
       return;
     case "text":
       writeTextElement(writer, element, index, inheritedOpacity, context);

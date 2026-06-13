@@ -912,6 +912,10 @@ function unsupportedSemanticsForGraphNode(
         return background.unsupportedSemantics ?? [];
       }
       case "document":
+      case "table":
+      case "tableSection":
+      case "tableRow":
+      case "tableCell":
       case "textRun":
         return [];
     }
@@ -973,9 +977,11 @@ export function collectPptxUnsupportedProjectionModelDiagnostics(
           !options.includeAllUnsupportedSemantics &&
           semantic.feature !== "border" &&
           semantic.feature !== "clipping" &&
+          semantic.feature !== "content" &&
           semantic.feature !== "filter" &&
           semantic.feature !== "blend" &&
           semantic.feature !== "isolation" &&
+          semantic.feature !== "layout" &&
           semantic.feature !== "outline" &&
           semantic.feature !== "stroke" &&
           semantic.fallback?.strategy !== "synthesizeFallbackFrame" &&
@@ -1021,6 +1027,61 @@ export function collectPptxUnsupportedProjectionModelDiagnostics(
             ],
           }),
         );
+      }
+
+      if (element.kind === "table") {
+        element.sections.forEach((section, sectionIndex) => {
+          section.rows.forEach((row, rowIndex) => {
+            row.cells.forEach((cell, cellIndex) => {
+              for (const semantic of cell.unsupportedSemantics ?? []) {
+                if (!options.includeAllUnsupportedSemantics && semantic.feature !== "content") {
+                  continue;
+                }
+
+                const graphNodeId = element.origin.graphNodeIds?.[0];
+                slideItems.push(
+                  diagnostic({
+                    severity: "warning",
+                    code: "W_PROJECT_UNSUPPORTED_PPTX_SEMANTIC",
+                    title: "css-like semantic was preserved with a pptx fallback",
+                    message: semantic.reason,
+                    labels: [
+                      {
+                        path: `projection.parts.${element.packagePartId}.elements.${element.id}.sections.${sectionIndex}.rows.${rowIndex}.cells.${cellIndex}.${semantic.property}`,
+                        message: `${semantic.feature} fallback for ${semantic.value}`,
+                        severity: "primary",
+                      },
+                    ],
+                    notes: [
+                      graphNodeId ? `graphNodeId=${graphNodeId}` : undefined,
+                      `elementId=${element.id}`,
+                      "elementKind=table",
+                      `slidePartId=${slide.id}`,
+                      `slideId=${slide.payload.slideId}`,
+                      `tableSection=${section.sectionKind}`,
+                      `tableCellKind=${cell.cellKind}`,
+                      `feature=${semantic.feature}`,
+                      `property=${semantic.property}`,
+                      `value=${semantic.value}`,
+                      semantic.fallback
+                        ? `fallbackStrategy=${semantic.fallback.strategy}`
+                        : undefined,
+                      semantic.fallback?.preserves.length
+                        ? `fallbackPreserves=${semantic.fallback.preserves.join(",")}`
+                        : undefined,
+                      semantic.fallback?.missing.length
+                        ? `fallbackMissing=${semantic.fallback.missing.join(",")}`
+                        : undefined,
+                    ].filter((note): note is string => note !== undefined),
+                    help: [
+                      "The projected PPTX model keeps this unsupported CSS-like meaning for inspection, but the current direct writer uses a fallback instead of reproducing it exactly.",
+                    ],
+                  }),
+                );
+              }
+            });
+          });
+        });
       }
     });
     return slideItems;

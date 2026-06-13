@@ -5,6 +5,10 @@ import type {
   ImageNodeProps,
   ShapeNodeProps,
   SlideNodeProps,
+  TableCellNodeProps,
+  TableNodeProps,
+  TableRowNodeProps,
+  TableSectionNodeProps,
   TextNodeProps,
   TextRunNodeProps,
   VideoNodeProps,
@@ -18,6 +22,10 @@ export type {
   ImageNodeProps,
   ShapeNodeProps,
   SlideNodeProps,
+  TableCellNodeProps,
+  TableNodeProps,
+  TableRowNodeProps,
+  TableSectionNodeProps,
   TextNodeProps,
   TextRunNodeProps,
   VideoNodeProps,
@@ -31,6 +39,7 @@ export type {
   CssAspectRatio,
   CssBoxSizing,
   CssDisplay,
+  CssBorderCollapse,
   CssFlexBasis,
   CssFlexDirection,
   CssFlexWrap,
@@ -48,6 +57,7 @@ export type {
   CssObjectPosition,
   CssOverflow,
   CssPosition,
+  CssTableLayout,
   CssVisibility,
   DeckLength,
   DeckPointLength,
@@ -63,6 +73,10 @@ export type {
   StrokeDashType,
   StrokeLineCap,
   StrokeLineJoin,
+  TableCellStyle,
+  TableRowStyle,
+  TableSectionStyle,
+  TableStyle,
   TextFit,
   TextRunStyle,
   TextStyle,
@@ -184,12 +198,40 @@ export type IntrinsicViewTag =
   | "section";
 
 export type IntrinsicTextTag = "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p";
+export type IntrinsicTableTag = "table" | "thead" | "tbody" | "tfoot" | "tr" | "th" | "td";
+
+export type IntrinsicTableProps = TableNodeProps &
+  IntrinsicKeyProps & {
+    children?: ContentJsxChild;
+  };
+
+export type IntrinsicTableSectionProps = TableSectionNodeProps &
+  IntrinsicKeyProps & {
+    children?: ContentJsxChild;
+  };
+
+export type IntrinsicTableRowProps = TableRowNodeProps &
+  IntrinsicKeyProps & {
+    children?: ContentJsxChild;
+  };
+
+export type IntrinsicTableCellProps = TableCellNodeProps &
+  IntrinsicKeyProps & {
+    children?: ViewIntrinsicJsxChild;
+  };
 
 export type DeckJsxIntrinsicElements = {
   img: IntrinsicImgProps;
   shape: IntrinsicShapeProps;
   span: IntrinsicSpanProps;
   video: IntrinsicVideoProps;
+  table: IntrinsicTableProps;
+  thead: IntrinsicTableSectionProps;
+  tbody: IntrinsicTableSectionProps;
+  tfoot: IntrinsicTableSectionProps;
+  tr: IntrinsicTableRowProps;
+  th: IntrinsicTableCellProps;
+  td: IntrinsicTableCellProps;
 } & {
   [Tag in IntrinsicViewTag]: IntrinsicDivProps;
 } & {

@@ -81,6 +81,7 @@ Theme authoring should preserve TypeScript access to theme values instead of rel
 Styles authored from Theme values should receive concrete style values directly; deckjsx should not implement string token path resolution or token provenance for every class or inline style property.
 Theme composition should not retroactively affect already-authored concrete StyleSheets; active Theme composition applies to Theme Defaults unless an author explicitly creates a merged Theme with `theme.extend(childTheme)` before deriving styles from it.
 Theme can be projected into output-specific theme structures, but it is not itself an output theme file.
+Theme is a lower layer in the cascade, not a table-specific styling mechanism. Output theme projection should respect the resolved cascade rather than applying Theme only to one feature family.
 _Avoid_: output template, string token reference
 
 **Theme Snapshot**:
@@ -122,6 +123,7 @@ _Avoid_: output style model, PPTX shape properties
 **Layout Input Snapshot**:
 An internal input snapshot prepared for layout from the Semantic Author Graph, Resolved Style Inspection View, Template Area relationships, Asset probe metadata, deck size, and ordered semantic children.
 It should contain only the semantic node kind, graph/source provenance, layout-relevant resolved style values, paint/text-construction inputs, structural layout data such as Template Area Reference, shape kind, image source reference, template area frame/kind, image probe dimensions, and child/text-run order needed by the layout solver.
+For Table Nodes, Layout Input Snapshot should preserve table structure, sections, rows, cells, spans, supported table styles, and content needed for downstream table projection rather than flattening the table into generic view children.
 It is distinct from Projected Layout Snapshot: Layout Input Snapshot describes what the solver consumes, while Projected Layout Snapshot describes the concrete frames, filtering, clipping, generated visual layers, and layout results that downstream output projections consume.
 It should not contain Author Tree props, AuthorNode values, public NodeProps, unresolved class names, or live references to the full Resolved Style Map.
 _Avoid_: authoring props replay, resolved style map passthrough, layout result
@@ -132,6 +134,7 @@ It is not an Author Tree, AuthorNode tree, or public authoring props replay; lay
 Its boundary should make types stronger by separating authoring props, resolved style values, layout inputs, projected layout results, and output package payloads instead of using one broad prop shape across multiple stages.
 In v0.8.1 it is an internal stage boundary, not a public define API, Project Result artifact, or persisted schema requiring its own version field.
 Cross-output visual layering such as generated backgrounds, borders, outlines, clipping, visibility, and rich text run content belongs here before output-specific package projection chooses how to serialize it.
+For tables, Projected Layout Snapshot should preserve table frame, row geometry, column geometry, cell geometry, and projected table content/style data so Pptx Table Projection can emit native PPTX table payloads without reconstructing table layout from generic drawing nodes.
 _Avoid_: authoring-shaped layout bridge, solver IR, PPTX package model
 
 **Projected Layout Identity**:
@@ -160,7 +163,19 @@ _Avoid_: PPTX media path
 
 **Authored Media Source**:
 The media reference supplied by authoring, such as a data URI, bytes, an absolute URL, an app-public URL, or a filesystem-like path. It is distinct from a PPTX Media Part, and resolving it into bytes belongs to a multi-runtime asset-loading boundary rather than to graph construction or package projection.
+Filesystem-like paths remain part of the core Authored Media Source vocabulary even though core does not resolve them. They preserve author intent for AssetLoaders supplied by Project Integration Packages or Runtime Integration Packages.
+Authoring-facing `src` values should stay ordinary media references; integration metadata needed to interpret them belongs to internal source/origin plumbing rather than to extra user-authored props.
 _Avoid_: media part, package path, resolved image bytes
+
+**Media Source Origin**:
+The authoring-module origin needed to interpret a relative Authored Media Source, such as the module or file that supplied the media reference. It is distinct from Source Identity, which is stable composition identity, and from Source Span, which is diagnostic location detail.
+Project Integration Packages may use Media Source Origin to connect relative media paths to a bundler module graph without making core resolve those paths.
+Media Source Origin should normally be attached by integration tooling rather than handwritten in everyday slide authoring.
+Source-level Media Source Origin is the default for media references in a slide factory or composed source. Node-level Media Source Origin may override it when JSX or components from another authoring module contribute their own media references.
+Media references authored as literals inside a component should use that component's defining module as their Media Source Origin, not the slide module that renders the component.
+When a media path is passed through component props, the Media Source Origin should remain the module that authored the path value, not necessarily the component module that forwards it.
+Media Source Origin metadata may travel beside the Author Tree through internal node metadata so media source props can remain ordinary authoring strings. This metadata applies to authoring media source props such as image `src`, video `src`, and video `poster`; inline data props do not need origin metadata.
+_Avoid_: Graph Identity, PPTX package path, resolved filesystem path
 
 **Playable Video Embed**:
 An authored video intent whose presentation output should contain playable video media rather than only a poster image, static fallback, or hyperlink to an external video location.
@@ -172,6 +187,19 @@ _Avoid_: linked video, poster-only image, background image variant, renderer com
 A renderable authored media node for Playable Video Embed. It is separate from Image nodes even when it shares frame, placement, or asset-loading behavior, because playable video has distinct media relationships, package semantics, diagnostics, and writer output.
 _Avoid_: image alias, poster image, linked media
 
+**Table Node**:
+A renderable authored structure for tabular content. It is distinct from layout grid: grid arranges authored boxes, while a Table Node preserves table-specific row, column, cell, and table-style meaning for output projections.
+The authoring model should preserve the HTML-like table structure, including table, row, header cell, data cell, and table section meaning, even when the current CSS-like table projection supports only a subset of table layout and styling semantics.
+Column and row spanning are table structure, not CSS styling. Table Nodes should preserve authored colspan and rowspan so output projections can map them to native table cell merge semantics where available.
+Table structure should be validated strictly because malformed table hierarchy can break output-native table projection much more abruptly than ordinary flow layout. Invalid table children should become table-structure diagnostics rather than silent auto-correction.
+Invalid authored table hierarchy is a Compile error because it means the Semantic Author Graph cannot represent a valid Table Node. Output-specific table limitations, such as unsupported style projection or PPTX merge constraints, belong to Project diagnostics.
+Rows directly under a table are allowed as authoring shorthand and should be normalized as an implicit body section for projection. Other malformed hierarchy, such as cells directly under a table or stray text in table structure positions, remains invalid.
+Table sections should have stable authored order: at most one head section, zero or more body sections, and at most one foot section, ordered as head, bodies, then foot. Section order or cardinality violations are invalid table hierarchy.
+Header cells and data cells should remain semantically distinct. Header cell meaning may drive projected table defaults such as header fill, bold text, or alignment without requiring v0.8.4 to support the full HTML table accessibility surface.
+Table cells may preserve ordinary deckjsx authored content in the Semantic Author Graph, but initial PPTX table projection can be text-centric. Complex cell content such as nested blocks, media, or shapes should remain visible as authored structure and receive projection diagnostics or fallbacks when unsupported.
+Table sizing should prefer CSS-like fields rather than deckjsx-only authoring fields. `tableLayout: fixed` may be used to interpret cell widths as column-grid hints, while row heights can come from row `height`.
+_Avoid_: layout grid, grouped shapes, arbitrary view layout
+
 **Video Compatibility Target**:
 A deliberately bounded renderer and media-format target that deckjsx treats as the current playable-video validation scope.
 Video Compatibility Targets let deckjsx support Playable Video Embed incrementally without implying universal video format support or identical behavior in every presentation renderer.
@@ -180,13 +208,44 @@ _Avoid_: all video formats, renderer compatibility layer, transcoding policy
 **Asset Loading Boundary**:
 The pipeline resource boundary that resolves Authored Media Sources into reusable metadata and bytes without making deckjsx core depend on one runtime's file system or asset APIs.
 Registered loaders are evaluated before built-in multi-runtime handling and in Deck registration order. The resolver scope that wins Project probing should also be used by Render loading so metadata and bytes are not mixed across different runtime assumptions.
+Absolute URL sources may be handled by built-in multi-runtime loading when the runtime provides fetch; this is still the Asset Loading Boundary, not a video-specific retrieval mechanism. Relative paths and local file sources are runtime-specific and should require an explicit registered loader or thin runtime boundary rather than becoming a core file-system dependency.
+Project-local default asset loading belongs to Project Integration Packages, such as a Vite plugin, because those integrations own bundler module graphs, project roots, and Node file-system access. The core deckjsx package should keep local file resolution behind AssetLoader registration instead of importing Node runtime modules for asset discovery.
+Project Integration Packages should be able to provide default loaders automatically so ordinary authors do not call manual loader-registration APIs for common project assets. Manual AssetLoader registration may remain a low-level or legacy escape hatch for custom runtimes and authenticated media.
+Asset resolver scope should identify the loader's resolution assumptions, not just its display name. Project Integration Packages should be able to provide stable resolver identity so asset cache keys separate different project roots, toolchain configurations, or resolver graphs.
 Loader result fields are validated at the boundary: media type, extension, and hash must be non-empty strings when present; width and height must be positive finite numbers; byteLength must be a finite non-negative number; and load bytes must be a Uint8Array.
+Loader-provided diagnostics should flow through Project Result or Render Result diagnostics. A loader returning `undefined` means it did not handle the source, while a loader that handled a source but found a problem should report diagnostics through the Asset Loading Boundary.
+Asset loader operations are asynchronous, but their resolved value should distinguish not-handled from handled failure. Both probing and loading should use this outcome vocabulary. This is an outcome shape returned by the Promise, not an extension of JavaScript Promise behavior itself.
 For image sources, Project probing must produce width and height. Missing dimensions are data retrieval failure, not a writer fallback.
-_Avoid_: graph asset resolution, Project-time file IO, core fs dependency
+_Avoid_: graph asset resolution, Project-time file IO, core fs dependency, built-in path resolver
+
+**Project Integration Package**:
+An optional package that connects deckjsx to a project toolchain, such as Vite, without making that toolchain part of the core Authoring Interface. Project Integration Packages may own local asset loading, project-root resolution, dev-server behavior, and bundler module-graph behavior.
+Runtime-specific capabilities, including Node file-system access, belong in Project Integration Packages or Runtime Integration Packages so the core deckjsx package can remain usable in non-Node runtimes such as Edge runtimes.
+When a Project Integration Package provides default asset loading for embedded presentation media, it should return AssetLoader probe metadata and bytes rather than only rewriting sources to public URLs.
+Toolchain-specific path meanings, such as Vite's public-root interpretation of `/asset.png`, belong to the Project Integration Package. Core preserves the authored path string and does not assign special meaning to a leading slash.
+Project Integration Packages may attach default Asset Loading Boundary behavior through integration-managed context rather than requiring authors to call manual loader registration APIs.
+_Avoid_: core authoring export, implicit runtime dependency, hidden file-system loader
+
+**Runtime Integration Package**:
+An optional package that connects deckjsx to a runtime capability family, such as Node file-system output, without making that runtime part of the core package. Runtime Integration Packages may provide path output, local file AssetLoader primitives, or other runtime-specific adapters that operate on core runtime-neutral artifacts and contracts.
+Project Integration Packages may depend on Runtime Integration Packages when a toolchain needs the same runtime capability, but the runtime capability should not be owned by the project toolchain package unless it is truly toolchain-specific.
+_Avoid_: core runtime import, Vite-owned Node output, hidden platform assumption
 
 **Asset Artifact**:
 A Pipeline Artifact that records resolved media metadata and optionally loaded source bytes for an Asset Entity or Authored Media Source.
 _Avoid_: Asset Entity, Media Part, graph payload, package projection
+
+**Asset Resolution Provenance**:
+Runtime-neutral metadata that explains how an Authored Media Source was resolved by the Asset Loading Boundary, such as inline data, fetched URL, local file, project public asset, or generated asset. It may include resolver identity, resolved id, content hash, and other inspection/debug details without exposing Vite, Node, or writer-specific objects as core model data.
+Asset Resolution Provenance helps diagnostics, cache explanation, and future HMR understand where asset bytes came from; it is not a replacement for Asset Artifact metadata or loaded bytes.
+Asset Resolution Provenance may be exposed through the Inspection Interface for sandbox, diagnostics, and HMR explanation, but it should not become ordinary root Authoring Interface vocabulary.
+The initial provenance kind vocabulary is closed and core-owned: inline, fetch, file, public asset, and generated asset. Project Integration Packages should map their behavior into those kinds rather than defining plugin-specific provenance kinds.
+Provenance fields should be strongly typed scalar metadata such as resolver scope, resolved id, importer, and hash source. Avoid open-ended plugin details bags; new provenance data should become deliberate core vocabulary when it is needed.
+Provenance should normally be established during asset probing so Project Result can explain asset resolution before Render. Loading may preserve or refine provenance when byte-level explanation is only available with bytes.
+The canonical asset content hash belongs to the Asset Probe Result. Provenance may explain how that hash was obtained, but should not duplicate the hash value as a second source of truth.
+The initial hash source vocabulary is closed to loader-provided content hash and bytes-derived hash. Metadata-derived hashes should not be treated as canonical asset content hashes unless a later decision gives them precise semantics.
+Root exports should include only the provenance-related types needed to implement an AssetLoader. Detailed provenance inspection shapes belong to the Inspection Interface, and hidden-symbol media-origin helpers should remain internal.
+_Avoid_: Vite module graph object, Node fs handle, PPTX media path, writer byte source
 
 **Media Allocation Key**:
 The projected key used to decide whether authored media references share one PPTX Media Part. When an Asset Artifact has a content hash, the key is hash-based; otherwise it is based on resolver scope plus Authored Media Source. The key also preserves media kind so images, playable videos, and future media families cannot accidentally share a package part only because their source or hash matches. The key controls Package Part Identity and media part reuse, while package paths such as `ppt/media/media1.png` or `ppt/media/media2.mp4` remain deterministic assembly names assigned from first projected use.
@@ -281,6 +340,21 @@ Cross-output visual semantics such as generated background/border/outline layers
 It should preserve projected drawing meaning for inspection and HMR without forcing the Output Writer to reinterpret graph, layout, or CSS-like authoring semantics.
 _Avoid_: writer drawing traversal, raw OOXML shape tree builder, graph authoring model
 
+**Pptx Table Projection**:
+The PPTX projection responsibility that maps Table Nodes and supported table style semantics into PPTX table drawing and package payloads. It should preserve table-specific row, column, cell, border, fill, and text styling decisions as projected table meaning instead of flattening the table into unrelated shapes too early.
+HTML-like table structure projection and CSS-like table style projection are separate responsibilities. v0.8.4 should aim to preserve the authored table structure completely, while CSS-like table layout and styling support can be intentionally partial with diagnostics or inspection records.
+Authored colspan and rowspan should project to native PPTX table cell merge semantics rather than being approximated by independent shapes.
+Pptx Table Projection depends on valid table hierarchy, so table-structure errors should block table projection rather than letting the writer repair an ambiguous table later.
+The initial PPTX table projection may focus on text-centric cell content while preserving unsupported richer cell content as diagnostics, inspection records, or explicit fallbacks.
+The Pptx Package Model should represent projected tables as a dedicated PPTX table element or drawing kind. A native PPTX table is not the same semantic payload as a generic grouped drawing, even if it is serialized through PPTX graphic-frame XML.
+Unsupported rich cell content should not delete the whole table projection. Preserve table structure, attach a cell-level fallback or unsupported-content record, and report a Project warning when Render can still emit a structurally valid native PPTX table.
+Unsupported or approximated table semantics should remain visible through Project diagnostics or inspection rather than becoming silent writer behavior.
+_Avoid_: layout grid projection, raw OOXML table tree, table rendered as grouped shapes by default
+
+**PowerPoint Compatibility Projection**:
+Projection work that makes generated PPTX packages open and render predictably in PowerPoint by producing required support structures, relationships, defaults, theme data, and compatibility scaffolding. It is narrower than a broad renderer compatibility layer and should stay grounded in Pptx Package Model vocabulary.
+_Avoid_: renderer compatibility layer, writer-only repair, undocumented support XML
+
 **Projected Paint Order**:
 The output-facing paint order computed from deckjsx's CSS-like rendering semantics, including z-index, generated backgrounds, outlines, template-owned drawing, and authored slide content. It preserves intended visual stacking before the PPTX projection chooses whether each drawing object can live in a slide layout part or must be expanded into a slide part.
 Projected Paint Order is a cross-output projection concept, but each Projected Document Model owns its concrete representation instead of sharing a premature common drawing-node base type.
@@ -368,6 +442,7 @@ The output projection bridge that maps deckjsx Theme vocabulary and defaults int
 It should be inspectable enough to explain which Theme values reached PPTX theme support, which were projected into concrete drawing properties, and which remained unprojected.
 Unprojected Theme mappings should preserve the resolved value, graph/default provenance, and reason so inspection and HMR tooling can distinguish unsupported projection decisions from lost Theme data.
 Even the default theme projection should be structured enough to record projected purpose, source, color scheme, font scheme, and format scheme data rather than treating the theme part as an opaque placeholder.
+Pptx Theme Projection is cascade-wide PowerPoint compatibility work. It should project Theme as one low cascade layer feeding text, shape, table, layout/master defaults, and support parts where PPTX has native theme concepts, rather than special-casing Theme only for table output.
 Theme projection should support both whole-theme mapping summaries and property-level provenance on projected drawing values.
 When a Theme Default wins resolved style resolution and is projected as a concrete drawing value, Pptx Theme Projection trace should record the graph node, authored tag/default key, property, resolved value, and projection decision.
 Projected drawing values may carry both resolved concrete values and PPTX theme references when a Theme-derived value can be represented either way.
@@ -459,9 +534,8 @@ _Avoid_: unordered build artifact map, Projected Document Model, ZIP writer impl
 
 **Pptx ZIP Sink**:
 An internal writer boundary that receives final PPTX ZIP chunks while the ZIP module consumes the Assembly Plan. Collecting sinks materialize the public `RenderedArtifact.bytes`; tee sinks may fan out chunks to multiple internal consumers, but sink topology is not public API.
-Path output may be implemented as a runtime side effect over produced artifact bytes or as an internal sink when the runtime boundary supports it. Either way, it must not change the public Render Result shape or expose streaming ZIP as a user-facing mode.
-Sink failures that prevent artifact byte collection are Render assembly failures. Path-output side-effect failures after artifact bytes exist should preserve `RenderedArtifact.bytes`, omit written output metadata, and report `E_RENDER_OUTPUT_WRITE_FAILED`.
-When path output is requested in a runtime without the Node output boundary, Render should use the same diagnostic family with `reason=runtimeOutputUnavailable` and keep the produced artifact bytes.
+Path output is a runtime integration concern over produced artifact bytes, not a core ZIP sink mode. Core should keep collecting `RenderedArtifact.bytes` as the public output, while Runtime Integration Packages may write those bytes to files.
+Sink failures that prevent artifact byte collection are Render assembly failures. Runtime integration write failures should be reported by the integration layer without turning partial ZIP bytes into a Rendered Artifact.
 _Avoid_: public stream mode, adapter option surface, runtime filesystem dependency in writer core
 
 **Writer Adapter**:
@@ -489,8 +563,8 @@ Project options may change the selected format, collected detail, or processing 
 _Avoid_: raw projection-only return, writer artifact, mode-dependent return shape
 
 **Render**:
-The operation that turns a Projected Document Model into an output artifact or file through a Writer Adapter. Render is downstream of Project and should not compile authoring inputs, read the Author Tree, or own semantic validation.
-Render should return a Render Result containing diagnostics and the rendered artifact for tests, tooling, and sandbox inspection; when an output path is provided, writing the artifact to that path is an additional side effect.
+The operation that turns a Projected Document Model into an output artifact through a Writer Adapter. Render is downstream of Project and should not compile authoring inputs, read the Author Tree, own semantic validation, or require a runtime file system.
+Render should return a Render Result containing diagnostics and the rendered artifact for tests, tooling, and sandbox inspection. Writing the artifact to a path belongs to a Runtime Integration Package rather than the core Render operation.
 Render can accept an explicit Writer Adapter or use the default adapter. When an adapter declares its required output format, render should ensure the matching Projected Document Model exists before invoking the adapter.
 Render should support either default-adapter options or a fully configured Writer Adapter value, rather than accepting a separate adapter-plus-options overload. Adapter-specific options belong to the adapter factory so the Render API stays narrow.
 When an explicit Writer Adapter requires a different format than the Deck default Output Format, render should use the adapter-required format and report a warning rather than silently using the Deck default.
@@ -500,14 +574,12 @@ Render may run lightweight pre-Render package consistency validation, especially
 _Avoid_: compile, project, authoring-to-output shortcut, semantic validation stage
 
 **Render Result**:
-The result of Render, containing diagnostics, the rendered artifact when available, and output information when the artifact was written. It is the final stage result for tooling and sandbox inspection.
+The result of Render, containing diagnostics and the rendered artifact when available. It is the final core stage result for tooling and sandbox inspection.
 Stage results should provide a Result-like `ok` flag derived from error diagnostics so callers can branch without manually scanning diagnostics. Warnings do not make `ok` false. Diagnostics remain the source of truth, and type narrowing should only promise values that the stage can guarantee.
 Render may materialize earlier unresolved stages such as Compile and Project when needed, and Render Result should make those prior-stage diagnostics or stage summaries visible so callers can tell which stage blocked or warned.
 Stage results should expose diagnostics both as a flat list for simple consumers and as stage-grouped summaries for inspection tools. Individual diagnostics should carry enough stage information to remain meaningful when flattened. Stage summaries should also indicate artifact presence, such as whether graph, projection, or rendered artifact output is available, partial, or missing.
-Render Result is still returned when no output path is provided; in that case the rendered artifact should carry bytes as a runtime-neutral `Uint8Array` so tests, browser tooling, and sandbox flows can consume the result without writing a file. Providing an output path adds file writing as a side effect and records output information, but it does not replace the result-first return shape.
-Render's file output option may remain a string path convenience. Runtimes without path-based file writing should report output-write diagnostics while still returning artifact bytes when rendering succeeds.
-When artifact generation succeeds but file writing fails, Render Result should retain the artifact bytes and report the write failure as error diagnostics rather than discarding the rendered artifact. Written output information should only be present when the side effect succeeded.
-Render Result should not expose separate streaming, sink, or file-handle modes. The implementation may optimize output side effects internally, but public callers receive the same result-first shape whether they render to bytes only or also request an output path.
+The rendered artifact should carry bytes as a runtime-neutral `Uint8Array` so tests, browser tooling, Edge runtime flows, and sandbox flows can consume the result without writing a file.
+Core Render Result should not expose separate streaming, sink, file-handle, or path-output modes. Runtime Integration Packages may provide file-writing helpers over Rendered Artifact bytes.
 Render options or Writer Adapters may change writer behavior or output detail, but they should not change the top-level Render Result shape.
 _Avoid_: void file write, raw artifact-only return, semantic validation result
 

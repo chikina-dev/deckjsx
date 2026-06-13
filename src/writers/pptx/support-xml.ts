@@ -231,12 +231,15 @@ export function presentationBytes(
     .empty("a:defRPr")
     .close("a:defPPr");
 
-  for (let level = 1; level <= 9; level += 1) {
+  for (const level of payload.defaultTextStyle.levels) {
     writer
-      .open(`a:lvl${level}pPr`, {
-        marL: (level - 1) * 457200,
-        algn: "l",
-        defTabSz: 914400,
+      .open(`a:lvl${level.level}pPr`, {
+        marL: emu(level.marginLeftEmu, `defaultTextStyle.levels.${level.level}.marginLeftEmu`),
+        algn: level.alignment,
+        defTabSz: emu(
+          level.defaultTabSizeEmu,
+          `defaultTextStyle.levels.${level.level}.defaultTabSizeEmu`,
+        ),
         rtl: 0,
         eaLnBrk: 1,
         latinLnBrk: 0,
@@ -244,17 +247,17 @@ export function presentationBytes(
       })
       .open("a:defRPr", {
         kumimoji: 1,
-        sz: 1800,
+        sz: Math.round(level.fontSizePt * 100),
         kern: 1200,
       })
       .open("a:solidFill")
-      .empty("a:schemeClr", { val: "tx1" })
+      .empty("a:schemeClr", { val: level.colorThemeReference })
       .close("a:solidFill")
-      .empty("a:latin", { typeface: "+mn-lt" })
-      .empty("a:ea", { typeface: "+mn-ea" })
-      .empty("a:cs", { typeface: "+mn-cs" })
+      .empty("a:latin", { typeface: level.latinTypeface })
+      .empty("a:ea", { typeface: level.eastAsianTypeface })
+      .empty("a:cs", { typeface: level.complexScriptTypeface })
       .close("a:defRPr")
-      .close(`a:lvl${level}pPr`);
+      .close(`a:lvl${level.level}pPr`);
   }
 
   return writer.close("p:defaultTextStyle").close("p:presentation").bytes();
@@ -265,13 +268,81 @@ export function tableStylesXml(part: PptxTableStylesPart): string {
 }
 
 export function tableStylesBytes(part: PptxTableStylesPart): Uint8Array {
-  return new XmlChunkWriter()
+  const payload = part.payload;
+  const writer = new XmlChunkWriter()
     .declaration()
-    .empty("a:tblStyleLst", {
+    .open("a:tblStyleLst", {
       "xmlns:a": DRAWING_ML_NS,
-      def: part.payload.defaultStyleId,
+      def: payload.defaultStyleId,
     })
-    .bytes();
+    .open("a:tblStyle", {
+      styleId: payload.defaultStyleId,
+      styleName: payload.styleName,
+    });
+
+  writeTableStyleSlot(writer, "a:wholeTbl", payload.slots.wholeTable);
+  writeTableStyleSlot(writer, "a:firstRow", payload.slots.headerRow);
+  writeTableStyleSlot(writer, "a:firstCol", payload.slots.firstColumn);
+  writeTableStyleSlot(writer, "a:band1H", payload.slots.bandedRows);
+
+  return writer.close("a:tblStyle").close("a:tblStyleLst").bytes();
+}
+
+function writeTableStyleSlot(
+  writer: XmlChunkWriter,
+  tag: "a:wholeTbl" | "a:firstRow" | "a:firstCol" | "a:band1H",
+  slot: PptxTableStylesPart["payload"]["slots"][keyof PptxTableStylesPart["payload"]["slots"]],
+): void {
+  writer.open(tag);
+  if (slot.status === "supported") {
+    if (slot.text) {
+      writer.open("a:tcTxStyle");
+      if (slot.text.themeReference) {
+        writer
+          .open("a:fontRef", { idx: "minor" })
+          .empty("a:schemeClr", { val: slot.text.themeReference })
+          .close("a:fontRef")
+          .empty("a:schemeClr", { val: slot.text.themeReference });
+      }
+      if (slot.text.bold) {
+        writer.empty("a:b");
+      }
+      writer.close("a:tcTxStyle");
+    }
+    if (slot.fill || slot.border) {
+      writer.open("a:tcStyle");
+      if (slot.fill?.themeReference || slot.fill?.color) {
+        writer.open("a:fill").open("a:solidFill");
+        if (slot.fill.themeReference) {
+          writer.empty("a:schemeClr", { val: slot.fill.themeReference });
+        } else {
+          writer.empty("a:srgbClr", { val: slot.fill.color });
+        }
+        writer.close("a:solidFill").close("a:fill");
+      }
+      if (slot.border) {
+        writer.open("a:tcBdr");
+        for (const borderTag of ["a:left", "a:right", "a:top", "a:bottom"] as const) {
+          writer
+            .open(borderTag)
+            .open("a:ln", {
+              w:
+                slot.border.widthPt === undefined
+                  ? undefined
+                  : Math.round(slot.border.widthPt * 12700),
+            })
+            .open("a:solidFill");
+          if (slot.border.themeReference) {
+            writer.empty("a:schemeClr", { val: slot.border.themeReference });
+          }
+          writer.close("a:solidFill").close("a:ln").close(borderTag);
+        }
+        writer.close("a:tcBdr");
+      }
+      writer.close("a:tcStyle");
+    }
+  }
+  writer.close(tag);
 }
 
 export function themeXml(part: PptxThemePart): string {

@@ -10,6 +10,7 @@ import { DEFAULT_COLOR_MAP, DEFAULT_THEME_COLORS, defaultThemeProjectionTrace } 
 import type {
   PptxPackageModel,
   PptxPackagePart,
+  PptxDefaultTextStylePayload,
   PptxPresentationSlideMasterId,
   PptxSlideLayoutAnchor,
   PptxSlideLayoutPartPayload,
@@ -39,6 +40,23 @@ export type PptxDefaultSupportParts = {
 
 const DEFAULT_SLIDE_MASTER_NUMERIC_ID = "2147483648";
 const DEFAULT_SLIDE_LAYOUT_NUMERIC_ID = 2147483649;
+
+function defaultTextStylePayload(): PptxDefaultTextStylePayload {
+  return {
+    source: "themeProjection",
+    levels: Array.from({ length: 9 }, (_, index) => ({
+      level: index + 1,
+      marginLeftEmu: index * 457200,
+      alignment: "l",
+      defaultTabSizeEmu: 914400,
+      fontSizePt: 18,
+      colorThemeReference: "tx1",
+      latinTypeface: "+mn-lt",
+      eastAsianTypeface: "+mn-ea",
+      complexScriptTypeface: "+mn-cs",
+    })),
+  };
+}
 
 function frameToFrameIR(frame: Frame): FrameIR {
   return {
@@ -258,6 +276,7 @@ export function defaultPptxSupportParts(input: {
         const slide = input.graph.nodes.get(slideId);
         return slide?.kind === "slide" ? [slidePartIdFor(slide)] : [];
       }),
+      defaultTextStyle: defaultTextStylePayload(),
     } satisfies PptxSupportPartPayload,
   };
   const slideLayoutPartIdBySlideId = new Map(
@@ -401,6 +420,31 @@ export function defaultPptxSupportParts(input: {
       kind: "table-styles",
       editable: true,
       defaultStyleId: "{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}",
+      styleName: "deckjsx default",
+      slots: {
+        wholeTable: {
+          status: "supported",
+          fill: { themeReference: "bg1" },
+          text: { themeReference: "tx1" },
+          border: { themeReference: "tx1", widthPt: 0.75 },
+        },
+        headerRow: {
+          status: "supported",
+          fill: { themeReference: "accent1" },
+          text: { themeReference: "lt1", bold: true },
+          border: { themeReference: "accent1", widthPt: 0.75 },
+        },
+        firstColumn: {
+          status: "placeholder",
+          reason:
+            "v0.8.4 does not add PPTX-specific first-column authoring flags; future selector support can feed this table-style slot.",
+        },
+        bandedRows: {
+          status: "placeholder",
+          reason:
+            "v0.8.4 does not add pseudo-class row banding; future selector support can feed this table-style slot.",
+        },
+      },
     } satisfies PptxSupportPartPayload,
   };
 

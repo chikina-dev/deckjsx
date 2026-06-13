@@ -521,7 +521,11 @@ function withHyperlinkRelationship(input: {
 }): PptxElement {
   const { element } = input;
 
-  if (element.kind === "group" || element.kind === "video" || !element.hyperlink) {
+  if (element.kind === "group" || element.kind === "table" || element.kind === "video") {
+    return element;
+  }
+
+  if (!element.hyperlink) {
     return element;
   }
 

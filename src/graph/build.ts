@@ -5,6 +5,10 @@ import type {
   AuthorImageElementNode,
   AuthorShapeElementNode,
   AuthorSlideElementNode,
+  AuthorTableCellElementNode,
+  AuthorTableElementNode,
+  AuthorTableRowElementNode,
+  AuthorTableSectionElementNode,
   AuthorTextLeaf,
   AuthorTreeNode,
   AuthorVideoElementNode,
@@ -17,6 +21,10 @@ import {
   IMAGE_STYLE_KEYS,
   SHAPE_STYLE_KEYS,
   SLIDE_STYLE_KEYS,
+  TABLE_CELL_STYLE_KEYS,
+  TABLE_ROW_STYLE_KEYS,
+  TABLE_SECTION_STYLE_KEYS,
+  TABLE_STYLE_KEYS,
   TEXT_RUN_STYLE_KEYS,
   TEXT_STYLE_KEYS,
   VIDEO_STYLE_KEYS,
@@ -35,6 +43,7 @@ import type {
   SemanticNodeKind,
   SemanticOrigin,
   SemanticRole,
+  TableSectionKind,
   SemanticTemplateAreaRef,
   SourceOrigin,
   StyleClassRef,
@@ -111,6 +120,25 @@ function isShapeElement(node: AuthorElementNode): node is AuthorShapeElementNode
   return node.source.kind === "tag" && node.source.tag === "shape";
 }
 
+function isTableElement(node: AuthorElementNode): node is AuthorTableElementNode {
+  return node.source.kind === "tag" && node.source.tag === "table";
+}
+
+function isTableSectionElement(node: AuthorElementNode): node is AuthorTableSectionElementNode {
+  return (
+    node.source.kind === "tag" &&
+    (node.source.tag === "thead" || node.source.tag === "tbody" || node.source.tag === "tfoot")
+  );
+}
+
+function isTableRowElement(node: AuthorElementNode): node is AuthorTableRowElementNode {
+  return node.source.kind === "tag" && node.source.tag === "tr";
+}
+
+function isTableCellElement(node: AuthorElementNode): node is AuthorTableCellElementNode {
+  return node.source.kind === "tag" && (node.source.tag === "th" || node.source.tag === "td");
+}
+
 function templateAreaValueFor(node: AuthorElementNode): AuthorElementPropValue | undefined {
   return "area" in node.props ? node.props.area : undefined;
 }
@@ -123,6 +151,16 @@ function supportedPropNamesFor(node: AuthorElementNode): ReadonlySet<string> {
   switch (node.source.tag) {
     case "span":
       return new Set(["className", "style"]);
+    case "table":
+      return new Set(["className", "style", "area"]);
+    case "thead":
+    case "tbody":
+    case "tfoot":
+    case "tr":
+      return new Set(["className", "style"]);
+    case "th":
+    case "td":
+      return new Set(["className", "style", "colspan", "rowspan"]);
     case "img":
       return new Set(["className", "style", "area", "src", "data"]);
     case "video":
@@ -142,6 +180,17 @@ function supportedStyleNamesFor(node: AuthorElementNode): ReadonlySet<string> {
   switch (node.source.tag) {
     case "span":
       return new Set(TEXT_RUN_STYLE_KEYS);
+    case "table":
+      return new Set(TABLE_STYLE_KEYS);
+    case "thead":
+    case "tbody":
+    case "tfoot":
+      return new Set(TABLE_SECTION_STYLE_KEYS);
+    case "tr":
+      return new Set(TABLE_ROW_STYLE_KEYS);
+    case "th":
+    case "td":
+      return new Set(TABLE_CELL_STYLE_KEYS);
     case "img":
       return new Set(IMAGE_STYLE_KEYS);
     case "video":
@@ -433,6 +482,27 @@ function validateAuthoringProps(state: BuildState, node: AuthorElementNode, path
           message: "The slide declaration template option must be a template name string.",
         }),
       );
+    }
+  }
+
+  if (isTableCellElement(node)) {
+    for (const key of ["colspan", "rowspan"] as const) {
+      const value = node.props[key];
+      if (value === undefined) {
+        continue;
+      }
+
+      if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+        addDiagnostic(
+          state,
+          authoringPropDiagnostic({
+            code: "E_COMPILE_INVALID_TABLE_SPAN_PROP",
+            title: "table cell span prop is invalid",
+            path: `${propPath}.${key}`,
+            message: `${key} must be a positive integer when it is provided.`,
+          }),
+        );
+      }
     }
   }
 }
@@ -1062,6 +1132,477 @@ function collectInlineText(
   return text;
 }
 
+type TableRowBuildInput = {
+  node: AuthorTableRowElementNode;
+  index: number;
+};
+
+function tableSectionKindFor(node: AuthorTableSectionElementNode): TableSectionKind {
+  switch (node.source.tag) {
+    case "thead":
+      return "head";
+    case "tfoot":
+      return "foot";
+    case "tbody":
+      return "body";
+  }
+}
+
+function positiveIntegerProp(value: AuthorElementPropValue): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : undefined;
+}
+
+function buildTableCellNode(
+  state: BuildState,
+  node: AuthorTableCellElementNode,
+  context: BuildContext,
+  index: number,
+): BuildChild {
+  const nodeContext = contextForNode(node, context);
+  const segment = `${sourceName(node)}:${keySegment(node.key, index)}`;
+  const material = [...nodeContext.parentMaterial, segment];
+  const id = graphNodeId(material);
+  const path = `${nodeContext.path} > ${sourceName(node)}[${keySegment(node.key, index)}]`;
+
+  validateAuthoringProps(state, node, path);
+  const childIds = buildChildren(state, node.children, {
+    parentId: id,
+    parentMaterial: material,
+    path,
+    inline: false,
+    source: sourceFor(nodeContext),
+    slotOrigins: nodeContext.slotOrigins,
+    activeSlot: nodeContext.activeSlot,
+    activeSlideTemplate: nodeContext.activeSlideTemplate,
+    activeSlideTemplates: nodeContext.activeSlideTemplates,
+    directSlideChild: false,
+    usedTemplateAreas: nodeContext.usedTemplateAreas,
+  });
+
+  state.nodes.set(id, {
+    ...semanticBase(state, node, id, "tableCell", path, material, nodeContext),
+    kind: "tableCell",
+    cellKind: node.source.tag === "th" ? "header" : "data",
+    colSpan: positiveIntegerProp(node.props.colspan) ?? 1,
+    rowSpan: positiveIntegerProp(node.props.rowspan) ?? 1,
+    children: childIds,
+  });
+  return { id, kind: "tableCell" };
+}
+
+function buildTableRowCellChildren(
+  state: BuildState,
+  children: readonly AuthorTreeNode[],
+  context: BuildContext,
+): GraphNodeId[] {
+  const ids: GraphNodeId[] = [];
+
+  children.forEach((child, index) => {
+    if (child.kind === "text") {
+      if (String(child.value).trim().length > 0) {
+        addDiagnostic(
+          state,
+          invalidStructure(
+            `${context.path} > text[${index}]`,
+            "invalid table row child",
+            "tr accepts th and td cells only.",
+          ),
+        );
+      }
+      return;
+    }
+
+    if (child.kind === "fragment") {
+      const childContext = contextForNode(child, context);
+      const segment = `fragment:${keySegment(child.key, index)}`;
+      ids.push(
+        ...buildTableRowCellChildren(state, child.children, {
+          ...childContext,
+          parentMaterial: [...childContext.parentMaterial, segment],
+          path: `${childContext.path} > fragment[${keySegment(child.key, index)}]`,
+        }),
+      );
+      return;
+    }
+
+    if (!isTableCellElement(child)) {
+      addDiagnostic(
+        state,
+        invalidStructure(
+          `${context.path} > ${sourceName(child)}[${index}]`,
+          "invalid table row child",
+          "tr accepts th and td cells only.",
+        ),
+      );
+      return;
+    }
+
+    ids.push(buildTableCellNode(state, child, context, index).id);
+  });
+
+  return ids;
+}
+
+function buildTableRowNode(
+  state: BuildState,
+  node: AuthorTableRowElementNode,
+  context: BuildContext,
+  index: number,
+): BuildChild {
+  const nodeContext = contextForNode(node, context);
+  const segment = `${sourceName(node)}:${keySegment(node.key, index)}`;
+  const material = [...nodeContext.parentMaterial, segment];
+  const id = graphNodeId(material);
+  const path = `${nodeContext.path} > ${sourceName(node)}[${keySegment(node.key, index)}]`;
+
+  validateAuthoringProps(state, node, path);
+  const childIds = buildTableRowCellChildren(state, node.children, {
+    ...nodeContext,
+    parentId: id,
+    parentMaterial: material,
+    path,
+    inline: false,
+    source: sourceFor(nodeContext),
+    directSlideChild: false,
+  });
+
+  state.nodes.set(id, {
+    ...semanticBase(state, node, id, "tableRow", path, material, nodeContext),
+    kind: "tableRow",
+    children: childIds,
+  });
+  return { id, kind: "tableRow" };
+}
+
+function buildAuthoredTableSectionNode(
+  state: BuildState,
+  node: AuthorTableSectionElementNode,
+  context: BuildContext,
+  index: number,
+): BuildChild {
+  const nodeContext = contextForNode(node, context);
+  const segment = `${sourceName(node)}:${keySegment(node.key, index)}`;
+  const material = [...nodeContext.parentMaterial, segment];
+  const id = graphNodeId(material);
+  const path = `${nodeContext.path} > ${sourceName(node)}[${keySegment(node.key, index)}]`;
+
+  validateAuthoringProps(state, node, path);
+  const rowIds: GraphNodeId[] = [];
+  node.children.forEach((child, childIndex) => {
+    if (child.kind === "text") {
+      if (String(child.value).trim().length > 0) {
+        addDiagnostic(
+          state,
+          invalidStructure(
+            `${path} > text[${childIndex}]`,
+            "invalid table section child",
+            "Table sections accept tr children only.",
+          ),
+        );
+      }
+      return;
+    }
+
+    if (child.kind === "fragment") {
+      const childContext = contextForNode(child, {
+        ...nodeContext,
+        parentId: id,
+        parentMaterial: material,
+        path,
+        inline: false,
+        source: sourceFor(nodeContext),
+      });
+      const fragmentSegment = `fragment:${keySegment(child.key, childIndex)}`;
+      rowIds.push(
+        ...buildTableSectionRows(state, child.children, {
+          ...childContext,
+          parentMaterial: [...childContext.parentMaterial, fragmentSegment],
+          path: `${childContext.path} > fragment[${keySegment(child.key, childIndex)}]`,
+        }),
+      );
+      return;
+    }
+
+    if (!isTableRowElement(child)) {
+      addDiagnostic(
+        state,
+        invalidStructure(
+          `${path} > ${sourceName(child)}[${childIndex}]`,
+          "invalid table section child",
+          "Table sections accept tr children only.",
+        ),
+      );
+      return;
+    }
+
+    rowIds.push(
+      buildTableRowNode(
+        state,
+        child,
+        {
+          ...nodeContext,
+          parentId: id,
+          parentMaterial: material,
+          path,
+          inline: false,
+          source: sourceFor(nodeContext),
+          directSlideChild: false,
+        },
+        childIndex,
+      ).id,
+    );
+  });
+
+  state.nodes.set(id, {
+    ...semanticBase(state, node, id, "tableSection", path, material, nodeContext),
+    kind: "tableSection",
+    sectionKind: tableSectionKindFor(node),
+    children: rowIds,
+  });
+  return { id, kind: "tableSection" };
+}
+
+function buildTableSectionRows(
+  state: BuildState,
+  children: readonly AuthorTreeNode[],
+  context: BuildContext,
+): GraphNodeId[] {
+  const ids: GraphNodeId[] = [];
+  children.forEach((child, index) => {
+    if (child.kind === "text") {
+      if (String(child.value).trim().length > 0) {
+        addDiagnostic(
+          state,
+          invalidStructure(
+            `${context.path} > text[${index}]`,
+            "invalid table section child",
+            "Table sections accept tr children only.",
+          ),
+        );
+      }
+      return;
+    }
+
+    if (child.kind === "fragment") {
+      const childContext = contextForNode(child, context);
+      const segment = `fragment:${keySegment(child.key, index)}`;
+      ids.push(
+        ...buildTableSectionRows(state, child.children, {
+          ...childContext,
+          parentMaterial: [...childContext.parentMaterial, segment],
+          path: `${childContext.path} > fragment[${keySegment(child.key, index)}]`,
+        }),
+      );
+      return;
+    }
+
+    if (!isTableRowElement(child)) {
+      addDiagnostic(
+        state,
+        invalidStructure(
+          `${context.path} > ${sourceName(child)}[${index}]`,
+          "invalid table section child",
+          "Table sections accept tr children only.",
+        ),
+      );
+      return;
+    }
+
+    ids.push(buildTableRowNode(state, child, context, index).id);
+  });
+  return ids;
+}
+
+function buildImplicitTableBodySection(input: {
+  state: BuildState;
+  rows: readonly TableRowBuildInput[];
+  context: BuildContext;
+  index: number;
+}): BuildChild {
+  const { state, rows, context, index } = input;
+  const segment = `tbody:implicit:${index}`;
+  const material = [...context.parentMaterial, segment];
+  const id = graphNodeId(material);
+  const path = `${context.path} > tbody[implicit:${index}]`;
+  const rowIds = rows.map(
+    (row) =>
+      buildTableRowNode(
+        state,
+        row.node,
+        {
+          ...context,
+          parentId: id,
+          parentMaterial: material,
+          path,
+          inline: false,
+          directSlideChild: false,
+        },
+        row.index,
+      ).id,
+  );
+
+  state.nodes.set(id, {
+    id,
+    kind: "tableSection",
+    origin: {
+      kind: "implicit",
+      path,
+      source: sourceFor(context),
+      reason: "table-row-shorthand",
+    },
+    role: { kind: "tableSection", sectionKind: "body" },
+    sectionKind: "body",
+    children: rowIds,
+  });
+  return { id, kind: "tableSection" };
+}
+
+function buildTableNode(
+  state: BuildState,
+  node: AuthorTableElementNode,
+  id: GraphNodeId,
+  path: string,
+  material: readonly string[],
+  context: BuildContext,
+): BuildChild {
+  const sectionIds: GraphNodeId[] = [];
+  const implicitRows: TableRowBuildInput[] = [];
+  let implicitSectionIndex = 0;
+  let seenHead = false;
+  let seenFoot = false;
+  let phase: TableSectionKind | undefined;
+
+  const reportOrder = (sectionKind: TableSectionKind, sectionPath: string): void => {
+    const invalid =
+      (sectionKind === "head" && (seenHead || phase !== undefined)) ||
+      (sectionKind === "body" && seenFoot) ||
+      (sectionKind === "foot" && seenFoot);
+
+    if (invalid) {
+      addDiagnostic(
+        state,
+        invalidStructure(
+          sectionPath,
+          "invalid table section order",
+          "Table sections must be ordered as thead, zero or more tbody sections, then tfoot.",
+        ),
+      );
+    }
+
+    if (sectionKind === "head") {
+      seenHead = true;
+      phase = "head";
+      return;
+    }
+
+    if (sectionKind === "body") {
+      phase = "body";
+      return;
+    }
+
+    seenFoot = true;
+    phase = "foot";
+  };
+
+  const flushImplicitRows = (): void => {
+    if (implicitRows.length === 0) {
+      return;
+    }
+
+    reportOrder("body", `${path} > tbody[implicit:${implicitSectionIndex}]`);
+    sectionIds.push(
+      buildImplicitTableBodySection({
+        state,
+        rows: implicitRows.splice(0, implicitRows.length),
+        context: {
+          ...context,
+          parentId: id,
+          parentMaterial: material,
+          path,
+          inline: false,
+          directSlideChild: false,
+        },
+        index: implicitSectionIndex,
+      }).id,
+    );
+    implicitSectionIndex += 1;
+  };
+
+  node.children.forEach((child, index) => {
+    if (child.kind === "text") {
+      if (String(child.value).trim().length > 0) {
+        addDiagnostic(
+          state,
+          invalidStructure(
+            `${path} > text[${index}]`,
+            "invalid table child",
+            "table accepts thead, tbody, tfoot, or tr children only.",
+          ),
+        );
+      }
+      return;
+    }
+
+    if (child.kind === "fragment") {
+      flushImplicitRows();
+      addDiagnostic(
+        state,
+        invalidStructure(
+          `${path} > fragment[${keySegment(child.key, index)}]`,
+          "invalid table child",
+          "table accepts thead, tbody, tfoot, or tr children only.",
+        ),
+      );
+      return;
+    }
+
+    if (isTableRowElement(child)) {
+      implicitRows.push({ node: child, index });
+      return;
+    }
+
+    flushImplicitRows();
+    if (!isTableSectionElement(child)) {
+      addDiagnostic(
+        state,
+        invalidStructure(
+          `${path} > ${sourceName(child)}[${index}]`,
+          "invalid table child",
+          "table accepts thead, tbody, tfoot, or tr children only.",
+        ),
+      );
+      return;
+    }
+
+    const sectionKind = tableSectionKindFor(child);
+    reportOrder(sectionKind, `${path} > ${sourceName(child)}[${keySegment(child.key, index)}]`);
+    sectionIds.push(
+      buildAuthoredTableSectionNode(
+        state,
+        child,
+        {
+          ...context,
+          parentId: id,
+          parentMaterial: material,
+          path,
+          inline: false,
+          source: sourceFor(context),
+          directSlideChild: false,
+        },
+        index,
+      ).id,
+    );
+  });
+
+  flushImplicitRows();
+  state.nodes.set(id, {
+    ...semanticBase(state, node, id, "table", path, material, context),
+    kind: "table",
+    children: sectionIds,
+  });
+  return { id, kind: "table" };
+}
+
 function buildNode(
   state: BuildState,
   node: AuthorTreeNode,
@@ -1112,6 +1653,22 @@ function buildNode(
 
   if (kind === "text") {
     return buildTextLikeNode(state, node, id, path, material, nodeContext);
+  }
+
+  if (isTableElement(node)) {
+    return buildTableNode(state, node, id, path, material, nodeContext);
+  }
+
+  if (isTableSectionElement(node) || isTableRowElement(node) || isTableCellElement(node)) {
+    addDiagnostic(
+      state,
+      invalidStructure(
+        path,
+        "table part cannot appear here",
+        "thead, tbody, tfoot, tr, th, and td must appear inside a table hierarchy.",
+      ),
+    );
+    return undefined;
   }
 
   if (isImageElement(node)) {

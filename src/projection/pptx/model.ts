@@ -27,6 +27,7 @@ import type {
   StrokeIR,
   TextRunIR,
   TextStyleIR,
+  ProjectedLayoutTableSection,
 } from "../../layout/projected";
 import type { ProjectionFormat } from "../../pipeline";
 import type { CssVisibility, StyleDeclarationValue } from "../../style/types";
@@ -54,7 +55,7 @@ export type PptxPackagePartKind =
   | "theme"
   | "view-properties";
 
-export type PptxElementKind = "group" | "image" | "shape" | "text" | "video";
+export type PptxElementKind = "group" | "image" | "shape" | "table" | "text" | "video";
 
 export type PptxElementOrigin = {
   readonly graphNodeIds?: readonly GraphNodeId[];
@@ -211,10 +212,43 @@ export type PptxShapeElement = PptxBaseElement & {
   readonly radiusEmu?: number;
 };
 
+export type PptxTableElement = PptxBaseElement & {
+  readonly kind: "table";
+  readonly sections: readonly PptxTableSection[];
+};
+
+export type PptxTableSection = {
+  readonly kind: "tableSection";
+  readonly sectionKind: ProjectedLayoutTableSection["sectionKind"];
+  readonly rows: readonly PptxTableRow[];
+};
+
+export type PptxTableRow = {
+  readonly kind: "tableRow";
+  readonly frame: FrameIR;
+  readonly cells: readonly PptxTableCell[];
+};
+
+export type PptxTableCell = {
+  readonly kind: "tableCell";
+  readonly cellKind: "header" | "data";
+  readonly gridColumnIndex: number;
+  readonly colSpan: number;
+  readonly rowSpan: number;
+  readonly frame: FrameIR;
+  readonly fill?: FillIR;
+  readonly edgeStrokes?: EdgeStrokeIR;
+  readonly style: TextStyleIR;
+  readonly text: string;
+  readonly children: readonly PptxElement[];
+  readonly unsupportedSemantics?: readonly PptxUnsupportedSemantic[];
+};
+
 export type PptxElement =
   | PptxGroupElement
   | PptxPictureElement
   | PptxShapeElement
+  | PptxTableElement
   | PptxTextElement
   | PptxVideoElement;
 
@@ -533,6 +567,23 @@ export type PptxPresentationSlideMasterId = {
   readonly id: string;
 };
 
+export type PptxDefaultTextStyleLevel = {
+  readonly level: number;
+  readonly marginLeftEmu: number;
+  readonly alignment: "l" | "ctr" | "r" | "just";
+  readonly defaultTabSizeEmu: number;
+  readonly fontSizePt: number;
+  readonly colorThemeReference: string;
+  readonly latinTypeface: string;
+  readonly eastAsianTypeface: string;
+  readonly complexScriptTypeface: string;
+};
+
+export type PptxDefaultTextStylePayload = {
+  readonly source: "themeProjection";
+  readonly levels: readonly PptxDefaultTextStyleLevel[];
+};
+
 export type PptxSlideMasterLayoutId = {
   readonly slideLayoutPartId: PackagePartId;
   readonly id: string;
@@ -586,12 +637,49 @@ export type PptxEmptySupportPartPayload =
       readonly kind: "view-properties";
       readonly editable: true;
       readonly settings: Record<string, never>;
-    }
-  | {
-      readonly kind: "table-styles";
-      readonly editable: true;
-      readonly defaultStyleId: string;
     };
+
+export type PptxTableStylePaint = {
+  readonly themeReference?: string;
+  readonly color?: string;
+};
+
+export type PptxTableStyleText = {
+  readonly themeReference?: string;
+  readonly bold?: boolean;
+};
+
+export type PptxTableStyleBorder = {
+  readonly themeReference?: string;
+  readonly widthPt?: number;
+};
+
+export type PptxTableStyleSupportedSlot = {
+  readonly status: "supported";
+  readonly fill?: PptxTableStylePaint;
+  readonly text?: PptxTableStyleText;
+  readonly border?: PptxTableStyleBorder;
+};
+
+export type PptxTableStylePlaceholderSlot = {
+  readonly status: "placeholder";
+  readonly reason: string;
+};
+
+export type PptxTableStyleSlot = PptxTableStyleSupportedSlot | PptxTableStylePlaceholderSlot;
+
+export type PptxTableStylesPartPayload = {
+  readonly kind: "table-styles";
+  readonly editable: true;
+  readonly defaultStyleId: string;
+  readonly styleName: string;
+  readonly slots: {
+    readonly wholeTable: PptxTableStyleSlot;
+    readonly headerRow: PptxTableStyleSlot;
+    readonly firstColumn: PptxTableStyleSlot;
+    readonly bandedRows: PptxTableStyleSlot;
+  };
+};
 
 export type PptxNotesPlaceholderPayload =
   | {
@@ -617,6 +705,7 @@ export type PptxSupportPartPayload =
       readonly size: PptxPackageModel["size"];
       readonly slideMasterIds: readonly PptxPresentationSlideMasterId[];
       readonly slidePartIds: readonly PackagePartId[];
+      readonly defaultTextStyle: PptxDefaultTextStylePayload;
     }
   | {
       readonly kind: "document-properties";
@@ -637,6 +726,7 @@ export type PptxSupportPartPayload =
   | PptxNotesPlaceholderPayload
   | PptxSlideLayoutPartPayload
   | PptxSlideMasterPartPayload
+  | PptxTableStylesPartPayload
   | PptxThemePartPayload;
 
 type PptxSupportPartOf<TPayload extends PptxSupportPartPayload> = PptxPackagePartBase<

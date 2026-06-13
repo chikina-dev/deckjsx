@@ -18,6 +18,13 @@ export type AuthoredTag =
   | "section"
   | "shape"
   | "span"
+  | "table"
+  | "tbody"
+  | "td"
+  | "tfoot"
+  | "th"
+  | "thead"
+  | "tr"
   | "video";
 
 export type SectioningTag = "article" | "aside" | "footer" | "header" | "main" | "nav" | "section";
@@ -34,6 +41,7 @@ export type IntrinsicViewTag =
   | "section";
 
 export type IntrinsicTextTag = "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p";
+export type IntrinsicTableTag = "table" | "thead" | "tbody" | "tfoot" | "tr" | "th" | "td";
 
 export const INTRINSIC_VIEW_TAGS = new Set<string>([
   "article",
@@ -48,6 +56,15 @@ export const INTRINSIC_VIEW_TAGS = new Set<string>([
 ]);
 
 export const INTRINSIC_TEXT_TAGS = new Set<string>(["h1", "h2", "h3", "h4", "h5", "h6", "p"]);
+export const INTRINSIC_TABLE_TAGS = new Set<string>([
+  "table",
+  "thead",
+  "tbody",
+  "tfoot",
+  "tr",
+  "th",
+  "td",
+]);
 
 export function isIntrinsicViewTag(value: string): value is IntrinsicViewTag {
   return INTRINSIC_VIEW_TAGS.has(value);
@@ -57,10 +74,15 @@ export function isIntrinsicTextTag(value: string): value is IntrinsicTextTag {
   return INTRINSIC_TEXT_TAGS.has(value);
 }
 
+export function isIntrinsicTableTag(value: string): value is IntrinsicTableTag {
+  return INTRINSIC_TABLE_TAGS.has(value);
+}
+
 export function isAuthoredTag(value: string): value is AuthoredTag {
   return (
     isIntrinsicViewTag(value) ||
     isIntrinsicTextTag(value) ||
+    isIntrinsicTableTag(value) ||
     value === "img" ||
     value === "shape" ||
     value === "span" ||

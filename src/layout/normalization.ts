@@ -12,6 +12,10 @@ import type {
   ShapeStyle,
   SlideStyle,
   StackAxis,
+  TableCellStyle,
+  TableRowStyle,
+  TableSectionStyle,
+  TableStyle,
   TextStyle,
   VideoStyle,
   ViewStyle,
@@ -63,6 +67,10 @@ export type NormalizedTextProps = AreaStructuralInput & TextStyle;
 export type NormalizedImageProps = ImageStructuralInput & ImageStyle;
 export type NormalizedVideoProps = VideoStructuralInput & VideoStyle;
 export type NormalizedShapeProps = AreaStructuralInput & ShapeStyle & { readonly shape: ShapeKind };
+export type NormalizedTableProps = AreaStructuralInput & TableStyle;
+export type NormalizedTableSectionProps = TableSectionStyle;
+export type NormalizedTableRowProps = TableRowStyle;
+export type NormalizedTableCellProps = TableCellStyle;
 export type SlideNormalizationInput = Partial<SlideStructuralInput> &
   SlideStyle & {
     readonly style?: SlideStyle;
@@ -87,6 +95,19 @@ export type ShapeNormalizationInput = Partial<ShapeStructuralInput> &
   ShapeStyle & {
     readonly style?: ShapeStyle;
   };
+export type TableNormalizationInput = Partial<AreaStructuralInput> &
+  TableStyle & {
+    readonly style?: TableStyle;
+  };
+export type TableSectionNormalizationInput = TableSectionStyle & {
+  readonly style?: TableSectionStyle;
+};
+export type TableRowNormalizationInput = TableRowStyle & {
+  readonly style?: TableRowStyle;
+};
+export type TableCellNormalizationInput = TableCellStyle & {
+  readonly style?: TableCellStyle;
+};
 
 function resolveFlexDirection(
   direction: StackAxis | undefined,
@@ -347,6 +368,26 @@ export function normalizeViewProps(props: ViewNormalizationInput): NormalizedVie
       authored.marginLeft,
     ),
   };
+}
+
+export function normalizeTableProps(props: TableNormalizationInput): NormalizedTableProps {
+  return normalizeViewProps(props);
+}
+
+export function normalizeTableSectionProps(
+  props: TableSectionNormalizationInput,
+): NormalizedTableSectionProps {
+  return normalizeViewProps(props);
+}
+
+export function normalizeTableRowProps(props: TableRowNormalizationInput): NormalizedTableRowProps {
+  return normalizeViewProps(props);
+}
+
+export function normalizeTableCellProps(
+  props: TableCellNormalizationInput,
+): NormalizedTableCellProps {
+  return normalizeTextProps(props);
 }
 
 export function normalizeTextProps(props: TextNormalizationInput): NormalizedTextProps {
