@@ -567,8 +567,12 @@ export type PptxPresentationSlideMasterId = {
   readonly id: string;
 };
 
-export type PptxDefaultTextStyleLevel = {
-  readonly level: number;
+export type PptxDefaultTextStyleLevelNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+
+export type PptxDefaultTextStyleLevel<
+  Level extends PptxDefaultTextStyleLevelNumber = PptxDefaultTextStyleLevelNumber,
+> = {
+  readonly level: Level;
   readonly marginLeftEmu: number;
   readonly alignment: "l" | "ctr" | "r" | "just";
   readonly defaultTabSizeEmu: number;
@@ -579,9 +583,21 @@ export type PptxDefaultTextStyleLevel = {
   readonly complexScriptTypeface: string;
 };
 
+export type PptxDefaultTextStyleLevels = readonly [
+  PptxDefaultTextStyleLevel<1>,
+  PptxDefaultTextStyleLevel<2>,
+  PptxDefaultTextStyleLevel<3>,
+  PptxDefaultTextStyleLevel<4>,
+  PptxDefaultTextStyleLevel<5>,
+  PptxDefaultTextStyleLevel<6>,
+  PptxDefaultTextStyleLevel<7>,
+  PptxDefaultTextStyleLevel<8>,
+  PptxDefaultTextStyleLevel<9>,
+];
+
 export type PptxDefaultTextStylePayload = {
   readonly source: "themeProjection";
-  readonly levels: readonly PptxDefaultTextStyleLevel[];
+  readonly levels: PptxDefaultTextStyleLevels;
 };
 
 export type PptxSlideMasterLayoutId = {
@@ -650,7 +666,7 @@ export type PptxTableStyleText = {
 };
 
 export type PptxTableStyleBorder = {
-  readonly themeReference?: string;
+  readonly themeReference: string;
   readonly widthPt?: number;
 };
 

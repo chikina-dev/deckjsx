@@ -365,6 +365,35 @@ describe("project/render pipeline", () => {
     expect(slideXml.indexOf('vMerge="1"')).toBeLessThan(slideXml.indexOf("<a:t>Q2</a:t>"));
   });
 
+  test("render sizes pptx table grid from every projected table row", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Row span expands columns" }, () => (
+      <>
+        <table style={{ x: 1, y: 1, width: 6, height: 2, tableLayout: "fixed" }}>
+          <tbody>
+            <tr>
+              <td rowspan={2}>Region</td>
+              <td>Q1</td>
+            </tr>
+            <tr>
+              <td>Q2</td>
+              <td>Q3</td>
+            </tr>
+          </tbody>
+        </table>
+      </>
+    ));
+
+    const render = await deck.render();
+    const zip = unzipSync(render.artifact?.bytes ?? new Uint8Array());
+    const slideXml = new TextDecoder().decode(zip["ppt/slides/slide1.xml"]);
+
+    expect(render.ok).toBe(true);
+    expect(slideXml.match(/<a:gridCol\b/g)?.length).toBe(3);
+    expect(slideXml).toContain('vMerge="1"');
+    expect(slideXml).toContain("<a:t>Q3</a:t>");
+  });
+
   test("project preserves table cells and warns when rich cell content falls back to text-centric native table output", async () => {
     const image =
       "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2210%22%20height%3D%2210%22%3E%3Crect%20width%3D%2210%22%20height%3D%2210%22%20fill%3D%22%23ff0000%22%2F%3E%3C%2Fsvg%3E";
@@ -625,6 +654,8 @@ describe("project/render pipeline", () => {
     expect(tableStylesXml).toContain("<a:wholeTbl>");
     expect(tableStylesXml).toContain("<a:firstRow>");
     expect(tableStylesXml).toContain("<a:band1H>");
+    expect(tableStylesXml).not.toContain("</a:fontRef><a:schemeClr");
+    expect(tableStylesXml).not.toContain("<a:solidFill/>");
   });
 
   test("project and render expose structured default text style support payload", async () => {
@@ -651,6 +682,11 @@ describe("project/render pipeline", () => {
         ]),
       }),
     });
+    expect(
+      presentationPart.payload.kind === "presentation"
+        ? presentationPart.payload.defaultTextStyle.levels.length
+        : undefined,
+    ).toBe(9);
     expect(render.ok).toBe(true);
     expect(presentationXml).toContain("<p:defaultTextStyle>");
     expect(presentationXml).toContain('<a:schemeClr val="tx1"/>');

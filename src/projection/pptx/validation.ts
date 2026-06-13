@@ -1348,6 +1348,32 @@ function validateTableStylesPayload(input: { part: PptxPackagePart }): Diagnosti
           }),
         );
       }
+      if (slot.status === "supported" && isRecord(slot.border)) {
+        if (
+          typeof slot.border.themeReference !== "string" ||
+          slot.border.themeReference.length === 0
+        ) {
+          issues.push(
+            supportPayloadDiagnostic({
+              path: `${path}.slots.${key}.border.themeReference`,
+              message: "supported table style border requires themeReference",
+            }),
+          );
+        }
+        if (
+          slot.border.widthPt !== undefined &&
+          (typeof slot.border.widthPt !== "number" ||
+            !Number.isFinite(slot.border.widthPt) ||
+            slot.border.widthPt < 0)
+        ) {
+          issues.push(
+            supportPayloadDiagnostic({
+              path: `${path}.slots.${key}.border.widthPt`,
+              message: "supported table style border width must be a non-negative number",
+            }),
+          );
+        }
+      }
     }
   }
 

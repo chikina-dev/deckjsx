@@ -2916,14 +2916,35 @@ function normalizeTableSections(
 }
 
 function tableColumnCount(sections: readonly NormalizedTableSection[]): number {
-  return Math.max(
-    1,
-    ...sections.flatMap((section) =>
-      section.rows.map((row) =>
-        row.cells.reduce((total, cell) => total + Math.max(1, cell.source.colSpan), 0),
-      ),
-    ),
-  );
+  let maxColumns = 1;
+  const rowSpanOccupancy: number[] = [];
+
+  for (const section of sections) {
+    for (const row of section.rows) {
+      let columnIndex = 0;
+      for (const cell of row.cells) {
+        while ((rowSpanOccupancy[columnIndex] ?? 0) > 0) {
+          columnIndex += 1;
+        }
+        const colSpan = Math.max(1, cell.source.colSpan);
+        maxColumns = Math.max(maxColumns, columnIndex + colSpan);
+        if (cell.source.rowSpan > 1) {
+          for (let offset = 0; offset < colSpan; offset += 1) {
+            rowSpanOccupancy[columnIndex + offset] = Math.max(
+              rowSpanOccupancy[columnIndex + offset] ?? 0,
+              cell.source.rowSpan,
+            );
+          }
+        }
+        columnIndex += colSpan;
+      }
+      for (let index = 0; index < rowSpanOccupancy.length; index += 1) {
+        rowSpanOccupancy[index] = Math.max(0, (rowSpanOccupancy[index] ?? 0) - 1);
+      }
+    }
+  }
+
+  return maxColumns;
 }
 
 function firstTableRow(

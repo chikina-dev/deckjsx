@@ -11,6 +11,8 @@ import type {
   PptxPackageModel,
   PptxPackagePart,
   PptxDefaultTextStylePayload,
+  PptxDefaultTextStyleLevel,
+  PptxDefaultTextStyleLevelNumber,
   PptxPresentationSlideMasterId,
   PptxSlideLayoutAnchor,
   PptxSlideLayoutPartPayload,
@@ -41,20 +43,36 @@ export type PptxDefaultSupportParts = {
 const DEFAULT_SLIDE_MASTER_NUMERIC_ID = "2147483648";
 const DEFAULT_SLIDE_LAYOUT_NUMERIC_ID = 2147483649;
 
+function defaultTextStyleLevel<Level extends PptxDefaultTextStyleLevelNumber>(
+  level: Level,
+): PptxDefaultTextStyleLevel<Level> {
+  return {
+    level,
+    marginLeftEmu: (level - 1) * 457200,
+    alignment: "l",
+    defaultTabSizeEmu: 914400,
+    fontSizePt: 18,
+    colorThemeReference: "tx1",
+    latinTypeface: "+mn-lt",
+    eastAsianTypeface: "+mn-ea",
+    complexScriptTypeface: "+mn-cs",
+  };
+}
+
 function defaultTextStylePayload(): PptxDefaultTextStylePayload {
   return {
     source: "themeProjection",
-    levels: Array.from({ length: 9 }, (_, index) => ({
-      level: index + 1,
-      marginLeftEmu: index * 457200,
-      alignment: "l",
-      defaultTabSizeEmu: 914400,
-      fontSizePt: 18,
-      colorThemeReference: "tx1",
-      latinTypeface: "+mn-lt",
-      eastAsianTypeface: "+mn-ea",
-      complexScriptTypeface: "+mn-cs",
-    })),
+    levels: [
+      defaultTextStyleLevel(1),
+      defaultTextStyleLevel(2),
+      defaultTextStyleLevel(3),
+      defaultTextStyleLevel(4),
+      defaultTextStyleLevel(5),
+      defaultTextStyleLevel(6),
+      defaultTextStyleLevel(7),
+      defaultTextStyleLevel(8),
+      defaultTextStyleLevel(9),
+    ],
   };
 }
 

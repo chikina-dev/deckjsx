@@ -461,20 +461,32 @@ const packagePartCandidate: PptxPackagePartCandidate = packagePart;
 packagePartCandidate.payload satisfies PptxPackagePartCandidate["payload"];
 void packagePart;
 
+function defaultTextStyleLevel<Level extends 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9>(level: Level) {
+  return {
+    level,
+    marginLeftEmu: (level - 1) * 457200,
+    alignment: "l",
+    defaultTabSizeEmu: 914400,
+    fontSizePt: 18,
+    colorThemeReference: "tx1",
+    latinTypeface: "+mn-lt",
+    eastAsianTypeface: "+mn-ea",
+    complexScriptTypeface: "+mn-cs",
+  } as const;
+}
+
 const defaultTextStyle = {
   source: "themeProjection",
   levels: [
-    {
-      level: 1,
-      marginLeftEmu: 0,
-      alignment: "l",
-      defaultTabSizeEmu: 914400,
-      fontSizePt: 18,
-      colorThemeReference: "tx1",
-      latinTypeface: "+mn-lt",
-      eastAsianTypeface: "+mn-ea",
-      complexScriptTypeface: "+mn-cs",
-    },
+    defaultTextStyleLevel(1),
+    defaultTextStyleLevel(2),
+    defaultTextStyleLevel(3),
+    defaultTextStyleLevel(4),
+    defaultTextStyleLevel(5),
+    defaultTextStyleLevel(6),
+    defaultTextStyleLevel(7),
+    defaultTextStyleLevel(8),
+    defaultTextStyleLevel(9),
   ],
 } as const;
 

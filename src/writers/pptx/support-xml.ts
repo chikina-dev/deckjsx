@@ -301,8 +301,7 @@ function writeTableStyleSlot(
         writer
           .open("a:fontRef", { idx: "minor" })
           .empty("a:schemeClr", { val: slot.text.themeReference })
-          .close("a:fontRef")
-          .empty("a:schemeClr", { val: slot.text.themeReference });
+          .close("a:fontRef");
       }
       if (slot.text.bold) {
         writer.empty("a:b");
@@ -320,7 +319,7 @@ function writeTableStyleSlot(
         }
         writer.close("a:solidFill").close("a:fill");
       }
-      if (slot.border) {
+      if (slot.border?.themeReference) {
         writer.open("a:tcBdr");
         for (const borderTag of ["a:left", "a:right", "a:top", "a:bottom"] as const) {
           writer
@@ -331,11 +330,11 @@ function writeTableStyleSlot(
                   ? undefined
                   : Math.round(slot.border.widthPt * 12700),
             })
-            .open("a:solidFill");
-          if (slot.border.themeReference) {
-            writer.empty("a:schemeClr", { val: slot.border.themeReference });
-          }
-          writer.close("a:solidFill").close("a:ln").close(borderTag);
+            .open("a:solidFill")
+            .empty("a:schemeClr", { val: slot.border.themeReference })
+            .close("a:solidFill")
+            .close("a:ln")
+            .close(borderTag);
         }
         writer.close("a:tcBdr");
       }

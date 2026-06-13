@@ -152,15 +152,41 @@ function tableShapeObjectId(
 }
 
 function tableColumnWidths(element: Extract<PptxElement, { kind: "table" }>): readonly number[] {
-  const firstRow = element.sections.flatMap((section) => section.rows)[0];
-  if (!firstRow || firstRow.cells.length === 0) {
+  const cells = element.sections.flatMap((section) => section.rows.flatMap((row) => row.cells));
+  if (cells.length === 0) {
     return [element.frame.widthEmu];
   }
 
-  return firstRow.cells.flatMap((cell) => {
+  const columnCount = Math.max(
+    1,
+    ...cells.map((cell) => cell.gridColumnIndex + Math.max(1, cell.colSpan)),
+  );
+  const widths: Array<number | undefined> = Array.from({ length: columnCount }, () => undefined);
+
+  for (const cell of cells) {
     const span = Math.max(1, cell.colSpan);
-    return Array.from({ length: span }, () => cell.frame.widthEmu / span);
-  });
+    const perColumnWidth = cell.frame.widthEmu / span;
+    if (!Number.isFinite(perColumnWidth) || perColumnWidth <= 0) {
+      continue;
+    }
+    for (
+      let offset = 0;
+      offset < span && cell.gridColumnIndex + offset < widths.length;
+      offset += 1
+    ) {
+      widths[cell.gridColumnIndex + offset] ??= perColumnWidth;
+    }
+  }
+
+  const fallbackWidth = element.frame.widthEmu / columnCount;
+  const rawWidths = widths.map((width) => width ?? fallbackWidth);
+  const rawTotal = rawWidths.reduce((total, width) => total + width, 0);
+  if (!Number.isFinite(rawTotal) || rawTotal <= 0) {
+    return Array.from({ length: columnCount }, () => fallbackWidth);
+  }
+
+  const scale = element.frame.widthEmu / rawTotal;
+  return rawWidths.map((width) => width * scale);
 }
 
 type TableCellXmlInput = Extract<
@@ -337,8 +363,12 @@ function writeTableElement(
       while (columnIndex < columns.length) {
         const cell = cellsByColumn.get(columnIndex);
         if (cell) {
+          const cellColumnSpan = Math.min(
+            Math.max(1, cell.colSpan),
+            Math.max(1, columns.length - columnIndex),
+          );
           writer.open("a:tc", {
-            gridSpan: cell.colSpan > 1 ? cell.colSpan : undefined,
+            gridSpan: cellColumnSpan > 1 ? cellColumnSpan : undefined,
             rowSpan: cell.rowSpan > 1 ? cell.rowSpan : undefined,
           });
           writeTableCellText(writer, cell);
@@ -347,7 +377,7 @@ function writeTableElement(
           if (cell.rowSpan > 1) {
             for (
               let offset = 0;
-              offset < cell.colSpan && columnIndex + offset < activeVerticalMerges.length;
+              offset < cellColumnSpan && columnIndex + offset < activeVerticalMerges.length;
               offset += 1
             ) {
               activeVerticalMerges[columnIndex + offset] = Math.max(
@@ -356,10 +386,10 @@ function writeTableElement(
               );
             }
           }
-          for (let offset = 1; offset < cell.colSpan; offset += 1) {
+          for (let offset = 1; offset < cellColumnSpan; offset += 1) {
             writeMergedTableCell(writer, "hMerge");
           }
-          columnIndex += Math.max(1, cell.colSpan);
+          columnIndex += cellColumnSpan;
           continue;
         }
         if ((activeVerticalMerges[columnIndex] ?? 0) > 0) {
