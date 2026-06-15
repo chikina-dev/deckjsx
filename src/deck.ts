@@ -1,5 +1,4 @@
 import type { DeckOptions } from "./authoring/index";
-import type { AssetLoader } from "./assets";
 import type { RenderOptions, WriterAdapter } from "./adapter";
 import {
   COMPOSITION_SOURCE,
@@ -117,7 +116,6 @@ export class BoundSource<
       source: this,
       options: this.#source.options,
       projectOptions: options,
-      assetLoaders: this.#source.assetLoaders,
     });
   }
 
@@ -132,7 +130,6 @@ export class BoundSource<
       source: this,
       options: this.#source.options,
       renderInput: config ?? {},
-      assetLoaders: this.#source.assetLoaders,
     });
   }
 }
@@ -158,7 +155,6 @@ export class Deck<
   readonly #options: DeckOptions<TTemplates>;
   readonly #entries: CompositionEntry<TSourceContext, TTemplates>[] = [];
   readonly #stylesheets: StyleSheet[] = [];
-  readonly #assetLoaders: AssetLoader[] = [];
   readonly #artifacts = new PipelineArtifactCollection();
 
   /** Bind Source Context to this Deck so it can be compiled, projected, rendered, or mounted. */
@@ -175,10 +171,6 @@ export class Deck<
 
   get options(): DeckOptions<TTemplates> {
     return this.#options;
-  }
-
-  get assetLoaders(): readonly AssetLoader[] {
-    return this.#assetLoaders;
   }
 
   [COMPOSITION_SOURCE](): CompositionSourceInternals<TSourceContext, TTemplates> {
@@ -201,25 +193,6 @@ export class Deck<
   useStyles(stylesheet: StyleSheet): this {
     this.#stylesheets.push(stylesheet);
     this.#artifacts.invalidateFromSource();
-    return this;
-  }
-
-  /**
-   * Register a source-local Asset Loading Boundary for media metadata and bytes.
-   *
-   * Asset loaders keep runtime-specific filesystem, framework-public URL, or authenticated media
-   * rules outside the multi-runtime core. Project and Render consume the registered loaders when
-   * media metadata or bytes are required.
-   *
-   * Loaders are evaluated before deckjsx's built-in asset boundary and in registration order. The
-   * loader that resolves Project metadata also owns Render byte loading for that source.
-   *
-   * @param loader - Asset loader with optional probe/load functions.
-   * @returns This Deck, for fluent authoring.
-   */
-  useAssets(loader: AssetLoader): this {
-    this.#assetLoaders.push(loader);
-    this.#artifacts.invalidateAssets();
     return this;
   }
 
@@ -390,7 +363,6 @@ export class Deck<
       definedGraph: this.#artifacts.graph,
       definedProjection: this.#artifacts.projection,
       artifacts: this.#artifacts,
-      assetLoaders: this.#assetLoaders,
     });
   }
 
@@ -411,7 +383,6 @@ export class Deck<
       definedGraph: this.#artifacts.graph,
       definedProjection: this.#artifacts.projection,
       artifacts: this.#artifacts,
-      assetLoaders: this.#assetLoaders,
     });
   }
 }

@@ -1,6 +1,4 @@
 import assert from "node:assert/strict";
-import { stat } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import { Deck } from "deckjsx";
 
 const deck = new Deck({
@@ -62,12 +60,9 @@ assert.equal(main?.kind, "group");
 assert.equal(footer?.kind, "group");
 assert.equal(footer.children[0]?.kind, "text");
 
-const outputPath = fileURLToPath(new URL("output-tsx.pptx", import.meta.url));
-const renderResult = await deck.render({ output: outputPath });
+const renderResult = await deck.render();
 assert.equal(renderResult.ok, true, JSON.stringify(renderResult.diagnostics.items, null, 2));
-assert.deepEqual(renderResult.output, { path: outputPath });
+assert.equal(renderResult.artifact?.format, "pptx");
+assert((renderResult.artifact?.bytes.byteLength ?? 0) > 0);
 
-const output = await stat(outputPath);
-assert(output.size > 0);
-
-console.log(`Generated output-tsx.pptx (${output.size} bytes)`);
+console.log(`Generated PPTX artifact (${renderResult.artifact?.bytes.byteLength ?? 0} bytes)`);

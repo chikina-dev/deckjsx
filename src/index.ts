@@ -13,14 +13,6 @@ export {
   formatDiagnostics,
 } from "./diagnostics";
 export type { JsxKey } from "./jsx-runtime";
-export type {
-  AssetLoadResult,
-  AssetLoader,
-  AssetLoaderContext,
-  AssetMediaType,
-  AssetProbeResult,
-  AssetSource,
-} from "./assets";
 export { EMU_PER_INCH, POINTS_PER_INCH } from "./types";
 export {
   type BorderStyle,
@@ -100,15 +92,11 @@ export type {
   RenderAssemblyPlanEntrySummary,
   RenderAssemblyPlanSummary,
   RenderAssemblyReasonDetails,
-  RenderOutputSideEffectReason,
-  RenderOutputSideEffectStatus,
-  RenderOutputSideEffectSummary,
   RenderedArtifact,
   RenderInspectionSummary,
   StageArtifactStatus,
   StageName,
   StageSummary,
-  WrittenOutput,
 } from "./pipeline";
 export type { ThemeDefaults } from "./style/defaults";
 export type { SourceSpan } from "./authoring/tree";

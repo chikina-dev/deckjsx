@@ -8,10 +8,6 @@ export type CollectingPptxZipSink = PptxZipSink & {
   bytes(): Uint8Array;
 };
 
-export type CollectingPptxZipSinkWithSideEffect = CollectingPptxZipSink & {
-  sideEffectError(): unknown;
-};
-
 function concatChunks(chunks: readonly Uint8Array[]): Uint8Array {
   const byteLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
   const bytes = new Uint8Array(byteLength);
@@ -74,52 +70,6 @@ export function createTeePptxZipSink(sinks: readonly PptxZipSink[], name = "tee"
       if (failures.length > 0) {
         throw failures[0];
       }
-    },
-  };
-}
-
-export function createCollectingPptxZipSinkWithSideEffect(
-  sideEffectSink: PptxZipSink,
-  name = "collecting-with-side-effect",
-): CollectingPptxZipSinkWithSideEffect {
-  const collecting = createCollectingPptxZipSink();
-  let sideEffectError: unknown;
-
-  const writeSideEffect = (chunk: Uint8Array): void => {
-    if (sideEffectError) {
-      return;
-    }
-
-    try {
-      sideEffectSink.write(chunk);
-    } catch (error) {
-      sideEffectError = error;
-    }
-  };
-
-  return {
-    name,
-    write(chunk) {
-      collecting.write(chunk);
-      writeSideEffect(chunk);
-    },
-    close() {
-      collecting.close?.();
-      if (sideEffectError) {
-        return;
-      }
-
-      try {
-        sideEffectSink.close?.();
-      } catch (error) {
-        sideEffectError = error;
-      }
-    },
-    bytes() {
-      return collecting.bytes();
-    },
-    sideEffectError() {
-      return sideEffectError;
     },
   };
 }

@@ -176,39 +176,8 @@ export type RenderAssemblyPlanSummary = {
   readonly failedCount: number;
 };
 
-export type RenderOutputSideEffectStatus =
-  | "failed"
-  | "notRequested"
-  | "skipped"
-  | "unavailable"
-  | "written";
-
-export type RenderOutputSideEffectReason =
-  | "artifactMissing"
-  | "noOutputRequested"
-  | "outputWriteFailed"
-  | "runtimeOutputUnavailable";
-
-export type RenderOutputSideEffectSummary = {
-  readonly requested: boolean;
-  readonly status: RenderOutputSideEffectStatus;
-  readonly path?: string;
-  readonly reason?: RenderOutputSideEffectReason;
-  readonly message?: string;
-  readonly runtime?: {
-    readonly kind: "node";
-    readonly available: boolean;
-    readonly reason?: string;
-  };
-};
-
 export type RenderInspectionSummary = {
   readonly assembly?: RenderAssemblyPlanSummary;
-  readonly output?: RenderOutputSideEffectSummary;
-};
-
-export type WrittenOutput = {
-  readonly path: string;
 };
 
 export function resultOk(diagnostics: Diagnostics): boolean {

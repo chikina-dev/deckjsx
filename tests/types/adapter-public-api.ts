@@ -6,14 +6,17 @@ import type { PptxPackageModel } from "deckjsx/inspect";
 type Assert<T extends true> = T;
 type IsAssignable<From, To> = [From] extends [To] ? true : false;
 
-const adapter = pptx({ output: "deck.pptx" });
+// @ts-expect-error core render no longer accepts path output.
+const adapterWithOutput = pptx({ output: "deck.pptx" });
+void adapterWithOutput;
+
+const adapter = pptx({ inspection: "summary" });
 adapter satisfies WriterAdapter<PptxPackageModel>;
 adapter.projectionFormat satisfies ProjectionFormat;
 adapter.format satisfies "pptx";
 
 const renderOptions = {
   inspection: "summary",
-  output: "deck.pptx",
 } satisfies PptxRenderOptions;
 void renderOptions;
 

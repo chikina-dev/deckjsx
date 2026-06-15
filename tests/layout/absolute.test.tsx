@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 import { Deck, EMU_PER_INCH } from "../../src/index.ts";
+import { projectSource } from "../../src/pipeline-runner.ts";
+import type { AssetLoader } from "../../src/assets.ts";
 import { WIDE_SVG_DATA_URI, summarizeNodes } from "../helpers.ts";
 
 describe("absolute layout", () => {
@@ -627,13 +629,17 @@ describe("absolute layout", () => {
 
   test("render derives image aspect ratio from asset probe metadata", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.useAssets({
+    const loader = {
+      resolverIdentity: "wide-image-test",
       async probe({ source }) {
         return source.kind === "path" && source.path === "/wide.png"
-          ? { mediaType: "image/png", extension: "png", width: 100, height: 50 }
+          ? {
+              ok: true,
+              value: { mediaType: "image/png", extension: "png", width: 100, height: 50 },
+            }
           : undefined;
       },
-    });
+    } satisfies AssetLoader;
 
     deck.slide({ name: "Natural image aspect ratio" }, () => (
       <>
@@ -643,7 +649,13 @@ describe("absolute layout", () => {
       </>
     ));
 
-    const ir = (await deck.project()).projection!;
+    const ir = (
+      await projectSource({
+        source: deck,
+        options: deck.options,
+        assetLoaders: [loader],
+      })
+    ).projection!;
 
     expect(summarizeNodes(ir.slides[0].payload.drawing.children)).toEqual([
       {

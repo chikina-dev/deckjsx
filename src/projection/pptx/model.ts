@@ -1361,5 +1361,5 @@ export function isPptxPackageModel(
 
 export type PptxProjectionAssetArtifact = {
   readonly probe?: AssetProbeResult;
-  readonly resolverScope?: string;
+  readonly resolverIdentity?: string;
 };

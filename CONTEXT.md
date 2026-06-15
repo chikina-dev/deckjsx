@@ -170,12 +170,25 @@ _Avoid_: media part, package path, resolved image bytes
 **Media Source Origin**:
 The authoring-module origin needed to interpret a relative Authored Media Source, such as the module or file that supplied the media reference. It is distinct from Source Identity, which is stable composition identity, and from Source Span, which is diagnostic location detail.
 Project Integration Packages may use Media Source Origin to connect relative media paths to a bundler module graph without making core resolve those paths.
+Media Source Origin contains deckjsx source identity for pipeline explanation and an optional importer string for project-toolchain resolution. Importer is an integration-interpreted module id string, not necessarily an absolute filesystem path, and core should not interpret it.
 Media Source Origin should normally be attached by integration tooling rather than handwritten in everyday slide authoring.
 Source-level Media Source Origin is the default for media references in a slide factory or composed source. Node-level Media Source Origin may override it when JSX or components from another authoring module contribute their own media references.
 Media references authored as literals inside a component should use that component's defining module as their Media Source Origin, not the slide module that renders the component.
 When a media path is passed through component props, the Media Source Origin should remain the module that authored the path value, not necessarily the component module that forwards it.
-Media Source Origin metadata may travel beside the Author Tree through internal node metadata so media source props can remain ordinary authoring strings. This metadata applies to authoring media source props such as image `src`, video `src`, and video `poster`; inline data props do not need origin metadata.
+Media Source Origin is attached at the JSX prop assignment site and forwarded as prop-level metadata, not embedded into the string value itself. Authored media source values should remain ordinary strings.
+Component props should not expose Media Source Origin or a branded media-source value type. The JSX runtime and Author Tree may preserve prop-level metadata internally, and graph construction reads it when an intrinsic media element produces an Asset Entity.
+Component prop forwarding may use an internal JSX runtime props metadata carrier so Media Source Origin can move through function components without appearing in the component's public props object. The carrier is runtime plumbing that eventually writes prop-level metadata onto intrinsic Author Element nodes.
+Media Source Origin metadata helpers are integration plumbing, not part of the root Authoring Interface.
+When integration metadata is absent, Media Source Origin may fall back to the current semantic source identity without an importer. Root sources do not need a synthetic source identity string.
+Media Source Origin is captured with the Asset Entity produced from an authoring media source prop. The Asset Loading Boundary receives that captured origin with the authored source, so downstream package projection does not need to rediscover or reinterpret where a relative media source came from.
+Media Source Origin metadata may travel beside the Author Tree through internal prop-level metadata on Author Element nodes so media source props can remain ordinary authoring strings. This metadata applies to authoring media source props such as image `src`, video `src`, and video `poster`; inline data props do not need origin metadata. Prop-level metadata lets one authoring node carry different origins for different media source props.
+Author Element `props` should remain serializable authoring data; hidden Media Source Origin metadata belongs to a separate node metadata slot keyed by prop name rather than inside the props object.
 _Avoid_: Graph Identity, PPTX package path, resolved filesystem path
+
+**Asset Source Field**:
+The core-owned media prop vocabulary that records which authoring field produced an Asset Entity. In v0.8.5 it is limited to `src`, `data`, `poster`, and `posterData`.
+Asset Source Field supports diagnostics and inspection without becoming Media Source Origin itself. Future fields, such as style-owned asset fields, should be added deliberately to the core vocabulary rather than accepted as plugin-defined strings.
+_Avoid_: plugin-defined field name, module origin, authored media source
 
 **Playable Video Embed**:
 An authored video intent whose presentation output should contain playable video media rather than only a poster image, static fallback, or hyperlink to an external video location.
@@ -207,14 +220,23 @@ _Avoid_: all video formats, renderer compatibility layer, transcoding policy
 
 **Asset Loading Boundary**:
 The pipeline resource boundary that resolves Authored Media Sources into reusable metadata and bytes without making deckjsx core depend on one runtime's file system or asset APIs.
-Registered loaders are evaluated before built-in multi-runtime handling and in Deck registration order. The resolver scope that wins Project probing should also be used by Render loading so metadata and bytes are not mixed across different runtime assumptions.
-Absolute URL sources may be handled by built-in multi-runtime loading when the runtime provides fetch; this is still the Asset Loading Boundary, not a video-specific retrieval mechanism. Relative paths and local file sources are runtime-specific and should require an explicit registered loader or thin runtime boundary rather than becoming a core file-system dependency.
+Integration-provided loaders are evaluated before built-in multi-runtime handling and in integration-defined order. The Resolver Identity that wins Project probing should also be used by Render loading so metadata and bytes are not mixed across different runtime assumptions.
+Built-in multi-runtime loading is limited to authored bytes, data/data URI sources, and absolute HTTP(S) URL sources when the runtime provides `fetch`; this is still the Asset Loading Boundary, not a video-specific retrieval mechanism. If `fetch` is unavailable, returns a non-success HTTP response, or fails for an absolute HTTP(S) source, Project should report an Asset Loading Boundary diagnostic because Project-time image metadata cannot be completed. Relative paths, root-absolute project paths, `file:` URLs, Vite public assets, and local file sources are runtime-specific and should require an explicit integration loader or thin runtime boundary rather than becoming a core file-system dependency.
+When built-in URL fetch succeeds during Project, Project should retain the fetched bytes in the Asset Artifact so Render can embed the same bytes without fetching again.
 Project-local default asset loading belongs to Project Integration Packages, such as a Vite plugin, because those integrations own bundler module graphs, project roots, and Node file-system access. The core deckjsx package should keep local file resolution behind AssetLoader registration instead of importing Node runtime modules for asset discovery.
-Project Integration Packages should be able to provide default loaders automatically so ordinary authors do not call manual loader-registration APIs for common project assets. Manual AssetLoader registration may remain a low-level or legacy escape hatch for custom runtimes and authenticated media.
-Asset resolver scope should identify the loader's resolution assumptions, not just its display name. Project Integration Packages should be able to provide stable resolver identity so asset cache keys separate different project roots, toolchain configurations, or resolver graphs.
-Loader result fields are validated at the boundary: media type, extension, and hash must be non-empty strings when present; width and height must be positive finite numbers; byteLength must be a finite non-negative number; and load bytes must be a Uint8Array.
-Loader-provided diagnostics should flow through Project Result or Render Result diagnostics. A loader returning `undefined` means it did not handle the source, while a loader that handled a source but found a problem should report diagnostics through the Asset Loading Boundary.
-Asset loader operations are asynchronous, but their resolved value should distinguish not-handled from handled failure. Both probing and loading should use this outcome vocabulary. This is an outcome shape returned by the Promise, not an extension of JavaScript Promise behavior itself.
+Project Integration Packages should provide default loaders automatically so ordinary authors do not call manual loader-registration APIs for common project assets. The root Deck authoring API should not keep a manual AssetLoader registration method in v0.8.5.
+AssetLoader contracts may remain internal until an integration package needs a stable plugin-facing subpath. v0.8.5 should not expose speculative AssetLoader, Asset Source, probe/load result, outcome, provenance hook, or hidden origin writer APIs from the root package.
+An Asset Entity should resolve through its owning Integration Context's AssetLoaders rather than falling through to loaders contributed by unrelated composed sources. Built-in runtime-neutral handling may still handle inline data and fetchable absolute URLs when no project-local loader claim is involved.
+Filesystem-like path sources without an owning Integration Context remain valid authored media sources, but Project should report an Asset Loading Boundary diagnostic instead of guessing a loader or treating the path as a Compile error.
+Resolver Identity should identify the loader's resolution assumptions, not just its display name. AssetLoaders should declare Resolver Identity explicitly; anonymous or registration-index-derived identities are invalid because they make cache keys, diagnostics, and future HMR explanation unstable. Project Integration Packages should provide stable Resolver Identity so asset cache keys separate different project roots, toolchain configurations, or resolver graphs. Built-in multi-runtime loading has the fixed Resolver Identity `deckjsx:builtin`.
+Loader success value fields are validated at the boundary: media type, extension, and hash must be non-empty strings when present; width and height must be positive finite numbers; byteLength must be a finite non-negative number; and load bytes must be a Uint8Array.
+Loader-provided diagnostics should flow through Project Result or Render Result diagnostics. A loader returning `undefined` means it did not handle the source, while a loader that handled a source but found a problem should return a Result-like failed outcome with diagnostics through the Asset Loading Boundary.
+Asset loader operations are asynchronous, but their resolved value should distinguish successful handled results, not-handled, and handled failed results. Both probing and loading should use this Result-like outcome vocabulary with `ok: true` and `ok: false` cases. This is an outcome shape returned by the Promise, not an extension of JavaScript Promise behavior itself.
+A handled failed result means the loader has claimed the source and resolution should stop for that source rather than falling through to later loaders or built-in handling.
+Expected loader failures should be represented as diagnostics so callers can inspect and manage them; thrown errors are reserved for unexpected loader execution failures rather than normal project asset problems.
+Loader failed outcomes should carry diagnostic item arrays from the loader, including at least one error diagnostic, while Project and Render wrap those items into stage `Diagnostics` when integrating them into results. Warning-only diagnostics belong on successful handled outcomes.
+Asset Probe Result and Asset Load Result are success-value shapes and should not carry diagnostics fields themselves; success warnings and failed errors belong to the surrounding Result-like loader outcome.
+AssetLoader Context should include the authored source, optional Media Source Origin, Resolver Identity, Asset Entity id, and required Asset Source Field so loaders can produce precise diagnostics and trace output. Asset Entity id and Asset Source Field are explanatory context, not resolver cache identity.
 For image sources, Project probing must produce width and height. Missing dimensions are data retrieval failure, not a writer fallback.
 _Avoid_: graph asset resolution, Project-time file IO, core fs dependency, built-in path resolver
 
@@ -226,6 +248,14 @@ Toolchain-specific path meanings, such as Vite's public-root interpretation of `
 Project Integration Packages may attach default Asset Loading Boundary behavior through integration-managed context rather than requiring authors to call manual loader registration APIs.
 _Avoid_: core authoring export, implicit runtime dependency, hidden file-system loader
 
+**Integration Context**:
+The integration-managed context attached to a deck module or source so Project Integration Packages can provide default Asset Loading Boundary behavior and Media Source Origin transport without making authors call registration APIs.
+Integration Context is module/source scoped rather than process-global, because multiple project toolchains, dev servers, tests, and HMR sessions may need different resolver assumptions in the same process.
+When sources are composed, each source contributes its own Integration Context and the pipeline aggregates those contexts for Project and Render. Parent source context should not erase a mounted child source's integration assumptions.
+An Asset Entity belongs to the Integration Context of the source or authoring module that produced its media source, but it should identify that ownership without embedding loader functions or runtime context objects in the Semantic Author Graph. Project-local path resolution should not fall through to loaders from another composed source's Integration Context.
+Integration Context Identity selects the source/module-scoped Integration Context that owns an Asset Entity. It is distinct from Resolver Identity, which explains the resolver assumptions that produced an Asset Artifact for cache and provenance.
+_Avoid_: public authoring option, global singleton registry, manual loader registration, resolver identity
+
 **Runtime Integration Package**:
 An optional package that connects deckjsx to a runtime capability family, such as Node file-system output, without making that runtime part of the core package. Runtime Integration Packages may provide path output, local file AssetLoader primitives, or other runtime-specific adapters that operate on core runtime-neutral artifacts and contracts.
 Project Integration Packages may depend on Runtime Integration Packages when a toolchain needs the same runtime capability, but the runtime capability should not be owned by the project toolchain package unless it is truly toolchain-specific.
@@ -236,24 +266,24 @@ A Pipeline Artifact that records resolved media metadata and optionally loaded s
 _Avoid_: Asset Entity, Media Part, graph payload, package projection
 
 **Asset Resolution Provenance**:
-Runtime-neutral metadata that explains how an Authored Media Source was resolved by the Asset Loading Boundary, such as inline data, fetched URL, local file, project public asset, or generated asset. It may include resolver identity, resolved id, content hash, and other inspection/debug details without exposing Vite, Node, or writer-specific objects as core model data.
+Runtime-neutral metadata that explains how an Authored Media Source was resolved by the Asset Loading Boundary, such as inline data, fetched URL, local file, project public asset, or generated asset. It may include resolver identity, resolved id, importer, hash source, and other inspection/debug details without exposing Vite, Node, or writer-specific objects as core model data.
 Asset Resolution Provenance helps diagnostics, cache explanation, and future HMR understand where asset bytes came from; it is not a replacement for Asset Artifact metadata or loaded bytes.
-Asset Resolution Provenance may be exposed through the Inspection Interface for sandbox, diagnostics, and HMR explanation, but it should not become ordinary root Authoring Interface vocabulary.
-The initial provenance kind vocabulary is closed and core-owned: inline, fetch, file, public asset, and generated asset. Project Integration Packages should map their behavior into those kinds rather than defining plugin-specific provenance kinds.
-Provenance fields should be strongly typed scalar metadata such as resolver scope, resolved id, importer, and hash source. Avoid open-ended plugin details bags; new provenance data should become deliberate core vocabulary when it is needed.
-Provenance should normally be established during asset probing so Project Result can explain asset resolution before Render. Loading may preserve or refine provenance when byte-level explanation is only available with bytes.
+Asset Resolution Provenance may be exposed through the Inspection Interface for sandbox, diagnostics, and HMR explanation, but it should not become ordinary root Authoring Interface vocabulary. Project-time inspection should expose asset resolution as its own lightweight summary view rather than folding it into PPTX media-part inspection. Asset resolution inspection should not expose loaded bytes or raw authored source payloads.
+The initial provenance kind vocabulary is closed and core-owned: inline, fetch, file, public asset, and generated asset. Authored bytes and data URI sources both use inline provenance. Project Integration Packages should map their behavior into those kinds rather than defining plugin-specific provenance kinds.
+Provenance fields should be strongly typed scalar metadata such as resolver identity, optional resolved id, optional importer, and hash source. Resolved id and importer should be strings, not Vite module graph nodes, URL objects, filesystem handles, or other runtime/toolchain objects. Avoid open-ended plugin details bags; new provenance data should become deliberate core vocabulary when it is needed.
+Provenance should normally be returned on Asset Probe Result and preserved on Asset Artifact so Project Result can explain asset resolution before Render. Loading may preserve or refine provenance when byte-level explanation is only available with bytes.
 The canonical asset content hash belongs to the Asset Probe Result. Provenance may explain how that hash was obtained, but should not duplicate the hash value as a second source of truth.
 The initial hash source vocabulary is closed to loader-provided content hash and bytes-derived hash. Metadata-derived hashes should not be treated as canonical asset content hashes unless a later decision gives them precise semantics.
-Root exports should include only the provenance-related types needed to implement an AssetLoader. Detailed provenance inspection shapes belong to the Inspection Interface, and hidden-symbol media-origin helpers should remain internal.
+AssetLoader contract and provenance hook types should not be root authoring exports before an integration-facing package or subpath needs them. Detailed provenance inspection shapes belong to the Inspection Interface when they are reader-facing, and hidden-symbol media-origin helpers should remain internal.
 _Avoid_: Vite module graph object, Node fs handle, PPTX media path, writer byte source
 
 **Media Allocation Key**:
-The projected key used to decide whether authored media references share one PPTX Media Part. When an Asset Artifact has a content hash, the key is hash-based; otherwise it is based on resolver scope plus Authored Media Source. The key also preserves media kind so images, playable videos, and future media families cannot accidentally share a package part only because their source or hash matches. The key controls Package Part Identity and media part reuse, while package paths such as `ppt/media/media1.png` or `ppt/media/media2.mp4` remain deterministic assembly names assigned from first projected use.
+The projected key used to decide whether authored media references share one PPTX Media Part. When an Asset Artifact has a content hash, the key is hash-based; otherwise it is based on Resolver Identity plus Authored Media Source. The key also preserves media kind so images, playable videos, and future media families cannot accidentally share a package part only because their source or hash matches. The key controls Package Part Identity and media part reuse, while package paths such as `ppt/media/media1.png` or `ppt/media/media2.mp4` remain deterministic assembly names assigned from first projected use.
 _Avoid_: graph node id, drawing element id, ZIP path as identity, byte cache key
 
 **Pptx Media Projection**:
 The PPTX projection responsibility that turns graph asset references, Authored Media Sources, and Asset Artifacts into media package part identity, media part payloads, slide relationship references, and deterministic reuse decisions.
-Pptx Media Projection may use probe metadata and resolver scope from Asset Artifacts, but it does not own media byte loading or byte caches. Media bytes belong to Asset Artifacts and Render-time media emission.
+Pptx Media Projection may use probe metadata and Resolver Identity from Asset Artifacts, but it does not own media byte loading or byte caches. Media bytes belong to Asset Artifacts and Render-time media emission.
 It should assign media package parts and drawing/background relationship ids during Project so the Output Writer can serialize concrete projected relationships instead of rediscovering media topology.
 _Avoid_: media byte store, writer-local media relationship creation, filesystem loader
 
@@ -502,8 +532,9 @@ The composite may keep one render orchestrator as the control owner for stage or
 _Avoid_: writer-side projection, direct imports of projection internals, public ZIP implementation surface
 
 **Render Output Side Effect**:
-The optional runtime action that writes a produced Rendered Artifact to an output path after artifact bytes exist. It is separate from package generation: Rendered Artifact bytes remain the primary output, while path writing reports requested, skipped, unavailable, failed, or written status through Render inspection summary and diagnostics.
-_Avoid_: primary artifact, writer package assembly, public streaming mode
+The runtime action, owned by a Runtime Integration Package rather than core Render, that writes a produced Rendered Artifact to an output path after artifact bytes exist. It is separate from package generation: Rendered Artifact bytes remain the primary output, while path writing belongs outside the core `deckjsx` package.
+In v0.8.5, core should remove the root/core `output: string` path-writing option and the current Node output side-effect implementation/types instead of keeping a compatibility side effect in Render.
+_Avoid_: primary artifact, writer package assembly, public streaming mode, core render option, core output side-effect type
 
 **Pptx Package Build Artifact**:
 A render-stage Pipeline Artifact that materializes a Pptx Package Model into package-part bytes before the final PPTX ZIP bytes are assembled. It is keyed by Package Part Identity, but it is not the Projected Document Model or the primary inspection model.
@@ -534,7 +565,7 @@ _Avoid_: unordered build artifact map, Projected Document Model, ZIP writer impl
 
 **Pptx ZIP Sink**:
 An internal writer boundary that receives final PPTX ZIP chunks while the ZIP module consumes the Assembly Plan. Collecting sinks materialize the public `RenderedArtifact.bytes`; tee sinks may fan out chunks to multiple internal consumers, but sink topology is not public API.
-Path output is a runtime integration concern over produced artifact bytes, not a core ZIP sink mode. Core should keep collecting `RenderedArtifact.bytes` as the public output, while Runtime Integration Packages may write those bytes to files.
+Path output is a runtime integration concern over produced artifact bytes, not a core ZIP sink mode. Core should keep collecting `RenderedArtifact.bytes` as the public output, while Runtime Integration Packages may write those bytes to files. v0.8.5 should remove core `output: string` path writing and Node output sink modules rather than preserve them as sink modes.
 Sink failures that prevent artifact byte collection are Render assembly failures. Runtime integration write failures should be reported by the integration layer without turning partial ZIP bytes into a Rendered Artifact.
 _Avoid_: public stream mode, adapter option surface, runtime filesystem dependency in writer core
 
@@ -564,7 +595,7 @@ _Avoid_: raw projection-only return, writer artifact, mode-dependent return shap
 
 **Render**:
 The operation that turns a Projected Document Model into an output artifact through a Writer Adapter. Render is downstream of Project and should not compile authoring inputs, read the Author Tree, own semantic validation, or require a runtime file system.
-Render should return a Render Result containing diagnostics and the rendered artifact for tests, tooling, and sandbox inspection. Writing the artifact to a path belongs to a Runtime Integration Package rather than the core Render operation.
+Render should return a Render Result containing diagnostics and the rendered artifact for tests, tooling, and sandbox inspection. Writing the artifact to a path belongs to a Runtime Integration Package rather than the core Render operation, so core Render options should not include `output: string`.
 Render can accept an explicit Writer Adapter or use the default adapter. When an adapter declares its required output format, render should ensure the matching Projected Document Model exists before invoking the adapter.
 Render should support either default-adapter options or a fully configured Writer Adapter value, rather than accepting a separate adapter-plus-options overload. Adapter-specific options belong to the adapter factory so the Render API stays narrow.
 When an explicit Writer Adapter requires a different format than the Deck default Output Format, render should use the adapter-required format and report a warning rather than silently using the Deck default.
@@ -579,7 +610,7 @@ Stage results should provide a Result-like `ok` flag derived from error diagnost
 Render may materialize earlier unresolved stages such as Compile and Project when needed, and Render Result should make those prior-stage diagnostics or stage summaries visible so callers can tell which stage blocked or warned.
 Stage results should expose diagnostics both as a flat list for simple consumers and as stage-grouped summaries for inspection tools. Individual diagnostics should carry enough stage information to remain meaningful when flattened. Stage summaries should also indicate artifact presence, such as whether graph, projection, or rendered artifact output is available, partial, or missing.
 The rendered artifact should carry bytes as a runtime-neutral `Uint8Array` so tests, browser tooling, Edge runtime flows, and sandbox flows can consume the result without writing a file.
-Core Render Result should not expose separate streaming, sink, file-handle, or path-output modes. Runtime Integration Packages may provide file-writing helpers over Rendered Artifact bytes.
+Core Render Result should not expose separate streaming, sink, file-handle, or path-output modes. Runtime Integration Packages may provide file-writing helpers over Rendered Artifact bytes. The core v0.8.5 Render surface should therefore be bytes-only rather than `output: string` plus bytes, and public `WrittenOutput` or Render output side-effect summary types should leave core with the removed Node output implementation.
 Render options or Writer Adapters may change writer behavior or output detail, but they should not change the top-level Render Result shape.
 _Avoid_: void file write, raw artifact-only return, semantic validation result
 

@@ -176,6 +176,7 @@ export type StyleEntity = {
 export type AssetEntity = {
   readonly id: AssetEntityId;
   readonly kind: "image" | "video";
+  readonly sourceField: "src" | "data" | "poster" | "posterData";
   readonly source:
     | { readonly kind: "path"; readonly path: string }
     | { readonly kind: "data"; readonly data: string }

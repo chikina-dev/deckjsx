@@ -88,6 +88,13 @@ describe("public surface", () => {
     expect(publicDeclarationText).not.toMatch(/\bPptxZipSink\b/);
     expect(publicDeclarationText).not.toMatch(/\bPptxPackageBuildArtifact\b/);
     expect(publicDeclarationText).not.toMatch(/\bAssetArtifact\b/);
+    expect(publicDeclarationText).not.toMatch(/\bAssetLoader\b/);
+    expect(publicDeclarationText).not.toMatch(/\bAssetLoaderContext\b/);
+    expect(publicDeclarationText).not.toMatch(/\bAssetProbeResult\b/);
+    expect(publicDeclarationText).not.toMatch(/\bAssetLoadResult\b/);
+    expect(publicDeclarationText).not.toMatch(/\bAssetSource\b/);
+    expect(publicDeclarationText).not.toMatch(/\bWrittenOutput\b/);
+    expect(publicDeclarationText).not.toMatch(/\bRenderOutputSideEffect/);
     expect(publicDeclarationText).not.toMatch(/\bfflate\b/);
     expect(publicDeclarationText).not.toMatch(/\bPptxCompressionMode\b/);
     expect(publicDeclarationText).not.toMatch(/\bLayoutInput/);
@@ -123,7 +130,7 @@ describe("public surface", () => {
     expect(pkg.dependencies).toEqual({});
   });
 
-  test("node filesystem imports stay behind the runtime output boundary", async () => {
+  test("core source does not import node filesystem builtins", async () => {
     const files = await sourceFiles(new URL("../../src", import.meta.url).pathname);
     const sources = await Promise.all(
       files.map(async (file) => [file, await readFile(file, "utf8")] as const),
@@ -136,7 +143,7 @@ describe("public surface", () => {
       .filter(([, source]) => nodeBuiltinImport.test(source) || bareNodeBuiltinImport.test(source))
       .map(([file]) => file.replace(new URL("../../", import.meta.url).pathname, ""));
 
-    expect(nodeImportFiles).toEqual(["src/runtime/node-output.ts"]);
+    expect(nodeImportFiles).toEqual([]);
   });
 
   test("published public entry files do not statically import node builtins", async () => {

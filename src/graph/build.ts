@@ -579,6 +579,7 @@ function assetForImage(
   const entity: AssetEntity = {
     id,
     kind: "image",
+    sourceField: typeof props.src === "string" ? "src" : "data",
     source,
     metadata:
       typeof props.data === "string" && props.data.startsWith("data:")
@@ -685,6 +686,7 @@ function assetForVideoSource(input: {
   state.assets.set(id, {
     id,
     kind: "video",
+    sourceField: typeof props.src === "string" ? "src" : "data",
     source,
     metadata: source.kind === "data" ? { mediaType: dataMediaType(source.data) } : {},
     resolution: "unresolved",
@@ -758,6 +760,7 @@ function assetForVideoPoster(
   state.assets.set(id, {
     id,
     kind: "image",
+    sourceField: typeof props.poster === "string" ? "poster" : "posterData",
     source,
     metadata: source.kind === "data" ? { mediaType: dataMediaType(source.data) } : {},
     resolution: "unresolved",
