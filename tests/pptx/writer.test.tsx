@@ -1,6 +1,4 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { readFile } from "node:fs/promises";
 import { describe, expect, test } from "vite-plus/test";
 import { Deck, Theme } from "../../src/index.ts";
 import { isPptxSlidePart, isPptxSupportPart } from "../../src/inspect.ts";
@@ -33,11 +31,7 @@ import { mediaPartPayload } from "../../src/writers/pptx/media.ts";
 import { relationshipsBytes } from "../../src/writers/pptx/package-xml.ts";
 import { slideBytes } from "../../src/writers/pptx/slide-xml.ts";
 import { writeTextBody } from "../../src/writers/pptx/text-xml.ts";
-import {
-  createCollectingPptxZipSink,
-  createCollectingPptxZipSinkWithSideEffect,
-  createTeePptxZipSink,
-} from "../../src/writers/pptx/sinks.ts";
+import { createCollectingPptxZipSink, createTeePptxZipSink } from "../../src/writers/pptx/sinks.ts";
 import {
   createPptxZipBytesFromEntries,
   writePptxZipEntriesToSink,
@@ -89,6 +83,14 @@ function zipEntry(zip: Unzipped, path: string): string | undefined {
 
 function packagePaths(zip: Unzipped): readonly string[] {
   return Object.keys(zip).sort((left, right) => left.localeCompare(right));
+}
+
+async function renderDeckBytes(deck: Deck): Promise<Uint8Array> {
+  const result = await deck.render();
+  expect(result.ok).toBe(true);
+  expect(result.artifact?.format).toBe("pptx");
+  expect(result.artifact?.bytes.byteLength).toBeGreaterThan(0);
+  return result.artifact?.bytes ?? new Uint8Array();
 }
 
 function withFreshPackageFingerprints(projection: PptxPackageModel): PptxPackageModel {
@@ -703,81 +705,22 @@ describe("direct pptx writer", () => {
     expect(Array.from(second.bytes())).toEqual([1, 2, 3]);
   });
 
-  test("collecting side-effect sink preserves artifact bytes when side output fails", () => {
-    const sink = createCollectingPptxZipSinkWithSideEffect({
-      name: "failing-side-effect",
-      write() {
-        throw new Error("side output failed");
-      },
-    });
-
-    writePptxZipEntriesToSink(
-      [{ path: "ppt/presentation.xml", bytes: new TextEncoder().encode("<p:presentation/>") }],
-      sink,
-    );
-
-    expect(sink.bytes().byteLength).toBeGreaterThan(0);
-    expect(sink.sideEffectError()).toBeInstanceOf(Error);
-  });
-
-  test("render writes a real pptx file through the writer", async () => {
+  test("render returns real pptx artifact bytes through the writer", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "sample.pptx");
 
-    deck.slide({ name: "File output" }, () => (
+    deck.slide({ name: "Artifact output" }, () => (
       <>
         <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>Hello PPTX</p>
       </>
     ));
 
-    try {
-      const result = await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const [content, fileStat] = await Promise.all([readFile(output), stat(output)]);
-
-      expect(result.artifact?.bytes.byteLength).toBe(content.byteLength);
-      expect(result.summary?.output).toMatchObject({ status: "written", path: output });
-      expect(content.subarray(0, 2).toString("utf8")).toBe("PK");
-      expect(fileStat.size).toBeGreaterThan(0);
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
-  });
-
-  test("render keeps artifact bytes when path output sink cannot be created", async () => {
-    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-
-    deck.slide({ name: "Failed file output" }, () => (
-      <>
-        <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Still collected</p>
-      </>
-    ));
-
-    try {
-      const result = await deck.render({ output: tempDir });
-
-      expect(result.ok).toBe(false);
-      expect(result.artifact?.bytes.byteLength).toBeGreaterThan(0);
-      expect(result.output).toBeUndefined();
-      expect(result.summary?.output).toMatchObject({
-        status: "failed",
-        path: tempDir,
-        reason: "outputWriteFailed",
-      });
-      expect(result.diagnostics.items).toContainEqual(
-        expect.objectContaining({ code: "E_RENDER_OUTPUT_WRITE_FAILED", severity: "error" }),
-      );
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(content.subarray(0, 2).toString()).toBe("80,75");
   });
 
   test("output emits styled span as rich text runs", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "rich-text.pptx");
 
     deck.slide({ name: "Rich text" }, () => (
       <>
@@ -787,33 +730,26 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml?.startsWith('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')).toBe(
-        true,
-      );
-      expect(slideXml).toContain(
-        '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">',
-      );
-      expect(slideXml).toContain("<a:t>Sales </a:t>");
-      expect(slideXml).toContain("<a:t>grew</a:t>");
-      expect(slideXml).toContain("<a:t> YoY</a:t>");
-      expect(slideXml).toContain('val="DC2626"');
-      expect(slideXml).toContain('b="1"');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml?.startsWith('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')).toBe(
+      true,
+    );
+    expect(slideXml).toContain(
+      '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">',
+    );
+    expect(slideXml).toContain("<a:t>Sales </a:t>");
+    expect(slideXml).toContain("<a:t>grew</a:t>");
+    expect(slideXml).toContain("<a:t> YoY</a:t>");
+    expect(slideXml).toContain('val="DC2626"');
+    expect(slideXml).toContain('b="1"');
   });
 
   test("output emits required support parts with deterministic roots", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "support-parts.pptx");
 
     deck.slide({ name: "Support parts" }, () => (
       <>
@@ -821,50 +757,43 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const themeXml = zipEntry(zip, "ppt/theme/theme1.xml");
-      const masterXml = zipEntry(zip, "ppt/slideMasters/slideMaster1.xml");
-      const masterRelsXml = zipEntry(zip, "ppt/slideMasters/_rels/slideMaster1.xml.rels");
-      const layoutXml = zipEntry(zip, "ppt/slideLayouts/slideLayout1.xml");
-      const layoutRelsXml = zipEntry(zip, "ppt/slideLayouts/_rels/slideLayout1.xml.rels");
+    const zip = unzipSync(content);
+    const themeXml = zipEntry(zip, "ppt/theme/theme1.xml");
+    const masterXml = zipEntry(zip, "ppt/slideMasters/slideMaster1.xml");
+    const masterRelsXml = zipEntry(zip, "ppt/slideMasters/_rels/slideMaster1.xml.rels");
+    const layoutXml = zipEntry(zip, "ppt/slideLayouts/slideLayout1.xml");
+    const layoutRelsXml = zipEntry(zip, "ppt/slideLayouts/_rels/slideLayout1.xml.rels");
 
-      expect(themeXml?.startsWith('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')).toBe(
-        true,
-      );
-      expect(themeXml).toContain(
-        '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="deckjsx">',
-      );
-      expect(themeXml).toContain('<a:accent1><a:srgbClr val="2563EB"/></a:accent1>');
-      expect(masterXml).toContain(
-        '<p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">',
-      );
-      expect(masterXml).toContain('<p:sldLayoutId id="2147483649" r:id="rId1"/>');
-      expect(masterRelsXml).toContain(
-        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout"',
-      );
-      expect(masterRelsXml).toContain(
-        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme"',
-      );
-      expect(layoutXml).toContain(
-        '<p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="blank" preserve="1">',
-      );
-      expect(layoutXml).toContain('<p:cSld name="Blank">');
-      expect(layoutRelsXml).toContain(
-        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster"',
-      );
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(themeXml?.startsWith('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')).toBe(
+      true,
+    );
+    expect(themeXml).toContain(
+      '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="deckjsx">',
+    );
+    expect(themeXml).toContain('<a:accent1><a:srgbClr val="2563EB"/></a:accent1>');
+    expect(masterXml).toContain(
+      '<p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">',
+    );
+    expect(masterXml).toContain('<p:sldLayoutId id="2147483649" r:id="rId1"/>');
+    expect(masterRelsXml).toContain(
+      'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout"',
+    );
+    expect(masterRelsXml).toContain(
+      'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme"',
+    );
+    expect(layoutXml).toContain(
+      '<p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="blank" preserve="1">',
+    );
+    expect(layoutXml).toContain('<p:cSld name="Blank">');
+    expect(layoutRelsXml).toContain(
+      'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster"',
+    );
   });
 
   test("output serializes slide master and layout support payloads", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "slide-master-layout-payload.pptx");
 
     deck.slide({ name: "Support payloads" }, () => (
       <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Support payloads</p>
@@ -905,20 +834,15 @@ describe("direct pptx writer", () => {
       }),
     );
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const masterXml = zipEntry(zip, "ppt/slideMasters/slideMaster1.xml");
-      const layoutXml = zipEntry(zip, "ppt/slideLayouts/slideLayout1.xml");
+    const zip = unzipSync(content);
+    const masterXml = zipEntry(zip, "ppt/slideMasters/slideMaster1.xml");
+    const layoutXml = zipEntry(zip, "ppt/slideLayouts/slideLayout1.xml");
 
-      expect(masterXml).toContain('bg1="accent2"');
-      expect(masterXml).toContain('tx1="accent3"');
-      expect(layoutXml).toContain('<p:cSld name="Payload Blank">');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(masterXml).toContain('bg1="accent2"');
+    expect(masterXml).toContain('tx1="accent3"');
+    expect(layoutXml).toContain('<p:cSld name="Payload Blank">');
   });
 
   test("support XML emitters reject malformed theme, master, and layout payloads", async () => {
@@ -1065,8 +989,6 @@ describe("direct pptx writer", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
       meta: { title: "Initial title", subject: "Initial subject", author: "Initial author" },
     });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "document-properties-payload.pptx");
 
     deck.slide({ name: "Doc props 1" }, () => (
       <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>One</p>
@@ -1121,29 +1043,22 @@ describe("direct pptx writer", () => {
       }),
     );
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const coreXml = zipEntry(zip, "docProps/core.xml");
-      const appXml = zipEntry(zip, "docProps/app.xml");
+    const zip = unzipSync(content);
+    const coreXml = zipEntry(zip, "docProps/core.xml");
+    const appXml = zipEntry(zip, "docProps/app.xml");
 
-      expect(coreXml).toContain("<dc:title>Payload title</dc:title>");
-      expect(coreXml).toContain("<dc:subject>Payload subject</dc:subject>");
-      expect(coreXml).toContain("<dc:creator>Payload author</dc:creator>");
-      expect(coreXml).not.toContain("Ignored top-level title");
-      expect(appXml).toContain("<Application>deckjsx</Application>");
-      expect(appXml).toContain("<Slides>2</Slides>");
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(coreXml).toContain("<dc:title>Payload title</dc:title>");
+    expect(coreXml).toContain("<dc:subject>Payload subject</dc:subject>");
+    expect(coreXml).toContain("<dc:creator>Payload author</dc:creator>");
+    expect(coreXml).not.toContain("Ignored top-level title");
+    expect(appXml).toContain("<Application>deckjsx</Application>");
+    expect(appXml).toContain("<Slides>2</Slides>");
   });
 
   test("output serializes presentation XML from structured support payload", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "presentation-payload.pptx");
 
     deck.slide({ name: "Presentation payload 1" }, () => (
       <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>One</p>
@@ -1202,31 +1117,24 @@ describe("direct pptx writer", () => {
       }),
     );
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const presentationXml = zipEntry(zip, "ppt/presentation.xml");
+    const zip = unzipSync(content);
+    const presentationXml = zipEntry(zip, "ppt/presentation.xml");
 
-      expect(presentationXml).toContain('<p:sldId id="333"');
-      expect(presentationXml).not.toContain('<p:sldId id="256"');
-      expect(presentationXml).not.toContain('<p:sldId id="257"');
-      expect(presentationXml).toContain('cx="333333"');
-      expect(presentationXml).toContain('cy="444444"');
-      expect(presentationXml).not.toContain('cx="111111"');
-      expect(presentationXml).not.toContain('cy="222222"');
-      expect(presentationXml).toContain("<p:defaultTextStyle>");
-      expect(presentationXml).not.toContain('lang="ja-JP"');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(presentationXml).toContain('<p:sldId id="333"');
+    expect(presentationXml).not.toContain('<p:sldId id="256"');
+    expect(presentationXml).not.toContain('<p:sldId id="257"');
+    expect(presentationXml).toContain('cx="333333"');
+    expect(presentationXml).toContain('cy="444444"');
+    expect(presentationXml).not.toContain('cx="111111"');
+    expect(presentationXml).not.toContain('cy="222222"');
+    expect(presentationXml).toContain("<p:defaultTextStyle>");
+    expect(presentationXml).not.toContain('lang="ja-JP"');
   });
 
   test("output serializes empty support property payload roots", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "empty-support-properties-payload.pptx");
 
     deck.slide({ name: "Support property payload" }, () => (
       <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Support properties</p>
@@ -1264,23 +1172,18 @@ describe("direct pptx writer", () => {
       }),
     );
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const viewPropsXml = zipEntry(zip, "ppt/viewProps.xml");
-      const presPropsXml = zipEntry(zip, "ppt/presProps.xml");
+    const zip = unzipSync(content);
+    const viewPropsXml = zipEntry(zip, "ppt/viewProps.xml");
+    const presPropsXml = zipEntry(zip, "ppt/presProps.xml");
 
-      expect(viewPropsXml).toContain("<p:viewPr");
-      expect(viewPropsXml).toContain(
-        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"',
-      );
-      expect(presPropsXml).toContain("<p:presentationPr");
-      expect(presPropsXml).not.toContain("<p:viewPr");
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(viewPropsXml).toContain("<p:viewPr");
+    expect(viewPropsXml).toContain(
+      'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"',
+    );
+    expect(presPropsXml).toContain("<p:presentationPr");
+    expect(presPropsXml).not.toContain("<p:viewPr");
   });
 
   test("output emits template-derived slide layout topology", async () => {
@@ -1369,8 +1272,6 @@ describe("direct pptx writer", () => {
 
   test("support XML consumes projected ids instead of inventing support ids", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "support-relationship-ids.pptx");
 
     deck.slide({ name: "Relationship ids" }, () => (
       <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Relationships</p>
@@ -1448,25 +1349,20 @@ describe("direct pptx writer", () => {
       }),
     );
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const presentationXml = zipEntry(zip, "ppt/presentation.xml");
-      const presentationRelsXml = zipEntry(zip, "ppt/_rels/presentation.xml.rels");
-      const masterXml = zipEntry(zip, "ppt/slideMasters/slideMaster1.xml");
-      const masterRelsXml = zipEntry(zip, "ppt/slideMasters/_rels/slideMaster1.xml.rels");
+    const zip = unzipSync(content);
+    const presentationXml = zipEntry(zip, "ppt/presentation.xml");
+    const presentationRelsXml = zipEntry(zip, "ppt/_rels/presentation.xml.rels");
+    const masterXml = zipEntry(zip, "ppt/slideMasters/slideMaster1.xml");
+    const masterRelsXml = zipEntry(zip, "ppt/slideMasters/_rels/slideMaster1.xml.rels");
 
-      expect(presentationXml).toContain('<p:sldMasterId id="2147483700" r:id="rIdModelMaster"/>');
-      expect(presentationXml).toContain('<p:sldId id="256" r:id="rIdModelSlide"/>');
-      expect(presentationRelsXml).toContain('Id="rIdModelMaster"');
-      expect(presentationRelsXml).toContain('Id="rIdModelSlide"');
-      expect(masterXml).toContain('<p:sldLayoutId id="2147483701" r:id="rIdModelLayout"/>');
-      expect(masterRelsXml).toContain('Id="rIdModelLayout"');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(presentationXml).toContain('<p:sldMasterId id="2147483700" r:id="rIdModelMaster"/>');
+    expect(presentationXml).toContain('<p:sldId id="256" r:id="rIdModelSlide"/>');
+    expect(presentationRelsXml).toContain('Id="rIdModelMaster"');
+    expect(presentationRelsXml).toContain('Id="rIdModelSlide"');
+    expect(masterXml).toContain('<p:sldLayoutId id="2147483701" r:id="rIdModelLayout"/>');
+    expect(masterRelsXml).toContain('Id="rIdModelLayout"');
   });
 
   test("support XML emitters reject missing projected relationship ids", async () => {
@@ -2272,8 +2168,6 @@ describe("direct pptx writer", () => {
 
   test("output serializes structured manifest payloads from a defined projection", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "manifest-payloads.pptx");
 
     deck.slide({ name: "Manifest payloads" }, () => (
       <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Manifest payloads</p>
@@ -2322,27 +2216,22 @@ describe("direct pptx writer", () => {
       }),
     );
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const contentTypesXml = zipEntry(zip, "[Content_Types].xml");
-      const rootRelsXml = zipEntry(zip, "_rels/.rels");
+    const zip = unzipSync(content);
+    const contentTypesXml = zipEntry(zip, "[Content_Types].xml");
+    const rootRelsXml = zipEntry(zip, "_rels/.rels");
 
-      expect(contentTypesXml).toContain(
-        '<Default Extension="deckjsx" ContentType="application/vnd.deckjsx.manifest-test"/>',
-      );
-      expect(contentTypesXml).toContain(
-        '<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>',
-      );
-      expect(rootRelsXml).toContain('Id="rIdManifestPayload"');
-      expect(rootRelsXml).toContain('Type="https://deckjsx.dev/relationships/manifest-test"');
-      expect(rootRelsXml).toContain('Target="https://deckjsx.dev/manifest"');
-      expect(rootRelsXml).toContain('TargetMode="External"');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(contentTypesXml).toContain(
+      '<Default Extension="deckjsx" ContentType="application/vnd.deckjsx.manifest-test"/>',
+    );
+    expect(contentTypesXml).toContain(
+      '<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>',
+    );
+    expect(rootRelsXml).toContain('Id="rIdManifestPayload"');
+    expect(rootRelsXml).toContain('Type="https://deckjsx.dev/relationships/manifest-test"');
+    expect(rootRelsXml).toContain('Target="https://deckjsx.dev/manifest"');
+    expect(rootRelsXml).toContain('TargetMode="External"');
   });
 
   test("manifest XML emitters reject malformed content type and relationship payloads", async () => {
@@ -2452,8 +2341,6 @@ describe("direct pptx writer", () => {
 
   test("output serializes media bytes from structured media payload source", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "media-payload-source.pptx");
     const replacement = "replacement-media-bytes";
 
     deck.slide({ name: "Media payload" }, () => (
@@ -2486,22 +2373,15 @@ describe("direct pptx writer", () => {
       }),
     );
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
+    const zip = unzipSync(content);
 
-      expect(strFromU8(zip[mediaPart.path]!)).toBe(replacement);
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(strFromU8(zip[mediaPart.path]!)).toBe(replacement);
   });
 
   test("output serializes structured theme payload from a defined projection", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "custom-theme-payload.pptx");
 
     deck.slide({ name: "Theme payload" }, () => <></>);
     const projection = (await deck.project()).projection!;
@@ -2536,23 +2416,18 @@ describe("direct pptx writer", () => {
       }),
     );
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const themeXml = zipEntry(zip, "ppt/theme/theme1.xml");
+    const zip = unzipSync(content);
+    const themeXml = zipEntry(zip, "ppt/theme/theme1.xml");
 
-      expect(themeXml).toContain('name="custom-deckjsx-theme"');
-      expect(themeXml).toContain('<a:clrScheme name="custom-colors">');
-      expect(themeXml).toContain('<a:accent1><a:srgbClr val="123456"/></a:accent1>');
-      expect(themeXml).toContain('<a:fontScheme name="custom-fonts">');
-      expect(themeXml).toContain('<a:latin typeface="Inter Display"/>');
-      expect(themeXml).toContain('<a:latin typeface="Inter"/>');
-      expect(themeXml).toContain('<a:fmtScheme name="custom-format">');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(themeXml).toContain('name="custom-deckjsx-theme"');
+    expect(themeXml).toContain('<a:clrScheme name="custom-colors">');
+    expect(themeXml).toContain('<a:accent1><a:srgbClr val="123456"/></a:accent1>');
+    expect(themeXml).toContain('<a:fontScheme name="custom-fonts">');
+    expect(themeXml).toContain('<a:latin typeface="Inter Display"/>');
+    expect(themeXml).toContain('<a:latin typeface="Inter"/>');
+    expect(themeXml).toContain('<a:fmtScheme name="custom-format">');
   });
 
   test("theme XML emitter rejects incomplete theme scheme payloads", async () => {
@@ -2610,45 +2485,36 @@ describe("direct pptx writer", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
       theme: new Theme({ defaults: { p: { color: "#2563EB", fontFamily: "Aptos" } } }),
     });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "theme-reference-serialization.pptx");
 
     deck.slide({ name: "Theme reference serialization" }, () => (
       <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Theme reference</p>
     ));
 
-    try {
-      const project = await deck.project();
-      const themePayload = project.projection?.parts.find((part) => part.kind === "theme")
-        ?.payload as PptxThemePartPayload | undefined;
+    const project = await deck.project();
+    const themePayload = project.projection?.parts.find((part) => part.kind === "theme")
+      ?.payload as PptxThemePartPayload | undefined;
 
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(project.ok).toBe(true);
-      expect(themePayload?.projection.trace.referenceSerialization).toContainEqual(
-        expect.objectContaining({
-          property: "color",
-          currentSerialization: "srgbClr",
-          decision: "deferThemeReferenceSerialization",
-          candidate: expect.objectContaining({ kind: "schemeColor", value: "accent1" }),
-        }),
-      );
-      expect(slideXml).toContain('<a:srgbClr val="2563EB"/>');
-      expect(slideXml).toContain('<a:latin typeface="Aptos"/>');
-      expect(slideXml).not.toContain('<a:schemeClr val="accent1"');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(project.ok).toBe(true);
+    expect(themePayload?.projection.trace.referenceSerialization).toContainEqual(
+      expect.objectContaining({
+        property: "color",
+        currentSerialization: "srgbClr",
+        decision: "deferThemeReferenceSerialization",
+        candidate: expect.objectContaining({ kind: "schemeColor", value: "accent1" }),
+      }),
+    );
+    expect(slideXml).toContain('<a:srgbClr val="2563EB"/>');
+    expect(slideXml).toContain('<a:latin typeface="Aptos"/>');
+    expect(slideXml).not.toContain('<a:schemeClr val="accent1"');
   });
 
   test("output emits shadow markup through the direct pptx writer", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "shadow.pptx");
 
     deck.slide({ name: "Shadow output" }, () => (
       <>
@@ -2681,28 +2547,21 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain("<a:outerShdw");
-      expect(slideXml?.match(/<a:outerShdw/g)?.length).toBeGreaterThanOrEqual(3);
-      expect(slideXml).toContain('val="2563EB"');
-      expect(slideXml).toContain('val="0F172A"');
-      expect(slideXml).toContain('val="663399"');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain("<a:outerShdw");
+    expect(slideXml?.match(/<a:outerShdw/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(slideXml).toContain('val="2563EB"');
+    expect(slideXml).toContain('val="0F172A"');
+    expect(slideXml).toContain('val="663399"');
   });
 
   test("output emits shape strokeDasharray markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "shape-stroke-dasharray.pptx");
 
     deck.slide({ name: " stroke dasharray output" }, () => (
       <>
@@ -2722,25 +2581,18 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('<a:prstDash val="sysDot"/>');
-      expect(slideXml).toContain('<a:srgbClr val="1E90FF"/>');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('<a:prstDash val="sysDot"/>');
+    expect(slideXml).toContain('<a:srgbClr val="1E90FF"/>');
   });
 
   test("output emits shape stroke shorthand dash markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "shape-stroke-shorthand-dash.pptx");
 
     deck.slide({ name: " stroke shorthand dash output" }, () => (
       <>
@@ -2758,26 +2610,19 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('<a:ln w="12700">');
-      expect(slideXml).toContain('<a:srgbClr val="2563EB"/>');
-      expect(slideXml).toContain('<a:prstDash val="dash"/>');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('<a:ln w="12700">');
+    expect(slideXml).toContain('<a:srgbClr val="2563EB"/>');
+    expect(slideXml).toContain('<a:prstDash val="dash"/>');
   });
 
   test("output emits shape stroke shorthand dotted markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "shape-stroke-shorthand-dotted.pptx");
 
     deck.slide({ name: " stroke shorthand dotted output" }, () => (
       <>
@@ -2795,26 +2640,19 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('<a:ln w="12700">');
-      expect(slideXml).toContain('<a:srgbClr val="2563EB"/>');
-      expect(slideXml).toContain('<a:prstDash val="sysDot"/>');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('<a:ln w="12700">');
+    expect(slideXml).toContain('<a:srgbClr val="2563EB"/>');
+    expect(slideXml).toContain('<a:prstDash val="sysDot"/>');
   });
 
   test("output emits strokeLinecap and strokeLinejoin markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "shape-stroke-cap-join.pptx");
 
     deck.slide({ name: " stroke cap and join output" }, () => (
       <>
@@ -2835,25 +2673,18 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('cap="sq"');
-      expect(slideXml).toContain("<a:bevel/>");
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('cap="sq"');
+    expect(slideXml).toContain("<a:bevel/>");
   });
 
   test("output emits projected border radius as rounded rectangle geometry", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "rounded-geometry.pptx");
 
     deck.slide({ name: "Rounded geometry output" }, () => (
       <>
@@ -2896,35 +2727,28 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
-      const shapeBlocks: string[] = slideXml?.match(/<p:sp>[\s\S]*?<\/p:sp>/g) ?? [];
-      const viewBlock = shapeBlocks.find((block) => block.includes('val="F8FAFC"'));
-      const textBlock = shapeBlocks.find((block) => block.includes('val="E0F2FE"'));
-      const shapeBlock = shapeBlocks.find((block) => block.includes('val="DCFCE7"'));
-      const capsuleBlock = shapeBlocks.find((block) => block.includes('val="FEE2E2"'));
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const shapeBlocks: string[] = slideXml?.match(/<p:sp>[\s\S]*?<\/p:sp>/g) ?? [];
+    const viewBlock = shapeBlocks.find((block) => block.includes('val="F8FAFC"'));
+    const textBlock = shapeBlocks.find((block) => block.includes('val="E0F2FE"'));
+    const shapeBlock = shapeBlocks.find((block) => block.includes('val="DCFCE7"'));
+    const capsuleBlock = shapeBlocks.find((block) => block.includes('val="FEE2E2"'));
 
-      expect(viewBlock).toContain('<a:prstGeom prst="roundRect">');
-      expect(viewBlock).toContain('<a:gd name="adj" fmla="val 25000"/>');
-      expect(textBlock).toContain('<a:prstGeom prst="roundRect">');
-      expect(textBlock).toContain('<a:gd name="adj" fmla="val 12500"/>');
-      expect(shapeBlock).toContain('<a:prstGeom prst="roundRect">');
-      expect(shapeBlock).toContain('<a:gd name="adj" fmla="val 37500"/>');
-      expect(capsuleBlock).toContain('<a:prstGeom prst="roundRect">');
-      expect(capsuleBlock).toContain('<a:gd name="adj" fmla="val 50000"/>');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(viewBlock).toContain('<a:prstGeom prst="roundRect">');
+    expect(viewBlock).toContain('<a:gd name="adj" fmla="val 25000"/>');
+    expect(textBlock).toContain('<a:prstGeom prst="roundRect">');
+    expect(textBlock).toContain('<a:gd name="adj" fmla="val 12500"/>');
+    expect(shapeBlock).toContain('<a:prstGeom prst="roundRect">');
+    expect(shapeBlock).toContain('<a:gd name="adj" fmla="val 37500"/>');
+    expect(capsuleBlock).toContain('<a:prstGeom prst="roundRect">');
+    expect(capsuleBlock).toContain('<a:gd name="adj" fmla="val 50000"/>');
   });
 
   test("output keeps XML fill and line patches aligned when generated shapes are interleaved", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "xml-patch-order.pptx");
 
     deck.slide({ name: "Patch order output" }, () => (
       <>
@@ -2959,54 +2783,47 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
-      const shapeBlocks: string[] = slideXml?.match(/<p:sp>[\s\S]*?<\/p:sp>/g) ?? [];
-      const backgroundLayerBlock = shapeBlocks.find(
-        (block) => block.includes('val="EF4444"') && block.includes('val="F59E0B"'),
-      );
-      const mainShapeBlock = shapeBlocks.find(
-        (block) => block.includes('val="22C55E"') && block.includes('val="0EA5E9"'),
-      );
-      const outlineBlock = shapeBlocks.find((block) => block.includes('val="111111"'));
-      const topEdgeBlock = shapeBlocks.find((block) => block.includes('val="222222"'));
-      const viewStrokeBlock = shapeBlocks.find((block) => block.includes('val="1E90FF"'));
-      const blockIndex = (block: string | undefined) => (block ? shapeBlocks.indexOf(block) : -1);
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const shapeBlocks: string[] = slideXml?.match(/<p:sp>[\s\S]*?<\/p:sp>/g) ?? [];
+    const backgroundLayerBlock = shapeBlocks.find(
+      (block) => block.includes('val="EF4444"') && block.includes('val="F59E0B"'),
+    );
+    const mainShapeBlock = shapeBlocks.find(
+      (block) => block.includes('val="22C55E"') && block.includes('val="0EA5E9"'),
+    );
+    const outlineBlock = shapeBlocks.find((block) => block.includes('val="111111"'));
+    const topEdgeBlock = shapeBlocks.find((block) => block.includes('val="222222"'));
+    const viewStrokeBlock = shapeBlocks.find((block) => block.includes('val="1E90FF"'));
+    const blockIndex = (block: string | undefined) => (block ? shapeBlocks.indexOf(block) : -1);
 
-      expect(slideXml).toBeDefined();
-      expect(backgroundLayerBlock).toBeDefined();
-      expect(mainShapeBlock).toBeDefined();
-      expect(outlineBlock).toBeDefined();
-      expect(topEdgeBlock).toBeDefined();
-      expect(viewStrokeBlock).toBeDefined();
-      expect(shapeBlocks.filter((block) => block.includes('val="EF4444"'))).toHaveLength(1);
-      expect(shapeBlocks.filter((block) => block.includes('val="111111"'))).toHaveLength(1);
-      expect(shapeBlocks.filter((block) => block.includes('val="222222"'))).toHaveLength(1);
-      expect(backgroundLayerBlock).toContain("<a:gradFill");
-      expect(backgroundLayerBlock).not.toContain('cap="sq"');
-      expect(mainShapeBlock).toContain("<a:gradFill");
-      expect(mainShapeBlock).toContain('cap="rnd"');
-      expect(viewStrokeBlock).toContain('cap="sq"');
-      expect(viewStrokeBlock).toContain("<a:bevel/>");
-      expect(outlineBlock).not.toContain('val="EF4444"');
-      expect(topEdgeBlock).not.toContain('val="22C55E"');
-      expect(blockIndex(backgroundLayerBlock)).toBeLessThan(blockIndex(topEdgeBlock));
-      expect(blockIndex(topEdgeBlock)).toBeLessThan(blockIndex(viewStrokeBlock));
-      expect(blockIndex(viewStrokeBlock)).toBeLessThan(blockIndex(outlineBlock));
-      expect(blockIndex(outlineBlock)).toBeLessThan(blockIndex(mainShapeBlock));
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(backgroundLayerBlock).toBeDefined();
+    expect(mainShapeBlock).toBeDefined();
+    expect(outlineBlock).toBeDefined();
+    expect(topEdgeBlock).toBeDefined();
+    expect(viewStrokeBlock).toBeDefined();
+    expect(shapeBlocks.filter((block) => block.includes('val="EF4444"'))).toHaveLength(1);
+    expect(shapeBlocks.filter((block) => block.includes('val="111111"'))).toHaveLength(1);
+    expect(shapeBlocks.filter((block) => block.includes('val="222222"'))).toHaveLength(1);
+    expect(backgroundLayerBlock).toContain("<a:gradFill");
+    expect(backgroundLayerBlock).not.toContain('cap="sq"');
+    expect(mainShapeBlock).toContain("<a:gradFill");
+    expect(mainShapeBlock).toContain('cap="rnd"');
+    expect(viewStrokeBlock).toContain('cap="sq"');
+    expect(viewStrokeBlock).toContain("<a:bevel/>");
+    expect(outlineBlock).not.toContain('val="EF4444"');
+    expect(topEdgeBlock).not.toContain('val="22C55E"');
+    expect(blockIndex(backgroundLayerBlock)).toBeLessThan(blockIndex(topEdgeBlock));
+    expect(blockIndex(topEdgeBlock)).toBeLessThan(blockIndex(viewStrokeBlock));
+    expect(blockIndex(viewStrokeBlock)).toBeLessThan(blockIndex(outlineBlock));
+    expect(blockIndex(outlineBlock)).toBeLessThan(blockIndex(mainShapeBlock));
   });
 
   test("output preserves zIndex order, skips visibility hidden, and applies image opacity", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "visual-controls.pptx");
 
     deck.slide({ name: "Visual controls" }, () => (
       <>
@@ -3023,33 +2840,26 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
+    expect(slideXml).toBeDefined();
 
-      const backIndex = slideXml!.indexOf(">Back<");
-      const middleIndex = slideXml!.indexOf(">Middle<");
-      const frontIndex = slideXml!.indexOf(">Front<");
+    const backIndex = slideXml!.indexOf(">Back<");
+    const middleIndex = slideXml!.indexOf(">Middle<");
+    const frontIndex = slideXml!.indexOf(">Front<");
 
-      expect(backIndex).toBeGreaterThanOrEqual(0);
-      expect(middleIndex).toBeGreaterThan(backIndex);
-      expect(frontIndex).toBeGreaterThan(middleIndex);
-      expect(slideXml).not.toContain(">Hidden<");
-      expect(slideXml).toContain('<a:alphaModFix amt="25000"/>');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(backIndex).toBeGreaterThanOrEqual(0);
+    expect(middleIndex).toBeGreaterThan(backIndex);
+    expect(frontIndex).toBeGreaterThan(middleIndex);
+    expect(slideXml).not.toContain(">Hidden<");
+    expect(slideXml).toContain('<a:alphaModFix amt="25000"/>');
   });
 
   test("output omits fully clipped children for overflow hidden containers", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "overflow-hidden.pptx");
 
     deck.slide({ name: "Overflow hidden output" }, () => (
       <>
@@ -3069,25 +2879,18 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain(">Clip me<");
-      expect(slideXml).not.toContain(">Drop me<");
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain(">Clip me<");
+    expect(slideXml).not.toContain(">Drop me<");
   });
 
   test("output adjusts clipped image source rects for overflow hidden containers", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "overflow-hidden-image.pptx");
 
     deck.slide({ name: "Overflow hidden image output" }, () => (
       <>
@@ -3109,24 +2912,17 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('<a:srcRect l="16667" r="16667" t="0" b="0"/>');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('<a:srcRect l="16667" r="16667" t="0" b="0"/>');
   });
 
   test("output cascades group opacity to descendant text, image, and shape nodes", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "opacity-cascade.pptx");
 
     deck.slide({ name: "Opacity cascade" }, () => (
       <>
@@ -3144,26 +2940,19 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('<a:alpha val="50000"/>');
-      expect(slideXml).toContain('<a:alphaModFix amt="25000"/>');
-      expect(slideXml).toContain('<a:srgbClr val="2563EB"><a:alpha val="50000"/></a:srgbClr>');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('<a:alpha val="50000"/>');
+    expect(slideXml).toContain('<a:alphaModFix amt="25000"/>');
+    expect(slideXml).toContain('<a:srgbClr val="2563EB"><a:alpha val="50000"/></a:srgbClr>');
   });
 
   test("output applies image fit, objectPosition, and crop controls", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "image-controls.pptx");
 
     deck.slide({ name: " controls output" }, () => (
       <>
@@ -3202,26 +2991,19 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('<a:srcRect l="0" r="0" t="-100000" b="0"/>');
-      expect(slideXml).toContain('<a:srcRect l="75000" r="0" t="0" b="0"/>');
-      expect(slideXml).toContain('<a:srcRect l="10000" r="20000" t="0" b="40000"/>');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('<a:srcRect l="0" r="0" t="-100000" b="0"/>');
+    expect(slideXml).toContain('<a:srcRect l="75000" r="0" t="0" b="0"/>');
+    expect(slideXml).toContain('<a:srcRect l="10000" r="20000" t="0" b="40000"/>');
   });
 
   test("output applies edge-offset and length-based objectPosition controls", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "image-position-offsets.pptx");
 
     deck.slide({ name: " position offsets output" }, () => (
       <>
@@ -3250,25 +3032,18 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('<a:srcRect l="56250" r="18750" t="0" b="0"/>');
-      expect(slideXml).toContain('<a:srcRect l="0" r="0" t="-87500" b="-12500"/>');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('<a:srcRect l="56250" r="18750" t="0" b="0"/>');
+    expect(slideXml).toContain('<a:srcRect l="0" r="0" t="-87500" b="-12500"/>');
   });
 
   test("output emits gradient fill markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "gradient-fill.pptx");
 
     deck.slide(
       {
@@ -3312,34 +3087,27 @@ describe("direct pptx writer", () => {
       ),
     );
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain("<a:gradFill");
-      expect(slideXml?.match(/<a:gradFill/g)?.length).toBeGreaterThanOrEqual(4);
-      expect(slideXml).toContain('ang="5400000"');
-      expect(slideXml).toContain('ang="10800000"');
-      expect(slideXml).toContain('ang="2700000"');
-      expect(slideXml).toContain('val="2563EB"');
-      expect(slideXml).toContain('val="F97316"');
-      expect(slideXml).toContain('val="22C55E"');
-      expect(slideXml).toContain('val="0EA5E9"');
-      expect(slideXml).toContain('val="EF4444"');
-      expect(slideXml).toContain('val="F59E0B"');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain("<a:gradFill");
+    expect(slideXml?.match(/<a:gradFill/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(slideXml).toContain('ang="5400000"');
+    expect(slideXml).toContain('ang="10800000"');
+    expect(slideXml).toContain('ang="2700000"');
+    expect(slideXml).toContain('val="2563EB"');
+    expect(slideXml).toContain('val="F97316"');
+    expect(slideXml).toContain('val="22C55E"');
+    expect(slideXml).toContain('val="0EA5E9"');
+    expect(slideXml).toContain('val="EF4444"');
+    expect(slideXml).toContain('val="F59E0B"');
   });
 
   test("output emits background gradient markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "background-image-gradient.pptx");
 
     deck.slide(
       {
@@ -3383,29 +3151,22 @@ describe("direct pptx writer", () => {
       ),
     );
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain("<a:gradFill");
-      expect(slideXml?.match(/<a:gradFill/g)?.length).toBeGreaterThanOrEqual(4);
-      expect(slideXml).toContain('val="2563EB"');
-      expect(slideXml).toContain('val="22C55E"');
-      expect(slideXml).toContain('val="0F172A"');
-      expect(slideXml).toContain('val="EF4444"');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain("<a:gradFill");
+    expect(slideXml?.match(/<a:gradFill/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(slideXml).toContain('val="2563EB"');
+    expect(slideXml).toContain('val="22C55E"');
+    expect(slideXml).toContain('val="0F172A"');
+    expect(slideXml).toContain('val="EF4444"');
   });
 
   test("output emits background image layer markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "background-image-layers.pptx");
 
     deck.slide(
       {
@@ -3433,28 +3194,21 @@ describe("direct pptx writer", () => {
       ),
     );
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml?.match(/<p:pic>/g)?.length).toBeGreaterThanOrEqual(2);
-      expect(slideXml).toContain('<a:srcRect l="0" r="0" t="-12500" b="0"/>');
-      expect(slideXml).toContain('<a:srcRect l="50000" r="0" t="0" b="0"/>');
-      expect(slideXml).toContain('val="111111"');
-      expect(slideXml).toContain('val="333333"');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml?.match(/<p:pic>/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(slideXml).toContain('<a:srcRect l="0" r="0" t="-12500" b="0"/>');
+    expect(slideXml).toContain('<a:srcRect l="50000" r="0" t="0" b="0"/>');
+    expect(slideXml).toContain('val="111111"');
+    expect(slideXml).toContain('val="333333"');
   });
 
   test("output emits repeated background image layer markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "background-repeat-layers.pptx");
 
     deck.slide({ name: "Background repeat output" }, () => (
       <>
@@ -3485,28 +3239,21 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml?.match(/<p:pic>/g)?.length).toBeGreaterThanOrEqual(4);
-      expect(slideXml).toContain('<a:off x="914400" y="914400"/>');
-      expect(slideXml).toContain('<a:off x="914400" y="1828800"/>');
-      expect(slideXml).toContain('<a:off x="3657600" y="914400"/>');
-      expect(slideXml).toContain('<a:off x="4572000" y="914400"/>');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml?.match(/<p:pic>/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(slideXml).toContain('<a:off x="914400" y="914400"/>');
+    expect(slideXml).toContain('<a:off x="914400" y="1828800"/>');
+    expect(slideXml).toContain('<a:off x="3657600" y="914400"/>');
+    expect(slideXml).toContain('<a:off x="4572000" y="914400"/>');
   });
 
   test("output emits background shorthand image layer markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "background-shorthand-image-layers.pptx");
 
     deck.slide(
       {
@@ -3530,29 +3277,22 @@ describe("direct pptx writer", () => {
       ),
     );
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml?.match(/<p:pic>/g)?.length).toBeGreaterThanOrEqual(3);
-      expect(slideXml).toContain('val="111111"');
-      expect(slideXml).toContain('val="333333"');
-      expect(slideXml).toContain('<a:srcRect l="0" r="0" t="-12500" b="0"/>');
-      expect(slideXml).toContain('<a:off x="914400" y="914400"/>');
-      expect(slideXml).toContain('<a:off x="1828800" y="914400"/>');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml?.match(/<p:pic>/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(slideXml).toContain('val="111111"');
+    expect(slideXml).toContain('val="333333"');
+    expect(slideXml).toContain('<a:srcRect l="0" r="0" t="-12500" b="0"/>');
+    expect(slideXml).toContain('<a:off x="914400" y="914400"/>');
+    expect(slideXml).toContain('<a:off x="1828800" y="914400"/>');
   });
 
   test("output emits explicit backgroundSize image layer markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "background-explicit-size.pptx");
 
     deck.slide({ name: "Explicit background size output" }, () => (
       <>
@@ -3581,27 +3321,20 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('<a:off x="2743200" y="1828800"/>');
-      expect(slideXml).toContain('<a:ext cx="1828800" cy="914400"/>');
-      expect(slideXml).toContain('<a:off x="914400" y="3200400"/>');
-      expect(slideXml).toContain('<a:ext cx="1371600" cy="685800"/>');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('<a:off x="2743200" y="1828800"/>');
+    expect(slideXml).toContain('<a:ext cx="1828800" cy="914400"/>');
+    expect(slideXml).toContain('<a:off x="914400" y="3200400"/>');
+    expect(slideXml).toContain('<a:ext cx="1371600" cy="685800"/>');
   });
 
   test("output emits intrinsic auto backgroundSize image layer markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "background-auto-size.pptx");
 
     deck.slide({ name: "Auto background size output" }, () => (
       <>
@@ -3619,25 +3352,18 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('<a:off x="3619500" y="2266950"/>');
-      expect(slideXml).toContain('<a:ext cx="952500" cy="476250"/>');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('<a:off x="3619500" y="2266950"/>');
+    expect(slideXml).toContain('<a:ext cx="952500" cy="476250"/>');
   });
 
   test("output emits backgroundClip image layer markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "background-clip-image.pptx");
 
     deck.slide({ name: "Background clip output" }, () => (
       <>
@@ -3658,28 +3384,21 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('<a:off x="1374775" y="1374775"/>');
-      expect(slideXml).toContain('<a:ext cx="2736850" cy="908050"/>');
-      expect(slideXml).toContain(
-        '<a:srcRect l="12587" r="12587" t="25174" b="25174"/><a:stretch><a:fillRect/></a:stretch>',
-      );
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('<a:off x="1374775" y="1374775"/>');
+    expect(slideXml).toContain('<a:ext cx="2736850" cy="908050"/>');
+    expect(slideXml).toContain(
+      '<a:srcRect l="12587" r="12587" t="25174" b="25174"/><a:stretch><a:fillRect/></a:stretch>',
+    );
   });
 
   test("output emits backgroundOrigin image layer markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "background-origin-image.pptx");
 
     deck.slide({ name: "Background origin output" }, () => (
       <>
@@ -3701,28 +3420,21 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('<a:off x="1374775" y="1374775"/>');
-      expect(slideXml).toContain('<a:ext cx="2736850" cy="908050"/>');
-      expect(slideXml).toContain(
-        '<a:srcRect l="12522" r="12522" t="25087" b="25087"/><a:stretch><a:fillRect/></a:stretch>',
-      );
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('<a:off x="1374775" y="1374775"/>');
+    expect(slideXml).toContain('<a:ext cx="2736850" cy="908050"/>');
+    expect(slideXml).toContain(
+      '<a:srcRect l="12522" r="12522" t="25087" b="25087"/><a:stretch><a:fillRect/></a:stretch>',
+    );
   });
 
   test("output emits background shorthand visual-box image layer markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "background-shorthand-boxes-image.pptx");
 
     deck.slide({ name: "Background shorthand boxes output" }, () => (
       <>
@@ -3741,28 +3453,21 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('<a:off x="1374775" y="1374775"/>');
-      expect(slideXml).toContain('<a:ext cx="2736850" cy="908050"/>');
-      expect(slideXml).toContain(
-        '<a:srcRect l="12522" r="12522" t="25087" b="25087"/><a:stretch><a:fillRect/></a:stretch>',
-      );
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('<a:off x="1374775" y="1374775"/>');
+    expect(slideXml).toContain('<a:ext cx="2736850" cy="908050"/>');
+    expect(slideXml).toContain(
+      '<a:srcRect l="12522" r="12522" t="25087" b="25087"/><a:stretch><a:fillRect/></a:stretch>',
+    );
   });
 
   test("output emits backgroundClip gradient fill markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "background-clip-gradient-fill.pptx");
 
     deck.slide({ name: "Background clip gradient output" }, () => (
       <>
@@ -3782,27 +3487,20 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('<a:off x="1374775" y="1374775"/>');
-      expect(slideXml).toContain('<a:ext cx="2736850" cy="908050"/>');
-      expect(slideXml).toContain('val="111111"');
-      expect(slideXml).toContain('val="333333"');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('<a:off x="1374775" y="1374775"/>');
+    expect(slideXml).toContain('<a:ext cx="2736850" cy="908050"/>');
+    expect(slideXml).toContain('val="111111"');
+    expect(slideXml).toContain('val="333333"');
   });
 
   test("output emits backgroundOrigin gradient fill markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "background-origin-gradient-fill.pptx");
 
     deck.slide({ name: "Background origin gradient output" }, () => (
       <>
@@ -3823,26 +3521,19 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('<a:off x="1374775" y="1374775"/>');
-      expect(slideXml).toContain('<a:ext cx="2736850" cy="908050"/>');
-      expect(slideXml).toContain('<a:gs pos="50174">');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('<a:off x="1374775" y="1374775"/>');
+    expect(slideXml).toContain('<a:ext cx="2736850" cy="908050"/>');
+    expect(slideXml).toContain('<a:gs pos="50174">');
   });
 
   test("output emits background shorthand visual-box gradient fill markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "background-shorthand-gradient-boxes.pptx");
 
     deck.slide({ name: "Background shorthand gradient boxes output" }, () => (
       <>
@@ -3861,26 +3552,19 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('<a:off x="1374775" y="1374775"/>');
-      expect(slideXml).toContain('<a:ext cx="2736850" cy="908050"/>');
-      expect(slideXml).toContain('<a:gs pos="50174">');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('<a:off x="1374775" y="1374775"/>');
+    expect(slideXml).toContain('<a:ext cx="2736850" cy="908050"/>');
+    expect(slideXml).toContain('<a:gs pos="50174">');
   });
 
   test("output emits background shorthand gradient layer color fallback markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "background-shorthand-gradient-fallback.pptx");
 
     deck.slide({ name: "Background shorthand gradient fallback output" }, () => (
       <>
@@ -3900,27 +3584,20 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('<a:off x="1374775" y="1374775"/>');
-      expect(slideXml).toContain('<a:ext cx="2736850" cy="908050"/>');
-      expect(slideXml).toContain('val="AAAAAA"');
-      expect(slideXml).toContain('<a:gs pos="50174">');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('<a:off x="1374775" y="1374775"/>');
+    expect(slideXml).toContain('<a:ext cx="2736850" cy="908050"/>');
+    expect(slideXml).toContain('val="AAAAAA"');
+    expect(slideXml).toContain('<a:gs pos="50174">');
   });
 
   test("output emits per-layer backgroundOrigin and backgroundClip list markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "background-layer-boxes.pptx");
 
     deck.slide({ name: "Background layer boxes output" }, () => (
       <>
@@ -3942,30 +3619,23 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml?.match(/<a:gradFill/g)?.length).toBeGreaterThanOrEqual(2);
-      expect(slideXml).toContain('<a:off x="917575" y="917575"/>');
-      expect(slideXml).toContain('<a:ext cx="3651250" cy="1822450"/>');
-      expect(slideXml).toContain('<a:off x="1374775" y="1374775"/>');
-      expect(slideXml).toContain('<a:ext cx="2736850" cy="908050"/>');
-      expect(slideXml).toContain('<a:gs pos="50000">');
-      expect(slideXml).toContain('<a:gs pos="50174">');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml?.match(/<a:gradFill/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(slideXml).toContain('<a:off x="917575" y="917575"/>');
+    expect(slideXml).toContain('<a:ext cx="3651250" cy="1822450"/>');
+    expect(slideXml).toContain('<a:off x="1374775" y="1374775"/>');
+    expect(slideXml).toContain('<a:ext cx="2736850" cy="908050"/>');
+    expect(slideXml).toContain('<a:gs pos="50000">');
+    expect(slideXml).toContain('<a:gs pos="50174">');
   });
 
   test("output emits transformOrigin-adjusted markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "transform-origin.pptx");
 
     deck.slide({ name: "Transform origin output" }, () => (
       <>
@@ -3995,28 +3665,21 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('<a:off x="914400" y="914400"/>');
-      expect(slideXml).toContain('<a:ext cx="3657600" cy="457200"/>');
-      expect(slideXml).toContain('<a:off x="3200400" y="-457200"/>');
-      expect(slideXml).toContain('<a:ext cx="1828800" cy="914400"/>');
-      expect(slideXml).toContain('rot="5400000"');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('<a:off x="914400" y="914400"/>');
+    expect(slideXml).toContain('<a:ext cx="3657600" cy="457200"/>');
+    expect(slideXml).toContain('<a:off x="3200400" y="-457200"/>');
+    expect(slideXml).toContain('<a:ext cx="1828800" cy="914400"/>');
+    expect(slideXml).toContain('rot="5400000"');
   });
 
   test("output emits skew-adjusted bounding box markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "transform-skew.pptx");
 
     deck.slide({ name: "Skew output" }, () => (
       <>
@@ -4046,27 +3709,20 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('<a:off x="914400" y="914400"/>');
-      expect(slideXml).toContain('<a:ext cx="2743200" cy="914400"/>');
-      expect(slideXml).toContain('<a:off x="3657600" y="914400"/>');
-      expect(slideXml).toContain('<a:ext cx="914400" cy="1828800"/>');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('<a:off x="914400" y="914400"/>');
+    expect(slideXml).toContain('<a:ext cx="2743200" cy="914400"/>');
+    expect(slideXml).toContain('<a:off x="3657600" y="914400"/>');
+    expect(slideXml).toContain('<a:ext cx="914400" cy="1828800"/>');
   });
 
   test("output emits matrix-adjusted bounding box markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "transform-matrix.pptx");
 
     deck.slide({ name: "Matrix output" }, () => (
       <>
@@ -4084,25 +3740,18 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('<a:off x="1828800" y="1371600"/>');
-      expect(slideXml).toContain('<a:ext cx="2057400" cy="1828800"/>');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('<a:off x="1828800" y="1371600"/>');
+    expect(slideXml).toContain('<a:ext cx="2057400" cy="1828800"/>');
   });
 
   test("output emits radial-gradient fill markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "radial-gradient-fill.pptx");
 
     deck.slide(
       {
@@ -4151,34 +3800,27 @@ describe("direct pptx writer", () => {
       ),
     );
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain("<a:gradFill");
-      expect(slideXml).toContain('<a:path path="circle">');
-      expect(slideXml?.match(/<a:path path="circle">/g)?.length).toBeGreaterThanOrEqual(4);
-      expect(slideXml).toContain('fillToRect l="5000" t="45000" r="55000" b="-5000"');
-      expect(slideXml).toContain('fillToRect l="50000" t="0" r="0" b="50000"');
-      expect(slideXml).toContain('fillToRect l="0" t="0" r="0" b="0"');
-      expect(slideXml).toContain('fillToRect l="-20000" t="-10000" r="40000" b="30000"');
-      expect(slideXml).toContain('val="2563EB"');
-      expect(slideXml).toContain('val="0EA5E9"');
-      expect(slideXml).toContain('val="0F172A"');
-      expect(slideXml).toContain('val="EF4444"');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain("<a:gradFill");
+    expect(slideXml).toContain('<a:path path="circle">');
+    expect(slideXml?.match(/<a:path path="circle">/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(slideXml).toContain('fillToRect l="5000" t="45000" r="55000" b="-5000"');
+    expect(slideXml).toContain('fillToRect l="50000" t="0" r="0" b="50000"');
+    expect(slideXml).toContain('fillToRect l="0" t="0" r="0" b="0"');
+    expect(slideXml).toContain('fillToRect l="-20000" t="-10000" r="40000" b="30000"');
+    expect(slideXml).toContain('val="2563EB"');
+    expect(slideXml).toContain('val="0EA5E9"');
+    expect(slideXml).toContain('val="0F172A"');
+    expect(slideXml).toContain('val="EF4444"');
   });
 
   test("output emits repeating gradient fill markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "repeating-gradient-fill.pptx");
 
     deck.slide(
       {
@@ -4203,28 +3845,21 @@ describe("direct pptx writer", () => {
       ),
     );
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml?.match(/<a:gs pos="/g)?.length).toBeGreaterThanOrEqual(10);
-      expect(slideXml).toContain('pos="75000"');
-      expect(slideXml).toContain('val="EEEEEE"');
-      expect(slideXml).toContain('val="F59E0B"');
-      expect(slideXml).toContain('<a:path path="circle">');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml?.match(/<a:gs pos="/g)?.length).toBeGreaterThanOrEqual(10);
+    expect(slideXml).toContain('pos="75000"');
+    expect(slideXml).toContain('val="EEEEEE"');
+    expect(slideXml).toContain('val="F59E0B"');
+    expect(slideXml).toContain('<a:path path="circle">');
   });
 
   test("output emits length-based gradient stop positions", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "gradient-length-stops.pptx");
 
     deck.slide({ name: "Length stop output" }, () => (
       <>
@@ -4250,27 +3885,20 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('pos="50000"');
-      expect(slideXml).toContain('val="777777"');
-      expect(slideXml).toContain('val="F59E0B"');
-      expect(slideXml).toContain('val="FDE68A"');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('pos="50000"');
+    expect(slideXml).toContain('val="777777"');
+    expect(slideXml).toContain('val="F59E0B"');
+    expect(slideXml).toContain('val="FDE68A"');
   });
 
   test("output emits multi-position stops and color hints", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "gradient-hints.pptx");
 
     deck.slide({ name: "Gradient hints output" }, () => (
       <>
@@ -4286,27 +3914,20 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('pos="50000"');
-      expect(slideXml).toContain('pos="75000"');
-      expect(slideXml).toContain('val="800080"');
-      expect(slideXml?.match(/val="FF0000"/g)?.length).toBeGreaterThanOrEqual(2);
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('pos="50000"');
+    expect(slideXml).toContain('pos="75000"');
+    expect(slideXml).toContain('val="800080"');
+    expect(slideXml?.match(/val="FF0000"/g)?.length).toBeGreaterThanOrEqual(2);
   });
 
   test("output emits multiple background layer markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "multiple-background-layers.pptx");
 
     deck.slide(
       {
@@ -4332,33 +3953,26 @@ describe("direct pptx writer", () => {
       ),
     );
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml?.match(/<a:gradFill/g)?.length).toBeGreaterThanOrEqual(4);
-      expect(slideXml).toContain('ang="5400000"');
-      expect(slideXml).toContain('ang="10800000"');
-      expect(slideXml).toContain('ang="2700000"');
-      expect(slideXml).toContain('val="FF0000"');
-      expect(slideXml).toContain('val="00FF00"');
-      expect(slideXml).toContain('val="0000FF"');
-      expect(slideXml).toContain('val="123456"');
-      expect(slideXml).toContain('val="ABCDEF"');
-      expect(slideXml).toContain('val="FEDCBA"');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml?.match(/<a:gradFill/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(slideXml).toContain('ang="5400000"');
+    expect(slideXml).toContain('ang="10800000"');
+    expect(slideXml).toContain('ang="2700000"');
+    expect(slideXml).toContain('val="FF0000"');
+    expect(slideXml).toContain('val="00FF00"');
+    expect(slideXml).toContain('val="0000FF"');
+    expect(slideXml).toContain('val="123456"');
+    expect(slideXml).toContain('val="ABCDEF"');
+    expect(slideXml).toContain('val="FEDCBA"');
   });
 
   test("output emits transform translation, scale, rotation, and flip markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "transform-aliases.pptx");
 
     deck.slide({ name: "Transform output" }, () => (
       <>
@@ -4376,28 +3990,21 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('rot="900000"');
-      expect(slideXml).toContain('flipH="1"');
-      expect(slideXml).toContain('flipV="1"');
-      expect(slideXml).toContain('<a:off x="914400" y="1143000"/>');
-      expect(slideXml).toContain('<a:ext cx="3657600" cy="1371600"/>');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('rot="900000"');
+    expect(slideXml).toContain('flipH="1"');
+    expect(slideXml).toContain('flipV="1"');
+    expect(slideXml).toContain('<a:off x="914400" y="1143000"/>');
+    expect(slideXml).toContain('<a:ext cx="3657600" cy="1371600"/>');
   });
 
   test("output emits text direction, hyperlinks, and baseline variants", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "text-semantics.pptx");
 
     deck.slide({ name: " semantics output" }, () => (
       <>
@@ -4441,33 +4048,26 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
-      const relsXml = zipEntry(zip, "ppt/slides/_rels/slide1.xml.rels");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const relsXml = zipEntry(zip, "ppt/slides/_rels/slide1.xml.rels");
 
-      expect(slideXml).toBeDefined();
-      expect(relsXml).toBeDefined();
-      expect(slideXml).toContain('rtl="1"');
-      expect(slideXml).toContain('baseline="30000"');
-      expect(slideXml).toContain('baseline="-40000"');
-      expect(slideXml).toContain('tooltip="Open docs"');
-      expect(slideXml).toContain('tooltip="Open image link"');
-      expect(relsXml).toContain('Target="https://example.com/docs"');
-      expect(relsXml).toContain('Target="https://example.com/image"');
-      expect(relsXml).toContain('Target="https://example.com/shape"');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(relsXml).toBeDefined();
+    expect(slideXml).toContain('rtl="1"');
+    expect(slideXml).toContain('baseline="30000"');
+    expect(slideXml).toContain('baseline="-40000"');
+    expect(slideXml).toContain('tooltip="Open docs"');
+    expect(slideXml).toContain('tooltip="Open image link"');
+    expect(relsXml).toContain('Target="https://example.com/docs"');
+    expect(relsXml).toContain('Target="https://example.com/image"');
+    expect(relsXml).toContain('Target="https://example.com/shape"');
   });
 
   test("output emits bullet and numbered list markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "lists.pptx");
 
     deck.slide({ name: "List output" }, () => (
       <>
@@ -4492,27 +4092,20 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('<a:buChar char="\u2022"/>');
-      expect(slideXml).toContain('<a:buChar char="\u25E6"/>');
-      expect(slideXml).toContain('marL="228600" indent="-228600"');
-      expect(slideXml).toContain('<a:buAutoNum type="romanUcPeriod" startAt="3"/>');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('<a:buChar char="\u2022"/>');
+    expect(slideXml).toContain('<a:buChar char="\u25E6"/>');
+    expect(slideXml).toContain('marL="228600" indent="-228600"');
+    expect(slideXml).toContain('<a:buAutoNum type="romanUcPeriod" startAt="3"/>');
   });
 
   test("output emits writingMode and underline style/color markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "typography-aliases.pptx");
 
     deck.slide({ name: "Typography aliases output" }, () => (
       <>
@@ -4533,28 +4126,21 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('vert="vert270"');
-      expect(slideXml).toContain('u="wavy"');
-      expect(slideXml).toContain(
-        '<a:uFill><a:solidFill><a:srgbClr val="FF6347"/></a:solidFill></a:uFill>',
-      );
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('vert="vert270"');
+    expect(slideXml).toContain('u="wavy"');
+    expect(slideXml).toContain(
+      '<a:uFill><a:solidFill><a:srgbClr val="FF6347"/></a:solidFill></a:uFill>',
+    );
   });
 
   test("output emits tab stop markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "tab-stops.pptx");
 
     deck.slide({ name: "Tab stops output" }, () => (
       <>
@@ -4576,27 +4162,20 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain("<a:tabLst>");
-      expect(slideXml).toContain('<a:tab pos="457200" algn="l"/>');
-      expect(slideXml).toContain('<a:tab pos="1371600" algn="ctr"/>');
-      expect(slideXml).toContain('<a:tab pos="1371600" algn="dec"/>');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain("<a:tabLst>");
+    expect(slideXml).toContain('<a:tab pos="457200" algn="l"/>');
+    expect(slideXml).toContain('<a:tab pos="1371600" algn="ctr"/>');
+    expect(slideXml).toContain('<a:tab pos="1371600" algn="dec"/>');
   });
 
   test("output emits paragraph spacing markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "paragraph-spacing.pptx");
 
     deck.slide({ name: "Paragraph spacing output" }, () => (
       <>
@@ -4631,29 +4210,22 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('<a:lnSpc><a:spcPts val="2800"/></a:lnSpc>');
-      expect(slideXml).toContain('<a:lnSpc><a:spcPct val="150000"/></a:lnSpc>');
-      expect(slideXml).toContain('<a:spcBef><a:spcPts val="1200"/></a:spcBef>');
-      expect(slideXml).toContain('<a:spcAft><a:spcPts val="1800"/></a:spcAft>');
-      expect(slideXml).toContain('<a:spcBef><a:spcPts val="1800"/></a:spcBef>');
-      expect(slideXml).toContain('<a:spcAft><a:spcPts val="3600"/></a:spcAft>');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('<a:lnSpc><a:spcPts val="2800"/></a:lnSpc>');
+    expect(slideXml).toContain('<a:lnSpc><a:spcPct val="150000"/></a:lnSpc>');
+    expect(slideXml).toContain('<a:spcBef><a:spcPts val="1200"/></a:spcBef>');
+    expect(slideXml).toContain('<a:spcAft><a:spcPts val="1800"/></a:spcAft>');
+    expect(slideXml).toContain('<a:spcBef><a:spcPts val="1800"/></a:spcBef>');
+    expect(slideXml).toContain('<a:spcAft><a:spcPts val="3600"/></a:spcAft>');
   });
 
   test("output emits character spacing markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "character-spacing.pptx");
 
     deck.slide({ name: "Character spacing output" }, () => (
       <>
@@ -4669,25 +4241,18 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('spc="150"');
-      expect(slideXml).toContain('spc="200"');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('spc="150"');
+    expect(slideXml).toContain('spc="200"');
   });
 
   test("output emits text fit and vertical alignment markup", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "text-fit-align.pptx");
 
     deck.slide({ name: " fit align output" }, () => (
       <>
@@ -4702,27 +4267,20 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain("<a:normAutofit/>");
-      expect(slideXml).toContain("<a:spAutoFit/>");
-      expect(slideXml).toContain('anchor="ctr"');
-      expect(slideXml).toContain('anchor="b"');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain("<a:normAutofit/>");
+    expect(slideXml).toContain("<a:spAutoFit/>");
+    expect(slideXml).toContain('anchor="ctr"');
+    expect(slideXml).toContain('anchor="b"');
   });
 
   test("output emits text padding as body insets", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "text-padding.pptx");
 
     deck.slide({ name: " padding output" }, () => (
       <>
@@ -4741,27 +4299,20 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('lIns="76200"');
-      expect(slideXml).toContain('tIns="152400"');
-      expect(slideXml).toContain('rIns="152400"');
-      expect(slideXml).toContain('bIns="76200"');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('lIns="76200"');
+    expect(slideXml).toContain('tIns="152400"');
+    expect(slideXml).toContain('rIns="152400"');
+    expect(slideXml).toContain('bIns="76200"');
   });
 
   test("output maps CSS textAlign values to PPTX paragraph alignment values", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "text-align.pptx");
 
     deck.slide({ name: " align output" }, () => (
       <>
@@ -4775,29 +4326,22 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('algn="ctr"');
-      expect(slideXml).toContain('algn="r"');
-      expect(slideXml).toContain('algn="just"');
-      expect(slideXml).not.toContain('algn="center"');
-      expect(slideXml).not.toContain('algn="right"');
-      expect(slideXml).not.toContain('algn="justify"');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('algn="ctr"');
+    expect(slideXml).toContain('algn="r"');
+    expect(slideXml).toContain('algn="just"');
+    expect(slideXml).not.toContain('algn="center"');
+    expect(slideXml).not.toContain('algn="right"');
+    expect(slideXml).not.toContain('algn="justify"');
   });
 
   test("output emits textIndent markup for plain and list paragraphs", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-"));
-    const output = join(tempDir, "text-indent.pptx");
 
     deck.slide({ name: " indent output" }, () => (
       <>
@@ -4818,19 +4362,14 @@ describe("direct pptx writer", () => {
       </>
     ));
 
-    try {
-      await deck.render({ output });
+    const content = await renderDeckBytes(deck);
 
-      const content = await readFile(output);
-      const zip = unzipSync(content);
-      const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
+    const zip = unzipSync(content);
+    const slideXml = zipEntry(zip, "ppt/slides/slide1.xml");
 
-      expect(slideXml).toBeDefined();
-      expect(slideXml).toContain('indent="457200" marL="0"');
-      expect(slideXml).toContain('<a:buChar char="\u25E6"/>');
-      expect(slideXml).toContain('marL="228600" indent="0"');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(slideXml).toBeDefined();
+    expect(slideXml).toContain('indent="457200" marL="0"');
+    expect(slideXml).toContain('<a:buChar char="\u25E6"/>');
+    expect(slideXml).toContain('marL="228600" indent="0"');
   });
 });

@@ -1,7 +1,13 @@
 import type { DeckOptions } from "./authoring/index";
-import type { RenderOptions, WriterAdapter, WriterAdapterResult } from "./adapter";
+import type { RenderOptions, WriterAdapter } from "./adapter";
 import { createWriterRenderContext } from "./adapter-context";
-import type { AssetLoader, AssetLoadResult, AssetProbeResult, AssetSource } from "./assets";
+import type {
+  AssetLoader,
+  AssetLoaderOutcome,
+  AssetLoadResult,
+  AssetProbeResult,
+  AssetSource,
+} from "./assets";
 import {
   defaultAdapterLimitationsFor,
   defaultWriterAdapterFor,
@@ -27,10 +33,8 @@ import {
   type ProjectStages,
   type RenderedArtifact,
   type RenderInspectionSummary,
-  type RenderOutputSideEffectSummary,
   type RenderStages,
   type StageArtifactStatus,
-  type WrittenOutput,
 } from "./pipeline";
 import {
   PipelineArtifactCollection,
@@ -49,11 +53,6 @@ import {
   summarizeProjectedDocumentModel,
 } from "./projection/registry";
 import { validatePptxPackageModel } from "./projection/pptx/validation";
-import {
-  loadNodeOutputRuntime,
-  type OutputByteSink,
-  type OutputRuntimeUnavailable,
-} from "./runtime/output";
 import { resolveStyles, type ResolvedStyleMap } from "./style/resolve";
 import type { SlideTemplateSet } from "./templates";
 import { pptxMediaAssetLoadRequirements } from "./writers/pptx";
@@ -110,7 +109,6 @@ export type RenderResultWithArtifact = {
   >;
   readonly format: OutputFormat;
   readonly artifact: RenderedArtifact;
-  readonly output?: WrittenOutput;
   readonly summary?: RenderInspectionSummary;
 };
 
@@ -120,7 +118,6 @@ export type RenderResultWithoutArtifact = {
   readonly stages: RenderStages<StageArtifactStatus, StageArtifactStatus, "missing">;
   readonly format: OutputFormat;
   readonly artifact?: undefined;
-  readonly output?: undefined;
   readonly summary?: undefined;
 };
 
@@ -132,26 +129,22 @@ function emptyDiagnostics(): Diagnostics {
   return createDiagnostics();
 }
 
-const BUILTIN_ASSET_RESOLVER_SCOPE = "deckjsx:builtin";
+const BUILTIN_ASSET_RESOLVER_IDENTITY = "deckjsx:builtin";
 
-function assetLoaderScope(loader: AssetLoader, index: number): string {
-  return loader.name ?? `anonymous:${index + 1}`;
-}
-
-function assetLoadersWithScopes(
+function assetLoadersWithIdentities(
   loaders: readonly AssetLoader[] | undefined,
-): readonly { readonly loader: AssetLoader; readonly scope: string }[] {
-  return (loaders ?? []).map((loader, index) => ({
+): readonly { readonly loader: AssetLoader; readonly resolverIdentity: string }[] {
+  return (loaders ?? []).map((loader) => ({
     loader,
-    scope: assetLoaderScope(loader, index),
+    resolverIdentity: loader.resolverIdentity,
   }));
 }
 
-function assetLoaderForScope(
-  loaders: readonly { readonly loader: AssetLoader; readonly scope: string }[],
-  scope: string,
-): { readonly loader: AssetLoader; readonly scope: string } | undefined {
-  return loaders.find((loader) => loader.scope === scope);
+function assetLoaderForIdentity(
+  loaders: readonly { readonly loader: AssetLoader; readonly resolverIdentity: string }[],
+  resolverIdentity: string,
+): { readonly loader: AssetLoader; readonly resolverIdentity: string } | undefined {
+  return loaders.find((loader) => loader.resolverIdentity === resolverIdentity);
 }
 
 function assetSourceDiagnosticValue(source: AssetSource): string {
@@ -175,7 +168,7 @@ function assetDiagnosticFromError(input: {
   readonly title: string;
   readonly phase: "load" | "probe";
   readonly source: AssetSource;
-  readonly resolverScope: string;
+  readonly resolverIdentity: string;
   readonly assetEntityId?: AssetEntityId;
   readonly packagePartPath?: string;
   readonly error: unknown;
@@ -196,7 +189,7 @@ function assetDiagnosticFromError(input: {
       ],
       notes: [
         `phase=${input.phase}`,
-        `resolverScope=${input.resolverScope}`,
+        `resolverIdentity=${input.resolverIdentity}`,
         input.assetEntityId ? `assetEntityId=${input.assetEntityId}` : undefined,
         input.packagePartPath ? `packagePartPath=${input.packagePartPath}` : undefined,
         `sourceKind=${input.source.kind}`,
@@ -211,7 +204,7 @@ function invalidAssetResultDiagnostics(input: {
   readonly title: string;
   readonly phase: "load" | "probe";
   readonly source: AssetSource;
-  readonly resolverScope: string;
+  readonly resolverIdentity: string;
   readonly invalidFields: readonly string[];
   readonly assetEntityId?: AssetEntityId;
   readonly packagePartPath?: string;
@@ -231,7 +224,7 @@ function invalidAssetResultDiagnostics(input: {
       ],
       notes: [
         `phase=${input.phase}`,
-        `resolverScope=${input.resolverScope}`,
+        `resolverIdentity=${input.resolverIdentity}`,
         `invalidFields=${input.invalidFields.join(",")}`,
         input.assetEntityId ? `assetEntityId=${input.assetEntityId}` : undefined,
         input.packagePartPath ? `packagePartPath=${input.packagePartPath}` : undefined,
@@ -241,9 +234,79 @@ function invalidAssetResultDiagnostics(input: {
   ]);
 }
 
+function invalidAssetOutcomeDiagnostics(input: {
+  readonly stage: "project" | "render";
+  readonly code: string;
+  readonly title: string;
+  readonly phase: "load" | "probe";
+  readonly source: AssetSource;
+  readonly resolverIdentity: string;
+  readonly assetEntityId?: AssetEntityId;
+  readonly packagePartPath?: string;
+}): Diagnostics {
+  return createDiagnostics([
+    diagnostic({
+      severity: "error",
+      code: input.code,
+      title: input.title,
+      message:
+        "Asset loader returned ok=false without at least one error diagnostic to explain the failed resolution.",
+      labels: [
+        {
+          path: input.packagePartPath ?? `asset.${input.phase}`,
+          message: assetSourceDiagnosticValue(input.source),
+          severity: "primary",
+        },
+      ],
+      notes: [
+        `phase=${input.phase}`,
+        `resolverIdentity=${input.resolverIdentity}`,
+        input.assetEntityId ? `assetEntityId=${input.assetEntityId}` : undefined,
+        input.packagePartPath ? `packagePartPath=${input.packagePartPath}` : undefined,
+        `sourceKind=${input.source.kind}`,
+      ].filter((note): note is string => note !== undefined),
+    }),
+  ]);
+}
+
+function assetLoaderOutcomeValue<T>(input: {
+  readonly outcome: AssetLoaderOutcome<T>;
+  readonly stage: "project" | "render";
+  readonly code: string;
+  readonly title: string;
+  readonly phase: "load" | "probe";
+  readonly source: AssetSource;
+  readonly resolverIdentity: string;
+  readonly assetEntityId?: AssetEntityId;
+  readonly packagePartPath?: string;
+}):
+  | { readonly kind: "unresolved" }
+  | { readonly kind: "resolved"; readonly value: T; readonly diagnostics: Diagnostics }
+  | { readonly kind: "failed"; readonly diagnostics: Diagnostics } {
+  if (input.outcome === undefined) {
+    return { kind: "unresolved" };
+  }
+
+  if (!input.outcome.ok) {
+    const diagnostics = createDiagnostics(input.outcome.diagnostics);
+    return diagnostics.hasErrors
+      ? { kind: "failed", diagnostics }
+      : {
+          kind: "failed",
+          diagnostics: invalidAssetOutcomeDiagnostics(input),
+        };
+  }
+
+  return {
+    kind: "resolved",
+    value: input.outcome.value,
+    diagnostics: createDiagnostics(input.outcome.diagnostics ?? []),
+  };
+}
+
 function missingRequiredAssetProbeDiagnostics(input: {
   readonly source: AssetSource;
-  readonly resolverScope: string;
+  readonly resolverIdentity: string;
   readonly assetEntityId?: AssetEntityId;
   readonly missingFields: readonly string[];
 }): Diagnostics {
@@ -262,7 +325,7 @@ function missingRequiredAssetProbeDiagnostics(input: {
       ],
       notes: [
         "phase=probe",
-        `resolverScope=${input.resolverScope}`,
+        `resolverIdentity=${input.resolverIdentity}`,
         `missingFields=${input.missingFields.join(",")}`,
         input.assetEntityId ? `assetEntityId=${input.assetEntityId}` : undefined,
         `sourceKind=${input.source.kind}`,
@@ -328,7 +391,7 @@ function missingRequiredAssetProbeFields(input: {
 function normalizedAssetProbeResult(input: {
   readonly result: AssetProbeResult;
   readonly source: AssetSource;
-  readonly resolverScope: string;
+  readonly resolverIdentity: string;
   readonly assetEntityId?: AssetEntityId;
 }):
   | { readonly ok: true; readonly result: AssetProbeResult }
@@ -343,7 +406,7 @@ function normalizedAssetProbeResult(input: {
         title: "asset probe result is invalid",
         phase: "probe",
         source: input.source,
-        resolverScope: input.resolverScope,
+        resolverIdentity: input.resolverIdentity,
         assetEntityId: input.assetEntityId,
         invalidFields,
       }),
@@ -356,7 +419,7 @@ function normalizedAssetProbeResult(input: {
 function normalizedAssetLoadResult(input: {
   readonly result: AssetLoadResult;
   readonly source: AssetSource;
-  readonly resolverScope: string;
+  readonly resolverIdentity: string;
   readonly assetEntityId?: AssetEntityId;
   readonly packagePartPath?: string;
 }):
@@ -376,7 +439,7 @@ function normalizedAssetLoadResult(input: {
         title: "asset load result is invalid",
         phase: "load",
         source: input.source,
-        resolverScope: input.resolverScope,
+        resolverIdentity: input.resolverIdentity,
         assetEntityId: input.assetEntityId,
         packagePartPath: input.packagePartPath,
         invalidFields,
@@ -737,7 +800,6 @@ async function loadBuiltInAssetSource(source: AssetSource): Promise<AssetLoadRes
     ...((probe?.height ?? dimensions.height) ? { height: probe?.height ?? dimensions.height } : {}),
     byteLength: probe?.byteLength ?? bytes.byteLength,
     ...(probe?.hash ? { hash: probe.hash } : {}),
-    ...(probe?.diagnostics ? { diagnostics: probe.diagnostics } : {}),
   };
 }
 
@@ -751,18 +813,21 @@ async function resolveAssetArtifacts(input: {
 }> {
   const diagnostics: Diagnostics[] = [];
   const assetsById = new Map<AssetEntityId, AssetArtifact>();
-  const loaders = assetLoadersWithScopes(input.loaders);
+  const loaders = assetLoadersWithIdentities(input.loaders);
 
   for (const [assetEntityId, asset] of input.graph.assets) {
     const source = assetSourceFromEntity(asset);
     let probe: AssetProbeResult | undefined;
     let load: AssetLoadResult | undefined;
-    let resolverScope = BUILTIN_ASSET_RESOLVER_SCOPE;
+    let resolverIdentity = BUILTIN_ASSET_RESOLVER_IDENTITY;
+    let assetDiagnostics = emptyDiagnostics();
     let cached = input.artifacts?.assetsById.get(assetEntityId);
 
     if (!cached) {
-      for (const { scope } of loaders) {
-        cached = input.artifacts?.assetsBySourceCacheKey.get(assetSourceCacheKey(source, scope));
+      for (const { resolverIdentity } of loaders) {
+        cached = input.artifacts?.assetsBySourceCacheKey.get(
+          assetSourceCacheKey(source, resolverIdentity),
+        );
         if (cached?.probe) {
           break;
         }
@@ -771,7 +836,7 @@ async function resolveAssetArtifacts(input: {
 
     if (!cached) {
       cached = input.artifacts?.assetsBySourceCacheKey.get(
-        assetSourceCacheKey(source, BUILTIN_ASSET_RESOLVER_SCOPE),
+        assetSourceCacheKey(source, BUILTIN_ASSET_RESOLVER_IDENTITY),
       );
     }
 
@@ -786,14 +851,32 @@ async function resolveAssetArtifacts(input: {
       continue;
     }
 
-    for (const { loader, scope } of loaders) {
+    for (const { loader, resolverIdentity: loaderResolverIdentity } of loaders) {
       try {
-        const result = await loader.probe?.({ source, scope });
-        if (result) {
-          const normalized = normalizedAssetProbeResult({
-            result,
+        const outcome = assetLoaderOutcomeValue({
+          outcome: await loader.probe?.({
             source,
-            resolverScope: scope,
+            resolverIdentity: loaderResolverIdentity,
+            assetEntityId,
+            sourceField: asset.sourceField,
+          }),
+          stage: "project",
+          code: "E_PROJECT_ASSET_PROBE_OUTCOME_INVALID",
+          title: "asset probe outcome is invalid",
+          phase: "probe",
+          source,
+          resolverIdentity: loaderResolverIdentity,
+          assetEntityId,
+        });
+        if (outcome.kind === "failed") {
+          diagnostics.push(outcome.diagnostics);
+          continue;
+        }
+        if (outcome.kind === "resolved") {
+          const normalized = normalizedAssetProbeResult({
+            result: outcome.value,
+            source,
+            resolverIdentity: loaderResolverIdentity,
             assetEntityId,
           });
           if (!normalized.ok) {
@@ -802,7 +885,8 @@ async function resolveAssetArtifacts(input: {
           }
 
           probe = normalized.result;
-          resolverScope = scope;
+          resolverIdentity = loaderResolverIdentity;
+          assetDiagnostics = outcome.diagnostics;
           break;
         }
       } catch (error) {
@@ -813,7 +897,7 @@ async function resolveAssetArtifacts(input: {
             title: "asset probe failed",
             phase: "probe",
             source,
-            resolverScope: scope,
+            resolverIdentity: loaderResolverIdentity,
             assetEntityId,
             error,
           }),
@@ -828,7 +912,7 @@ async function resolveAssetArtifacts(input: {
           const normalized = normalizedAssetProbeResult({
             result: builtInProbe.probe,
             source,
-            resolverScope: BUILTIN_ASSET_RESOLVER_SCOPE,
+            resolverIdentity: BUILTIN_ASSET_RESOLVER_IDENTITY,
             assetEntityId,
           });
           if (normalized.ok) {
@@ -846,13 +930,13 @@ async function resolveAssetArtifacts(input: {
             title: "asset probe failed",
             phase: "probe",
             source,
-            resolverScope: BUILTIN_ASSET_RESOLVER_SCOPE,
+            resolverIdentity: BUILTIN_ASSET_RESOLVER_IDENTITY,
             assetEntityId,
             error,
           }),
         );
       }
-      resolverScope = BUILTIN_ASSET_RESOLVER_SCOPE;
+      resolverIdentity = BUILTIN_ASSET_RESOLVER_IDENTITY;
     }
 
     const missingRequiredFields = missingRequiredAssetProbeFields({
@@ -863,19 +947,20 @@ async function resolveAssetArtifacts(input: {
       diagnostics.push(
         missingRequiredAssetProbeDiagnostics({
           source,
-          resolverScope,
+          resolverIdentity,
           assetEntityId,
           missingFields: missingRequiredFields,
         }),
       );
     }
 
-    const artifactDiagnostics = createDiagnostics(probe?.diagnostics ?? []);
+    const artifactDiagnostics = assetDiagnostics;
     diagnostics.push(artifactDiagnostics);
     const artifact = {
       assetEntityId,
       source,
-      resolverScope,
+      sourceField: asset.sourceField,
+      resolverIdentity,
       ...(probe ? { probe } : {}),
       ...(load ? { load } : {}),
       diagnostics: artifactDiagnostics,
@@ -897,9 +982,10 @@ async function loadAssetArtifacts(input: {
   }
 
   const diagnostics: Diagnostics[] = [];
-  const loaders = assetLoadersWithScopes(input.loaders);
+  const loaders = assetLoadersWithIdentities(input.loaders);
   const mediaPayloads = pptxMediaAssetLoadRequirements({
     projection: input.projection,
+    assetsById: input.artifacts.assetsById,
     buildArtifactsByPartId: input.artifacts.pptxBuildArtifactsByPartId,
   });
 
@@ -907,16 +993,16 @@ async function loadAssetArtifacts(input: {
     const current = input.artifacts.assetsById.get(media.assetEntityId);
     const currentMatchesSource =
       current !== undefined &&
-      assetSourceCacheKey(current.source, current.resolverScope) ===
-        assetSourceCacheKey(media.source, current.resolverScope);
+      assetSourceCacheKey(current.source, current.resolverIdentity) ===
+        assetSourceCacheKey(media.source, current.resolverIdentity);
 
     if (currentMatchesSource && current.load) {
       continue;
     }
 
-    const currentResolverScope = currentMatchesSource ? current.resolverScope : undefined;
+    const currentResolverIdentity = currentMatchesSource ? current.resolverIdentity : undefined;
     const cached = input.artifacts.assetsBySourceCacheKey.get(
-      assetSourceCacheKey(media.source, currentResolverScope),
+      assetSourceCacheKey(media.source, currentResolverIdentity),
     );
     if (cached?.load) {
       input.artifacts.materializeAsset({
@@ -928,15 +1014,16 @@ async function loadAssetArtifacts(input: {
     }
 
     let load: AssetLoadResult | undefined;
-    let resolverScope = currentResolverScope ?? BUILTIN_ASSET_RESOLVER_SCOPE;
-    const scopedLoader = currentResolverScope
-      ? assetLoaderForScope(loaders, currentResolverScope)
+    let resolverIdentity = currentResolverIdentity ?? BUILTIN_ASSET_RESOLVER_IDENTITY;
+    let assetDiagnostics = emptyDiagnostics();
+    const scopedLoader = currentResolverIdentity
+      ? assetLoaderForIdentity(loaders, currentResolverIdentity)
       : undefined;
-    const scopedLoaders = currentResolverScope ? (scopedLoader ? [scopedLoader] : []) : loaders;
+    const scopedLoaders = currentResolverIdentity ? (scopedLoader ? [scopedLoader] : []) : loaders;
 
-    for (const { loader, scope } of scopedLoaders) {
+    for (const { loader, resolverIdentity: loaderResolverIdentity } of scopedLoaders) {
       const loaderCached = input.artifacts.assetsBySourceCacheKey.get(
-        assetSourceCacheKey(media.source, scope),
+        assetSourceCacheKey(media.source, loaderResolverIdentity),
       );
       if (loaderCached?.load) {
         input.artifacts.materializeAsset({
@@ -948,12 +1035,31 @@ async function loadAssetArtifacts(input: {
       }
 
       try {
-        const result = await loader.load?.({ source: media.source, scope });
-        if (result) {
-          const normalized = normalizedAssetLoadResult({
-            result,
+        const outcome = assetLoaderOutcomeValue({
+          outcome: await loader.load?.({
             source: media.source,
-            resolverScope: scope,
+            resolverIdentity: loaderResolverIdentity,
+            assetEntityId: media.assetEntityId,
+            sourceField: media.sourceField,
+          }),
+          stage: "render",
+          code: "E_RENDER_ASSET_LOAD_OUTCOME_INVALID",
+          title: "asset load outcome is invalid",
+          phase: "load",
+          source: media.source,
+          resolverIdentity: loaderResolverIdentity,
+          assetEntityId: media.assetEntityId,
+          packagePartPath: media.packagePartPath,
+        });
+        if (outcome.kind === "failed") {
+          diagnostics.push(outcome.diagnostics);
+          continue;
+        }
+        if (outcome.kind === "resolved") {
+          const normalized = normalizedAssetLoadResult({
+            result: outcome.value,
+            source: media.source,
+            resolverIdentity: loaderResolverIdentity,
             assetEntityId: media.assetEntityId,
             packagePartPath: media.packagePartPath,
           });
@@ -963,7 +1069,8 @@ async function loadAssetArtifacts(input: {
           }
 
           load = normalized.result;
-          resolverScope = scope;
+          resolverIdentity = loaderResolverIdentity;
+          assetDiagnostics = outcome.diagnostics;
           break;
         }
       } catch (error) {
@@ -974,7 +1081,7 @@ async function loadAssetArtifacts(input: {
             title: "asset load failed",
             phase: "load",
             source: media.source,
-            resolverScope: scope,
+            resolverIdentity: loaderResolverIdentity,
             assetEntityId: media.assetEntityId,
             packagePartPath: media.packagePartPath,
             error,
@@ -983,14 +1090,17 @@ async function loadAssetArtifacts(input: {
       }
     }
 
-    if (!load && (!currentResolverScope || currentResolverScope === BUILTIN_ASSET_RESOLVER_SCOPE)) {
+    if (
+      !load &&
+      (!currentResolverIdentity || currentResolverIdentity === BUILTIN_ASSET_RESOLVER_IDENTITY)
+    ) {
       try {
         const builtInLoad = await loadBuiltInAssetSource(media.source);
         if (builtInLoad) {
           const normalized = normalizedAssetLoadResult({
             result: builtInLoad,
             source: media.source,
-            resolverScope: BUILTIN_ASSET_RESOLVER_SCOPE,
+            resolverIdentity: BUILTIN_ASSET_RESOLVER_IDENTITY,
             assetEntityId: media.assetEntityId,
             packagePartPath: media.packagePartPath,
           });
@@ -1000,7 +1110,7 @@ async function loadAssetArtifacts(input: {
             diagnostics.push(normalized.diagnostics);
           }
         }
-        resolverScope = BUILTIN_ASSET_RESOLVER_SCOPE;
+        resolverIdentity = BUILTIN_ASSET_RESOLVER_IDENTITY;
       } catch (error) {
         diagnostics.push(
           assetDiagnosticFromError({
@@ -1009,7 +1119,7 @@ async function loadAssetArtifacts(input: {
             title: "asset load failed",
             phase: "load",
             source: media.source,
-            resolverScope,
+            resolverIdentity,
             assetEntityId: media.assetEntityId,
             packagePartPath: media.packagePartPath,
             error,
@@ -1026,7 +1136,7 @@ async function loadAssetArtifacts(input: {
           title: "asset load failed",
           phase: "load",
           source: media.source,
-          resolverScope,
+          resolverIdentity,
           assetEntityId: media.assetEntityId,
           packagePartPath: media.packagePartPath,
           error: new Error("No asset loader returned bytes for this media source."),
@@ -1035,12 +1145,15 @@ async function loadAssetArtifacts(input: {
       continue;
     }
 
-    const artifactDiagnostics = createDiagnostics(load.diagnostics ?? []);
-    diagnostics.push(artifactDiagnostics);
+    const artifactDiagnostics = currentMatchesSource
+      ? combineDiagnostics(current.diagnostics, assetDiagnostics)
+      : assetDiagnostics;
+    diagnostics.push(assetDiagnostics);
     input.artifacts.materializeAsset({
       assetEntityId: media.assetEntityId,
       source: currentMatchesSource ? current.source : media.source,
-      resolverScope,
+      sourceField: media.sourceField,
+      resolverIdentity,
       ...(currentMatchesSource && current.probe ? { probe: current.probe } : {}),
       load,
       diagnostics: artifactDiagnostics,
@@ -1173,332 +1286,6 @@ function writerAdapterFormatDiagnostics(input: {
       ],
     }),
   ]);
-}
-
-type PreparedRenderOutputSink =
-  | {
-      readonly requested: false;
-    }
-  | {
-      readonly requested: true;
-      readonly mode: "deferredWrite";
-      readonly path: string;
-    }
-  | {
-      readonly requested: true;
-      readonly mode: "unavailable";
-      readonly path: string;
-      readonly runtime: OutputRuntimeUnavailable;
-    }
-  | {
-      readonly requested: true;
-      readonly mode: "sink";
-      readonly path: string;
-      readonly sink: OutputByteSink;
-    }
-  | {
-      readonly requested: true;
-      readonly mode: "sinkCreationFailed";
-      readonly path: string;
-      readonly error: unknown;
-    };
-
-async function prepareRenderOutputSink(adapter: WriterAdapter): Promise<PreparedRenderOutputSink> {
-  const output = adapter.options.output;
-  if (!output) {
-    return { requested: false };
-  }
-
-  if (adapter.name !== "pptx" || adapter.format !== "pptx") {
-    return { requested: true, mode: "deferredWrite", path: output };
-  }
-
-  const outputRuntime = await loadNodeOutputRuntime();
-  if (!outputRuntime.ok) {
-    return {
-      requested: true,
-      mode: "unavailable",
-      path: output,
-      runtime: outputRuntime,
-    };
-  }
-
-  return { requested: true, mode: "deferredWrite", path: output };
-}
-
-async function writeRenderedArtifact(input: {
-  adapter: WriterAdapter;
-  adapterResult: WriterAdapterResult;
-  diagnostics: Diagnostics;
-  preparedOutput: PreparedRenderOutputSink;
-}): Promise<{
-  readonly diagnostics: Diagnostics;
-  readonly output?: WrittenOutput;
-  readonly summary: RenderOutputSideEffectSummary;
-}> {
-  if (!input.preparedOutput.requested) {
-    return {
-      diagnostics: input.diagnostics,
-      summary: {
-        requested: false,
-        status: "notRequested",
-        reason: "noOutputRequested",
-      },
-    };
-  }
-
-  if (!input.adapterResult.artifact) {
-    return {
-      diagnostics: input.diagnostics,
-      summary: {
-        requested: true,
-        path: input.preparedOutput.path,
-        status: "skipped",
-        reason: "artifactMissing",
-        message: "Rendered artifact bytes were not available, so path output was not attempted.",
-      },
-    };
-  }
-
-  if (input.preparedOutput.mode === "unavailable") {
-    return {
-      diagnostics: combineDiagnostics(
-        input.diagnostics,
-        outputRuntimeUnavailableDiagnostics({
-          output: input.preparedOutput.path,
-          runtime: input.preparedOutput.runtime,
-        }),
-      ),
-      summary: {
-        requested: true,
-        path: input.preparedOutput.path,
-        status: "unavailable",
-        reason: "runtimeOutputUnavailable",
-        message: input.preparedOutput.runtime.message,
-        runtime: {
-          kind: "node",
-          available: false,
-          reason: input.preparedOutput.runtime.reason,
-        },
-      },
-    };
-  }
-
-  if (input.preparedOutput.mode === "sinkCreationFailed") {
-    const message = errorMessage(input.preparedOutput.error);
-    return {
-      diagnostics: combineDiagnostics(
-        input.diagnostics,
-        outputWriteFailedDiagnostics({
-          output: input.preparedOutput.path,
-          error: input.preparedOutput.error,
-        }),
-      ),
-      summary: {
-        requested: true,
-        path: input.preparedOutput.path,
-        status: "failed",
-        reason: "outputWriteFailed",
-        message,
-        runtime: {
-          kind: "node",
-          available: true,
-        },
-      },
-    };
-  }
-
-  if (input.preparedOutput.mode === "sink") {
-    const sideEffect = input.adapterResult.outputSideEffect;
-    if (sideEffect) {
-      if (sideEffect.failure) {
-        return {
-          diagnostics: combineDiagnostics(
-            input.diagnostics,
-            outputWriteFailedDiagnostics({
-              output: sideEffect.path,
-              error: sideEffect.failure.message,
-            }),
-          ),
-          summary: {
-            requested: true,
-            path: sideEffect.path,
-            status: "failed",
-            reason: "outputWriteFailed",
-            message: sideEffect.failure.message,
-            runtime: {
-              kind: "node",
-              available: true,
-            },
-          },
-        };
-      }
-
-      return {
-        diagnostics: input.diagnostics,
-        output: { path: sideEffect.path },
-        summary: {
-          requested: true,
-          path: sideEffect.path,
-          status: "written",
-          runtime: {
-            kind: "node",
-            available: true,
-          },
-        },
-      };
-    }
-  }
-
-  const outputRuntime = await loadNodeOutputRuntime();
-  if (!outputRuntime.ok) {
-    return {
-      diagnostics: combineDiagnostics(
-        input.diagnostics,
-        outputRuntimeUnavailableDiagnostics({
-          output: input.preparedOutput.path,
-          runtime: outputRuntime,
-        }),
-      ),
-      summary: {
-        requested: true,
-        path: input.preparedOutput.path,
-        status: "unavailable",
-        reason: "runtimeOutputUnavailable",
-        message: outputRuntime.message,
-        runtime: {
-          kind: "node",
-          available: false,
-          reason: outputRuntime.reason,
-        },
-      },
-    };
-  }
-
-  try {
-    const output = await outputRuntime.write({
-      output: input.preparedOutput.path,
-      artifact: input.adapterResult.artifact,
-    });
-    return {
-      diagnostics: input.diagnostics,
-      output,
-      summary: {
-        requested: true,
-        path: output.path,
-        status: "written",
-        runtime: {
-          kind: "node",
-          available: true,
-        },
-      },
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return {
-      diagnostics: combineDiagnostics(
-        input.diagnostics,
-        outputWriteFailedDiagnostics({
-          output: input.preparedOutput.path,
-          error,
-        }),
-      ),
-      summary: {
-        requested: true,
-        path: input.preparedOutput.path,
-        status: "failed",
-        reason: "outputWriteFailed",
-        message,
-        runtime: {
-          kind: "node",
-          available: true,
-        },
-      },
-    };
-  }
-}
-
-function renderSummaryWithOutput(
-  summary: RenderInspectionSummary | undefined,
-  output: RenderOutputSideEffectSummary,
-): RenderInspectionSummary {
-  return {
-    ...summary,
-    output,
-  };
-}
-
-function outputRuntimeUnavailableDiagnostics(input: {
-  readonly output: string;
-  readonly runtime: OutputRuntimeUnavailable;
-}): Diagnostics {
-  const cause =
-    input.runtime.error instanceof Error
-      ? input.runtime.error.message
-      : typeof input.runtime.error === "string"
-        ? input.runtime.error
-        : undefined;
-
-  return createDiagnostics([
-    diagnostic({
-      severity: "error",
-      code: "E_RENDER_OUTPUT_WRITE_FAILED",
-      title: "output runtime unavailable",
-      message: input.runtime.message,
-      labels: [
-        {
-          path: "render.output",
-          message: input.output,
-          severity: "primary",
-        },
-      ],
-      notes: [
-        "reason=runtimeOutputUnavailable",
-        `runtimeReason=${input.runtime.reason}`,
-        cause ? `cause=${cause}` : undefined,
-      ].filter((note): note is string => note !== undefined),
-      help: ["Render without an output path to use RenderResult.artifact.bytes in this runtime."],
-    }),
-  ]);
-}
-
-function outputWriteFailedDiagnostics(input: {
-  readonly output: string;
-  readonly error: unknown;
-}): Diagnostics {
-  const message = errorMessage(input.error);
-  return createDiagnostics([
-    diagnostic({
-      severity: "error",
-      code: "E_RENDER_OUTPUT_WRITE_FAILED",
-      title: "output write failed",
-      message,
-      labels: [
-        {
-          path: "render.output",
-          message: input.output,
-          severity: "primary",
-        },
-      ],
-      notes: ["reason=outputWriteFailed"],
-      help: ["The PPTX artifact bytes were produced; inspect RenderResult.artifact.bytes."],
-    }),
-  ]);
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  if (typeof error === "string") {
-    return error;
-  }
-
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return "Unknown error";
-  }
 }
 
 function diagnosticFromError(input: {
@@ -1815,6 +1602,7 @@ export async function renderSource<
   artifacts?: PipelineArtifactCollection;
   assetLoaders?: readonly AssetLoader[];
 }): Promise<RenderResult> {
+  const artifacts = input.artifacts ?? new PipelineArtifactCollection();
   const projectionFormat = projectionFormatFor(input.options);
   const adapterSelection = selectWriterAdapter({
     renderInput: input.renderInput,
@@ -1841,7 +1629,7 @@ export async function renderSource<
     projectionFormat: adapter.projectionFormat,
     definedGraph: input.definedGraph,
     definedProjection: input.definedProjection,
-    artifacts: input.artifacts,
+    artifacts,
     assetLoaders: input.assetLoaders,
     projectOptions: { inspection: "none" },
   });
@@ -1865,7 +1653,7 @@ export async function renderSource<
 
   try {
     const assetLoadDiagnostics = await loadAssetArtifacts({
-      artifacts: input.artifacts,
+      artifacts,
       loaders: input.assetLoaders,
       projection: projectResult.projection,
     });
@@ -1882,15 +1670,10 @@ export async function renderSource<
       };
     }
 
-    const preparedOutput = await prepareRenderOutputSink(adapter);
     const writerContext = createWriterRenderContext({
-      assetsById: input.artifacts?.assetsById,
-      pptxBuildArtifactsByPartId: input.artifacts?.pptxBuildArtifactsByPartId,
-      onBuildArtifacts: (buildArtifacts) =>
-        input.artifacts?.materializePptxBuildArtifacts(buildArtifacts),
-      ...(preparedOutput.requested && preparedOutput.mode === "sink"
-        ? { outputSink: { path: preparedOutput.path, sink: preparedOutput.sink } }
-        : {}),
+      assetsById: artifacts.assetsById,
+      pptxBuildArtifactsByPartId: artifacts.pptxBuildArtifactsByPartId,
+      onBuildArtifacts: (buildArtifacts) => artifacts.materializePptxBuildArtifacts(buildArtifacts),
     });
 
     const adapterResult = await adapter.render(projectResult.projection, writerContext);
@@ -1899,43 +1682,35 @@ export async function renderSource<
       assetLoadDiagnostics,
       adapterResult.diagnostics,
     );
-    const writeResult = await writeRenderedArtifact({
-      adapter,
-      adapterResult,
-      diagnostics: renderDiagnostics,
-      preparedOutput,
-    });
-
     if (!adapterResult.artifact) {
       return {
-        ok: resultOk(writeResult.diagnostics),
-        diagnostics: writeResult.diagnostics,
+        ok: resultOk(renderDiagnostics),
+        diagnostics: renderDiagnostics,
         stages: {
           ...projectResult.stages,
-          render: stageSummary("render", writeResult.diagnostics, "missing"),
+          render: stageSummary("render", renderDiagnostics, "missing"),
         },
         format: adapter.format,
       };
     }
 
     const summary = includeInspectionSummary(adapter.options.inspection)
-      ? renderSummaryWithOutput(adapterResult.summary, writeResult.summary)
+      ? adapterResult.summary
       : undefined;
 
     return {
-      ok: resultOk(writeResult.diagnostics),
-      diagnostics: writeResult.diagnostics,
+      ok: resultOk(renderDiagnostics),
+      diagnostics: renderDiagnostics,
       stages: {
         ...projectResult.stages,
         render: stageSummary(
           "render",
-          writeResult.diagnostics,
-          projectedArtifactStatus(adapterResult.artifact, writeResult.diagnostics),
+          renderDiagnostics,
+          projectedArtifactStatus(adapterResult.artifact, renderDiagnostics),
         ),
       },
       format: adapter.format,
       artifact: adapterResult.artifact,
-      ...(writeResult.output ? { output: writeResult.output } : {}),
       ...(summary ? { summary } : {}),
     };
   } catch (error) {

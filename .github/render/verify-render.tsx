@@ -986,7 +986,7 @@ async function writeVerificationDeck(output: string) {
     </p>,
   ]);
 
-  const render = await deck.render({ output });
+  const render = await deck.render();
   if (!render.ok) {
     const details = render.diagnostics.items
       .map((item) => {
@@ -1001,6 +1001,10 @@ async function writeVerificationDeck(output: string) {
         .join(", ")}${details ? `\n${details}` : ""}`,
     );
   }
+  if (!render.artifact) {
+    throw new Error("Verification deck render did not return artifact bytes.");
+  }
+  await writeFile(output, render.artifact.bytes);
 }
 
 async function writeSampleDeck(output: string) {
@@ -1081,12 +1085,16 @@ async function writeSampleDeck(output: string) {
     </p>,
   ]);
 
-  const render = await deck.render({ output });
+  const render = await deck.render();
   if (!render.ok) {
     throw new Error(
       `Sample deck render failed: ${render.diagnostics.items.map((item) => item.code).join(", ")}`,
     );
   }
+  if (!render.artifact) {
+    throw new Error("Sample deck render did not return artifact bytes.");
+  }
+  await writeFile(output, render.artifact.bytes);
 }
 
 async function main() {

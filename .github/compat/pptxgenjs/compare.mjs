@@ -670,7 +670,7 @@ async function writeDirectDeck() {
     ),
   ]);
 
-  const render = await deck.render({ output: directPath });
+  const render = await deck.render();
   const renderDiagnostics = render.diagnostics.items
     .map((item) => {
       const labels = item.labels?.map((label) => `${label.path}: ${label.message}`).join("; ");
@@ -685,6 +685,7 @@ async function writeDirectDeck() {
       .join(", ")}${renderDiagnostics ? `\n${renderDiagnostics}` : ""}`,
   );
   assert(render.artifact?.bytes.byteLength > 0, "deckjsx render did not return artifact bytes");
+  await writeFile(directPath, render.artifact.bytes);
 }
 
 async function writePptxGenJsOracle() {

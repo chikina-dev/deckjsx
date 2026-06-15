@@ -109,7 +109,7 @@ export function mediaAllocationKey(input: {
     return `${mediaKind}:hash:${hash}:${asset?.probe?.extension ?? asset?.probe?.mediaType ?? imageExtension(input.source)}`;
   }
 
-  return `${mediaKind}:source:${asset?.resolverScope ?? "deckjsx:builtin"}:${imageSourceKey(input.source)}`;
+  return `${mediaKind}:source:${asset?.resolverIdentity ?? "deckjsx:builtin"}:${imageSourceKey(input.source)}`;
 }
 
 export function mediaPartIdForSource(input: {

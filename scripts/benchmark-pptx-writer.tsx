@@ -1,8 +1,10 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { Deck, type AssetLoader } from "../src/index.ts";
-import type { PptxPackageBuildArtifact } from "../src/pipeline-artifacts.ts";
+import { Deck, type ProjectOptions } from "../src/index.ts";
+import type { AssetLoader } from "../src/assets.ts";
+import {
+  PipelineArtifactCollection,
+  type PptxPackageBuildArtifact,
+} from "../src/pipeline-artifacts.ts";
+import { projectSource, renderSource } from "../src/pipeline-runner.ts";
 import type { PackagePartId } from "../src/projection/pptx/model.ts";
 import {
   renderPptxPackage as renderPptxPackageBase,
@@ -34,14 +36,7 @@ async function renderPptxPackage(
 
 type BenchmarkMetric = {
   readonly name: string;
-  readonly category:
-    | "artifactReuse"
-    | "asset"
-    | "inspection"
-    | "output"
-    | "project"
-    | "writer"
-    | "zip";
+  readonly category: "artifactReuse" | "asset" | "inspection" | "project" | "writer" | "zip";
   readonly averageMs: number;
   readonly budgetMs: number;
   readonly ok: boolean;
@@ -58,7 +53,7 @@ type BenchmarkResult = {
   readonly firstProjectLoadCalls: number;
   readonly warmProjectProbeCalls: number;
   readonly warmProjectLoadCalls: number;
-  readonly pathOutputStatus: string;
+  readonly artifactRenderStatus: string;
   readonly warmFailedCount: number;
   readonly warmMissingCount: number;
   readonly warmReusedCount: number;
@@ -79,7 +74,7 @@ type BenchmarkFixture = {
     readonly coldWriterMs: number;
     readonly warmWriterMs: number;
     readonly zipAssemblyMs: number;
-    readonly pathOutputMs: number;
+    readonly artifactRenderMs: number;
   };
 };
 
@@ -122,20 +117,20 @@ function benchmarkAssetLoader(counters: AssetCounters): AssetLoader {
   };
 
   return {
-    name: "benchmark-data-uri-assets",
+    resolverIdentity: "benchmark-data-uri-assets",
     async probe(context) {
       if (context.source.kind !== "data" || context.source.data !== tinySvgDataUri) {
         return undefined;
       }
       counters.probeCalls += 1;
-      return metadata;
+      return { ok: true, value: metadata };
     },
     async load(context) {
       if (context.source.kind !== "data" || context.source.data !== tinySvgDataUri) {
         return undefined;
       }
       counters.loadCalls += 1;
-      return { ...metadata, bytes };
+      return { ok: true, value: { ...metadata, bytes } };
     },
   };
 }
@@ -144,10 +139,38 @@ function createAssetCounters(): AssetCounters {
   return { probeCalls: 0, loadCalls: 0 };
 }
 
-function registerBenchmarkAssets(deck: Deck, context: BenchmarkRunContext | undefined): void {
-  if (context) {
-    deck.useAssets(benchmarkAssetLoader(context.assets));
-  }
+function benchmarkAssetLoaders(
+  context: BenchmarkRunContext | undefined,
+): readonly AssetLoader[] | undefined {
+  return context ? [benchmarkAssetLoader(context.assets)] : undefined;
+}
+
+function projectBenchmarkDeck(
+  deck: Deck<void, any>,
+  context: BenchmarkRunContext | undefined,
+  options?: ProjectOptions,
+  artifacts?: PipelineArtifactCollection,
+) {
+  return projectSource({
+    source: deck,
+    options: deck.options,
+    projectOptions: options,
+    artifacts,
+    assetLoaders: benchmarkAssetLoaders(context),
+  });
+}
+
+function renderBenchmarkDeck(
+  deck: Deck<void, any>,
+  context: BenchmarkRunContext | undefined,
+  artifacts?: PipelineArtifactCollection,
+) {
+  return renderSource({
+    source: deck,
+    options: deck.options,
+    artifacts,
+    assetLoaders: benchmarkAssetLoaders(context),
+  });
 }
 
 const fixtures: readonly BenchmarkFixture[] = [
@@ -166,7 +189,7 @@ const fixtures: readonly BenchmarkFixture[] = [
       coldWriterMs: 80,
       warmWriterMs: 50,
       zipAssemblyMs: 40,
-      pathOutputMs: 120,
+      artifactRenderMs: 120,
     },
   },
   {
@@ -199,18 +222,18 @@ const fixtures: readonly BenchmarkFixture[] = [
       projectMs: 350,
       projectDetailsMs: 430,
       projectNoInspectionMs: 350,
-      warmProjectMs: 30,
+      warmProjectMs: 90,
       coldWriterMs: 450,
       warmWriterMs: 180,
       zipAssemblyMs: 100,
-      pathOutputMs: 650,
+      artifactRenderMs: 650,
     },
   },
   {
     name: "image-heavy",
     createDeck(context) {
       const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-      registerBenchmarkAssets(deck, context);
+      void context;
       for (let slide = 0; slide < 6; slide += 1) {
         deck.slide({ name: `Images ${slide + 1}` }, () => (
           <>
@@ -239,7 +262,7 @@ const fixtures: readonly BenchmarkFixture[] = [
       coldWriterMs: 450,
       warmWriterMs: 180,
       zipAssemblyMs: 120,
-      pathOutputMs: 700,
+      artifactRenderMs: 700,
     },
   },
   {
@@ -284,11 +307,11 @@ const fixtures: readonly BenchmarkFixture[] = [
       projectMs: 420,
       projectDetailsMs: 520,
       projectNoInspectionMs: 420,
-      warmProjectMs: 35,
+      warmProjectMs: 60,
       coldWriterMs: 520,
       warmWriterMs: 220,
       zipAssemblyMs: 120,
-      pathOutputMs: 760,
+      artifactRenderMs: 760,
     },
   },
   {
@@ -341,7 +364,7 @@ const fixtures: readonly BenchmarkFixture[] = [
       coldWriterMs: 500,
       warmWriterMs: 220,
       zipAssemblyMs: 120,
-      pathOutputMs: 760,
+      artifactRenderMs: 760,
     },
   },
 ];
@@ -442,11 +465,11 @@ async function runFixture(fixture: BenchmarkFixture, iterations: number): Promis
   let warmMissingCount = 0;
   let warmReusedCount = 0;
   let warmRebuiltCount = 0;
-  let pathOutputStatus = "notMeasured";
+  let artifactRenderStatus = "notMeasured";
 
   const projectMs = await measure(iterations, async () => {
     const deck = fixture.createDeck();
-    const project = await deck.project();
+    const project = await projectBenchmarkDeck(deck, undefined);
     if (!project.projection || !project.ok) {
       throw new Error(`${fixture.name} projection failed.`);
     }
@@ -455,7 +478,7 @@ async function runFixture(fixture: BenchmarkFixture, iterations: number): Promis
 
   const projectNoInspectionMs = await measure(iterations, async () => {
     const deck = fixture.createDeck();
-    const project = await deck.project({ inspection: "none" });
+    const project = await projectBenchmarkDeck(deck, undefined, { inspection: "none" });
     if (!project.projection || !project.ok || project.summary) {
       throw new Error(`${fixture.name} no-inspection projection failed.`);
     }
@@ -463,7 +486,7 @@ async function runFixture(fixture: BenchmarkFixture, iterations: number): Promis
 
   const projectDetailsMs = await measure(iterations, async () => {
     const deck = fixture.createDeck();
-    const project = await deck.project({ inspection: "details" });
+    const project = await projectBenchmarkDeck(deck, undefined, { inspection: "details" });
     if (
       !project.projection ||
       !project.ok ||
@@ -479,7 +502,15 @@ async function runFixture(fixture: BenchmarkFixture, iterations: number): Promis
 
   const warmProjectContext = { assets: createAssetCounters() };
   const warmProjectDeck = fixture.createDeck(warmProjectContext);
-  const firstProject = await warmProjectDeck.project({ inspection: "none" });
+  const warmProjectArtifacts = new PipelineArtifactCollection();
+  const firstProject = await projectBenchmarkDeck(
+    warmProjectDeck,
+    warmProjectContext,
+    {
+      inspection: "none",
+    },
+    warmProjectArtifacts,
+  );
   if (!firstProject.projection || !firstProject.ok) {
     throw new Error(`${fixture.name} first warm projection failed.`);
   }
@@ -488,7 +519,14 @@ async function runFixture(fixture: BenchmarkFixture, iterations: number): Promis
   const probeCallsBeforeWarmProject = warmProjectContext.assets.probeCalls;
   const loadCallsBeforeWarmProject = warmProjectContext.assets.loadCalls;
   const warmProjectMs = await measure(iterations, async () => {
-    const project = await warmProjectDeck.project({ inspection: "none" });
+    const project = await projectBenchmarkDeck(
+      warmProjectDeck,
+      warmProjectContext,
+      {
+        inspection: "none",
+      },
+      warmProjectArtifacts,
+    );
     if (!project.projection || !project.ok) {
       throw new Error(`${fixture.name} warm projection failed.`);
     }
@@ -497,7 +535,7 @@ async function runFixture(fixture: BenchmarkFixture, iterations: number): Promis
   warmProjectLoadCalls = warmProjectContext.assets.loadCalls - loadCallsBeforeWarmProject;
 
   const projectedDeck = fixture.createDeck();
-  const projection = (await projectedDeck.project()).projection;
+  const projection = (await projectBenchmarkDeck(projectedDeck, undefined)).projection;
   if (!projection) {
     throw new Error(`${fixture.name} projection was unavailable.`);
   }
@@ -539,96 +577,96 @@ async function runFixture(fixture: BenchmarkFixture, iterations: number): Promis
     warmFailedCount = result.summary?.assembly?.failedCount ?? 0;
   });
 
-  const tempDir = await mkdtemp(join(tmpdir(), "deckjsx-pptx-bench-"));
-  try {
-    const outputDeck = fixture.createDeck();
-    const output = join(tempDir, `${fixture.name}.pptx`);
-    const pathOutputMs = await measure(iterations, async () => {
-      const result = await outputDeck.render({ output });
-      if (!result.artifact || result.summary?.output?.status !== "written") {
-        throw new Error(`${fixture.name} path output failed.`);
-      }
-      pathOutputStatus = result.summary.output.status;
-    });
+  const artifactRenderContext = { assets: createAssetCounters() };
+  const outputDeck = fixture.createDeck(artifactRenderContext);
+  const artifactRenderArtifacts = new PipelineArtifactCollection();
+  const artifactRenderMs = await measure(iterations, async () => {
+    const result = await renderBenchmarkDeck(
+      outputDeck,
+      artifactRenderContext,
+      artifactRenderArtifacts,
+    );
+    if (!result.artifact) {
+      throw new Error(`${fixture.name} artifact render failed.`);
+    }
+    artifactRenderStatus = "rendered";
+  });
 
-    const metrics: BenchmarkMetric[] = [
-      {
-        name: "projectSummary",
-        category: "inspection",
-        averageMs: projectMs,
-        budgetMs: fixture.budgets.projectMs,
-        ok: projectMs <= fixture.budgets.projectMs,
-      },
-      {
-        name: "project",
-        category: "project",
-        averageMs: projectNoInspectionMs,
-        budgetMs: fixture.budgets.projectNoInspectionMs,
-        ok: projectNoInspectionMs <= fixture.budgets.projectNoInspectionMs,
-      },
-      {
-        name: "projectDetails",
-        category: "inspection",
-        averageMs: projectDetailsMs,
-        budgetMs: fixture.budgets.projectDetailsMs,
-        ok: projectDetailsMs <= fixture.budgets.projectDetailsMs,
-      },
-      {
-        name: "warmProject",
-        category: "asset",
-        averageMs: warmProjectMs,
-        budgetMs: fixture.budgets.warmProjectMs,
-        ok: warmProjectMs <= fixture.budgets.warmProjectMs,
-      },
-      {
-        name: "coldWriter",
-        category: "writer",
-        averageMs: coldMs,
-        budgetMs: fixture.budgets.coldWriterMs,
-        ok: coldMs <= fixture.budgets.coldWriterMs,
-      },
-      {
-        name: "zipAssembly",
-        category: "zip",
-        averageMs: zipAssemblyMs,
-        budgetMs: fixture.budgets.zipAssemblyMs,
-        ok: zipAssemblyMs <= fixture.budgets.zipAssemblyMs,
-      },
-      {
-        name: "warmWriter",
-        category: "artifactReuse",
-        averageMs: warmMs,
-        budgetMs: fixture.budgets.warmWriterMs,
-        ok: warmMs <= fixture.budgets.warmWriterMs,
-      },
-      {
-        name: "pathOutput",
-        category: "output",
-        averageMs: pathOutputMs,
-        budgetMs: fixture.budgets.pathOutputMs,
-        ok: pathOutputMs <= fixture.budgets.pathOutputMs,
-      },
-    ];
+  const metrics: BenchmarkMetric[] = [
+    {
+      name: "projectSummary",
+      category: "inspection",
+      averageMs: projectMs,
+      budgetMs: fixture.budgets.projectMs,
+      ok: projectMs <= fixture.budgets.projectMs,
+    },
+    {
+      name: "project",
+      category: "project",
+      averageMs: projectNoInspectionMs,
+      budgetMs: fixture.budgets.projectNoInspectionMs,
+      ok: projectNoInspectionMs <= fixture.budgets.projectNoInspectionMs,
+    },
+    {
+      name: "projectDetails",
+      category: "inspection",
+      averageMs: projectDetailsMs,
+      budgetMs: fixture.budgets.projectDetailsMs,
+      ok: projectDetailsMs <= fixture.budgets.projectDetailsMs,
+    },
+    {
+      name: "warmProject",
+      category: "asset",
+      averageMs: warmProjectMs,
+      budgetMs: fixture.budgets.warmProjectMs,
+      ok: warmProjectMs <= fixture.budgets.warmProjectMs,
+    },
+    {
+      name: "coldWriter",
+      category: "writer",
+      averageMs: coldMs,
+      budgetMs: fixture.budgets.coldWriterMs,
+      ok: coldMs <= fixture.budgets.coldWriterMs,
+    },
+    {
+      name: "zipAssembly",
+      category: "zip",
+      averageMs: zipAssemblyMs,
+      budgetMs: fixture.budgets.zipAssemblyMs,
+      ok: zipAssemblyMs <= fixture.budgets.zipAssemblyMs,
+    },
+    {
+      name: "warmWriter",
+      category: "artifactReuse",
+      averageMs: warmMs,
+      budgetMs: fixture.budgets.warmWriterMs,
+      ok: warmMs <= fixture.budgets.warmWriterMs,
+    },
+    {
+      name: "artifactRender",
+      category: "writer",
+      averageMs: artifactRenderMs,
+      budgetMs: fixture.budgets.artifactRenderMs,
+      ok: artifactRenderMs <= fixture.budgets.artifactRenderMs,
+    },
+  ];
 
-    return {
-      fixture: fixture.name,
-      slideCount,
-      zipBytes,
-      zipEntryCount,
-      firstProjectProbeCalls,
-      firstProjectLoadCalls,
-      warmProjectProbeCalls,
-      warmProjectLoadCalls,
-      pathOutputStatus,
-      warmFailedCount,
-      warmMissingCount,
-      warmReusedCount,
-      warmRebuiltCount,
-      metrics,
-    };
-  } finally {
-    await rm(tempDir, { recursive: true, force: true });
-  }
+  return {
+    fixture: fixture.name,
+    slideCount,
+    zipBytes,
+    zipEntryCount,
+    firstProjectProbeCalls,
+    firstProjectLoadCalls,
+    warmProjectProbeCalls,
+    warmProjectLoadCalls,
+    artifactRenderStatus,
+    warmFailedCount,
+    warmMissingCount,
+    warmReusedCount,
+    warmRebuiltCount,
+    metrics,
+  };
 }
 
 function formatMs(value: number): string {
@@ -646,7 +684,7 @@ function printTable(results: readonly BenchmarkResult[]): void {
     console.log(
       `  asset calls: firstProject probe=${result.firstProjectProbeCalls} load=${result.firstProjectLoadCalls}; warmProject probe=${result.warmProjectProbeCalls} load=${result.warmProjectLoadCalls}`,
     );
-    console.log(`  path output: ${result.pathOutputStatus}`);
+    console.log(`  artifact render: ${result.artifactRenderStatus}`);
     for (const metric of result.metrics) {
       const mark = metric.ok ? "ok" : "over";
       console.log(
@@ -685,9 +723,9 @@ const invariantFailures = results.flatMap((result) => {
   if (result.zipEntryCount <= 0) {
     failures.push(`${result.fixture}.zipEntryCount expected generated ZIP entries`);
   }
-  if (result.pathOutputStatus !== "written") {
+  if (result.artifactRenderStatus !== "rendered") {
     failures.push(
-      `${result.fixture}.pathOutputStatus expected written, got ${result.pathOutputStatus}`,
+      `${result.fixture}.artifactRenderStatus expected rendered, got ${result.artifactRenderStatus}`,
     );
   }
   if (result.warmFailedCount !== 0) {

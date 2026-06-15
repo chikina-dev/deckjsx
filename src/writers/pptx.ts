@@ -37,11 +37,7 @@ import {
   mediaPartArtifact,
   mediaPartPayload,
 } from "./pptx/media";
-import {
-  createCollectingPptxZipSink,
-  createCollectingPptxZipSinkWithSideEffect,
-  type PptxZipSink,
-} from "./pptx/sinks";
+import { createCollectingPptxZipSink } from "./pptx/sinks";
 import { slideBytes } from "./pptx/slide-xml";
 import { writePptxZipEntriesToSink } from "./pptx/zip";
 
@@ -53,12 +49,6 @@ type PptxWriterResult = {
   readonly diagnostics: Diagnostics;
   readonly artifact?: RenderedArtifact<"pptx">;
   readonly summary?: RenderInspectionSummary;
-  readonly outputSideEffect?: {
-    readonly path: string;
-    readonly failure?: {
-      readonly message: string;
-    };
-  };
 };
 
 export type PptxWriterContext = {
@@ -68,20 +58,21 @@ export type PptxWriterContext = {
   >;
   readonly pptxBuildArtifactsByPartId?: ReadonlyMap<PackagePartId, PptxPackageBuildArtifact>;
   readonly onBuildArtifacts?: (artifacts: readonly PptxPackageBuildArtifact[]) => void;
-  readonly outputSink?: {
-    readonly path: string;
-    readonly sink: PptxZipSink;
-  };
 };
 
 export type PptxMediaAssetLoadRequirement = {
   readonly assetEntityId: NonNullable<PptxMediaPartPayload["assetEntityId"]>;
   readonly packagePartPath: string;
   readonly source: PptxMediaPartPayload["source"];
+  readonly sourceField: AssetArtifact["sourceField"];
 };
 
 export function pptxMediaAssetLoadRequirements(input: {
   readonly projection: PptxPackageModel;
+  readonly assetsById?: ReadonlyMap<
+    NonNullable<PptxMediaPartPayload["assetEntityId"]>,
+    AssetArtifact
+  >;
   readonly buildArtifactsByPartId?: ReadonlyMap<PackagePartId, PptxPackageBuildArtifact>;
 }): readonly PptxMediaAssetLoadRequirement[] {
   return input.projection.parts.flatMap((part) => {
@@ -117,6 +108,7 @@ export function pptxMediaAssetLoadRequirements(input: {
         assetEntityId: payload.assetEntityId,
         packagePartPath: part.path,
         source: payload.source,
+        sourceField: input.assetsById?.get(payload.assetEntityId)?.sourceField ?? "src",
       },
     ];
   });
@@ -316,15 +308,10 @@ export async function renderPptxPackage(
     return { diagnostics: combinedDiagnostics, summary: assemblySummary(plan) };
   }
 
-  const sideEffectSink = context?.outputSink
-    ? createCollectingPptxZipSinkWithSideEffect(context.outputSink.sink)
-    : undefined;
-  const sink = sideEffectSink ?? createCollectingPptxZipSink();
-  let outputSideEffectError: unknown;
+  const sink = createCollectingPptxZipSink();
 
   try {
     writePptxZipEntriesToSink(zipEntriesFromAssemblyPlan(plan), sink);
-    outputSideEffectError = sideEffectSink?.sideEffectError();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return {
@@ -350,16 +337,6 @@ export async function renderPptxPackage(
   return {
     diagnostics: combinedDiagnostics,
     summary: assemblySummary(plan),
-    ...(context?.outputSink
-      ? {
-          outputSideEffect: {
-            path: context.outputSink.path,
-            ...(outputSideEffectError
-              ? { failure: { message: errorMessage(outputSideEffectError) } }
-              : {}),
-          },
-        }
-      : {}),
     artifact: {
       format: "pptx" satisfies OutputFormat,
       mediaType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -367,8 +344,4 @@ export async function renderPptxPackage(
       bytes,
     },
   };
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

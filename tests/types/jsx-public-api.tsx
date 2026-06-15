@@ -16,7 +16,6 @@ import type {
   RenderAssemblyPlanEntrySummary,
   RenderAssemblyReasonDetails,
   RenderResult,
-  AssetLoader,
   JsxKey,
   Spacing,
   TextRunStyle,
@@ -392,9 +391,6 @@ void (<video data="data:video/mp4;base64,AAAA" poster="poster.png" />);
 // @ts-expect-error deckjsx video does not expose browser playback props yet.
 void (<video src="clip.mp4" controls />);
 
-const pptxOutput = { output: "deck.pptx" };
-void pptxOutput;
-
 const typedDeck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 typedDeck.useStyles(reportStyles).slide(() => <></>);
 const typedGraph = typedDeck.compile().graph!;
@@ -402,15 +398,8 @@ typedGraph.documentId satisfies string;
 const typedInspect = typedDeck.compile();
 typedInspect satisfies CompileResult;
 typedInspect.diagnostics satisfies Diagnostics;
-const assetLoader = {
-  async probe({ source }) {
-    if (source.kind === "path") {
-      return { mediaType: "image/png", width: 100, height: 100 };
-    }
-    return undefined;
-  },
-} satisfies AssetLoader;
-typedDeck.useAssets(assetLoader).slide(() => <></>);
+// @ts-expect-error Asset loading is integration-managed and not a root Deck authoring method.
+typedDeck.useAssets({ probe: async () => undefined });
 void (typedDeck.project() satisfies Promise<ProjectResult>);
 void (typedDeck.project({ inspection: "none" }) satisfies Promise<ProjectResult>);
 
@@ -490,5 +479,4 @@ if (renderResultForArtifactNarrowing.artifact) {
   renderResultForArtifactNarrowing.artifact.format satisfies import("deckjsx").OutputFormat;
 } else {
   renderResultForArtifactNarrowing.artifact satisfies undefined;
-  renderResultForArtifactNarrowing.output satisfies undefined;
 }

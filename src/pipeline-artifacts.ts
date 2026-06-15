@@ -70,7 +70,8 @@ export type {
 export type AssetArtifact = {
   readonly assetEntityId: AssetEntityId;
   readonly source: AssetSource;
-  readonly resolverScope?: string;
+  readonly sourceField: AssetEntity["sourceField"];
+  readonly resolverIdentity?: string;
   readonly probe?: AssetProbeResult;
   readonly load?: AssetLoadResult;
   readonly diagnostics: Diagnostics;
@@ -78,17 +79,17 @@ export type AssetArtifact = {
 
 export function assetSourceCacheKey(
   source: AssetSource,
-  resolverScope = "deckjsx:builtin",
+  resolverIdentity = "deckjsx:builtin",
 ): string {
   switch (source.kind) {
     case "bytes":
-      return `${resolverScope}:bytes:${source.mediaType ?? ""}:${source.extension ?? ""}:${source.bytes.byteLength}`;
+      return `${resolverIdentity}:bytes:${source.mediaType ?? ""}:${source.extension ?? ""}:${source.bytes.byteLength}`;
     case "data":
-      return `${resolverScope}:data:${source.data}`;
+      return `${resolverIdentity}:data:${source.data}`;
     case "path":
-      return `${resolverScope}:path:${source.path}`;
+      return `${resolverIdentity}:path:${source.path}`;
     case "url":
-      return `${resolverScope}:url:${source.url}`;
+      return `${resolverIdentity}:url:${source.url}`;
   }
 }
 
@@ -386,7 +387,7 @@ export class PipelineArtifactCollection {
     };
     this.#assetsById.set(input.assetEntityId, artifact);
     this.#assetsBySourceCacheKey.set(
-      assetSourceCacheKey(artifact.source, artifact.resolverScope),
+      assetSourceCacheKey(artifact.source, artifact.resolverIdentity),
       artifact,
     );
   }

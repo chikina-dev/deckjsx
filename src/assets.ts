@@ -29,20 +29,39 @@ export type AssetProbeResult = {
   readonly height?: number;
   readonly byteLength?: number;
   readonly hash?: string;
-  readonly diagnostics?: readonly Diagnostic[];
 };
 
 export type AssetLoadResult = AssetProbeResult & {
   readonly bytes: Uint8Array;
 };
 
+export type AssetSourceField = "src" | "data" | "poster" | "posterData";
+
+export type AssetLoaderOutcome<T> =
+  | {
+      readonly ok: true;
+      readonly value: T;
+      readonly diagnostics?: readonly Diagnostic[];
+    }
+  | {
+      readonly ok: false;
+      readonly diagnostics: readonly Diagnostic[];
+    }
+  | undefined;
+
 export type AssetLoaderContext = {
   readonly source: AssetSource;
-  readonly scope?: string;
+  readonly resolverIdentity: string;
+  readonly assetEntityId: string;
+  readonly sourceField: AssetSourceField;
+  readonly origin?: {
+    readonly importer?: string;
+    readonly source?: string;
+  };
 };
 
 export type AssetLoader = {
-  readonly name?: string;
-  probe?(context: AssetLoaderContext): Promise<AssetProbeResult | undefined>;
-  load?(context: AssetLoaderContext): Promise<AssetLoadResult | undefined>;
+  readonly resolverIdentity: string;
+  probe?(context: AssetLoaderContext): Promise<AssetLoaderOutcome<AssetProbeResult>>;
+  load?(context: AssetLoaderContext): Promise<AssetLoaderOutcome<AssetLoadResult>>;
 };

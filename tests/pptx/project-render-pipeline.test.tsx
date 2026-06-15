@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 import { pptx, type WriterAdapter } from "../../src/adapter.ts";
-import { createDiagnostics } from "../../src/diagnostics/index.ts";
+import { createDiagnostics, type Diagnostic } from "../../src/diagnostics/index.ts";
 import { Deck, StyleSheet, Theme, type RenderInspectionSummary } from "../../src/index.ts";
 import { isPptxMediaPart, isPptxSlidePart, isPptxSupportPart } from "../../src/inspect.ts";
 import {
@@ -14,7 +14,7 @@ import {
   type PptxWriterContext,
   type PptxWriterOptions,
 } from "../../src/writers/pptx.ts";
-import type { AssetLoader } from "../../src/assets.ts";
+import type { AssetLoadResult, AssetLoader, AssetProbeResult } from "../../src/assets.ts";
 import type {
   AssetEntityId,
   GraphNodeId,
@@ -39,6 +39,42 @@ import {
   SAMPLE_SVG_DATA_URI,
   unzipSync,
 } from "../helpers.ts";
+
+function testAssetLoader(input: {
+  readonly resolverIdentity: string;
+  readonly probe?: AssetLoaderProbe;
+  readonly load?: AssetLoaderLoad;
+}): AssetLoader {
+  return {
+    resolverIdentity: input.resolverIdentity,
+    ...(input.probe
+      ? {
+          async probe(context) {
+            const value = await input.probe?.(context);
+            return value ? { ok: true, value } : undefined;
+          },
+        }
+      : {}),
+    ...(input.load
+      ? {
+          async load(context) {
+            const value = await input.load?.(context);
+            return value ? { ok: true, value } : undefined;
+          },
+        }
+      : {}),
+  };
+}
+
+type AssetLoaderContextForTest = Parameters<NonNullable<AssetLoader["probe"]>>[0];
+type AssetLoaderProbe = (
+  context: AssetLoaderContextForTest,
+) => Promise<AssetProbeResult | undefined>;
+type AssetLoaderLoad = (context: AssetLoaderContextForTest) => Promise<AssetLoadResult | undefined>;
+
+function diagnosticCodeCount(items: readonly Diagnostic[], code: string): number {
+  return items.filter((item) => item.code === code).length;
+}
 
 function textNodeIdBy(graph: SemanticAuthorGraph, text: string): GraphNodeId | undefined {
   for (const node of graph.nodes.values()) {
@@ -4234,8 +4270,8 @@ describe("project/render pipeline", () => {
 
   test("project reuses media parts by loader-provided content hash", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.useAssets({
-      name: "hashed-assets",
+    const loader = testAssetLoader({
+      resolverIdentity: "hashed-assets",
       async probe({ source }) {
         return source.kind === "path"
           ? {
@@ -4255,7 +4291,11 @@ describe("project/render pipeline", () => {
       </>
     ));
 
-    const project = await deck.project();
+    const project = await projectSource({
+      source: deck,
+      options: deck.options,
+      assetLoaders: [loader],
+    });
     const slide = project.projection?.slides[0];
     const images = slide?.payload.drawing.children.filter((element) => element.kind === "image");
     const mediaParts = project.projection?.parts.filter((part) => part.kind === "media") ?? [];
@@ -7611,8 +7651,8 @@ describe("project/render pipeline", () => {
 
   test("project validates media payload asset references against drawing origins", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.useAssets({
-      name: "asset-reference-test",
+    const loader = testAssetLoader({
+      resolverIdentity: "asset-reference-test",
       async probe({ source }) {
         return source.kind === "path"
           ? { mediaType: "image/png", extension: "png", width: 1, height: 1, byteLength: 8 }
@@ -7623,7 +7663,13 @@ describe("project/render pipeline", () => {
       <img src="/public/chart.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
     ));
 
-    const projection = (await deck.project()).projection!;
+    const projection = (
+      await projectSource({
+        source: deck,
+        options: deck.options,
+        assetLoaders: [loader],
+      })
+    ).projection!;
     const mediaPart = expectPptxPart(projection.parts, "media");
     const mediaPayload = mediaPart.payload;
     deck.defineProjection(
@@ -10277,8 +10323,8 @@ describe("project/render pipeline", () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     const artifacts = new PipelineArtifactCollection();
     const probedSources: string[] = [];
-    const loader = {
-      name: "test-assets",
+    const loader = testAssetLoader({
+      resolverIdentity: "test-assets",
       async probe({ source }) {
         if (source.kind !== "path") {
           return undefined;
@@ -10293,9 +10339,8 @@ describe("project/render pipeline", () => {
           byteLength: 1024,
         };
       },
-    } satisfies AssetLoader;
+    });
 
-    deck.useAssets(loader);
     deck.slide({ name: "Assets" }, () => (
       <>
         <img src="/public/chart.png" style={{ x: 1, y: 1, width: 2, height: 1 }} />
@@ -10306,14 +10351,14 @@ describe("project/render pipeline", () => {
       source: deck,
       options: deck.options,
       artifacts,
-      assetLoaders: deck.assetLoaders,
+      assetLoaders: [loader],
     });
     const [asset] = [...artifacts.assetsById.values()];
     const mediaPart = project.projection?.parts.find((part) => part.kind === "media");
 
     expect(project.ok).toBe(true);
     expect(probedSources).toEqual(["/public/chart.png"]);
-    expect(asset?.resolverScope).toBe("test-assets");
+    expect(asset?.resolverIdentity).toBe("test-assets");
     expect(asset?.source).toEqual({ kind: "path", path: "/public/chart.png" });
     expect(asset?.probe).toMatchObject({
       mediaType: "image/png",
@@ -10337,8 +10382,8 @@ describe("project/render pipeline", () => {
   test("render loads Deck-owned asset bytes for media parts", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     const pngBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0]);
-    const loader = {
-      name: "test-assets",
+    const loader = testAssetLoader({
+      resolverIdentity: "test-assets",
       async probe({ source }) {
         return source.kind === "path"
           ? { mediaType: "image/png", extension: "png", width: 1, height: 1 }
@@ -10349,16 +10394,19 @@ describe("project/render pipeline", () => {
           ? { mediaType: "image/png", extension: "png", bytes: pngBytes }
           : undefined;
       },
-    } satisfies AssetLoader;
+    });
 
-    deck.useAssets(loader);
     deck.slide({ name: "Loaded asset" }, () => (
       <>
         <img src="/public/chart.png" style={{ x: 1, y: 1, width: 2, height: 1 }} />
       </>
     ));
 
-    const render = await deck.render();
+    const render = await renderSource({
+      source: deck,
+      options: deck.options,
+      assetLoaders: [loader],
+    });
     const zip = unzipSync(render.artifact?.bytes ?? new Uint8Array());
 
     expect(render.ok).toBe(true);
@@ -10370,8 +10418,8 @@ describe("project/render pipeline", () => {
     const pngBytes = new Uint8Array([137, 80, 78, 71]);
     let probeCount = 0;
     let loadCount = 0;
-    const loader = {
-      name: "shared-assets",
+    const loader = testAssetLoader({
+      resolverIdentity: "shared-assets",
       async probe({ source }) {
         if (source.kind !== "path") {
           return undefined;
@@ -10386,9 +10434,8 @@ describe("project/render pipeline", () => {
         loadCount += 1;
         return { mediaType: "image/png", extension: "png", bytes: pngBytes };
       },
-    } satisfies AssetLoader;
+    });
 
-    deck.useAssets(loader);
     deck.slide({ name: "Shared assets" }, () => (
       <>
         <img src="/public/shared.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
@@ -10396,7 +10443,11 @@ describe("project/render pipeline", () => {
       </>
     ));
 
-    const render = await deck.render();
+    const render = await renderSource({
+      source: deck,
+      options: deck.options,
+      assetLoaders: [loader],
+    });
 
     expect(render.ok).toBe(true);
     expect(probeCount).toBe(1);
@@ -10407,8 +10458,8 @@ describe("project/render pipeline", () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     const pngBytes = new Uint8Array([137, 80, 78, 71]);
     let loadCount = 0;
-    const loader = {
-      name: "hashed-reuse-assets",
+    const loader = testAssetLoader({
+      resolverIdentity: "hashed-reuse-assets",
       async probe({ source }) {
         return source.kind === "path"
           ? {
@@ -10432,7 +10483,7 @@ describe("project/render pipeline", () => {
           bytes: pngBytes,
         };
       },
-    } satisfies AssetLoader;
+    });
     const firstArtifacts = new PipelineArtifactCollection();
     const secondArtifacts = new PipelineArtifactCollection();
 
@@ -10484,10 +10535,10 @@ describe("project/render pipeline", () => {
   test("registered asset loaders resolve in order before the built-in boundary", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     const artifacts = new PipelineArtifactCollection();
-    const loader = {
-      name: "signed-url-assets",
-      async probe({ source, scope }) {
-        if (source.kind !== "url" || scope !== "signed-url-assets") {
+    const loader = testAssetLoader({
+      resolverIdentity: "signed-url-assets",
+      async probe({ source, resolverIdentity }) {
+        if (source.kind !== "url" || resolverIdentity !== "signed-url-assets") {
           return undefined;
         }
         return {
@@ -10498,9 +10549,8 @@ describe("project/render pipeline", () => {
           byteLength: 4096,
         };
       },
-    } satisfies AssetLoader;
+    });
 
-    deck.useAssets(loader);
     deck.slide({ name: "Signed URL" }, () => (
       <>
         <img
@@ -10514,13 +10564,13 @@ describe("project/render pipeline", () => {
       source: deck,
       options: deck.options,
       artifacts,
-      assetLoaders: deck.assetLoaders,
+      assetLoaders: [loader],
     });
     const [asset] = [...artifacts.assetsById.values()];
     const mediaPart = project.projection?.parts.find((part) => part.kind === "media");
 
     expect(project.ok).toBe(true);
-    expect(asset?.resolverScope).toBe("signed-url-assets");
+    expect(asset?.resolverIdentity).toBe("signed-url-assets");
     expect(mediaPart?.payload).toMatchObject({
       metadata: { mediaType: "image/png", widthPx: 320, heightPx: 180, byteLength: 4096 },
     });
@@ -10531,8 +10581,8 @@ describe("project/render pipeline", () => {
     const pngBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 2]);
     const calls: string[] = [];
 
-    deck.useAssets({
-      name: "first-assets",
+    const firstLoader = testAssetLoader({
+      resolverIdentity: "first-assets",
       async probe({ source }) {
         calls.push(`first:probe:${source.kind}`);
         return undefined;
@@ -10542,17 +10592,17 @@ describe("project/render pipeline", () => {
         return { mediaType: "image/png", extension: "png", bytes: new Uint8Array([0]) };
       },
     });
-    deck.useAssets({
-      name: "second-assets",
+    const secondLoader = testAssetLoader({
+      resolverIdentity: "second-assets",
       async probe({ source }) {
         calls.push(`second:probe:${source.kind}`);
         return source.kind === "path"
           ? { mediaType: "image/png", extension: "png", width: 1, height: 1 }
           : undefined;
       },
-      async load({ source, scope }) {
-        calls.push(`second:load:${scope}:${source.kind}`);
-        return source.kind === "path" && scope === "second-assets"
+      async load({ source, resolverIdentity }) {
+        calls.push(`second:load:${resolverIdentity}:${source.kind}`);
+        return source.kind === "path" && resolverIdentity === "second-assets"
           ? { mediaType: "image/png", extension: "png", bytes: pngBytes }
           : undefined;
       },
@@ -10563,7 +10613,11 @@ describe("project/render pipeline", () => {
       </>
     ));
 
-    const render = await deck.render();
+    const render = await renderSource({
+      source: deck,
+      options: deck.options,
+      assetLoaders: [firstLoader, secondLoader],
+    });
     const zip = unzipSync(render.artifact?.bytes ?? new Uint8Array());
 
     expect(render.ok).toBe(true);
@@ -10577,8 +10631,8 @@ describe("project/render pipeline", () => {
 
   test("render reports missing bytes from the Project-winning asset resolver", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.useAssets({
-      name: "probe-only-assets",
+    const loader = testAssetLoader({
+      resolverIdentity: "probe-only-assets",
       async probe({ source }) {
         return source.kind === "path"
           ? { mediaType: "image/png", extension: "png", width: 1, height: 1 }
@@ -10591,7 +10645,11 @@ describe("project/render pipeline", () => {
       </>
     ));
 
-    const render = await deck.render();
+    const render = await renderSource({
+      source: deck,
+      options: deck.options,
+      assetLoaders: [loader],
+    });
     const diagnostic = render.diagnostics.items.find(
       (item) => item.code === "E_RENDER_ASSET_LOAD_FAILED",
     );
@@ -10608,17 +10666,17 @@ describe("project/render pipeline", () => {
       ],
       notes: expect.arrayContaining([
         "phase=load",
-        "resolverScope=probe-only-assets",
+        "resolverIdentity=probe-only-assets",
         "packagePartPath=ppt/media/media1.png",
         "sourceKind=path",
       ]),
     });
   });
 
-  test("project asset probe failures identify source, scope, phase, and asset entity", async () => {
+  test("project asset probe failures identify source, resolver identity, phase, and asset entity", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.useAssets({
-      name: "broken-probe",
+    const loader = testAssetLoader({
+      resolverIdentity: "broken-probe",
       async probe({ source }) {
         if (source.kind === "path") {
           throw new Error("probe exploded");
@@ -10632,7 +10690,11 @@ describe("project/render pipeline", () => {
       </>
     ));
 
-    const project = await deck.project();
+    const project = await projectSource({
+      source: deck,
+      options: deck.options,
+      assetLoaders: [loader],
+    });
     const diagnostic = project.diagnostics.items.find(
       (item) => item.code === "E_PROJECT_ASSET_PROBE_FAILED",
     );
@@ -10642,7 +10704,7 @@ describe("project/render pipeline", () => {
       labels: [expect.objectContaining({ message: "/public/broken.png" })],
       notes: expect.arrayContaining([
         "phase=probe",
-        "resolverScope=broken-probe",
+        "resolverIdentity=broken-probe",
         "sourceKind=path",
       ]),
     });
@@ -10651,8 +10713,8 @@ describe("project/render pipeline", () => {
 
   test("project reports invalid asset probe result shapes", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.useAssets({
-      name: "invalid-probe",
+    const loader = testAssetLoader({
+      resolverIdentity: "invalid-probe",
       async probe({ source }) {
         return source.kind === "path"
           ? { mediaType: "", extension: "", width: 0, height: Number.NaN, byteLength: -1 }
@@ -10665,7 +10727,11 @@ describe("project/render pipeline", () => {
       </>
     ));
 
-    const project = await deck.project();
+    const project = await projectSource({
+      source: deck,
+      options: deck.options,
+      assetLoaders: [loader],
+    });
     const diagnostic = project.diagnostics.items.find(
       (item) => item.code === "E_PROJECT_ASSET_PROBE_INVALID",
     );
@@ -10676,7 +10742,7 @@ describe("project/render pipeline", () => {
       labels: [expect.objectContaining({ message: "/public/invalid-probe.png" })],
       notes: expect.arrayContaining([
         "phase=probe",
-        "resolverScope=invalid-probe",
+        "resolverIdentity=invalid-probe",
         "invalidFields=mediaType,extension,width,height,byteLength",
         "sourceKind=path",
       ]),
@@ -10685,8 +10751,8 @@ describe("project/render pipeline", () => {
 
   test("project reports incomplete asset probe result shapes when image dimensions are missing", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.useAssets({
-      name: "dimensionless-probe",
+    const loader = testAssetLoader({
+      resolverIdentity: "dimensionless-probe",
       async probe({ source }) {
         return source.kind === "path" ? { mediaType: "image/png", extension: "png" } : undefined;
       },
@@ -10697,7 +10763,11 @@ describe("project/render pipeline", () => {
       </>
     ));
 
-    const project = await deck.project();
+    const project = await projectSource({
+      source: deck,
+      options: deck.options,
+      assetLoaders: [loader],
+    });
     const diagnostic = project.diagnostics.items.find(
       (item) => item.code === "E_PROJECT_ASSET_PROBE_INCOMPLETE",
     );
@@ -10708,7 +10778,7 @@ describe("project/render pipeline", () => {
       labels: [expect.objectContaining({ message: "/public/dimensionless.png" })],
       notes: expect.arrayContaining([
         "phase=probe",
-        "resolverScope=dimensionless-probe",
+        "resolverIdentity=dimensionless-probe",
         "missingFields=width,height",
         "sourceKind=path",
       ]),
@@ -10717,8 +10787,8 @@ describe("project/render pipeline", () => {
 
   test("render asset load failures identify package part path and source details", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.useAssets({
-      name: "broken-load",
+    const loader = testAssetLoader({
+      resolverIdentity: "broken-load",
       async probe({ source }) {
         return source.kind === "path"
           ? { mediaType: "image/png", extension: "png", width: 1, height: 1 }
@@ -10737,7 +10807,11 @@ describe("project/render pipeline", () => {
       </>
     ));
 
-    const render = await deck.render();
+    const render = await renderSource({
+      source: deck,
+      options: deck.options,
+      assetLoaders: [loader],
+    });
     const diagnostic = render.diagnostics.items.find(
       (item) => item.code === "E_RENDER_ASSET_LOAD_FAILED",
     );
@@ -10750,7 +10824,7 @@ describe("project/render pipeline", () => {
       ],
       notes: expect.arrayContaining([
         "phase=load",
-        "resolverScope=broken-load",
+        "resolverIdentity=broken-load",
         "packagePartPath=ppt/media/media1.png",
         "sourceKind=path",
       ]),
@@ -10760,8 +10834,8 @@ describe("project/render pipeline", () => {
 
   test("render reports invalid asset load result shapes", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.useAssets({
-      name: "invalid-load",
+    const loader = testAssetLoader({
+      resolverIdentity: "invalid-load",
       async probe({ source }) {
         return source.kind === "path"
           ? { mediaType: "image/png", extension: "png", width: 1, height: 1 }
@@ -10784,7 +10858,11 @@ describe("project/render pipeline", () => {
       </>
     ));
 
-    const render = await deck.render();
+    const render = await renderSource({
+      source: deck,
+      options: deck.options,
+      assetLoaders: [loader],
+    });
     const diagnostic = render.diagnostics.items.find(
       (item) => item.code === "E_RENDER_ASSET_LOAD_INVALID",
     );
@@ -10801,12 +10879,119 @@ describe("project/render pipeline", () => {
       ],
       notes: expect.arrayContaining([
         "phase=load",
-        "resolverScope=invalid-load",
+        "resolverIdentity=invalid-load",
         "invalidFields=width,bytes",
         "packagePartPath=ppt/media/media1.png",
         "sourceKind=path",
       ]),
     });
+  });
+
+  test("project includes successful asset probe diagnostics once", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const probeWarning: Diagnostic = {
+      severity: "warning",
+      code: "W_TEST_ASSET_PROBE",
+      title: "test asset probe warning",
+      labels: [],
+    };
+    const loader: AssetLoader = {
+      resolverIdentity: "probe-warning-assets",
+      async probe({ source }) {
+        return source.kind === "path"
+          ? {
+              ok: true,
+              value: {
+                mediaType: "image/png",
+                extension: "png",
+                width: 1,
+                height: 1,
+              },
+              diagnostics: [probeWarning],
+            }
+          : undefined;
+      },
+    };
+    deck.slide({ name: "Probe warning" }, () => (
+      <>
+        <img src="/public/probe-warning.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      </>
+    ));
+
+    const project = await projectSource({
+      source: deck,
+      options: deck.options,
+      assetLoaders: [loader],
+    });
+
+    expect(project.ok).toBe(true);
+    expect(diagnosticCodeCount(project.diagnostics.items, "W_TEST_ASSET_PROBE")).toBe(1);
+  });
+
+  test("render includes successful asset probe and load diagnostics once", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const pngBytes = pngHeaderBytes(1, 1);
+    const probeWarning: Diagnostic = {
+      severity: "warning",
+      code: "W_TEST_ASSET_PROBE",
+      title: "test asset probe warning",
+      labels: [],
+    };
+    const loadWarning: Diagnostic = {
+      severity: "warning",
+      code: "W_TEST_ASSET_LOAD",
+      title: "test asset load warning",
+      labels: [],
+    };
+    const loader: AssetLoader = {
+      resolverIdentity: "load-warning-assets",
+      async probe({ source }) {
+        return source.kind === "path"
+          ? {
+              ok: true,
+              value: {
+                mediaType: "image/png",
+                extension: "png",
+                width: 1,
+                height: 1,
+                byteLength: pngBytes.byteLength,
+              },
+              diagnostics: [probeWarning],
+            }
+          : undefined;
+      },
+      async load({ source }) {
+        return source.kind === "path"
+          ? {
+              ok: true,
+              value: {
+                mediaType: "image/png",
+                extension: "png",
+                width: 1,
+                height: 1,
+                byteLength: pngBytes.byteLength,
+                bytes: pngBytes,
+              },
+              diagnostics: [loadWarning],
+            }
+          : undefined;
+      },
+    };
+    deck.slide({ name: "Load warning" }, () => (
+      <>
+        <img src="/public/load-warning.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      </>
+    ));
+
+    const render = await renderSource({
+      source: deck,
+      options: deck.options,
+      assetLoaders: [loader],
+    });
+
+    expect(render.ok).toBe(true);
+    expect(diagnosticCodeCount(render.diagnostics.items, "W_TEST_ASSET_PROBE")).toBe(1);
+    expect(diagnosticCodeCount(render.diagnostics.items, "W_TEST_ASSET_LOAD")).toBe(1);
   });
 
   test("built-in asset probe extracts image dimensions into Project media metadata", async () => {
