@@ -10367,6 +10367,103 @@ describe("project/render pipeline", () => {
     expect(secondStableSlideRelationships).toBe(firstStableSlideRelationships);
   });
 
+  test("HMR projection reuses unchanged slide media package parts from the stale projection", async () => {
+    let editedText = "before";
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const artifacts = new PipelineArtifactCollection();
+
+    deck.slide({ name: "Edited" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{editedText}</p>
+    ));
+    deck.slide({ name: "Stable media" }, () => (
+      <img data={SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1, width: 1, height: 1 }} />
+    ));
+
+    const first = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const firstStableMedia = first.projection?.parts.find((part) => part.kind === "media");
+
+    editedText = "after";
+    artifacts.invalidateForHmr({
+      importer: "/project/src/deck.tsx",
+      changedModuleIds: ["/project/src/deck.tsx"],
+    });
+    const second = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const secondStableMedia = second.projection?.parts.find(
+      (part) => part.id === firstStableMedia?.id,
+    );
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(firstStableMedia).toBeDefined();
+    expect(secondStableMedia).toBe(firstStableMedia);
+  });
+
+  test("HMR projection keeps media reuse scoped to unchanged slide units", async () => {
+    let editedText = "before";
+    const stableImage =
+      "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2210%22%20height%3D%2210%22%3E%3Crect%20width%3D%2210%22%20height%3D%2210%22%20fill%3D%22%2300ff00%22%2F%3E%3C%2Fsvg%3E";
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const artifacts = new PipelineArtifactCollection();
+
+    deck.slide({ name: "Edited media" }, () => (
+      <>
+        <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{editedText}</p>
+        <img data={SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 2, width: 1, height: 1 }} />
+      </>
+    ));
+    deck.slide({ name: "Stable media" }, () => (
+      <img data={stableImage} style={{ x: 1, y: 1, width: 1, height: 1 }} />
+    ));
+
+    const first = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const firstEditedMedia = first.projection?.parts.find(
+      (part) => part.kind === "media" && part.path === "ppt/media/media1.svg",
+    );
+    const firstStableMedia = first.projection?.parts.find(
+      (part) => part.kind === "media" && part.path === "ppt/media/media2.svg",
+    );
+
+    editedText = "after";
+    artifacts.invalidateForHmr({
+      importer: "/project/src/deck.tsx",
+      changedModuleIds: ["/project/src/deck.tsx"],
+    });
+    const second = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const secondEditedMedia = second.projection?.parts.find(
+      (part) => part.id === firstEditedMedia?.id,
+    );
+    const secondStableMedia = second.projection?.parts.find(
+      (part) => part.id === firstStableMedia?.id,
+    );
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(firstEditedMedia).toBeDefined();
+    expect(firstStableMedia).toBeDefined();
+    expect(secondEditedMedia).not.toBe(firstEditedMedia);
+    expect(secondStableMedia).toBe(firstStableMedia);
+  });
+
   test("HMR render reports reused patch plan parts for unchanged slide projection units", async () => {
     let editedText = "before";
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });

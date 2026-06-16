@@ -8,6 +8,8 @@ Patchable PPTX reserves capacity primarily in XML package parts by writing deckj
 
 HMR invalidation should refresh stale process-memory compile/project artifacts before ordinary `deck.render(pptx())` continues, but retain PPTX package build artifacts so unchanged parts can still be reused by package-part fingerprint checks after the new projection is built.
 
+For slide-level projection reuse, the runtime keeps the stale graph together with the stale projection during an HMR invalidation. The next projection compares each slide subtree's semantic graph, resolved styles, and asset references before projection, reuses the previous slide part when that slide unit is unchanged, and scopes dependent media and slide relationship part reuse to the same unchanged slide unit. Package-part fingerprints still guard the final object reuse, so changed media bytes or changed slide XML fall back to fresh projected parts.
+
 The initial slide-unit reuse target is ordinary content edits where a slide keeps the same Graph Identity. Slide insertion and reordering still depend on a future stable slide-root identity hint in the authoring API; v0.9 should not pretend position-derived `deck.slide()` roots can provide complete insertion tolerance.
 
 This chooses a stronger HMR contract than merely re-emitting a fresh PPTX quickly: unchanged package part bytes and slide identity should survive ordinary source edits. It rejects arbitrary-user-PPTX mutation and append-only duplicate ZIP entries because those paths are harder to make predictable across PowerPoint, LibreOffice, and ZIP readers; deckjsx can instead own the patchable artifact shape it generates and fall back safely when another tool rewrites or invalidates that shape.

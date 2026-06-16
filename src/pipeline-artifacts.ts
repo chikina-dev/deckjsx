@@ -231,6 +231,8 @@ export class PipelineArtifactCollection {
   #pptxBuildArtifactsByPartId = new Map<PackagePartId, PptxPackageBuildArtifact>();
   #projection?: DefinedProjectionArtifact;
   #staleProjectionForReuse?: DefinedProjectionArtifact;
+  #staleGraphForReuse?: DefinedGraphArtifact;
+  #staleAssetEntityIdsForReuse = new Set<AssetEntityId>();
 
   get graph(): DefinedGraphArtifact | undefined {
     return this.#graphsBySourceKey.get(ROOT_SOURCE_ARTIFACT_KEY);
@@ -242,6 +244,14 @@ export class PipelineArtifactCollection {
 
   get staleProjectionForReuse(): DefinedProjectionArtifact | undefined {
     return this.#staleProjectionForReuse;
+  }
+
+  get staleGraphForReuse(): DefinedGraphArtifact | undefined {
+    return this.#staleGraphForReuse;
+  }
+
+  get staleAssetEntityIdsForReuse(): ReadonlySet<AssetEntityId> {
+    return this.#staleAssetEntityIdsForReuse;
   }
 
   get sourcesByKey(): ReadonlyMap<string, SourceArtifact> {
@@ -272,6 +282,8 @@ export class PipelineArtifactCollection {
     this.#pptxBuildArtifactsByPartId.clear();
     this.#projection = undefined;
     this.#staleProjectionForReuse = undefined;
+    this.#staleGraphForReuse = undefined;
+    this.#staleAssetEntityIdsForReuse.clear();
   }
 
   invalidateFromGraph(): void {
@@ -281,12 +293,16 @@ export class PipelineArtifactCollection {
     this.#pptxBuildArtifactsByPartId.clear();
     this.#projection = undefined;
     this.#staleProjectionForReuse = undefined;
+    this.#staleGraphForReuse = undefined;
+    this.#staleAssetEntityIdsForReuse.clear();
   }
 
   invalidateFromProjection(): void {
     this.#pptxBuildArtifactsByPartId.clear();
     this.#projection = undefined;
     this.#staleProjectionForReuse = undefined;
+    this.#staleGraphForReuse = undefined;
+    this.#staleAssetEntityIdsForReuse.clear();
   }
 
   invalidateAssets(): void {
@@ -295,6 +311,8 @@ export class PipelineArtifactCollection {
     this.#pptxBuildArtifactsByPartId.clear();
     this.#projection = undefined;
     this.#staleProjectionForReuse = undefined;
+    this.#staleGraphForReuse = undefined;
+    this.#staleAssetEntityIdsForReuse.clear();
   }
 
   invalidateForHmr(invalidation: HmrInvalidation): boolean {
@@ -316,6 +334,7 @@ export class PipelineArtifactCollection {
       this.#assetsById.clear();
       this.#assetsBySourceCacheKey.clear();
       this.#projection = undefined;
+      this.#staleAssetEntityIdsForReuse.clear();
       return true;
     }
 
@@ -330,6 +349,7 @@ export class PipelineArtifactCollection {
     }
 
     this.preserveProjectionForHmrReuse();
+    this.#staleAssetEntityIdsForReuse = staleAssetIds;
     staleAssetIds.forEach((id) => {
       this.#assetsById.delete(id);
     });
@@ -347,6 +367,9 @@ export class PipelineArtifactCollection {
   private preserveProjectionForHmrReuse(): void {
     if (this.#projection) {
       this.#staleProjectionForReuse = this.#projection;
+    }
+    if (this.graph) {
+      this.#staleGraphForReuse = this.graph;
     }
   }
 
@@ -513,6 +536,8 @@ export class PipelineArtifactCollection {
   materializeProjection(projection: PptxPackageModel, diagnostics: Diagnostics): void {
     this.#projection = pptxProjectionArtifact(projection, diagnostics);
     this.#staleProjectionForReuse = undefined;
+    this.#staleGraphForReuse = undefined;
+    this.#staleAssetEntityIdsForReuse.clear();
   }
 
   materializeAsset(input: AssetArtifact): void {
@@ -563,6 +588,8 @@ export class PipelineArtifactCollection {
     });
     this.#projection = undefined;
     this.#staleProjectionForReuse = undefined;
+    this.#staleGraphForReuse = undefined;
+    this.#staleAssetEntityIdsForReuse.clear();
   }
 
   replaceProjectionArtifact(projection: PptxPackageModelCandidate): void {
@@ -570,6 +597,8 @@ export class PipelineArtifactCollection {
     this.#graphsBySourceKey.clear();
     this.#projection = pptxProjectionArtifact(projection, projectionShapeDiagnostics(projection));
     this.#staleProjectionForReuse = undefined;
+    this.#staleGraphForReuse = undefined;
+    this.#staleAssetEntityIdsForReuse.clear();
   }
 }
 
