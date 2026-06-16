@@ -38,6 +38,22 @@ jobs:
       - name: Build
         run: bun run build
 
+      - name: Check @deckjsx/node
+        working-directory: plugins/node
+        run: ../../node_modules/.bin/vp check
+
+      - name: Build @deckjsx/node
+        working-directory: plugins/node
+        run: ../../node_modules/.bin/vp pack
+
+      - name: Check @deckjsx/vite
+        working-directory: plugins/vite
+        run: ../../node_modules/.bin/vp check
+
+      - name: Build @deckjsx/vite
+        working-directory: plugins/vite
+        run: ../../node_modules/.bin/vp pack
+
       - name: Install sample dependencies
         run: npm ci --prefix sample
 

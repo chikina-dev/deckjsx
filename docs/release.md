@@ -21,15 +21,15 @@ Trusted Publishing uses GitHub Actions OIDC, so no `NPM_TOKEN` secret is needed.
 
 ## Manual release
 
-1. Update `package.json`, `plugins/node/package.json`, and `plugins/vite/package.json` to the target
-   version.
+1. Update the package manifest for the package being released:
+   - `package.json` for `deckjsx`
+   - `plugins/node/package.json` for `@deckjsx/node`
+   - `plugins/vite/package.json` for `@deckjsx/vite`
 2. Run the local release checks:
    - `vp check`
-   - `(cd plugins/node && ../../node_modules/.bin/vp check)`
-   - `(cd plugins/vite && ../../node_modules/.bin/vp check)`
    - `bun run build`
-   - `(cd plugins/node && ../../node_modules/.bin/vp pack)`
-   - `(cd plugins/vite && ../../node_modules/.bin/vp pack)`
+   - for `@deckjsx/node`: `(cd plugins/node && ../../node_modules/.bin/vp check && ../../node_modules/.bin/vp pack)`
+   - for `@deckjsx/vite`: `(cd plugins/vite && ../../node_modules/.bin/vp check && ../../node_modules/.bin/vp pack)`
    - `npm ci --prefix sample`
    - `npm run --prefix sample smoke`
    - `vp test`
@@ -39,13 +39,16 @@ Trusted Publishing uses GitHub Actions OIDC, so no `NPM_TOKEN` secret is needed.
      release-candidate manifest exists
    - `npm run --prefix .github/compat/pptxgenjs compare`
    - `vp pack`
-   - `(cd plugins/node && npm pack)`
-   - `(cd plugins/vite && npm pack)`
+   - for `@deckjsx/node`: `(cd plugins/node && npm pack)`
+   - for `@deckjsx/vite`: `(cd plugins/vite && npm pack)`
 3. Push the change to `main`.
-4. Run the `Release` workflow from GitHub Actions with a matching tag such as `v0.1.1`.
+4. Run the `Release` workflow from GitHub Actions with the package selector and matching tag:
+   - `deckjsx`: `v0.9.0`
+   - `@deckjsx/node`: `deckjsx-node-v0.9.0`
+   - `@deckjsx/vite`: `deckjsx-vite-v0.9.0`
 
-The workflow validates that all three package versions match the release tag, runs checks and tests,
-creates the GitHub release, and publishes `deckjsx`, `@deckjsx/node`, and `@deckjsx/vite` to npm.
+The workflow validates that the selected package version matches the release tag, runs checks and
+tests, creates the GitHub release, and publishes only the selected npm package.
 `bun run build` intentionally runs before `vp test` in release gates because the public-surface tests
 inspect generated declaration files in `dist`.
 The sample dependency install intentionally runs after `bun run build` because `sample` depends on
@@ -55,9 +58,9 @@ For v0.8.0 and later, the release workflow also runs the strict direct PPTX writ
 render fixture verification, and the isolated pinned `pptxgenjs` generation-regression oracle before
 packing or publishing.
 
-For v0.9.0 and later, the release workflow also checks, builds, packs, dry-runs, and publishes the
-Node and Vite integration packages. The plugin packages should publish only built `dist` artifacts,
-declare `deckjsx` as a peer dependency, and must not publish a `file:../..` dependency.
+For v0.9.0 and later, the Node and Vite integration packages release separately from the root
+package. The plugin packages should publish only built `dist` artifacts, declare `deckjsx` as a peer
+dependency, and must not publish a `file:../..` dependency.
 
 For v0.8.0 and later, the published package should use deckjsx's direct PPTX writer by default and
 must not publish `pptxgenjs` as a runtime dependency. The isolated `.github/compat/pptxgenjs/`

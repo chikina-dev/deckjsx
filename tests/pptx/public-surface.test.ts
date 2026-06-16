@@ -209,6 +209,34 @@ describe("public surface", () => {
     }
   });
 
+  test("plugin typecheck paths do not require prebuilt root dist", async () => {
+    const pluginTsconfigs = await Promise.all(
+      ["plugins/node/tsconfig.json", "plugins/vite/tsconfig.json"].map(
+        async (path) =>
+          [
+            path,
+            JSON.parse(await readRepoText(path)) as {
+              compilerOptions?: { paths?: Record<string, readonly string[]> };
+            },
+          ] as const,
+      ),
+    );
+
+    for (const [path, tsconfig] of pluginTsconfigs) {
+      const paths = tsconfig.compilerOptions?.paths ?? {};
+      expect(paths.deckjsx, `${path} resolves deckjsx from source during check`).toEqual([
+        "../../src/index.ts",
+      ]);
+      expect(
+        paths["deckjsx/integration"],
+        `${path} resolves deckjsx/integration from source during check`,
+      ).toEqual(["../../src/integration.ts"]);
+      expect(JSON.stringify(paths), `${path} must not need dist before check`).not.toContain(
+        "../../dist",
+      );
+    }
+  });
+
   test("v0.9 public surface review classifies integration packages before publishing", async () => {
     const review = await readRepoText("docs/reviews/v0.9-public-surface.md");
 
@@ -267,9 +295,7 @@ describe("public surface", () => {
     );
     const requiredCommands = [
       "run: bun run check",
-      "run: ../../node_modules/.bin/vp check",
       "run: bun run build",
-      "run: ../../node_modules/.bin/vp pack",
       "run: npm ci --prefix sample",
       "run: npm run --prefix sample smoke",
       "run: bun run test",
@@ -291,12 +317,14 @@ describe("public surface", () => {
     }
 
     expect(workflow).toContain("dry_run");
-    expect(workflow).toContain("plugins/node/package.json");
-    expect(workflow).toContain("plugins/vite/package.json");
-    expect(workflow).toContain("working-directory: plugins/node");
-    expect(workflow).toContain("working-directory: plugins/vite");
-    expect(workflow.match(/npm publish --dry-run --access public/g)?.length).toBe(3);
-    expect(workflow.match(/npm publish --access public/g)?.length).toBe(3);
+    expect(workflow).toContain("package:");
+    expect(workflow).toContain("deckjsx-node-v");
+    expect(workflow).toContain("deckjsx-vite-v");
+    expect(workflow).toContain("package_dir=");
+    expect(workflow).toContain("working-directory: ${{ steps.release.outputs.package_dir }}");
+    expect(workflow).not.toContain("package_paths=(");
+    expect(workflow.match(/npm publish --dry-run --access public/g)?.length).toBe(1);
+    expect(workflow.match(/npm publish --access public/g)?.length).toBe(1);
 
     expect(benchmarkDiagnostics).toContain("PPTX_BENCHMARK_QUICK_ITERATIONS:-1");
     expect(benchmarkDiagnostics).toContain("PPTX_BENCHMARK_DEEP_ITERATIONS:-5");
@@ -307,6 +335,33 @@ describe("public surface", () => {
       'bun run benchmark:pptx -- --iterations "$deep_iterations" --strict',
     );
     expect(benchmarkDiagnostics).toContain("Quick PPTX writer benchmark failed");
+  });
+
+  test("ci workflow checks and packs integration packages", async () => {
+    const workflow = await readRepoText(".github/workflows/ci.yml");
+    const requiredCommands = [
+      "run: bun run check",
+      "run: bun run build",
+      "run: ../../node_modules/.bin/vp check",
+      "run: ../../node_modules/.bin/vp pack",
+      "run: npm ci --prefix sample",
+      "run: npm run --prefix sample smoke",
+      "run: bun run test",
+      "run: bash .github/scripts/benchmark-pptx-with-diagnostics.sh",
+    ];
+
+    let previousIndex = -1;
+    for (const command of requiredCommands) {
+      const index = workflow.indexOf(command);
+      expect(index, `CI workflow includes ${command}`).toBeGreaterThanOrEqual(0);
+      expect(index, `CI workflow runs ${command} in release-relevant order`).toBeGreaterThan(
+        previousIndex,
+      );
+      previousIndex = index;
+    }
+
+    expect(workflow).toContain("working-directory: plugins/node");
+    expect(workflow).toContain("working-directory: plugins/vite");
   });
 
   test("required generation regression workflows stay isolated from root dependencies", async () => {

@@ -3,8 +3,16 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
+      package:
+        description: Package to publish
+        required: true
+        type: choice
+        options:
+          - deckjsx
+          - "@deckjsx/node"
+          - "@deckjsx/vite"
       tag:
-        description: Release tag, for example v0.1.1
+        description: Release tag, for example v0.9.0, deckjsx-node-v0.9.0, or deckjsx-vite-v0.9.0
         required: true
         type: string
       prerelease:
@@ -27,11 +35,11 @@ permissions:
 
 jobs:
   publish:
-    name: Publish npm packages
+    name: Publish npm package
     runs-on: ubuntu-latest
 
     steps:
-      - name: Resolve release tag
+      - name: Resolve release package
         id: release
         shell: bash
         run: |
@@ -39,19 +47,62 @@ jobs:
             tag="${{ github.event.release.tag_name }}"
             prerelease="${{ github.event.release.prerelease }}"
             dry_run="false"
+            selected_package=""
           else
             tag="${{ inputs.tag }}"
             prerelease="${{ inputs.prerelease }}"
             dry_run="${{ inputs.dry_run }}"
+            selected_package="${{ inputs.package }}"
           fi
 
-          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "Release tag must look like v0.1.1 or v0.1.1-beta.0." >&2
+          package_name=""
+          package_dir="."
+          package_json="package.json"
+          version=""
+
+          case "$tag" in
+            v*)
+              package_name="deckjsx"
+              package_dir="."
+              package_json="package.json"
+              version="${tag#v}"
+              expected_package="deckjsx"
+              ;;
+            deckjsx-node-v*)
+              package_name="@deckjsx/node"
+              package_dir="plugins/node"
+              package_json="plugins/node/package.json"
+              version="${tag#deckjsx-node-v}"
+              expected_package="@deckjsx/node"
+              ;;
+            deckjsx-vite-v*)
+              package_name="@deckjsx/vite"
+              package_dir="plugins/vite"
+              package_json="plugins/vite/package.json"
+              version="${tag#deckjsx-vite-v}"
+              expected_package="@deckjsx/vite"
+              ;;
+            *)
+              echo "Release tag must look like v0.9.0, deckjsx-node-v0.9.0, or deckjsx-vite-v0.9.0." >&2
+              exit 1
+              ;;
+          esac
+
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag contains invalid package version: $tag" >&2
+            exit 1
+          fi
+
+          if [ -n "$selected_package" ] && [ "$selected_package" != "$expected_package" ]; then
+            echo "Selected package $selected_package does not match release tag $tag; expected $expected_package." >&2
             exit 1
           fi
 
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "package_name=$package_name" >> "$GITHUB_OUTPUT"
+          echo "package_dir=$package_dir" >> "$GITHUB_OUTPUT"
+          echo "package_json=$package_json" >> "$GITHUB_OUTPUT"
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
           echo "dry_run=$dry_run" >> "$GITHUB_OUTPUT"
 
@@ -78,19 +129,11 @@ jobs:
       - name: Validate package version
         shell: bash
         run: |
-          package_paths=(
-            "package.json"
-            "plugins/node/package.json"
-            "plugins/vite/package.json"
-          )
-
-          for package_path in "${package_paths[@]}"; do
-            package_version="$(node -p "require('./$package_path').version")"
-            if [ "$package_version" != "${{ steps.release.outputs.version }}" ]; then
-              echo "$package_path version $package_version does not match ${{ steps.release.outputs.tag }}." >&2
-              exit 1
-            fi
-          done
+          package_version="$(node -p "require('./${{ steps.release.outputs.package_json }}').version")"
+          if [ "$package_version" != "${{ steps.release.outputs.version }}" ]; then
+            echo "${{ steps.release.outputs.package_json }} version $package_version does not match ${{ steps.release.outputs.tag }}." >&2
+            exit 1
+          fi
 
       - name: Validate release source
         if: steps.release.outputs.dry_run != 'true'
@@ -107,55 +150,58 @@ jobs:
       - name: Check
         run: bun run check
 
-      - name: Check @deckjsx/node
-        working-directory: plugins/node
-        run: ../../node_modules/.bin/vp check
-
-      - name: Check @deckjsx/vite
-        working-directory: plugins/vite
-        run: ../../node_modules/.bin/vp check
-
       - name: Build
         run: bun run build
 
+      - name: Check @deckjsx/node
+        if: steps.release.outputs.package_name == '@deckjsx/node'
+        working-directory: plugins/node
+        run: ../../node_modules/.bin/vp check
+
       - name: Build @deckjsx/node
+        if: steps.release.outputs.package_name == '@deckjsx/node'
         working-directory: plugins/node
         run: ../../node_modules/.bin/vp pack
 
+      - name: Check @deckjsx/vite
+        if: steps.release.outputs.package_name == '@deckjsx/vite'
+        working-directory: plugins/vite
+        run: ../../node_modules/.bin/vp check
+
       - name: Build @deckjsx/vite
+        if: steps.release.outputs.package_name == '@deckjsx/vite'
         working-directory: plugins/vite
         run: ../../node_modules/.bin/vp pack
 
       - name: Install sample dependencies
+        if: steps.release.outputs.package_name == 'deckjsx'
         run: npm ci --prefix sample
 
       - name: Run sample smoke
+        if: steps.release.outputs.package_name == 'deckjsx'
         run: npm run --prefix sample smoke
 
       - name: Test
         run: bun run test
 
       - name: Benchmark direct PPTX writer
+        if: steps.release.outputs.package_name == 'deckjsx'
         run: bash .github/scripts/benchmark-pptx-with-diagnostics.sh
 
       - name: Verify render fixtures
+        if: steps.release.outputs.package_name == 'deckjsx'
         run: bun run verify:render -- --skip-raster
 
       - name: Install PPTX oracle dependencies
+        if: steps.release.outputs.package_name == 'deckjsx'
         run: npm install --no-audit --no-fund --prefix .github/compat/pptxgenjs
 
       - name: Compare direct PPTX writer with oracle
+        if: steps.release.outputs.package_name == 'deckjsx'
         run: npm run --prefix .github/compat/pptxgenjs compare
 
-      - name: Pack
-        run: npm pack
-
-      - name: Pack @deckjsx/node
-        working-directory: plugins/node
-        run: npm pack
-
-      - name: Pack @deckjsx/vite
-        working-directory: plugins/vite
+      - name: Pack selected package
+        working-directory: ${{ steps.release.outputs.package_dir }}
         run: npm pack
 
       - name: Create GitHub release
@@ -164,6 +210,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.release.outputs.tag }}
           PRERELEASE: ${{ steps.release.outputs.prerelease }}
+          PACKAGE_NAME: ${{ steps.release.outputs.package_name }}
         shell: bash
         run: |
           if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
@@ -176,7 +223,7 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG already exists."
           else
-            args=(gh release create "$TAG" --generate-notes --verify-tag)
+            args=(gh release create "$TAG" --title "$PACKAGE_NAME ${{ steps.release.outputs.version }}" --generate-notes --verify-tag)
             if [ "$PRERELEASE" = "true" ]; then
               args+=(--prerelease)
             fi
@@ -185,28 +232,10 @@ jobs:
 
       - name: Publish dry run
         if: steps.release.outputs.dry_run == 'true'
-        run: npm publish --dry-run --access public
-
-      - name: Publish @deckjsx/node dry run
-        if: steps.release.outputs.dry_run == 'true'
-        working-directory: plugins/node
-        run: npm publish --dry-run --access public
-
-      - name: Publish @deckjsx/vite dry run
-        if: steps.release.outputs.dry_run == 'true'
-        working-directory: plugins/vite
+        working-directory: ${{ steps.release.outputs.package_dir }}
         run: npm publish --dry-run --access public
 
       - name: Publish to npm
         if: steps.release.outputs.dry_run != 'true'
-        run: npm publish --access public
-
-      - name: Publish @deckjsx/node to npm
-        if: steps.release.outputs.dry_run != 'true'
-        working-directory: plugins/node
-        run: npm publish --access public
-
-      - name: Publish @deckjsx/vite to npm
-        if: steps.release.outputs.dry_run != 'true'
-        working-directory: plugins/vite
+        working-directory: ${{ steps.release.outputs.package_dir }}
         run: npm publish --access public
