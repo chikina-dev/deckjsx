@@ -142,6 +142,10 @@ Stable identity for a node inside a Projected Layout Snapshot. It is distinct fr
 Projected Layout nodes should retain Graph Identity and Style Entity provenance, but their own identity belongs to the layout snapshot.
 _Avoid_: graph node id, PPTX element identity, PowerPoint shape id
 
+**Slide Projection Fingerprint**:
+A Project-stage fingerprint that decides whether a slide's layout and output projection can be reused for HMR-oriented incremental projection. It is derived from the slide Graph Identity plus upstream semantic, resolved style, asset probe, theme, template, deck layout, and order-sensitive context that can change the projected slide.
+_Avoid_: Package Part Identity, writer emitter fingerprint, ZIP entry checksum
+
 **Inspection Interface**:
 The explicit public surface for inspecting compiled deck meaning, including the Semantic Author Graph and inspection-only views such as resolved styles. It is separate from the Authoring Interface so graph internals and debug-oriented payloads do not look like everyday authoring vocabulary.
 The public result contract for inspect-mode compile may be reachable from the Authoring Interface, but detailed graph and resolved-style vocabulary belongs to the Inspection Interface.
@@ -155,6 +159,10 @@ _Avoid_: root authoring export, output projection surface, legacy output surface
 An inspection-only view computed from a Projected Document Model, diagnostics, and related Pipeline Artifacts to explain output-facing state without becoming the primary projected model. Examples include Effective Projected Style View, Composed Visual Paint Order View, Project Result warning rollups, and build/reuse explanations exposed through Render inspection summaries.
 Derived Projection Inspection Views may be materialized lazily or by detail level so ordinary Project and Render calls do not pay for every sandbox explanation. They must not be writer input and must not duplicate ownership from the Pptx Package Model or Pptx Package Assembly Plan.
 _Avoid_: Projected Document Model, writer input, eager debug payload, root authoring export
+
+**Integration Interface**:
+The plugin-facing public subpath, such as `deckjsx/integration`, that exposes the minimum contracts Project Integration Packages and Runtime Integration Packages need to connect to core without becoming ordinary authoring APIs. It may expose Integration Context, Media Source Origin helpers, AssetLoader contracts, and patch plan DTOs, while root `deckjsx` keeps authoring vocabulary separate.
+_Avoid_: root Authoring Interface export, internal writer module import, user-authored media prop wrapper
 
 **Asset Entity**:
 A graph entity that represents reusable media or external content such as an image source. Renderable nodes reference Asset Entities instead of embedding output-specific media paths.
@@ -246,7 +254,35 @@ Runtime-specific capabilities, including Node file-system access, belong in Proj
 When a Project Integration Package provides default asset loading for embedded presentation media, it should return AssetLoader probe metadata and bytes rather than only rewriting sources to public URLs.
 Toolchain-specific path meanings, such as Vite's public-root interpretation of `/asset.png`, belong to the Project Integration Package. Core preserves the authored path string and does not assign special meaning to a leading slash.
 Project Integration Packages may attach default Asset Loading Boundary behavior through integration-managed context rather than requiring authors to call manual loader registration APIs.
-_Avoid_: core authoring export, implicit runtime dependency, hidden file-system loader
+`@deckjsx/node` may provide a Node file AssetLoader for normal runtime rendering. It should resolve absolute paths directly, importer-relative paths from Media Source Origin metadata, and optional root-relative paths from explicit loader configuration; core should not gain Node filesystem behavior.
+Project Integration Packages may act as middleware around an existing `deck.render()` execution by supplying module origin, asset loading, HMR invalidation metadata, and patch-writing bridges; they should not own Deck entry discovery or replace the core render API.
+They should influence `deck.render()` by attaching module-local Integration Context and Media Source Origin metadata through source/JSX transforms, not by rewriting user-authored render call expressions into a different public API.
+Vite render-call transforms should preserve ordinary adapter configuration such as `deck.render(pptx({ inspection: "summary" }))`; adding Integration Context must wrap the adapter expression rather than replace it with a special dev-only API.
+_Avoid_: core authoring export, implicit runtime dependency, hidden file-system loader, deck entry owner
+
+**HMR-oriented Compilation Runtime**:
+A project-integrated deckjsx runtime that preserves presentation identity while updating affected authored sources, projected slides, and package output from toolchain change events. It is not merely a browser preview reload or a whole-deck rebuild hidden behind Vite HMR.
+HMR invalidation should clear stale process-memory source, graph, projection, and asset artifacts when code modules change, but should retain PPTX package build artifacts so unchanged package parts can still pass through fingerprint-based reuse after the fresh projection is computed.
+When invalidating a projection for HMR, the previous projection may be retained only as a stale reuse source. The next Project stage can reuse unchanged slide package parts, including the slide XML part and its slide relationship part, when their Slide Projection Fingerprint or package part fingerprint still matches. It must rebuild dependency-bearing manifest and support parts so their dependency fingerprints stay current.
+When a changed HMR module is a local media file, invalidation should compare the changed file path against Media Source Origin importer-relative authored paths and clear only the matching Asset Artifacts and derived projection state. Package build artifacts may remain available for fingerprint checks after the media payload is refreshed.
+Project Integration Packages should treat HMR invalidation as process-memory event state rather than persistent cache state. Once a Vite render module has received the current changed module ids, the plugin should consume that snapshot so old changes do not keep invalidating later renders.
+Because authored media path literals are not real JavaScript imports, a Vite integration should track modules where it injects render Integration Context and return those modules from hot-update handling. This lets media file changes re-enter the ordinary render path where HMR invalidation metadata can be consumed.
+_Avoid_: preview UI, full rebuild loop, renderer compatibility layer
+
+**Patchable PPTX**:
+A PPTX artifact generated with enough deckjsx-owned package identity and reserved part capacity for the HMR-oriented Compilation Runtime to update changed package parts without rewriting the whole archive in the common case.
+Patchable PPTX capacity is primarily reserved on XML package parts because slide, relationship, presentation, layout, theme, and manifest-like XML changes are common during HMR; media parts normally do not reserve capacity and fall back to whole-archive rewrite when their byte size changes.
+XML reserve capacity should be stored as a deckjsx-owned trailing XML comment so each package part remains valid XML while preserving a larger stored entry length for in-place patching.
+Patchable PPTX is the normal deckjsx PPTX artifact rather than a separate dev-only render mode; Project Integration Packages may add HMR behavior around it without replacing the core render API.
+Persistent patchability state lives inside the PPTX package itself; HMR loops may keep process-memory caches, but v0.9.0 should not require sidecar cache files.
+The deckjsx-owned patch manifest should live at `ppt/deckjsx/patch-manifest.json`.
+If another tool rewrites the package and removes or invalidates deckjsx patch metadata, Runtime Integration Packages should treat the existing file as non-patchable and perform a whole-archive rewrite with diagnostics rather than attempting an in-place patch.
+_Avoid_: arbitrary user-authored PPTX, dev-only artifact mode, opaque ZIP file
+
+**In-place Package Patch**:
+A package update that rewrites changed PPTX package part bytes inside an existing Patchable PPTX while preserving unaffected package part bytes and archive placement. It may fall back to a whole-archive rewrite when a changed part exceeds its reserved capacity.
+Core may describe patchable package structure and patch plans, while Runtime Integration Packages or Project Integration Packages perform filesystem reads, in-place writes, locking, and whole-archive rewrite fallback.
+_Avoid_: append-only duplicate ZIP entry, renderer live reload, semantic slide edit
 
 **Integration Context**:
 The integration-managed context attached to a deck module or source so Project Integration Packages can provide default Asset Loading Boundary behavior and Media Source Origin transport without making authors call registration APIs.
@@ -257,8 +293,9 @@ Integration Context Identity selects the source/module-scoped Integration Contex
 _Avoid_: public authoring option, global singleton registry, manual loader registration, resolver identity
 
 **Runtime Integration Package**:
-An optional package that connects deckjsx to a runtime capability family, such as Node file-system output, without making that runtime part of the core package. Runtime Integration Packages may provide path output, local file AssetLoader primitives, or other runtime-specific adapters that operate on core runtime-neutral artifacts and contracts.
-Project Integration Packages may depend on Runtime Integration Packages when a toolchain needs the same runtime capability, but the runtime capability should not be owned by the project toolchain package unless it is truly toolchain-specific.
+An optional package that connects deckjsx to a runtime capability family, such as Node file-system output, without making that runtime part of the core package. The canonical Node Runtime Integration Package is `@deckjsx/node`.
+Runtime Integration Packages may provide path output, local file AssetLoader primitives, Patchable PPTX file inspection, In-place Package Patch writes, file locking, and whole-archive rewrite fallback over core runtime-neutral artifacts and contracts.
+Project Integration Packages and Runtime Integration Packages should compose as sibling packages through ordinary user render code and shared integration contracts. For example, user code can call `write(await deck.render(pptx()), "out.pptx")` from `@deckjsx/node`, while `@deckjsx/vite` influences the `deck.render(pptx())` execution by attaching project integration metadata rather than receiving Node runtime capabilities as plugin options.
 _Avoid_: core runtime import, Vite-owned Node output, hidden platform assumption
 
 **Asset Artifact**:
@@ -328,6 +365,7 @@ _Avoid_: direct writer import of projection internals, file split by ceremony, p
 
 **Package Part Identity**:
 Stable identity for a part in a Projected Document Model, especially a PPTX package part. It is distinct from the package path because paths can change due to slide ordering, media placement, or writer layout decisions while the conceptual output part remains the same.
+For Patchable PPTX, slide package paths should be derived from Package Part Identity where practical so slide insertion or reordering does not force unchanged slide parts to move. This should reduce HMR churn without introducing a separate user-facing slide path identity system.
 _Avoid_: package path, relationship id, graph id
 
 **Package Part Order Key**:
@@ -533,8 +571,15 @@ _Avoid_: writer-side projection, direct imports of projection internals, public 
 
 **Render Output Side Effect**:
 The runtime action, owned by a Runtime Integration Package rather than core Render, that writes a produced Rendered Artifact to an output path after artifact bytes exist. It is separate from package generation: Rendered Artifact bytes remain the primary output, while path writing belongs outside the core `deckjsx` package.
+The Node Runtime Integration Package exposes this as a helper shaped like `write(await deck.render(pptx()), "out.pptx")`; the helper may choose In-place Package Patch for Patchable PPTX outputs before falling back to a whole-archive rewrite.
+Runtime write helpers should follow the result-first diagnostics culture of core stages: expected filesystem, lock, patch-capacity, non-patchable-package, and fallback failures return diagnostics rather than throwing ordinary user-manageable errors.
+Runtime write helpers should not modify the target path when the Render Result has errors, lacks an artifact, or targets an unsupported format.
 In v0.8.5, core should remove the root/core `output: string` path-writing option and the current Node output side-effect implementation/types instead of keeping a compatibility side effect in Render.
 _Avoid_: primary artifact, writer package assembly, public streaming mode, core render option, core output side-effect type
+
+**Write Result**:
+The result-first response from a Runtime Integration Package write helper. It should include diagnostics, target path, and a small machine-readable action summary such as created, patched, rewritten, or skipped without duplicating Render Patch Plan details.
+_Avoid_: Render Result, Render Patch Plan, filesystem exception
 
 **Pptx Package Build Artifact**:
 A render-stage Pipeline Artifact that materializes a Pptx Package Model into package-part bytes before the final PPTX ZIP bytes are assembled. It is keyed by Package Part Identity, but it is not the Projected Document Model or the primary inspection model.
@@ -562,6 +607,12 @@ The ZIP writer should consume the Assembly Plan in streaming order internally; s
 Assembly entry status reasons are typed debug/reuse reasons, not public diagnostic code families.
 Assembly entries should distinguish required package entries from optional entries so missing required parts can block Render while optional parts can be reported without corrupting the package.
 _Avoid_: unordered build artifact map, Projected Document Model, ZIP writer implementation detail
+
+**Render Patch Plan**:
+Render-stage artifact metadata that lets a Runtime Integration Package update a Patchable PPTX without relying on human-readable inspection summaries. It records patchable package versioning, package part paths, byte offsets, reserved capacity, expected checksums or fingerprints, and fallback information needed by `@deckjsx/node` write helpers.
+Render Patch Plan values may be cached in process memory by HMR tooling, but persistent patch state should be recoverable from the PPTX package manifest rather than a sidecar cache file.
+Persistent patch manifests should record logical and capacity metadata such as package part identity, path, reserved capacity, logical byte length, stored entry byte length, fingerprints, patchable kind, and expected checksums. ZIP byte offsets should be recovered from the existing package central directory by the Runtime Integration Package instead of being treated as manifest-owned truth.
+_Avoid_: Render Inspection Summary, final artifact bytes, public ZIP writer API
 
 **Pptx ZIP Sink**:
 An internal writer boundary that receives final PPTX ZIP chunks while the ZIP module consumes the Assembly Plan. Collecting sinks materialize the public `RenderedArtifact.bytes`; tee sinks may fan out chunks to multiple internal consumers, but sink topology is not public API.

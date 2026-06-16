@@ -477,6 +477,10 @@ declare const renderResultForArtifactNarrowing: RenderResult;
 if (renderResultForArtifactNarrowing.artifact) {
   renderResultForArtifactNarrowing.artifact.bytes satisfies Uint8Array;
   renderResultForArtifactNarrowing.artifact.format satisfies import("deckjsx").OutputFormat;
+  renderResultForArtifactNarrowing.patchPlan satisfies
+    | import("deckjsx").RenderPatchPlan
+    | undefined;
 } else {
   renderResultForArtifactNarrowing.artifact satisfies undefined;
+  renderResultForArtifactNarrowing.patchPlan satisfies undefined;
 }

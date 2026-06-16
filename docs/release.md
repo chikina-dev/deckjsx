@@ -1,10 +1,16 @@
 # Release Process
 
-This package is designed to publish from GitHub Actions using npm Trusted Publishing.
+The root package and integration packages are designed to publish from GitHub Actions using npm
+Trusted Publishing:
+
+- `deckjsx`
+- `@deckjsx/node`
+- `@deckjsx/vite`
 
 ## One-time npm setup
 
-In the npm package settings for `deckjsx`, add a trusted publisher:
+In the npm package settings for `deckjsx`, `@deckjsx/node`, and `@deckjsx/vite`, add a trusted
+publisher:
 
 - Provider: GitHub Actions
 - Organization or user: `chikina-dev`
@@ -15,10 +21,15 @@ Trusted Publishing uses GitHub Actions OIDC, so no `NPM_TOKEN` secret is needed.
 
 ## Manual release
 
-1. Update `package.json` to the target version.
+1. Update `package.json`, `plugins/node/package.json`, and `plugins/vite/package.json` to the target
+   version.
 2. Run the local release checks:
    - `vp check`
+   - `(cd plugins/node && ../../node_modules/.bin/vp check)`
+   - `(cd plugins/vite && ../../node_modules/.bin/vp check)`
    - `bun run build`
+   - `(cd plugins/node && ../../node_modules/.bin/vp pack)`
+   - `(cd plugins/vite && ../../node_modules/.bin/vp pack)`
    - `npm ci --prefix sample`
    - `npm run --prefix sample smoke`
    - `vp test`
@@ -28,11 +39,13 @@ Trusted Publishing uses GitHub Actions OIDC, so no `NPM_TOKEN` secret is needed.
      release-candidate manifest exists
    - `npm run --prefix .github/compat/pptxgenjs compare`
    - `vp pack`
+   - `(cd plugins/node && npm pack)`
+   - `(cd plugins/vite && npm pack)`
 3. Push the change to `main`.
 4. Run the `Release` workflow from GitHub Actions with a matching tag such as `v0.1.1`.
 
-The workflow validates the package version, runs checks and tests, creates the GitHub release, and
-publishes the package to npm.
+The workflow validates that all three package versions match the release tag, runs checks and tests,
+creates the GitHub release, and publishes `deckjsx`, `@deckjsx/node`, and `@deckjsx/vite` to npm.
 `bun run build` intentionally runs before `vp test` in release gates because the public-surface tests
 inspect generated declaration files in `dist`.
 The sample dependency install intentionally runs after `bun run build` because `sample` depends on
@@ -41,6 +54,10 @@ release.
 For v0.8.0 and later, the release workflow also runs the strict direct PPTX writer benchmark,
 render fixture verification, and the isolated pinned `pptxgenjs` generation-regression oracle before
 packing or publishing.
+
+For v0.9.0 and later, the release workflow also checks, builds, packs, dry-runs, and publishes the
+Node and Vite integration packages. The plugin packages should publish only built `dist` artifacts,
+declare `deckjsx` as a peer dependency, and must not publish a `file:../..` dependency.
 
 For v0.8.0 and later, the published package should use deckjsx's direct PPTX writer by default and
 must not publish `pptxgenjs` as a runtime dependency. The isolated `.github/compat/pptxgenjs/`
@@ -52,11 +69,13 @@ Before a v0.8.0 or later release, also confirm that public documentation describ
 `deck.useAssets(loader)`, and the `deckjsx` / `deckjsx/adapter` / `deckjsx/inspect` surface split.
 Writer internals, streaming ZIP controls, fflate settings, XML emitters, Assembly Plan builders, and
 Build Artifact storage should not appear as public usage guidance.
-The package export map should be reviewed as a concrete allowlist, not only as a list of names:
-`deckjsx`, `deckjsx/adapter`, `deckjsx/inspect`, the JSX runtimes, and `package.json` should point at
-their intended built entry files. Wildcard subpaths, deep internal writer paths, generated chunk
-targets, projection helper paths, runtime output paths, ZIP/sink paths, and direct XML emitter paths
-are release blockers.
+The package export maps should be reviewed as concrete allowlists, not only as lists of names:
+`deckjsx`, `deckjsx/adapter`, `deckjsx/inspect`, `deckjsx/integration`, the JSX runtimes, and
+`package.json` should point at their intended built entry files with matching `types` conditions.
+`@deckjsx/node` and `@deckjsx/vite` should expose only their root entry and `package.json`, also with
+matching `types` conditions. Wildcard subpaths, deep internal writer paths, generated chunk targets,
+projection helper paths, runtime output paths, ZIP/sink paths, and direct XML emitter paths are
+release blockers.
 
 Public API review for v0.8.0 should classify every exported name before release:
 

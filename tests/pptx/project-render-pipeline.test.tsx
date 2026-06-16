@@ -1341,6 +1341,129 @@ describe("project/render pipeline", () => {
     }
   });
 
+  test("render emits patchable package metadata for node runtime writers", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Patchable" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>patchable</p>
+    ));
+
+    const render = await deck.render({ inspection: "none" });
+    const zip = unzipSync(render.artifact?.bytes ?? new Uint8Array());
+    const manifestBytes = zip["ppt/deckjsx/patch-manifest.json"];
+    const contentTypes = new TextDecoder().decode(zip["[Content_Types].xml"] ?? new Uint8Array());
+    const manifest = JSON.parse(new TextDecoder().decode(manifestBytes)) as {
+      readonly kind: string;
+      readonly version: number;
+      readonly parts: readonly {
+        readonly packagePartId: string;
+        readonly path: string;
+        readonly patchableKind: string;
+        readonly reservedCapacity: number;
+        readonly logicalByteLength: number;
+        readonly storedByteLength: number;
+        readonly fingerprint: string;
+        readonly buildStatus?: string;
+      }[];
+    };
+    const patchPlan = render.patchPlan;
+    const slideEntry = manifest.parts.find((part) => part.path.endsWith(".xml"));
+    const relationshipEntry = manifest.parts.find((part) => part.path.endsWith(".rels"));
+    const slideBytes = zip[slideEntry?.path ?? ""];
+    const slideText = new TextDecoder().decode(slideBytes ?? new Uint8Array());
+
+    expect(render.ok).toBe(true);
+    expect(patchPlan).toEqual(
+      expect.objectContaining({
+        kind: "deckjsx.renderPatchPlan",
+        version: 1,
+      }),
+    );
+    expect(manifest).toEqual(
+      expect.objectContaining({
+        kind: "deckjsx.patchManifest",
+        version: 1,
+      }),
+    );
+    expect(contentTypes).toContain('Extension="json"');
+    expect(contentTypes).toContain('ContentType="application/json"');
+    expect(manifest.parts.length).toBeGreaterThan(0);
+    expect(patchPlan?.parts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          packagePartId: "deckjsx:patch-manifest",
+          path: "ppt/deckjsx/patch-manifest.json",
+          patchableKind: "manifest",
+          reservedCapacity: expect.any(Number),
+          storedByteLength: expect.any(Number),
+          fingerprint: expect.stringMatching(/^fnv1a32:/),
+          buildStatus: "rebuilt",
+        }),
+        expect.objectContaining({
+          packagePartId: slideEntry?.packagePartId,
+          path: slideEntry?.path,
+          reservedCapacity: slideEntry?.reservedCapacity,
+          logicalByteLength: slideEntry?.logicalByteLength,
+          storedByteLength: slideEntry?.storedByteLength,
+          fingerprint: slideEntry?.fingerprint,
+          buildStatus: "rebuilt",
+        }),
+      ]),
+    );
+    expect(patchPlan?.parts.find((part) => part.patchableKind === "manifest")).toEqual(
+      expect.objectContaining({
+        logicalByteLength: expect.any(Number),
+        reservedCapacity: expect.any(Number),
+        storedByteLength: expect.any(Number),
+      }),
+    );
+    expect(slideEntry).toEqual(
+      expect.objectContaining({
+        patchableKind: "xml",
+        reservedCapacity: expect.any(Number),
+        logicalByteLength: expect.any(Number),
+        storedByteLength: expect.any(Number),
+        fingerprint: expect.stringMatching(/^fnv1a32:/),
+      }),
+    );
+    expect(slideEntry!.reservedCapacity).toBeGreaterThan(0);
+    expect(slideEntry!.storedByteLength).toBeGreaterThan(slideEntry!.logicalByteLength);
+    expect(slideText).toContain("deckjsx-patch-reserve:");
+    expect(slideEntry).not.toHaveProperty("buildStatus");
+    expect(relationshipEntry).toEqual(
+      expect.objectContaining({
+        patchableKind: "xml",
+        reservedCapacity: expect.any(Number),
+      }),
+    );
+    expect(relationshipEntry!.reservedCapacity).toBeGreaterThan(0);
+  });
+
+  test("render patch plan reports warm package part reuse without persisting reuse state", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Patch reuse" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>patch reuse</p>
+    ));
+
+    const cold = await deck.render({ inspection: "none" });
+    const warm = await deck.render({ inspection: "none" });
+    const warmZip = unzipSync(warm.artifact?.bytes ?? new Uint8Array());
+    const manifest = JSON.parse(
+      new TextDecoder().decode(warmZip["ppt/deckjsx/patch-manifest.json"]),
+    ) as {
+      readonly parts: readonly { readonly path: string; readonly buildStatus?: string }[];
+    };
+    const warmXmlPart = warm.patchPlan?.parts.find((part) => part.patchableKind === "xml");
+    const manifestXmlPart = manifest.parts.find((part) => part.path === warmXmlPart?.path);
+
+    expect(cold.patchPlan?.parts.some((part) => part.buildStatus === "rebuilt")).toBe(true);
+    expect(warmXmlPart).toEqual(
+      expect.objectContaining({
+        buildStatus: "reused",
+      }),
+    );
+    expect(manifestXmlPart).not.toHaveProperty("buildStatus");
+  });
+
   test("render explains rebuilds when a defined projection changes a package part fingerprint", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Original" }, () => (
@@ -10116,6 +10239,242 @@ describe("project/render pipeline", () => {
     expect(project.ok).toBe(true);
     expect(artifacts.projection?.projection).toBe(project.projection);
     expect(artifacts.projection?.partsById.size).toBe(project.projection?.parts.length);
+  });
+
+  test("projection artifacts expose stable slide projection fingerprints for slide-level reuse", async () => {
+    async function projectDeck(firstSlideText: string) {
+      const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+      const artifacts = new PipelineArtifactCollection();
+
+      deck.slide({ name: "Edited" }, () => (
+        <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{firstSlideText}</p>
+      ));
+      deck.slide({ name: "Stable" }, () => (
+        <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>unchanged</p>
+      ));
+
+      const project = await projectSource({
+        source: deck,
+        options: deck.options,
+        projectOptions: { inspection: "none" },
+        artifacts,
+      });
+
+      return { artifacts, project };
+    }
+
+    const first = await projectDeck("before");
+    const second = await projectDeck("after");
+    const firstEditedSlide = first.project.projection?.slides.find(
+      (slide) => slide.payload.name === "Edited",
+    );
+    const firstStableSlide = first.project.projection?.slides.find(
+      (slide) => slide.payload.name === "Stable",
+    );
+    const secondEditedSlide = second.project.projection?.slides.find(
+      (slide) => slide.payload.name === "Edited",
+    );
+    const secondStableSlide = second.project.projection?.slides.find(
+      (slide) => slide.payload.name === "Stable",
+    );
+
+    const firstEditedFingerprint = first.artifacts.projection?.slideProjectionFingerprints.get(
+      firstEditedSlide!.id,
+    );
+    const firstStableFingerprint = first.artifacts.projection?.slideProjectionFingerprints.get(
+      firstStableSlide!.id,
+    );
+    const secondEditedFingerprint = second.artifacts.projection?.slideProjectionFingerprints.get(
+      secondEditedSlide!.id,
+    );
+    const secondStableFingerprint = second.artifacts.projection?.slideProjectionFingerprints.get(
+      secondStableSlide!.id,
+    );
+
+    expect(firstEditedFingerprint).toEqual(
+      expect.objectContaining({
+        slidePartId: firstEditedSlide?.id,
+        fingerprint: expect.stringMatching(/^fnv1a32:/),
+      }),
+    );
+    expect(firstStableFingerprint?.fingerprint).toBe(secondStableFingerprint?.fingerprint);
+    expect(firstEditedFingerprint?.fingerprint).not.toBe(secondEditedFingerprint?.fingerprint);
+  });
+
+  test("HMR projection reuses unchanged slide package parts from the stale projection", async () => {
+    let editedText = "before";
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const artifacts = new PipelineArtifactCollection();
+
+    deck.slide({ name: "Edited" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{editedText}</p>
+    ));
+    deck.slide({ name: "Stable" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>unchanged</p>
+    ));
+
+    const first = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const firstEditedSlide = first.projection?.slides.find(
+      (slide) => slide.payload.name === "Edited",
+    );
+    const firstStableSlide = first.projection?.slides.find(
+      (slide) => slide.payload.name === "Stable",
+    );
+    const firstStableSlideRelationships = first.projection?.parts.find(
+      (part) =>
+        part.kind === "relationships" &&
+        firstStableSlide?.origin?.graphNodeIds?.some((id) =>
+          part.origin?.graphNodeIds?.includes(id),
+        ),
+    );
+
+    editedText = "after";
+    artifacts.invalidateForHmr({
+      importer: "/project/src/deck.tsx",
+      changedModuleIds: ["/project/src/deck.tsx"],
+    });
+    const second = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const secondEditedSlide = second.projection?.slides.find(
+      (slide) => slide.payload.name === "Edited",
+    );
+    const secondStableSlide = second.projection?.slides.find(
+      (slide) => slide.payload.name === "Stable",
+    );
+    const secondStableSlideRelationships = second.projection?.parts.find(
+      (part) =>
+        part.kind === "relationships" &&
+        secondStableSlide?.origin?.graphNodeIds?.some((id) =>
+          part.origin?.graphNodeIds?.includes(id),
+        ),
+    );
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(firstStableSlideRelationships).toBeDefined();
+    expect(secondStableSlideRelationships).toBeDefined();
+    expect(secondEditedSlide).not.toBe(firstEditedSlide);
+    expect(secondStableSlide).toBe(firstStableSlide);
+    expect(secondStableSlideRelationships).toBe(firstStableSlideRelationships);
+  });
+
+  test("HMR render reports reused patch plan parts for unchanged slide projection units", async () => {
+    let editedText = "before";
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const artifacts = new PipelineArtifactCollection();
+
+    deck.slide({ name: "Edited" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{editedText}</p>
+    ));
+    deck.slide({ name: "Stable" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>unchanged</p>
+    ));
+
+    const firstProject = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const firstRender = await renderPptxPackage(
+      firstProject.projection!,
+      { inspection: "none" },
+      {
+        pptxBuildArtifactsByPartId: artifacts.pptxBuildArtifactsByPartId,
+      },
+    );
+    artifacts.materializePptxBuildArtifacts(firstRender.buildArtifacts ?? []);
+    const firstStableSlide = firstProject.projection?.slides.find(
+      (slide) => slide.payload.name === "Stable",
+    );
+    const firstStableSlideRelationships = firstProject.projection?.parts.find(
+      (part) =>
+        part.kind === "relationships" &&
+        firstStableSlide?.origin?.graphNodeIds?.some((id) =>
+          part.origin?.graphNodeIds?.includes(id),
+        ),
+    );
+
+    editedText = "after";
+    artifacts.invalidateForHmr({
+      importer: "/project/src/deck.tsx",
+      changedModuleIds: ["/project/src/deck.tsx"],
+    });
+    const secondProject = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const secondRender = await renderPptxPackage(
+      secondProject.projection!,
+      { inspection: "none" },
+      {
+        pptxBuildArtifactsByPartId: artifacts.pptxBuildArtifactsByPartId,
+      },
+    );
+    const secondStableSlide = secondProject.projection?.slides.find(
+      (slide) => slide.payload.name === "Stable",
+    );
+    const secondStableSlideRelationships = secondProject.projection?.parts.find(
+      (part) =>
+        part.kind === "relationships" &&
+        secondStableSlide?.origin?.graphNodeIds?.some((id) =>
+          part.origin?.graphNodeIds?.includes(id),
+        ),
+    );
+    const stableSlidePatchPart = secondRender.patchPlan?.parts.find(
+      (part) => part.packagePartId === firstStableSlide?.id,
+    );
+    const stableRelationshipsPatchPart = secondRender.patchPlan?.parts.find(
+      (part) => part.packagePartId === firstStableSlideRelationships?.id,
+    );
+    const stableSlideAssemblyEntry = secondRender.summary?.assembly?.entries.find(
+      (entry) => entry.path === firstStableSlide?.path,
+    );
+    const stableRelationshipsAssemblyEntry = secondRender.summary?.assembly?.entries.find(
+      (entry) => entry.path === firstStableSlideRelationships?.path,
+    );
+
+    expect(firstProject.ok).toBe(true);
+    expect(firstRender.artifact).toBeDefined();
+    expect(secondProject.ok).toBe(true);
+    expect(secondRender.artifact).toBeDefined();
+    expect(secondStableSlide).toBe(firstStableSlide);
+    expect(secondStableSlideRelationships).toBe(firstStableSlideRelationships);
+    expect(stableSlidePatchPart).toEqual(
+      expect.objectContaining({
+        buildStatus: "reused",
+        buildReason: "buildArtifactFingerprintMatched",
+      }),
+    );
+    expect(stableRelationshipsPatchPart).toEqual(
+      expect.objectContaining({
+        buildStatus: "reused",
+        buildReason: "buildArtifactFingerprintMatched",
+      }),
+    );
+    expect(stableSlideAssemblyEntry).toEqual(
+      expect.objectContaining({
+        status: "reused",
+        reason: "buildArtifactFingerprintMatched",
+      }),
+    );
+    expect(stableRelationshipsAssemblyEntry).toEqual(
+      expect.objectContaining({
+        status: "reused",
+        reason: "buildArtifactFingerprintMatched",
+      }),
+    );
   });
 
   test("stage artifacts keep mounted source and package part indexes", async () => {

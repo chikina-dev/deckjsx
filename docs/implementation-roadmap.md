@@ -3388,9 +3388,9 @@ Semantic Author Graph
   URLs, authenticated URLs, and framework-specific asset rules require a registered asset loader.
 - Keep Graph Identity distinct from PPTX relationship ids, object ids, part paths, and other Output
   Identity.
-- Do not make HMR depend on mutating an existing `.pptx` ZIP in place. PPTX ZIP files have a central
-  directory at the end, so the practical fast path is to avoid recompiling unchanged slides and then
-  quickly re-emit the package.
+- In v0.8.0, avoid depending on mutating arbitrary existing `.pptx` ZIP files in place. The v0.9
+  HMR line can add deckjsx-owned Patchable PPTX output with reserved XML capacity, in-place package
+  patching, and whole-archive rewrite fallback for cases that exceed reserved capacity.
 
 ### v0.8.0 Implementation Inventory
 
@@ -6727,62 +6727,129 @@ PowerPoint compatibility fixes into intentional package-model behavior.
 
 ### Goal
 
-Support a fast authoring loop where saving a source file quickly updates the generated output. The
-main objective is immediate feedback after save, not preserving long-lived runtime state inside the
-deck compiler.
+Support a fast authoring loop where saving a source file quickly updates the generated PPTX output
+while preserving deckjsx-owned presentation identity. The main objective is HMR-oriented compilation
+and package patching: affected sources, slides, projected package parts, and existing Patchable PPTX
+files should update incrementally instead of hiding a whole-deck rebuild behind a watch loop.
 
 ### Preconditions
 
-HMR should come after the Semantic Author Graph, Graph Composition, and at least one output
-projection/writer path can preserve source and graph identity. `pptxgenjs` is built around
-whole-presentation generation, which limits meaningful HMR.
+HMR should come after the Semantic Author Graph, Graph Composition, and the direct PPTX
+projection/writer path can preserve source, graph, package-part, and build-artifact identity.
 
-For the first implementation, "HMR" can mean watch-mode incremental rebuild rather than a browser UI
-with stateful module replacement. The important behavior is that editing a slide module should update
-the output quickly.
+For the first implementation, "HMR" does not need to include a browser preview UI or presentation
+renderer control. It does need slide-level incremental projection and Patchable PPTX filesystem
+updates for deckjsx-generated packages.
 
 ### Proposed Architecture
 
-- Track authoring sources by Source Identity, including source keys and module/export identity where
-  available.
-- Compile changed sources to updated Author Trees and raise them into updated Semantic Author Graph
-  branches.
-- Preserve Graph Identity where Source Identity, JSX position, and Graph Identity Hints allow it.
-- Rebuild only affected package entries:
-  - changed slide XML
-  - changed slide relationships
-  - changed media entries
-  - presentation manifest if slide order changed
-- Expose a dev server integration through Vite+ tasks or a dedicated CLI.
-- Re-project changed graph branches into the output projection, then re-emit the PPTX from the
-  package model. Avoid depending on low-level ZIP entry patching for correctness.
-- Keep browser support in mind by separating:
-  - source/module watching
-  - compilation
-  - semantic graph construction
-  - output projection
-  - output writing
+- Make normal `deck.render(pptx())` produce a Patchable PPTX artifact with XML package-part reserve
+  capacity, patch metadata, and stable package-part/build-artifact identity.
+- Add Slide Projection Fingerprints so unchanged slides can reuse layout/projection work across HMR
+  updates while affected slides are reprojected.
+- Preserve Graph Identity where Source Identity, JSX position, and Graph Identity Hints allow it,
+  and keep slide Package Part Identity stable across ordinary content edits.
+- Prefer identity-derived slide package paths where practical so slide insertion or reordering does
+  not force unchanged slide XML parts to move.
+- Treat slide insertion and reordering as a follow-up unless the authoring API grows a stable
+  slide-root identity hint. The first v0.9 implementation should not overclaim complete insertion
+  tolerance while `deck.slide()` roots are still position-derived.
+- Rebuild only affected package entries, such as changed slide XML, changed slide relationships,
+  changed media entries, and presentation manifest parts when slide order changed.
+- Add a plugin-facing `deckjsx/integration` subpath for Integration Context, Media Source Origin,
+  AssetLoader, and patch plan contracts without moving those concepts into the root Authoring
+  Interface.
+- Add `@deckjsx/node` for runtime file operations, including `write(await deck.render(pptx()),
+"out.pptx")`, Patchable PPTX inspection, In-place Package Patch writes, file locking, and
+  whole-archive rewrite fallback.
+- Add `@deckjsx/vite` as a Vite Project Integration Package that attaches module-local Integration
+  Context and Media Source Origin metadata, supplies Vite-aware asset loading, and feeds HMR
+  invalidation metadata into ordinary `deck.render(pptx())` execution without owning Deck entry
+  discovery or rewriting user render calls.
+- Let the initial Vite transform default to JSX/TSX-like modules while excluding dependency
+  directories. The transform should be cheap and no-op when a module has no deckjsx media-origin or
+  source-context work. It should cover `img.src`, `video.src`, `video.poster`, component prop
+  forwarding through the hidden metadata carrier, and module-local Integration Context attachment;
+  inline `data`/`posterData` and style-owned assets are outside the initial origin transform scope.
+- Implement `@deckjsx/vite` and `@deckjsx/node` as independent Vite+ projects under `plugins/vite`
+  and `plugins/node`. During scaffolding they may use a temporary `deckjsx: file:../..`
+  development dependency, but release manifests should depend on the core package through
+  `peerDependencies` and repo-local workspace/link configuration rather than publishing a file
+  dependency.
 
 ### Proposed API
 
-```bash
-vp dev
+```ts
+import { write } from "@deckjsx/node";
+import { pptx } from "deckjsx/adapter";
+
+await write(await deck.render(pptx()), "out.pptx");
 ```
 
-or:
-
-```bash
-deckjsx dev src/deck.tsx --outdir .deckjsx
-```
-
-The first implementation can write updated PPTX artifacts to disk. A later implementation can add a
-preview UI if needed.
+Vite projects install `@deckjsx/vite` in `vite.config.ts` so the normal render call receives
+project-local module origin, asset loading, and HMR invalidation metadata. `@deckjsx/node` remains
+the runtime file-writing package rather than a Vite plugin option or a core Render option.
+For non-Vite Node rendering, `@deckjsx/node` may provide a local file AssetLoader that users pass
+through `withIntegrationContext(...)` or another integration-owned wrapper around the normal
+`deck.render(pptx())` call.
 
 ### Validation
 
-- Unit tests for Source Identity, Graph Identity, and Graph Identity Hints.
-- Integration tests for changing one slide and regenerating only expected outputs.
-- Smoke test through a Vite+ dev task.
+- Unit tests for Source Identity, Graph Identity, Graph Identity Hints, and Slide Projection
+  Fingerprints.
+- Integration tests for changing one slide and regenerating or patching only expected package parts.
+- Patchable PPTX tests for XML reserved capacity, same-size updates, capacity-bounded in-place
+  updates, and whole-archive rewrite fallback.
+- `@deckjsx/node` tests for `write(RenderResult, path)` over a new file, existing Patchable PPTX,
+  lock/write failure diagnostics, fallback behavior, and local file AssetLoader diagnostics.
+- `@deckjsx/vite` tests for module-origin media resolution, component-authored literal media,
+  prop-authored media forwarding, Vite public-root paths, and HMR invalidation metadata.
+- Integration tests for HMR invalidation refreshing cached graph/projection artifacts while
+  retaining package build artifacts for fingerprint-based reuse.
+
+### Completion Criteria
+
+- `deck.render(pptx())` generates Patchable PPTX as the normal PPTX artifact.
+- XML package parts carry deckjsx-owned trailing-comment reserve capacity.
+- The package contains the persistent patch manifest at `ppt/deckjsx/patch-manifest.json`.
+- Render Result exposes a Render Patch Plan that Runtime Integration Packages can use even when
+  inspection summaries are disabled.
+- Slide Projection Fingerprints support slide-level incremental projection and reuse.
+- Package Part Identity, package paths, Package Part Fingerprints, and package dependency snapshots
+  let unchanged slide XML and related build artifacts be reused across ordinary content edits that
+  keep the slide's Graph Identity stable.
+- The plugin-facing `deckjsx/integration` subpath exposes the contracts required by
+  `@deckjsx/vite` and `@deckjsx/node` without moving those concepts into the root Authoring
+  Interface.
+- `plugins/node` provides `write(await deck.render(pptx()), "out.pptx")` with create, in-place
+  patch, whole-archive rewrite fallback, result-first diagnostics, and a Node local file AssetLoader.
+- `plugins/vite` attaches module-local Media Source Origin, Vite-aware asset loading, Integration
+  Context, and HMR invalidation metadata to ordinary `deck.render(pptx())` execution.
+- HMR invalidation refreshes stale process-memory graph/projection/asset artifacts without deleting
+  reusable package build artifacts needed for unchanged package-part reuse.
+- v0.9.0 creates no sidecar cache files; persistent patch state lives inside the PPTX package and
+  hot HMR state may live only in process memory.
+- Renderer preview UI, PowerPoint automation, and presentation renderer control remain outside the
+  v0.9.0 scope.
+
+### Implementation Slices
+
+1. Core Patchable PPTX writer support: XML reserve capacity, `ppt/deckjsx/patch-manifest.json`,
+   Render Patch Plan metadata, and identity-derived slide paths where practical.
+   Render Patch Plan and the persistent patch manifest should share nearly the same schema so
+   `@deckjsx/node` can compare the current render plan with the existing PPTX manifest directly;
+   Render Patch Plan may additionally include current render build/reuse state, while the manifest
+   stays limited to persistent logical and capacity metadata.
+2. Core incremental projection support: Slide Projection Fingerprints, partial invalidation over
+   Pipeline Artifacts, and package-part dependency reuse checks for stable slide identities.
+   Slide insertion/reordering needs a later authoring identity hint before it can be treated as a
+   complete slide-unit reuse case.
+3. `deckjsx/integration`: plugin-facing Integration Context, Media Source Origin, AssetLoader, and
+   patch plan contracts.
+4. `plugins/node`: `write(RenderResult, path)`, Patchable PPTX inspection, in-place patch writes,
+   result-first diagnostics, locking, and whole-archive rewrite fallback.
+5. `plugins/vite`: Vite transforms for module-local origin metadata, Vite-aware asset loading,
+   Integration Context attachment, and HMR invalidation metadata.
 
 ## Suggested Release Order
 

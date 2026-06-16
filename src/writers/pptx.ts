@@ -3,6 +3,8 @@ import type {
   InspectionDetailLevel,
   OutputFormat,
   RenderInspectionSummary,
+  RenderPatchPlan,
+  RenderPatchPlanPart,
   RenderedArtifact,
 } from "../pipeline";
 import type { AssetArtifact, PptxPackageBuildArtifact } from "../pipeline-artifacts";
@@ -48,6 +50,7 @@ export type PptxWriterOptions = {
 type PptxWriterResult = {
   readonly diagnostics: Diagnostics;
   readonly artifact?: RenderedArtifact<"pptx">;
+  readonly patchPlan?: RenderPatchPlan;
   readonly summary?: RenderInspectionSummary;
 };
 
@@ -66,6 +69,184 @@ export type PptxMediaAssetLoadRequirement = {
   readonly source: PptxMediaPartPayload["source"];
   readonly sourceField: AssetArtifact["sourceField"];
 };
+
+const PATCH_MANIFEST_PATH = "ppt/deckjsx/patch-manifest.json";
+const PATCH_MANIFEST_PART_ID = "deckjsx:patch-manifest";
+const PATCH_RESERVE_MARKER = "deckjsx-patch-reserve:";
+const PATCH_MANIFEST_RESERVE_MIN_BYTES = 16 * 1024;
+const PATCH_RESERVE_MIN_BYTES = 16 * 1024;
+const PATCH_RESERVE_SLIDE_MIN_BYTES = 64 * 1024;
+const TEXT_ENCODER = new TextEncoder();
+const TEXT_DECODER = new TextDecoder();
+
+type PatchableXmlBytes = {
+  readonly bytes: Uint8Array;
+  readonly logicalByteLength: number;
+  readonly reservedCapacity: number;
+};
+
+type PatchManifest = {
+  readonly kind: "deckjsx.patchManifest";
+  readonly version: 1;
+  readonly parts: readonly PersistentPatchPlanPart[];
+};
+
+type PersistentPatchPlanPart = Omit<RenderPatchPlanPart, "buildReason" | "buildStatus">;
+
+function isXmlPatchablePath(path: string): boolean {
+  return path.endsWith(".xml") || path.endsWith(".rels");
+}
+
+function isXmlPatchablePart(part: PptxPackageModel["parts"][number]): boolean {
+  return part.kind !== "media" && isXmlPatchablePath(part.path);
+}
+
+function reserveCapacityForPart(
+  part: PptxPackageModel["parts"][number],
+  logicalByteLength: number,
+) {
+  if (!isXmlPatchablePart(part)) {
+    return 0;
+  }
+
+  return part.kind === "slide"
+    ? Math.max(PATCH_RESERVE_SLIDE_MIN_BYTES, logicalByteLength * 3)
+    : Math.max(PATCH_RESERVE_MIN_BYTES, logicalByteLength * 2);
+}
+
+function patchReserveComment(capacity: number): Uint8Array {
+  return TEXT_ENCODER.encode(`\n<!--${PATCH_RESERVE_MARKER}${".".repeat(capacity)}-->`);
+}
+
+function stripPatchReserve(bytes: Uint8Array): PatchableXmlBytes {
+  const text = TEXT_DECODER.decode(bytes);
+  const markerIndex = text.lastIndexOf(`<!--${PATCH_RESERVE_MARKER}`);
+  if (markerIndex < 0) {
+    return {
+      bytes,
+      logicalByteLength: bytes.byteLength,
+      reservedCapacity: 0,
+    };
+  }
+
+  const reserveStart = markerIndex + `<!--${PATCH_RESERVE_MARKER}`.length;
+  const reserveEnd = text.indexOf("-->", reserveStart);
+  if (reserveEnd < 0) {
+    return {
+      bytes,
+      logicalByteLength: bytes.byteLength,
+      reservedCapacity: 0,
+    };
+  }
+
+  const logicalText = text.slice(0, markerIndex);
+  const reserveText = text.slice(reserveStart, reserveEnd);
+  return {
+    bytes: TEXT_ENCODER.encode(logicalText),
+    logicalByteLength: TEXT_ENCODER.encode(logicalText).byteLength,
+    reservedCapacity: TEXT_ENCODER.encode(reserveText).byteLength,
+  };
+}
+
+function patchableBytesForPart(input: {
+  readonly part: PptxPackageModel["parts"][number];
+  readonly bytes: Uint8Array;
+}): PatchableXmlBytes {
+  if (!isXmlPatchablePart(input.part)) {
+    return {
+      bytes: input.bytes,
+      logicalByteLength: input.bytes.byteLength,
+      reservedCapacity: 0,
+    };
+  }
+
+  const stripped = stripPatchReserve(input.bytes);
+  const reservedCapacity = reserveCapacityForPart(input.part, stripped.logicalByteLength);
+  const reserve = patchReserveComment(reservedCapacity);
+  const bytes = new Uint8Array(stripped.bytes.byteLength + reserve.byteLength);
+  bytes.set(stripped.bytes, 0);
+  bytes.set(reserve, stripped.bytes.byteLength);
+  return {
+    bytes,
+    logicalByteLength: stripped.logicalByteLength,
+    reservedCapacity,
+  };
+}
+
+function patchPlanPartForEntry(entry: PptxAssemblyPlanEntry): RenderPatchPlanPart | undefined {
+  if (!entry.packagePartId || !entry.bytes || !entry.build?.partFingerprint) {
+    return undefined;
+  }
+
+  const xml = isXmlPatchablePath(entry.path) ? stripPatchReserve(entry.bytes) : undefined;
+  return {
+    packagePartId: entry.packagePartId,
+    path: entry.path,
+    patchableKind: isXmlPatchablePath(entry.path) ? "xml" : "media",
+    reservedCapacity: xml?.reservedCapacity ?? 0,
+    logicalByteLength: xml?.logicalByteLength ?? entry.bytes.byteLength,
+    storedByteLength: entry.bytes.byteLength,
+    fingerprint:
+      entry.path.endsWith(".xml") || entry.path.endsWith(".rels")
+        ? xml
+          ? (fingerprintBytes(xml.bytes) ?? entry.build.partFingerprint)
+          : entry.build.partFingerprint
+        : (entry.build.mediaByteFingerprint ?? entry.build.partFingerprint),
+    ...(entry.status === "rebuilt" || entry.status === "reused"
+      ? { buildStatus: entry.status }
+      : {}),
+    ...(entry.reason ? { buildReason: entry.reason } : {}),
+  };
+}
+
+function renderPatchPlan(plan: readonly PptxAssemblyPlanEntry[]): RenderPatchPlan {
+  const parts = plan.flatMap((entry) => {
+    const part = patchPlanPartForEntry(entry);
+    return part ? [part] : [];
+  });
+  const manifestLogicalBytes = patchManifestLogicalBytes(parts);
+  const manifestStoredByteLength =
+    manifestLogicalBytes.byteLength + PATCH_MANIFEST_RESERVE_MIN_BYTES;
+
+  return {
+    kind: "deckjsx.renderPatchPlan",
+    version: 1,
+    manifestPath: PATCH_MANIFEST_PATH,
+    parts: [
+      ...parts,
+      {
+        packagePartId: PATCH_MANIFEST_PART_ID,
+        path: PATCH_MANIFEST_PATH,
+        patchableKind: "manifest",
+        reservedCapacity: PATCH_MANIFEST_RESERVE_MIN_BYTES,
+        logicalByteLength: manifestLogicalBytes.byteLength,
+        storedByteLength: manifestStoredByteLength,
+        fingerprint: fingerprintBytes(manifestLogicalBytes) ?? "fnv1a32:00000000",
+        buildStatus: "rebuilt",
+        buildReason: "missingArtifact",
+      },
+    ],
+  };
+}
+
+function patchManifestLogicalBytes(parts: readonly RenderPatchPlanPart[]): Uint8Array {
+  const manifest: PatchManifest = {
+    kind: "deckjsx.patchManifest",
+    version: 1,
+    parts: parts.flatMap(({ buildReason: _buildReason, buildStatus: _buildStatus, ...part }) =>
+      part.patchableKind === "manifest" ? [] : [part],
+    ),
+  };
+  return TEXT_ENCODER.encode(`${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+function patchManifestBytes(patchPlan: RenderPatchPlan): Uint8Array {
+  const logical = patchManifestLogicalBytes(patchPlan.parts);
+  const bytes = new Uint8Array(logical.byteLength + PATCH_MANIFEST_RESERVE_MIN_BYTES);
+  bytes.set(logical, 0);
+  bytes.fill(0x20, logical.byteLength);
+  return bytes;
+}
 
 export function pptxMediaAssetLoadRequirements(input: {
   readonly projection: PptxPackageModel;
@@ -265,6 +446,7 @@ export async function renderPptxPackage(
       continue;
     }
 
+    const patchableBytes = patchableBytesForPart({ part, bytes: partBytes });
     const reuse = buildArtifactReuseDecision({
       part,
       mediaByteFingerprint,
@@ -274,7 +456,7 @@ export async function renderPptxPackage(
       reuse.artifact ??
       buildArtifactForPart({
         part,
-        bytes: partBytes,
+        bytes: patchableBytes.bytes,
         reason: buildReasonFromReuseDecision(reusable ?? reuse),
         mediaByteFingerprint,
         mediaByteFingerprintSource,
@@ -309,9 +491,14 @@ export async function renderPptxPackage(
   }
 
   const sink = createCollectingPptxZipSink();
+  const patchPlan = renderPatchPlan(plan);
+  const patchManifestEntry = {
+    path: PATCH_MANIFEST_PATH,
+    bytes: patchManifestBytes(patchPlan),
+  };
 
   try {
-    writePptxZipEntriesToSink(zipEntriesFromAssemblyPlan(plan), sink);
+    writePptxZipEntriesToSink([...zipEntriesFromAssemblyPlan(plan), patchManifestEntry], sink);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return {
@@ -336,6 +523,7 @@ export async function renderPptxPackage(
 
   return {
     diagnostics: combinedDiagnostics,
+    patchPlan,
     summary: assemblySummary(plan),
     artifact: {
       format: "pptx" satisfies OutputFormat,

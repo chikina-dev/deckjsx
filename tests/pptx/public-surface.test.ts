@@ -4,12 +4,28 @@ import { describe, expect, test } from "vite-plus/test";
 
 type PackageJson = {
   dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
   files?: readonly string[];
-  exports?: Record<string, string>;
+  exports?: Record<string, string | ExportCondition>;
+  version?: string;
+  peerDependencies?: Record<string, string>;
+  publishConfig?: {
+    access?: string;
+  };
+  scripts?: Record<string, string>;
+};
+
+type ExportCondition = {
+  readonly types: string;
+  readonly import: string;
 };
 
 async function readPackageJson(): Promise<PackageJson> {
   return JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8"));
+}
+
+async function readRepoPackageJson(path: string): Promise<PackageJson> {
+  return JSON.parse(await readRepoText(path));
 }
 
 async function readRepoText(path: string): Promise<string> {
@@ -43,6 +59,14 @@ async function fileExists(path: string): Promise<boolean> {
   }
 }
 
+function exportImportTarget(target: string | ExportCondition): string {
+  return typeof target === "string" ? target : target.import;
+}
+
+function expectTypedExportTarget(pkg: PackageJson, subpath: string, target: ExportCondition): void {
+  expect(pkg.exports?.[subpath], `${subpath} export target`).toEqual(target);
+}
+
 describe("public surface", () => {
   test("package export map exposes only intentional public entry points", async () => {
     const pkg = await readPackageJson();
@@ -50,20 +74,28 @@ describe("public surface", () => {
 
     expect(pkg.files).toEqual(["dist"]);
     expect(pkg.exports).toEqual({
-      ".": "./dist/index.mjs",
-      "./adapter": "./dist/adapter.mjs",
-      "./inspect": "./dist/inspect.mjs",
-      "./jsx-dev-runtime": "./dist/jsx-dev-runtime.mjs",
-      "./jsx-runtime": "./dist/jsx-runtime.mjs",
+      ".": { types: "./dist/index.d.mts", import: "./dist/index.mjs" },
+      "./adapter": { types: "./dist/adapter.d.mts", import: "./dist/adapter.mjs" },
+      "./inspect": { types: "./dist/inspect.d.mts", import: "./dist/inspect.mjs" },
+      "./integration": { types: "./dist/integration.d.mts", import: "./dist/integration.mjs" },
+      "./jsx-dev-runtime": {
+        types: "./dist/jsx-dev-runtime.d.mts",
+        import: "./dist/jsx-dev-runtime.mjs",
+      },
+      "./jsx-runtime": { types: "./dist/jsx-runtime.d.mts", import: "./dist/jsx-runtime.mjs" },
       "./package.json": "./package.json",
     });
 
     for (const [subpath, target] of Object.entries(pkg.exports ?? {})) {
+      const importTarget = exportImportTarget(target);
       expect(subpath).not.toContain("*");
-      expect(String(target)).not.toMatch(/(?:^|\/)(?:src|writers|projection|runtime)\//);
-      expect(String(target)).not.toMatch(/(?:^|\/)(?:adapter|index|inspect)-[A-Za-z0-9_-]+\.mjs$/);
+      expect(importTarget).not.toMatch(/(?:^|\/)(?:src|writers|projection|runtime)\//);
+      expect(importTarget).not.toMatch(/(?:^|\/)(?:adapter|index|inspect)-[A-Za-z0-9_-]+\.mjs$/);
       if (subpath !== "./package.json") {
-        expect(await fileExists(join(packageRoot, String(target)))).toBe(true);
+        expect(await fileExists(join(packageRoot, importTarget))).toBe(true);
+        if (typeof target !== "string") {
+          expect(await fileExists(join(packageRoot, target.types))).toBe(true);
+        }
       }
     }
   });
@@ -130,6 +162,66 @@ describe("public surface", () => {
     expect(pkg.dependencies).toEqual({});
   });
 
+  test("package manifests are versioned for the v0.9 release line", async () => {
+    const rootPackage = await readPackageJson();
+    const pluginPackages = await Promise.all(
+      ["plugins/node/package.json", "plugins/vite/package.json"].map(
+        async (path) => [path, await readRepoPackageJson(path)] as const,
+      ),
+    );
+
+    expect(rootPackage.version).toBe("0.9.0");
+    for (const [path, pkg] of pluginPackages) {
+      expect(pkg.version, `${path} version should match the v0.9 release line`).toBe("0.9.0");
+    }
+  });
+
+  test("plugin package manifests use peer dependencies instead of repo file dependencies", async () => {
+    const pluginPackages = await Promise.all(
+      ["plugins/node/package.json", "plugins/vite/package.json"].map(
+        async (path) => [path, await readRepoPackageJson(path)] as const,
+      ),
+    );
+
+    for (const [path, pkg] of pluginPackages) {
+      expect(pkg.files, `${path} publishes only built artifacts`).toEqual(["dist"]);
+      expectTypedExportTarget(pkg, ".", {
+        types: "./dist/index.d.mts",
+        import: "./dist/index.mjs",
+      });
+      expect(pkg.exports?.["./package.json"], `${path} exposes package metadata`).toBe(
+        "./package.json",
+      );
+      expect(pkg.publishConfig?.access, `${path} publishes as a scoped public package`).toBe(
+        "public",
+      );
+      expect(pkg.scripts?.prepublishOnly, `${path} builds before direct npm publish`).toBe(
+        "vp run build",
+      );
+      expect(pkg.peerDependencies?.deckjsx, `${path} declares deckjsx as a peer`).toBe("^0.9.0");
+      expect(pkg.dependencies?.deckjsx, `${path} must not publish a runtime file dependency`).toBe(
+        undefined,
+      );
+      expect(
+        pkg.devDependencies?.deckjsx,
+        `${path} must not keep the temporary deckjsx file dependency`,
+      ).toBe(undefined);
+    }
+  });
+
+  test("v0.9 public surface review classifies integration packages before publishing", async () => {
+    const review = await readRepoText("docs/reviews/v0.9-public-surface.md");
+
+    expect(review).toContain("deckjsx/integration");
+    expect(review).toContain("@deckjsx/node");
+    expect(review).toContain("@deckjsx/vite");
+    expect(review).toContain("Integration Interface");
+    expect(review).toContain("Runtime Integration Package");
+    expect(review).toContain("Project Integration Package");
+    expect(review).toContain("not root Authoring Interface");
+    expect(review).toContain("no `file:../..`");
+  });
+
   test("core source does not import node filesystem builtins", async () => {
     const files = await sourceFiles(new URL("../../src", import.meta.url).pathname);
     const sources = await Promise.all(
@@ -175,7 +267,9 @@ describe("public surface", () => {
     );
     const requiredCommands = [
       "run: bun run check",
+      "run: ../../node_modules/.bin/vp check",
       "run: bun run build",
+      "run: ../../node_modules/.bin/vp pack",
       "run: npm ci --prefix sample",
       "run: npm run --prefix sample smoke",
       "run: bun run test",
@@ -197,8 +291,12 @@ describe("public surface", () => {
     }
 
     expect(workflow).toContain("dry_run");
-    expect(workflow).toContain("npm publish --dry-run --access public");
-    expect(workflow).toContain("npm publish --access public");
+    expect(workflow).toContain("plugins/node/package.json");
+    expect(workflow).toContain("plugins/vite/package.json");
+    expect(workflow).toContain("working-directory: plugins/node");
+    expect(workflow).toContain("working-directory: plugins/vite");
+    expect(workflow.match(/npm publish --dry-run --access public/g)?.length).toBe(3);
+    expect(workflow.match(/npm publish --access public/g)?.length).toBe(3);
 
     expect(benchmarkDiagnostics).toContain("PPTX_BENCHMARK_QUICK_ITERATIONS:-1");
     expect(benchmarkDiagnostics).toContain("PPTX_BENCHMARK_DEEP_ITERATIONS:-5");

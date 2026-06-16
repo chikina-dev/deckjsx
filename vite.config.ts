@@ -22,6 +22,10 @@ export default defineConfig({
         replacement: new URL("./src/inspect.ts", import.meta.url).pathname,
       },
       {
+        find: "deckjsx/integration",
+        replacement: new URL("./src/integration.ts", import.meta.url).pathname,
+      },
+      {
         find: "deckjsx/adapter",
         replacement: new URL("./src/adapter.ts", import.meta.url).pathname,
       },
@@ -39,13 +43,14 @@ export default defineConfig({
       "src/index.ts",
       "src/adapter.ts",
       "src/inspect.ts",
+      "src/integration.ts",
       "src/jsx-runtime.ts",
       "src/jsx-dev-runtime.ts",
     ],
     dts: {
       tsgo: true,
     },
-    exports: true,
+    exports: false,
   },
   lint: {
     options: {

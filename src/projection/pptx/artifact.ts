@@ -6,6 +6,8 @@ import type {
   PptxPackageModelCandidate,
   PptxPackagePartCandidate,
 } from "./model";
+import { isPptxSlidePart } from "./model";
+import { packagePartFingerprint } from "./fingerprint";
 import {
   packageDependencyEdges,
   type PackageDependencyEdge,
@@ -23,10 +25,22 @@ export type PptxProjectionArtifact<
   readonly partsById: ReadonlyMap<PackagePartId, PptxPackagePartCandidate>;
   readonly partsBySourceKey: ReadonlyMap<string, readonly PackagePartId[]>;
   readonly partsByGraphNodeId: ReadonlyMap<GraphNodeId, readonly PackagePartId[]>;
+  readonly slideProjectionFingerprints: ReadonlyMap<
+    PackagePartId,
+    SlideProjectionFingerprintSnapshot
+  >;
   readonly packageDependencies: PackageDependencySnapshot;
 };
 
 export type { PackageDependencyEdge, PackageDependencyReason };
+
+export type SlideProjectionFingerprintSnapshot = {
+  readonly slidePartId: PackagePartId;
+  readonly slideId: string;
+  readonly name?: string;
+  readonly fingerprint: string;
+  readonly graphNodeIds: readonly GraphNodeId[];
+};
 
 export type PackageDependencySnapshot = {
   readonly edges: readonly PackageDependencyEdge[];
@@ -139,6 +153,7 @@ export function pptxProjectionArtifact(
     partsById: new Map(parts.map((part) => [part.id, part])),
     partsBySourceKey: partsBySourceKey(parts),
     partsByGraphNodeId: partsByGraphNodeId(parts),
+    slideProjectionFingerprints: slideProjectionFingerprints(parts),
     packageDependencies: packageDependencySnapshot(parts),
   };
 }
@@ -169,6 +184,28 @@ function partsByGraphNodeId(
   parts.forEach((part) => {
     part.origin?.graphNodeIds?.forEach((graphNodeId) => {
       appendIndexValue(index, graphNodeId, part.id);
+    });
+  });
+
+  return index;
+}
+
+function slideProjectionFingerprints(
+  parts: readonly PptxPackagePartCandidate[],
+): ReadonlyMap<PackagePartId, SlideProjectionFingerprintSnapshot> {
+  const index = new Map<PackagePartId, SlideProjectionFingerprintSnapshot>();
+
+  parts.forEach((part) => {
+    if (!isPptxSlidePart(part)) {
+      return;
+    }
+
+    index.set(part.id, {
+      slidePartId: part.id,
+      slideId: part.payload.slideId,
+      ...(part.payload.name ? { name: part.payload.name } : {}),
+      fingerprint: part.fingerprint ?? packagePartFingerprint(part),
+      graphNodeIds: part.origin?.graphNodeIds ?? [],
     });
   });
 

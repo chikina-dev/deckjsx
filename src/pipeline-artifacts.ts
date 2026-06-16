@@ -2,6 +2,7 @@ import type { CompositionSource } from "./composition/types";
 import { resolveComposition } from "./composition/resolve";
 import type { ComposedAuthorRoot } from "./composition/types";
 import type { AssetLoadResult, AssetProbeResult, AssetSource } from "./assets";
+import type { MediaSourceOrigin } from "./media-source-origin";
 import { createDiagnostics, type Diagnostics } from "./diagnostics";
 import type {
   AssetEntityId,
@@ -72,22 +73,30 @@ export type AssetArtifact = {
   readonly source: AssetSource;
   readonly sourceField: AssetEntity["sourceField"];
   readonly resolverIdentity?: string;
+  readonly origin?: MediaSourceOrigin;
   readonly probe?: AssetProbeResult;
   readonly load?: AssetLoadResult;
   readonly diagnostics: Diagnostics;
 };
 
+export type HmrInvalidation = {
+  readonly importer?: string;
+  readonly changedModuleIds: readonly string[];
+};
+
 export function assetSourceCacheKey(
   source: AssetSource,
   resolverIdentity = "deckjsx:builtin",
+  origin?: MediaSourceOrigin,
 ): string {
+  const originKey = origin ? `:${origin.importer ?? ""}:${origin.source ?? ""}` : "";
   switch (source.kind) {
     case "bytes":
       return `${resolverIdentity}:bytes:${source.mediaType ?? ""}:${source.extension ?? ""}:${source.bytes.byteLength}`;
     case "data":
       return `${resolverIdentity}:data:${source.data}`;
     case "path":
-      return `${resolverIdentity}:path:${source.path}`;
+      return `${resolverIdentity}:path${originKey}:${source.path}`;
     case "url":
       return `${resolverIdentity}:url:${source.url}`;
   }
@@ -146,6 +155,74 @@ function sourceKeyFor(source: SourceOrigin | undefined): string {
   return !source || source.kind === "root" ? ROOT_SOURCE_ARTIFACT_KEY : source.sourceIdentity;
 }
 
+function normalizedHmrModuleId(id: string): string {
+  return hmrPathNormalize(id.replace(/[?#].*$/, ""));
+}
+
+function isCodeLikeHmrModuleId(id: string): boolean {
+  return /\.[cm]?[jt]sx?$/.test(normalizedHmrModuleId(id));
+}
+
+function hmrPathNormalize(value: string): string {
+  const normalized = value.replace(/\\/g, "/");
+  const leadingSlash = normalized.startsWith("/");
+  const segments: string[] = [];
+  for (const segment of normalized.split("/")) {
+    if (!segment || segment === ".") {
+      continue;
+    }
+    if (segment === "..") {
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+
+  return `${leadingSlash ? "/" : ""}${segments.join("/")}`;
+}
+
+function hmrPathDirname(value: string): string {
+  const normalized = hmrPathNormalize(value);
+  const index = normalized.lastIndexOf("/");
+  if (index <= 0) {
+    return normalized.startsWith("/") ? "/" : "";
+  }
+
+  return normalized.slice(0, index);
+}
+
+function hmrPathResolve(importer: string, source: string): string {
+  const normalizedSource = normalizedHmrModuleId(source);
+  if (normalizedSource.startsWith("/")) {
+    return normalizedSource;
+  }
+
+  return hmrPathNormalize(`${hmrPathDirname(importer)}/${normalizedSource}`);
+}
+
+function hmrOriginMatchesChangedModule(
+  source: AssetSource,
+  origin: MediaSourceOrigin | undefined,
+  changedModuleIds: ReadonlySet<string>,
+): boolean {
+  if (!origin) {
+    return false;
+  }
+
+  const directMatches = [origin.importer, origin.source]
+    .filter((value): value is string => value !== undefined)
+    .some((value) => changedModuleIds.has(normalizedHmrModuleId(value)));
+  if (directMatches) {
+    return true;
+  }
+
+  if (source.kind !== "path" || !origin.importer) {
+    return false;
+  }
+
+  return changedModuleIds.has(hmrPathResolve(origin.importer, origin.source ?? source.path));
+}
+
 export class PipelineArtifactCollection {
   #sourcesByKey = new Map<string, SourceArtifact>();
   #graphsBySourceKey = new Map<string, DefinedGraphArtifact>();
@@ -153,6 +230,7 @@ export class PipelineArtifactCollection {
   #assetsBySourceCacheKey = new Map<string, AssetArtifact>();
   #pptxBuildArtifactsByPartId = new Map<PackagePartId, PptxPackageBuildArtifact>();
   #projection?: DefinedProjectionArtifact;
+  #staleProjectionForReuse?: DefinedProjectionArtifact;
 
   get graph(): DefinedGraphArtifact | undefined {
     return this.#graphsBySourceKey.get(ROOT_SOURCE_ARTIFACT_KEY);
@@ -160,6 +238,10 @@ export class PipelineArtifactCollection {
 
   get projection(): DefinedProjectionArtifact | undefined {
     return this.#projection;
+  }
+
+  get staleProjectionForReuse(): DefinedProjectionArtifact | undefined {
+    return this.#staleProjectionForReuse;
   }
 
   get sourcesByKey(): ReadonlyMap<string, SourceArtifact> {
@@ -189,6 +271,7 @@ export class PipelineArtifactCollection {
     this.#assetsBySourceCacheKey.clear();
     this.#pptxBuildArtifactsByPartId.clear();
     this.#projection = undefined;
+    this.#staleProjectionForReuse = undefined;
   }
 
   invalidateFromGraph(): void {
@@ -197,11 +280,13 @@ export class PipelineArtifactCollection {
     this.#assetsBySourceCacheKey.clear();
     this.#pptxBuildArtifactsByPartId.clear();
     this.#projection = undefined;
+    this.#staleProjectionForReuse = undefined;
   }
 
   invalidateFromProjection(): void {
     this.#pptxBuildArtifactsByPartId.clear();
     this.#projection = undefined;
+    this.#staleProjectionForReuse = undefined;
   }
 
   invalidateAssets(): void {
@@ -209,6 +294,60 @@ export class PipelineArtifactCollection {
     this.#assetsBySourceCacheKey.clear();
     this.#pptxBuildArtifactsByPartId.clear();
     this.#projection = undefined;
+    this.#staleProjectionForReuse = undefined;
+  }
+
+  invalidateForHmr(invalidation: HmrInvalidation): boolean {
+    const changedModuleIds = new Set(
+      invalidation.changedModuleIds.map((id) => normalizedHmrModuleId(id)),
+    );
+    if (changedModuleIds.size === 0) {
+      return false;
+    }
+
+    const importerChanged =
+      invalidation.importer !== undefined &&
+      changedModuleIds.has(normalizedHmrModuleId(invalidation.importer));
+    const codeChanged = [...changedModuleIds].some((id) => isCodeLikeHmrModuleId(id));
+    if (importerChanged || codeChanged) {
+      this.preserveProjectionForHmrReuse();
+      this.#sourcesByKey.clear();
+      this.#graphsBySourceKey.clear();
+      this.#assetsById.clear();
+      this.#assetsBySourceCacheKey.clear();
+      this.#projection = undefined;
+      return true;
+    }
+
+    const staleAssetIds = new Set<AssetEntityId>();
+    this.#assetsById.forEach((asset) => {
+      if (hmrOriginMatchesChangedModule(asset.source, asset.origin, changedModuleIds)) {
+        staleAssetIds.add(asset.assetEntityId);
+      }
+    });
+    if (staleAssetIds.size === 0) {
+      return false;
+    }
+
+    this.preserveProjectionForHmrReuse();
+    staleAssetIds.forEach((id) => {
+      this.#assetsById.delete(id);
+    });
+    this.#assetsBySourceCacheKey.clear();
+    this.#assetsById.forEach((asset) => {
+      this.#assetsBySourceCacheKey.set(
+        assetSourceCacheKey(asset.source, asset.resolverIdentity, asset.origin),
+        asset,
+      );
+    });
+    this.#projection = undefined;
+    return true;
+  }
+
+  private preserveProjectionForHmrReuse(): void {
+    if (this.#projection) {
+      this.#staleProjectionForReuse = this.#projection;
+    }
   }
 
   materializeComposition(
@@ -373,6 +512,7 @@ export class PipelineArtifactCollection {
 
   materializeProjection(projection: PptxPackageModel, diagnostics: Diagnostics): void {
     this.#projection = pptxProjectionArtifact(projection, diagnostics);
+    this.#staleProjectionForReuse = undefined;
   }
 
   materializeAsset(input: AssetArtifact): void {
@@ -387,7 +527,7 @@ export class PipelineArtifactCollection {
     };
     this.#assetsById.set(input.assetEntityId, artifact);
     this.#assetsBySourceCacheKey.set(
-      assetSourceCacheKey(artifact.source, artifact.resolverIdentity),
+      assetSourceCacheKey(artifact.source, artifact.resolverIdentity, artifact.origin),
       artifact,
     );
   }
@@ -422,12 +562,14 @@ export class PipelineArtifactCollection {
       diagnostics,
     });
     this.#projection = undefined;
+    this.#staleProjectionForReuse = undefined;
   }
 
   replaceProjectionArtifact(projection: PptxPackageModelCandidate): void {
     this.#sourcesByKey.clear();
     this.#graphsBySourceKey.clear();
     this.#projection = pptxProjectionArtifact(projection, projectionShapeDiagnostics(projection));
+    this.#staleProjectionForReuse = undefined;
   }
 }
 

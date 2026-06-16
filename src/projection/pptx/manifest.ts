@@ -212,6 +212,7 @@ export function buildPptxManifest(input: BuildPptxManifestInput): PptxManifestPa
         contentType: "application/vnd.openxmlformats-package.relationships+xml",
       },
       { extension: "xml", contentType: "application/xml" },
+      { extension: "json", contentType: "application/json" },
       ...mediaDefaults(input.mediaParts),
     ],
     overrides: [

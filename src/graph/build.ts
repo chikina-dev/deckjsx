@@ -510,6 +510,7 @@ function validateAuthoringProps(state: BuildState, node: AuthorElementNode, path
 function assetForImage(
   state: BuildState,
   idMaterial: readonly string[],
+  node: AuthorImageElementNode,
   props: ImageNodeProps,
   path: string,
 ): AssetEntityId | undefined {
@@ -581,6 +582,13 @@ function assetForImage(
     kind: "image",
     sourceField: typeof props.src === "string" ? "src" : "data",
     source,
+    ...(typeof props.src === "string"
+      ? node.mediaSourceOrigins?.src
+        ? { origin: node.mediaSourceOrigins.src }
+        : {}
+      : node.mediaSourceOrigins?.data
+        ? { origin: node.mediaSourceOrigins.data }
+        : {}),
     metadata:
       typeof props.data === "string" && props.data.startsWith("data:")
         ? { mediaType: props.data.slice(5, props.data.indexOf(";")) || undefined }
@@ -612,6 +620,7 @@ function dataMediaType(value: string): string | undefined {
 function assetForVideoSource(input: {
   state: BuildState;
   idMaterial: readonly string[];
+  node: AuthorVideoElementNode;
   props: Pick<VideoNodeProps, "data" | "src">;
   path: string;
 }): AssetEntityId | undefined {
@@ -688,6 +697,13 @@ function assetForVideoSource(input: {
     kind: "video",
     sourceField: typeof props.src === "string" ? "src" : "data",
     source,
+    ...(typeof props.src === "string"
+      ? input.node.mediaSourceOrigins?.src
+        ? { origin: input.node.mediaSourceOrigins.src }
+        : {}
+      : input.node.mediaSourceOrigins?.data
+        ? { origin: input.node.mediaSourceOrigins.data }
+        : {}),
     metadata: source.kind === "data" ? { mediaType: dataMediaType(source.data) } : {},
     resolution: "unresolved",
   });
@@ -697,6 +713,7 @@ function assetForVideoSource(input: {
 function assetForVideoPoster(
   state: BuildState,
   idMaterial: readonly string[],
+  node: AuthorVideoElementNode,
   props: VideoNodeProps,
   path: string,
 ): AssetEntityId | undefined {
@@ -762,6 +779,13 @@ function assetForVideoPoster(
     kind: "image",
     sourceField: typeof props.poster === "string" ? "poster" : "posterData",
     source,
+    ...(typeof props.poster === "string"
+      ? node.mediaSourceOrigins?.poster
+        ? { origin: node.mediaSourceOrigins.poster }
+        : {}
+      : node.mediaSourceOrigins?.posterData
+        ? { origin: node.mediaSourceOrigins.posterData }
+        : {}),
     metadata: source.kind === "data" ? { mediaType: dataMediaType(source.data) } : {},
     resolution: "unresolved",
   });
@@ -1682,7 +1706,7 @@ function buildNode(
       );
     }
 
-    const assetRef = assetForImage(state, material, node.props, path);
+    const assetRef = assetForImage(state, material, node, node.props, path);
     state.nodes.set(id, {
       ...semanticBase(state, node, id, "image", path, material, nodeContext),
       kind: "image",
@@ -1702,10 +1726,17 @@ function buildNode(
     const assetRef = assetForVideoSource({
       state,
       idMaterial: material,
+      node,
       props: node.props,
       path,
     });
-    const posterAssetRef = assetForVideoPoster(state, [...material, "poster"], node.props, path);
+    const posterAssetRef = assetForVideoPoster(
+      state,
+      [...material, "poster"],
+      node,
+      node.props,
+      path,
+    );
     if (node.props.poster === undefined && node.props.posterData === undefined) {
       addDiagnostic(state, videoPosterMissingDiagnostic({ path }));
     }

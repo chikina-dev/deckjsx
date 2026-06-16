@@ -33,6 +33,7 @@ import {
   type ProjectStages,
   type RenderedArtifact,
   type RenderInspectionSummary,
+  type RenderPatchPlan,
   type RenderStages,
   type StageArtifactStatus,
 } from "./pipeline";
@@ -43,8 +44,17 @@ import {
   type DefinedGraphArtifact,
   type DefinedProjectionArtifact,
 } from "./pipeline-artifacts";
-import { isPptxPackageModel } from "./projection/pptx/model";
-import type { ProjectInspectionSummary, PptxPackageModel } from "./projection/pptx/model";
+import {
+  integrationContextFor,
+  mergeAssetLoaders,
+  type IntegrationContext,
+} from "./integration-context";
+import { isPptxPackageModel, isPptxSlidePart } from "./projection/pptx/model";
+import type {
+  ProjectInspectionSummary,
+  PptxPackageModel,
+  PptxPackagePartCandidate,
+} from "./projection/pptx/model";
 import {
   projectGraphToDocumentModel,
   projectGraphToPartialDocumentModel,
@@ -58,6 +68,8 @@ import type { SlideTemplateSet } from "./templates";
 import { pptxMediaAssetLoadRequirements } from "./writers/pptx";
 
 type PresentStageArtifactStatus = Exclude<StageArtifactStatus, "missing">;
+
+type PptxPackagePartModel = PptxPackageModel["parts"][number];
 
 export type CompileResult = CompileResultWithGraph | CompileResultWithoutGraph;
 
@@ -109,6 +121,7 @@ export type RenderResultWithArtifact = {
   >;
   readonly format: OutputFormat;
   readonly artifact: RenderedArtifact;
+  readonly patchPlan?: RenderPatchPlan;
   readonly summary?: RenderInspectionSummary;
 };
 
@@ -118,6 +131,7 @@ export type RenderResultWithoutArtifact = {
   readonly stages: RenderStages<StageArtifactStatus, StageArtifactStatus, "missing">;
   readonly format: OutputFormat;
   readonly artifact?: undefined;
+  readonly patchPlan?: undefined;
   readonly summary?: undefined;
 };
 
@@ -807,6 +821,7 @@ async function resolveAssetArtifacts(input: {
   graph: SemanticAuthorGraph;
   loaders?: readonly AssetLoader[];
   artifacts?: PipelineArtifactCollection;
+  mediaSourceOrigin?: IntegrationContext["mediaSourceOrigin"];
 }): Promise<{
   diagnostics: Diagnostics;
   assetsById: ReadonlyMap<AssetEntityId, AssetArtifact>;
@@ -826,7 +841,7 @@ async function resolveAssetArtifacts(input: {
     if (!cached) {
       for (const { resolverIdentity } of loaders) {
         cached = input.artifacts?.assetsBySourceCacheKey.get(
-          assetSourceCacheKey(source, resolverIdentity),
+          assetSourceCacheKey(source, resolverIdentity, asset.origin),
         );
         if (cached?.probe) {
           break;
@@ -836,7 +851,7 @@ async function resolveAssetArtifacts(input: {
 
     if (!cached) {
       cached = input.artifacts?.assetsBySourceCacheKey.get(
-        assetSourceCacheKey(source, BUILTIN_ASSET_RESOLVER_IDENTITY),
+        assetSourceCacheKey(source, BUILTIN_ASSET_RESOLVER_IDENTITY, asset.origin),
       );
     }
 
@@ -859,6 +874,9 @@ async function resolveAssetArtifacts(input: {
             resolverIdentity: loaderResolverIdentity,
             assetEntityId,
             sourceField: asset.sourceField,
+            ...((asset.origin ?? input.mediaSourceOrigin)
+              ? { origin: asset.origin ?? input.mediaSourceOrigin }
+              : {}),
           }),
           stage: "project",
           code: "E_PROJECT_ASSET_PROBE_OUTCOME_INVALID",
@@ -961,6 +979,7 @@ async function resolveAssetArtifacts(input: {
       source,
       sourceField: asset.sourceField,
       resolverIdentity,
+      ...(asset.origin ? { origin: asset.origin } : {}),
       ...(probe ? { probe } : {}),
       ...(load ? { load } : {}),
       diagnostics: artifactDiagnostics,
@@ -975,6 +994,7 @@ async function resolveAssetArtifacts(input: {
 async function loadAssetArtifacts(input: {
   artifacts?: PipelineArtifactCollection;
   loaders?: readonly AssetLoader[];
+  mediaSourceOrigin?: IntegrationContext["mediaSourceOrigin"];
   projection: PptxPackageModel;
 }): Promise<Diagnostics> {
   if (!input.artifacts) {
@@ -993,8 +1013,8 @@ async function loadAssetArtifacts(input: {
     const current = input.artifacts.assetsById.get(media.assetEntityId);
     const currentMatchesSource =
       current !== undefined &&
-      assetSourceCacheKey(current.source, current.resolverIdentity) ===
-        assetSourceCacheKey(media.source, current.resolverIdentity);
+      assetSourceCacheKey(current.source, current.resolverIdentity, current.origin) ===
+        assetSourceCacheKey(media.source, current.resolverIdentity, current.origin);
 
     if (currentMatchesSource && current.load) {
       continue;
@@ -1002,7 +1022,7 @@ async function loadAssetArtifacts(input: {
 
     const currentResolverIdentity = currentMatchesSource ? current.resolverIdentity : undefined;
     const cached = input.artifacts.assetsBySourceCacheKey.get(
-      assetSourceCacheKey(media.source, currentResolverIdentity),
+      assetSourceCacheKey(media.source, currentResolverIdentity, current?.origin),
     );
     if (cached?.load) {
       input.artifacts.materializeAsset({
@@ -1023,7 +1043,7 @@ async function loadAssetArtifacts(input: {
 
     for (const { loader, resolverIdentity: loaderResolverIdentity } of scopedLoaders) {
       const loaderCached = input.artifacts.assetsBySourceCacheKey.get(
-        assetSourceCacheKey(media.source, loaderResolverIdentity),
+        assetSourceCacheKey(media.source, loaderResolverIdentity, current?.origin),
       );
       if (loaderCached?.load) {
         input.artifacts.materializeAsset({
@@ -1041,6 +1061,9 @@ async function loadAssetArtifacts(input: {
             resolverIdentity: loaderResolverIdentity,
             assetEntityId: media.assetEntityId,
             sourceField: media.sourceField,
+            ...((current?.origin ?? input.mediaSourceOrigin)
+              ? { origin: current?.origin ?? input.mediaSourceOrigin }
+              : {}),
           }),
           stage: "render",
           code: "E_RENDER_ASSET_LOAD_OUTCOME_INVALID",
@@ -1307,6 +1330,51 @@ function diagnosticFromError(input: {
   ]);
 }
 
+function projectionWithReusablePackageParts(input: {
+  projection: PptxPackageModel;
+  previous?: DefinedProjectionArtifact;
+}): PptxPackageModel {
+  if (!input.previous || !isPptxPackageModel(input.previous.projection)) {
+    return input.projection;
+  }
+
+  let reused = false;
+  const parts = input.projection.parts.map((part): PptxPackagePartModel => {
+    const previous = input.previous?.partsById.get(part.id);
+    if (
+      isHmrReusableSlideUnitPart(part) &&
+      previous &&
+      isHmrReusableSlideUnitPart(previous) &&
+      previous.fingerprint &&
+      previous.fingerprint === part.fingerprint
+    ) {
+      reused = true;
+      return previous as PptxPackagePartModel;
+    }
+
+    return part;
+  });
+
+  if (!reused) {
+    return input.projection;
+  }
+
+  return {
+    ...input.projection,
+    parts,
+    slides: parts.filter(isPptxSlidePart),
+  };
+}
+
+function isHmrReusableSlideUnitPart(part: PptxPackagePartCandidate): boolean {
+  return (
+    isPptxSlidePart(part) ||
+    (part.kind === "relationships" &&
+      part.category === "authored-content" &&
+      part.path.startsWith("ppt/slides/_rels/"))
+  );
+}
+
 export function compileSource<
   TSourceContext extends SourceContextValue | void,
   TTemplates extends SlideTemplateSet,
@@ -1382,6 +1450,7 @@ export async function projectSource<
   definedProjection?: DefinedProjectionArtifact;
   artifacts?: PipelineArtifactCollection;
   assetLoaders?: readonly AssetLoader[];
+  mediaSourceOrigin?: IntegrationContext["mediaSourceOrigin"];
 }): Promise<ProjectResult> {
   const projectionFormat = input.projectionFormat ?? projectionFormatFor(input.options);
 
@@ -1471,13 +1540,18 @@ export async function projectSource<
       graph: compileResult.graph,
       loaders: input.assetLoaders,
       artifacts: input.artifacts,
+      mediaSourceOrigin: input.mediaSourceOrigin,
     });
-    const projection = projectGraphToDocumentModel({
+    const projected = projectGraphToDocumentModel({
       format: projectionFormat,
       graph: compileResult.graph,
       resolvedStyles: compileResult.resolvedStyles,
       options: input.options,
       assets: assetResult.assetsById,
+    });
+    const projection = projectionWithReusablePackageParts({
+      projection: projected,
+      previous: input.artifacts?.staleProjectionForReuse,
     });
     const unsupportedProjectionDiagnostics = projectionDiagnosticsForGraph({
       format: projectionFormat,
@@ -1623,14 +1697,22 @@ export async function renderSource<
   }
 
   const adapter = adapterSelection.adapter;
+  const integrationContext = isRenderInputObject(input.renderInput)
+    ? integrationContextFor(input.renderInput)
+    : undefined;
+  const hmrInvalidated = integrationContext?.hmrInvalidation
+    ? artifacts.invalidateForHmr(integrationContext.hmrInvalidation)
+    : false;
+  const assetLoaders = mergeAssetLoaders(input.assetLoaders, integrationContext?.assetLoaders);
   const projectResult = await projectSource({
     source: input.source,
     options: input.options,
     projectionFormat: adapter.projectionFormat,
-    definedGraph: input.definedGraph,
-    definedProjection: input.definedProjection,
+    definedGraph: hmrInvalidated ? artifacts.graph : input.definedGraph,
+    definedProjection: hmrInvalidated ? artifacts.projection : input.definedProjection,
     artifacts,
-    assetLoaders: input.assetLoaders,
+    assetLoaders,
+    mediaSourceOrigin: integrationContext?.mediaSourceOrigin,
     projectOptions: { inspection: "none" },
   });
   const formatDiagnostics = writerAdapterFormatDiagnostics({
@@ -1654,7 +1736,8 @@ export async function renderSource<
   try {
     const assetLoadDiagnostics = await loadAssetArtifacts({
       artifacts,
-      loaders: input.assetLoaders,
+      loaders: assetLoaders,
+      mediaSourceOrigin: integrationContext?.mediaSourceOrigin,
       projection: projectResult.projection,
     });
     if (assetLoadDiagnostics.hasErrors) {
@@ -1697,6 +1780,10 @@ export async function renderSource<
     const summary = includeInspectionSummary(adapter.options.inspection)
       ? adapterResult.summary
       : undefined;
+    const patchPlan =
+      adapterResult.patchPlan && integrationContext?.hmrInvalidation
+        ? { ...adapterResult.patchPlan, hmrInvalidation: integrationContext.hmrInvalidation }
+        : adapterResult.patchPlan;
 
     return {
       ok: resultOk(renderDiagnostics),
@@ -1711,6 +1798,7 @@ export async function renderSource<
       },
       format: adapter.format,
       artifact: adapterResult.artifact,
+      ...(patchPlan ? { patchPlan } : {}),
       ...(summary ? { summary } : {}),
     };
   } catch (error) {

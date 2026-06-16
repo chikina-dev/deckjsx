@@ -61,6 +61,31 @@ export type RenderedArtifact<TFormat extends OutputFormat = OutputFormat> = {
   readonly bytes: Uint8Array;
 };
 
+export type RenderPatchPlanPartKind = "manifest" | "media" | "xml";
+
+export type RenderPatchPlanPart = {
+  readonly packagePartId: string;
+  readonly path: string;
+  readonly patchableKind: RenderPatchPlanPartKind;
+  readonly reservedCapacity: number;
+  readonly logicalByteLength: number;
+  readonly storedByteLength: number;
+  readonly fingerprint: string;
+  readonly buildStatus?: "rebuilt" | "reused";
+  readonly buildReason?: string;
+};
+
+export type RenderPatchPlan = {
+  readonly kind: "deckjsx.renderPatchPlan";
+  readonly version: 1;
+  readonly manifestPath: "ppt/deckjsx/patch-manifest.json";
+  readonly hmrInvalidation?: {
+    readonly importer?: string;
+    readonly changedModuleIds: readonly string[];
+  };
+  readonly parts: readonly RenderPatchPlanPart[];
+};
+
 export type RenderAssemblyExpectedEntrySummary = {
   readonly path: string;
   readonly packagePartId?: string;

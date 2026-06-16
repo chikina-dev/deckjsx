@@ -27,7 +27,7 @@ permissions:
 
 jobs:
   publish:
-    name: Publish npm package
+    name: Publish npm packages
     runs-on: ubuntu-latest
 
     steps:
@@ -78,11 +78,19 @@ jobs:
       - name: Validate package version
         shell: bash
         run: |
-          package_version="$(node -p "require('./package.json').version")"
-          if [ "$package_version" != "${{ steps.release.outputs.version }}" ]; then
-            echo "package.json version $package_version does not match ${{ steps.release.outputs.tag }}." >&2
-            exit 1
-          fi
+          package_paths=(
+            "package.json"
+            "plugins/node/package.json"
+            "plugins/vite/package.json"
+          )
+
+          for package_path in "${package_paths[@]}"; do
+            package_version="$(node -p "require('./$package_path').version")"
+            if [ "$package_version" != "${{ steps.release.outputs.version }}" ]; then
+              echo "$package_path version $package_version does not match ${{ steps.release.outputs.tag }}." >&2
+              exit 1
+            fi
+          done
 
       - name: Validate release source
         if: steps.release.outputs.dry_run != 'true'
@@ -99,8 +107,24 @@ jobs:
       - name: Check
         run: bun run check
 
+      - name: Check @deckjsx/node
+        working-directory: plugins/node
+        run: ../../node_modules/.bin/vp check
+
+      - name: Check @deckjsx/vite
+        working-directory: plugins/vite
+        run: ../../node_modules/.bin/vp check
+
       - name: Build
         run: bun run build
+
+      - name: Build @deckjsx/node
+        working-directory: plugins/node
+        run: ../../node_modules/.bin/vp pack
+
+      - name: Build @deckjsx/vite
+        working-directory: plugins/vite
+        run: ../../node_modules/.bin/vp pack
 
       - name: Install sample dependencies
         run: npm ci --prefix sample
@@ -124,6 +148,14 @@ jobs:
         run: npm run --prefix .github/compat/pptxgenjs compare
 
       - name: Pack
+        run: npm pack
+
+      - name: Pack @deckjsx/node
+        working-directory: plugins/node
+        run: npm pack
+
+      - name: Pack @deckjsx/vite
+        working-directory: plugins/vite
         run: npm pack
 
       - name: Create GitHub release
@@ -155,6 +187,26 @@ jobs:
         if: steps.release.outputs.dry_run == 'true'
         run: npm publish --dry-run --access public
 
+      - name: Publish @deckjsx/node dry run
+        if: steps.release.outputs.dry_run == 'true'
+        working-directory: plugins/node
+        run: npm publish --dry-run --access public
+
+      - name: Publish @deckjsx/vite dry run
+        if: steps.release.outputs.dry_run == 'true'
+        working-directory: plugins/vite
+        run: npm publish --dry-run --access public
+
       - name: Publish to npm
         if: steps.release.outputs.dry_run != 'true'
+        run: npm publish --access public
+
+      - name: Publish @deckjsx/node to npm
+        if: steps.release.outputs.dry_run != 'true'
+        working-directory: plugins/node
+        run: npm publish --access public
+
+      - name: Publish @deckjsx/vite to npm
+        if: steps.release.outputs.dry_run != 'true'
+        working-directory: plugins/vite
         run: npm publish --access public
