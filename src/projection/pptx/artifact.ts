@@ -25,16 +25,16 @@ export type PptxProjectionArtifact<
   readonly partsById: ReadonlyMap<PackagePartId, PptxPackagePartCandidate>;
   readonly partsBySourceKey: ReadonlyMap<string, readonly PackagePartId[]>;
   readonly partsByGraphNodeId: ReadonlyMap<GraphNodeId, readonly PackagePartId[]>;
-  readonly slideProjectionFingerprints: ReadonlyMap<
+  readonly slidePackagePartFingerprints: ReadonlyMap<
     PackagePartId,
-    SlideProjectionFingerprintSnapshot
+    SlidePackagePartFingerprintSnapshot
   >;
   readonly packageDependencies: PackageDependencySnapshot;
 };
 
 export type { PackageDependencyEdge, PackageDependencyReason };
 
-export type SlideProjectionFingerprintSnapshot = {
+export type SlidePackagePartFingerprintSnapshot = {
   readonly slidePartId: PackagePartId;
   readonly slideId: string;
   readonly name?: string;
@@ -153,7 +153,7 @@ export function pptxProjectionArtifact(
     partsById: new Map(parts.map((part) => [part.id, part])),
     partsBySourceKey: partsBySourceKey(parts),
     partsByGraphNodeId: partsByGraphNodeId(parts),
-    slideProjectionFingerprints: slideProjectionFingerprints(parts),
+    slidePackagePartFingerprints: slidePackagePartFingerprints(parts),
     packageDependencies: packageDependencySnapshot(parts),
   };
 }
@@ -190,10 +190,10 @@ function partsByGraphNodeId(
   return index;
 }
 
-function slideProjectionFingerprints(
+function slidePackagePartFingerprints(
   parts: readonly PptxPackagePartCandidate[],
-): ReadonlyMap<PackagePartId, SlideProjectionFingerprintSnapshot> {
-  const index = new Map<PackagePartId, SlideProjectionFingerprintSnapshot>();
+): ReadonlyMap<PackagePartId, SlidePackagePartFingerprintSnapshot> {
+  const index = new Map<PackagePartId, SlidePackagePartFingerprintSnapshot>();
 
   parts.forEach((part) => {
     if (!isPptxSlidePart(part)) {

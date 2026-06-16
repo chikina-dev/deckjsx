@@ -130,6 +130,40 @@ describe("@deckjsx/vite", () => {
     expect(thirdCode).not.toContain("/project/src/slide.tsx");
   });
 
+  test("keeps HMR invalidation metadata until every tracked render module receives it", async () => {
+    const plugin = deckjsx();
+    const source = [
+      'import { Deck } from "deckjsx";',
+      'import { pptx } from "deckjsx/adapter";',
+      "const deck = new Deck({ layout: { width: 10, height: 5.625, unit: 'in' } });",
+      "await deck.render(pptx());",
+    ].join("\n");
+    const transform = plugin.transform as
+      | ((
+          code: string,
+          id: string,
+        ) => string | { code: string } | null | Promise<string | { code: string } | null>)
+      | undefined;
+    const handleHotUpdate = plugin.handleHotUpdate as
+      | ((context: { file: string; modules: readonly unknown[] }) => void | readonly unknown[])
+      | undefined;
+
+    await transform?.(source, "/project/src/deck-a.tsx");
+    await transform?.(source, "/project/src/deck-b.tsx");
+
+    handleHotUpdate?.({ file: "/project/src/shared.tsx", modules: [] });
+    const first = await transform?.(source, "/project/src/deck-a.tsx");
+    const second = await transform?.(source, "/project/src/deck-b.tsx");
+    const third = await transform?.(source, "/project/src/deck-a.tsx");
+    const firstCode = typeof first === "string" ? first : first?.code;
+    const secondCode = typeof second === "string" ? second : second?.code;
+    const thirdCode = typeof third === "string" ? third : third?.code;
+
+    expect(firstCode).toContain('changedModuleIds: ["/project/src/shared.tsx"]');
+    expect(secondCode).toContain('changedModuleIds: ["/project/src/shared.tsx"]');
+    expect(thirdCode).not.toContain("hmrInvalidation");
+  });
+
   test("returns tracked render modules from HMR updates so renders receive invalidation", async () => {
     const plugin = deckjsx();
     const source = [

@@ -1,6 +1,7 @@
 import type { CompositionSource } from "./composition/types";
 import { resolveComposition } from "./composition/resolve";
 import type { ComposedAuthorRoot } from "./composition/types";
+import type { DeckOptions } from "./authoring/index";
 import type { AssetLoadResult, AssetProbeResult, AssetSource } from "./assets";
 import type { MediaSourceOrigin } from "./media-source-origin";
 import { createDiagnostics, type Diagnostics } from "./diagnostics";
@@ -230,8 +231,11 @@ export class PipelineArtifactCollection {
   #assetsBySourceCacheKey = new Map<string, AssetArtifact>();
   #pptxBuildArtifactsByPartId = new Map<PackagePartId, PptxPackageBuildArtifact>();
   #projection?: DefinedProjectionArtifact;
+  #projectionOptions?: DeckOptions;
   #staleProjectionForReuse?: DefinedProjectionArtifact;
   #staleGraphForReuse?: DefinedGraphArtifact;
+  #staleProjectionOptionsForReuse?: DeckOptions;
+  #staleAssetsByIdForReuse?: ReadonlyMap<AssetEntityId, AssetArtifact>;
   #staleAssetEntityIdsForReuse = new Set<AssetEntityId>();
 
   get graph(): DefinedGraphArtifact | undefined {
@@ -248,6 +252,14 @@ export class PipelineArtifactCollection {
 
   get staleGraphForReuse(): DefinedGraphArtifact | undefined {
     return this.#staleGraphForReuse;
+  }
+
+  get staleProjectionOptionsForReuse(): DeckOptions | undefined {
+    return this.#staleProjectionOptionsForReuse;
+  }
+
+  get staleAssetsByIdForReuse(): ReadonlyMap<AssetEntityId, AssetArtifact> | undefined {
+    return this.#staleAssetsByIdForReuse;
   }
 
   get staleAssetEntityIdsForReuse(): ReadonlySet<AssetEntityId> {
@@ -281,8 +293,11 @@ export class PipelineArtifactCollection {
     this.#assetsBySourceCacheKey.clear();
     this.#pptxBuildArtifactsByPartId.clear();
     this.#projection = undefined;
+    this.#projectionOptions = undefined;
     this.#staleProjectionForReuse = undefined;
     this.#staleGraphForReuse = undefined;
+    this.#staleProjectionOptionsForReuse = undefined;
+    this.#staleAssetsByIdForReuse = undefined;
     this.#staleAssetEntityIdsForReuse.clear();
   }
 
@@ -292,16 +307,22 @@ export class PipelineArtifactCollection {
     this.#assetsBySourceCacheKey.clear();
     this.#pptxBuildArtifactsByPartId.clear();
     this.#projection = undefined;
+    this.#projectionOptions = undefined;
     this.#staleProjectionForReuse = undefined;
     this.#staleGraphForReuse = undefined;
+    this.#staleProjectionOptionsForReuse = undefined;
+    this.#staleAssetsByIdForReuse = undefined;
     this.#staleAssetEntityIdsForReuse.clear();
   }
 
   invalidateFromProjection(): void {
     this.#pptxBuildArtifactsByPartId.clear();
     this.#projection = undefined;
+    this.#projectionOptions = undefined;
     this.#staleProjectionForReuse = undefined;
     this.#staleGraphForReuse = undefined;
+    this.#staleProjectionOptionsForReuse = undefined;
+    this.#staleAssetsByIdForReuse = undefined;
     this.#staleAssetEntityIdsForReuse.clear();
   }
 
@@ -310,8 +331,11 @@ export class PipelineArtifactCollection {
     this.#assetsBySourceCacheKey.clear();
     this.#pptxBuildArtifactsByPartId.clear();
     this.#projection = undefined;
+    this.#projectionOptions = undefined;
     this.#staleProjectionForReuse = undefined;
     this.#staleGraphForReuse = undefined;
+    this.#staleProjectionOptionsForReuse = undefined;
+    this.#staleAssetsByIdForReuse = undefined;
     this.#staleAssetEntityIdsForReuse.clear();
   }
 
@@ -334,6 +358,7 @@ export class PipelineArtifactCollection {
       this.#assetsById.clear();
       this.#assetsBySourceCacheKey.clear();
       this.#projection = undefined;
+      this.#projectionOptions = undefined;
       this.#staleAssetEntityIdsForReuse.clear();
       return true;
     }
@@ -361,6 +386,7 @@ export class PipelineArtifactCollection {
       );
     });
     this.#projection = undefined;
+    this.#projectionOptions = undefined;
     return true;
   }
 
@@ -368,9 +394,13 @@ export class PipelineArtifactCollection {
     if (this.#projection) {
       this.#staleProjectionForReuse = this.#projection;
     }
+    if (this.#projectionOptions) {
+      this.#staleProjectionOptionsForReuse = this.#projectionOptions;
+    }
     if (this.graph) {
       this.#staleGraphForReuse = this.graph;
     }
+    this.#staleAssetsByIdForReuse = new Map(this.#assetsById);
   }
 
   materializeComposition(
@@ -533,10 +563,17 @@ export class PipelineArtifactCollection {
     });
   }
 
-  materializeProjection(projection: PptxPackageModel, diagnostics: Diagnostics): void {
+  materializeProjection(
+    projection: PptxPackageModel,
+    diagnostics: Diagnostics,
+    options: DeckOptions,
+  ): void {
     this.#projection = pptxProjectionArtifact(projection, diagnostics);
+    this.#projectionOptions = options;
     this.#staleProjectionForReuse = undefined;
     this.#staleGraphForReuse = undefined;
+    this.#staleProjectionOptionsForReuse = undefined;
+    this.#staleAssetsByIdForReuse = undefined;
     this.#staleAssetEntityIdsForReuse.clear();
   }
 
@@ -587,8 +624,11 @@ export class PipelineArtifactCollection {
       diagnostics,
     });
     this.#projection = undefined;
+    this.#projectionOptions = undefined;
     this.#staleProjectionForReuse = undefined;
     this.#staleGraphForReuse = undefined;
+    this.#staleProjectionOptionsForReuse = undefined;
+    this.#staleAssetsByIdForReuse = undefined;
     this.#staleAssetEntityIdsForReuse.clear();
   }
 
@@ -596,8 +636,11 @@ export class PipelineArtifactCollection {
     this.#sourcesByKey.clear();
     this.#graphsBySourceKey.clear();
     this.#projection = pptxProjectionArtifact(projection, projectionShapeDiagnostics(projection));
+    this.#projectionOptions = undefined;
     this.#staleProjectionForReuse = undefined;
     this.#staleGraphForReuse = undefined;
+    this.#staleProjectionOptionsForReuse = undefined;
+    this.#staleAssetsByIdForReuse = undefined;
     this.#staleAssetEntityIdsForReuse.clear();
   }
 }

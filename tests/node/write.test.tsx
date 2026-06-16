@@ -223,6 +223,57 @@ async function renderMediaDeck(bytes: Uint8Array) {
   );
 }
 
+async function renderDeckWithOptionalMedia(includeMedia: boolean) {
+  const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+  const loader = {
+    resolverIdentity: "test:node-optional-media-loader",
+    async probe(context) {
+      return context.source.kind === "path"
+        ? {
+            ok: true,
+            value: {
+              mediaType: "image/png",
+              extension: "png",
+              width: 2,
+              height: 2,
+              byteLength: pngHeaderBytes(2, 2, 0xcc).byteLength,
+            },
+          }
+        : undefined;
+    },
+    async load(context) {
+      return context.source.kind === "path"
+        ? {
+            ok: true,
+            value: {
+              mediaType: "image/png",
+              extension: "png",
+              width: 2,
+              height: 2,
+              byteLength: pngHeaderBytes(2, 2, 0xcc).byteLength,
+              bytes: pngHeaderBytes(2, 2, 0xcc),
+            },
+          }
+        : undefined;
+    },
+  } satisfies AssetLoader;
+
+  deck.slide({ name: "Optional media" }, () => (
+    <>
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>optional media</p>
+      {includeMedia ? (
+        <img src="./optional.png" style={{ x: 1, y: 2, width: 1, height: 1 }} />
+      ) : undefined}
+    </>
+  ));
+  return deck.render(
+    withIntegrationContext(pptx({ inspection: "none" }), {
+      assetLoaders: [loader],
+      mediaSourceOrigin: { importer: "/project/src/deck.tsx" },
+    }),
+  );
+}
+
 describe("@deckjsx/node write", () => {
   test("creates a local file AssetLoader for importer-relative and absolute paths", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-assets-"));
@@ -680,6 +731,34 @@ describe("@deckjsx/node write", () => {
     expect(afterStat.size).toBe(beforeStat.size);
     expect(afterStat.ino).toBe(beforeStat.ino);
     expect(Array.from(zip["ppt/media/media1.png"] ?? [])).toEqual(Array.from(afterMedia));
+  });
+
+  test("replaces the whole archive when a package part was removed", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-write-"));
+    const outputPath = path.join(directory, "deleted-part.pptx");
+    const first = await renderDeckWithOptionalMedia(true);
+    const second = await renderDeckWithOptionalMedia(false);
+
+    await write(first, outputPath);
+
+    const result = await write(second, outputPath);
+    const output = await readFile(outputPath);
+    const zip = unzipSync(output);
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        status: "replaced",
+        strategy: "atomic-replace",
+        patchedParts: [],
+        diagnostics: expect.arrayContaining([
+          expect.objectContaining({
+            code: "deckjsx.node.write.patchManifestRemovedPart",
+            path: "ppt/media/media1.png",
+          }),
+        ]),
+      }),
+    );
+    expect(zip["ppt/media/media1.png"]).toBeUndefined();
   });
 
   test("returns result-first diagnostics when another write holds the lock", async () => {

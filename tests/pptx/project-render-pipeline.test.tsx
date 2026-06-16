@@ -10241,7 +10241,7 @@ describe("project/render pipeline", () => {
     expect(artifacts.projection?.partsById.size).toBe(project.projection?.parts.length);
   });
 
-  test("projection artifacts expose stable slide projection fingerprints for slide-level reuse", async () => {
+  test("projection artifacts expose stable slide package part fingerprints", async () => {
     async function projectDeck(firstSlideText: string) {
       const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
       const artifacts = new PipelineArtifactCollection();
@@ -10278,16 +10278,16 @@ describe("project/render pipeline", () => {
       (slide) => slide.payload.name === "Stable",
     );
 
-    const firstEditedFingerprint = first.artifacts.projection?.slideProjectionFingerprints.get(
+    const firstEditedFingerprint = first.artifacts.projection?.slidePackagePartFingerprints.get(
       firstEditedSlide!.id,
     );
-    const firstStableFingerprint = first.artifacts.projection?.slideProjectionFingerprints.get(
+    const firstStableFingerprint = first.artifacts.projection?.slidePackagePartFingerprints.get(
       firstStableSlide!.id,
     );
-    const secondEditedFingerprint = second.artifacts.projection?.slideProjectionFingerprints.get(
+    const secondEditedFingerprint = second.artifacts.projection?.slidePackagePartFingerprints.get(
       secondEditedSlide!.id,
     );
-    const secondStableFingerprint = second.artifacts.projection?.slideProjectionFingerprints.get(
+    const secondStableFingerprint = second.artifacts.projection?.slidePackagePartFingerprints.get(
       secondStableSlide!.id,
     );
 
@@ -10365,6 +10365,97 @@ describe("project/render pipeline", () => {
     expect(secondEditedSlide).not.toBe(firstEditedSlide);
     expect(secondStableSlide).toBe(firstStableSlide);
     expect(secondStableSlideRelationships).toBe(firstStableSlideRelationships);
+  });
+
+  test("HMR projection does not reuse a slide when deck layout changes", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const artifacts = new PipelineArtifactCollection();
+
+    deck.slide({ name: "Layout sensitive" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>unchanged graph</p>
+    ));
+
+    const first = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const firstSlide = first.projection?.slides[0];
+
+    artifacts.invalidateForHmr({
+      importer: "/project/src/deck.tsx",
+      changedModuleIds: ["/project/src/deck.tsx"],
+    });
+    const second = await projectSource({
+      source: deck,
+      options: { ...deck.options, layout: { width: 12, height: 6.75, unit: "in" } },
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const secondSlide = second.projection?.slides[0];
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(firstSlide).toBeDefined();
+    expect(secondSlide).toBeDefined();
+    expect(secondSlide).not.toBe(firstSlide);
+  });
+
+  test("HMR projection does not reuse a slide when asset probe metadata changes", async () => {
+    let imageWidth = 2;
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const artifacts = new PipelineArtifactCollection();
+    const loader = testAssetLoader({
+      resolverIdentity: "test:hmr-probe-sensitive-assets",
+      async probe({ source }) {
+        return source.kind === "path"
+          ? {
+              mediaType: "image/png",
+              extension: "png",
+              width: imageWidth,
+              height: 2,
+              byteLength: pngHeaderBytes(imageWidth, 2).byteLength,
+              hash: `fnv1a32:image-width-${imageWidth}`,
+            }
+          : undefined;
+      },
+    });
+
+    deck.slide({ name: "Probe sensitive" }, () => (
+      <img src="./chart.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+    ));
+
+    const first = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+      assetLoaders: [loader],
+      mediaSourceOrigin: { importer: "/project/src/deck.tsx" },
+    });
+    const firstSlide = first.projection?.slides[0];
+
+    imageWidth = 3;
+    artifacts.invalidateForHmr({
+      importer: "/project/src/deck.tsx",
+      changedModuleIds: ["/project/src/deck.tsx"],
+    });
+    const second = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+      assetLoaders: [loader],
+      mediaSourceOrigin: { importer: "/project/src/deck.tsx" },
+    });
+    const secondSlide = second.projection?.slides[0];
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(firstSlide).toBeDefined();
+    expect(secondSlide).toBeDefined();
+    expect(secondSlide).not.toBe(firstSlide);
   });
 
   test("HMR projection reuses unchanged slide media package parts from the stale projection", async () => {

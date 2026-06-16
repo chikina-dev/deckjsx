@@ -22,7 +22,6 @@ import {
   type AssetEntityId,
   type GraphNodeId,
   type SemanticAuthorGraph,
-  type StyleEntityId,
 } from "./graph";
 import {
   resultOk,
@@ -65,10 +64,10 @@ import {
   summarizeProjectedDocumentModel,
 } from "./projection/registry";
 import { validatePptxPackageModel } from "./projection/pptx/validation";
+import { hmrProjectionReusePlan } from "./projection/pptx/reuse";
 import { resolveStyles, type ResolvedStyleMap } from "./style/resolve";
 import type { SlideTemplateSet } from "./templates";
 import { pptxMediaAssetLoadRequirements } from "./writers/pptx";
-import { fingerprintString, stableJson } from "./projection/pptx/fingerprint";
 
 type PresentStageArtifactStatus = Exclude<StageArtifactStatus, "missing">;
 
@@ -1333,164 +1332,6 @@ function diagnosticFromError(input: {
   ]);
 }
 
-function hmrProjectionReuseOptions(input: {
-  graph: SemanticAuthorGraph;
-  resolvedStyles: ResolvedStyleMap;
-  previousGraph?: DefinedGraphArtifact;
-  previousProjection?: DefinedProjectionArtifact;
-  staleAssetEntityIds?: ReadonlySet<AssetEntityId>;
-}):
-  | {
-      readonly previousProjection: PptxPackageModel;
-      readonly slideNodeIds: ReadonlySet<GraphNodeId>;
-    }
-  | undefined {
-  if (!input.previousGraph || !input.previousProjection) {
-    return undefined;
-  }
-  const previousGraph = input.previousGraph;
-  const previousProjection = input.previousProjection.projection;
-  if (!isPptxPackageModel(previousProjection)) {
-    return undefined;
-  }
-
-  const document = input.graph.nodes.get(input.graph.documentId);
-  const previousDocument = previousGraph.graph.nodes.get(previousGraph.graph.documentId);
-  if (document?.kind !== "document" || previousDocument?.kind !== "document") {
-    return undefined;
-  }
-  if (document.children.length !== previousDocument.children.length) {
-    return undefined;
-  }
-
-  const slideNodeIds = new Set<GraphNodeId>();
-  document.children.forEach((slideNodeId, index) => {
-    if (previousDocument.children[index] !== slideNodeId) {
-      return;
-    }
-    const slide = input.graph.nodes.get(slideNodeId);
-    const previousSlide = previousGraph.graph.nodes.get(slideNodeId);
-    if (slide?.kind !== "slide" || previousSlide?.kind !== "slide") {
-      return;
-    }
-    if (
-      input.staleAssetEntityIds &&
-      graphSubtreeAssetEntityIds(input.graph, slideNodeId).some((id) =>
-        input.staleAssetEntityIds?.has(id),
-      )
-    ) {
-      return;
-    }
-
-    const currentFingerprint = graphSlideUnitFingerprint({
-      graph: input.graph,
-      resolvedStyles: input.resolvedStyles,
-      slideNodeId,
-    });
-    const previousFingerprint = graphSlideUnitFingerprint({
-      graph: previousGraph.graph,
-      resolvedStyles: previousGraph.resolvedStyles,
-      slideNodeId,
-    });
-    if (currentFingerprint === previousFingerprint) {
-      slideNodeIds.add(slideNodeId);
-    }
-  });
-
-  return slideNodeIds.size > 0 ? { previousProjection, slideNodeIds } : undefined;
-}
-
-function graphSlideUnitFingerprint(input: {
-  graph: SemanticAuthorGraph;
-  resolvedStyles: ResolvedStyleMap;
-  slideNodeId: GraphNodeId;
-}): string {
-  const graphNodeIds = graphSubtreeNodeIds(input.graph, input.slideNodeId);
-  const styleEntityIds = new Set<StyleEntityId>();
-  const assetEntityIds = new Set<AssetEntityId>();
-  const nodes = graphNodeIds.flatMap((id) => {
-    const node = input.graph.nodes.get(id);
-    if (!node) {
-      return [];
-    }
-    if (node.styleRef) {
-      styleEntityIds.add(node.styleRef);
-    }
-    if (node.kind === "image" && node.assetRef) {
-      assetEntityIds.add(node.assetRef);
-    }
-    if (node.kind === "video") {
-      if (node.assetRef) {
-        assetEntityIds.add(node.assetRef);
-      }
-      if (node.posterAssetRef) {
-        assetEntityIds.add(node.posterAssetRef);
-      }
-    }
-    return [node];
-  });
-
-  return fingerprintString(
-    stableJson({
-      nodes,
-      resolvedStyles: graphNodeIds.flatMap((id) => {
-        const resolved = input.resolvedStyles.get(id);
-        return resolved ? [{ id, resolved }] : [];
-      }),
-      styles: [...styleEntityIds].sort().flatMap((id) => {
-        const style = input.graph.styles.get(id);
-        return style ? [style] : [];
-      }),
-      assets: [...assetEntityIds].sort().flatMap((id) => {
-        const asset = input.graph.assets.get(id);
-        return asset ? [asset] : [];
-      }),
-    }),
-  );
-}
-
-function graphSubtreeNodeIds(
-  graph: SemanticAuthorGraph,
-  rootId: GraphNodeId,
-): readonly GraphNodeId[] {
-  const ids: GraphNodeId[] = [];
-  const visit = (nodeId: GraphNodeId): void => {
-    const node = graph.nodes.get(nodeId);
-    if (!node) {
-      return;
-    }
-    ids.push(nodeId);
-    const children =
-      "children" in node ? node.children : "inlineChildren" in node ? node.inlineChildren : [];
-    children.forEach(visit);
-  };
-
-  visit(rootId);
-  return ids;
-}
-
-function graphSubtreeAssetEntityIds(
-  graph: SemanticAuthorGraph,
-  rootId: GraphNodeId,
-): readonly AssetEntityId[] {
-  const assetEntityIds = new Set<AssetEntityId>();
-  graphSubtreeNodeIds(graph, rootId).forEach((nodeId) => {
-    const node = graph.nodes.get(nodeId);
-    if (node?.kind === "image" && node.assetRef) {
-      assetEntityIds.add(node.assetRef);
-    }
-    if (node?.kind === "video") {
-      if (node.assetRef) {
-        assetEntityIds.add(node.assetRef);
-      }
-      if (node.posterAssetRef) {
-        assetEntityIds.add(node.posterAssetRef);
-      }
-    }
-  });
-  return [...assetEntityIds];
-}
-
 function projectionWithReusablePackageParts(input: {
   projection: PptxPackageModel;
   previous?: DefinedProjectionArtifact;
@@ -1549,20 +1390,23 @@ function reusableSlideUnitIndex(input: {
 }): ReusableSlideUnitIndex {
   const slidePartIds = new Set<string>();
   const slideNodeIds = new Set<GraphNodeId>();
+  const reusableSlideNodeIds = input.reusableSlideNodeIds;
+  if (!reusableSlideNodeIds) {
+    return {
+      slidePartIds,
+      slideNodeIds,
+      slideNodeIdByGraphNodeId: slideNodeIdByGraphNodeId(input.graph),
+    };
+  }
 
   input.projection.slides.forEach((slide) => {
-    const previous = input.previous.partsById.get(slide.id);
     const slideNodeId = slide.origin?.graphNodeIds?.find(
       (id) => input.graph.nodes.get(id)?.kind === "slide",
     );
     if (!slideNodeId) {
       return;
     }
-    if (input.reusableSlideNodeIds) {
-      if (!input.reusableSlideNodeIds.has(slideNodeId)) {
-        return;
-      }
-    } else if (!previous?.fingerprint || previous.fingerprint !== slide.fingerprint) {
+    if (!reusableSlideNodeIds.has(slideNodeId)) {
       return;
     }
 
@@ -1816,11 +1660,15 @@ export async function projectSource<
       artifacts: input.artifacts,
       mediaSourceOrigin: input.mediaSourceOrigin,
     });
-    const projectionReuse = hmrProjectionReuseOptions({
+    const projectionReuse = hmrProjectionReusePlan({
       graph: compileResult.graph,
       resolvedStyles: compileResult.resolvedStyles,
+      options: input.options,
+      assets: assetResult.assetsById,
       previousGraph: input.artifacts?.staleGraphForReuse,
       previousProjection: input.artifacts?.staleProjectionForReuse,
+      previousOptions: input.artifacts?.staleProjectionOptionsForReuse,
+      previousAssets: input.artifacts?.staleAssetsByIdForReuse,
       staleAssetEntityIds: input.artifacts?.staleAssetEntityIdsForReuse,
     });
     const projected = projectGraphToDocumentModel({
@@ -1861,7 +1709,7 @@ export async function projectSource<
           resolvedStyles: compileResult.resolvedStyles,
         })
       : undefined;
-    input.artifacts?.materializeProjection(projection, diagnostics);
+    input.artifacts?.materializeProjection(projection, diagnostics, input.options);
 
     return {
       ok: resultOk(diagnostics),
@@ -1903,7 +1751,7 @@ export async function projectSource<
         validatePptxPackageModel(partialProjection),
       );
       diagnostics = partialDiagnostics;
-      input.artifacts?.materializeProjection(partialProjection, partialDiagnostics);
+      input.artifacts?.materializeProjection(partialProjection, partialDiagnostics, input.options);
     } catch {
       partialProjection = undefined;
     }
