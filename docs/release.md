@@ -62,16 +62,18 @@ For v0.9.0 and later, the Node and Vite integration packages release separately 
 package. The plugin packages should publish only built `dist` artifacts, declare `deckjsx` as a peer
 dependency, and must not publish a `file:../..` dependency.
 
-For v0.8.0 and later, the published package should use deckjsx's direct PPTX writer by default and
-must not publish `pptxgenjs` as a runtime dependency. The isolated `.github/compat/pptxgenjs/`
-package is allowed only as generation-regression tooling.
+For v0.9.0 and later, the published root package should use deckjsx's direct PPTX writer through the
+normal `deck.render(pptx())` path and must not publish `pptxgenjs` as a runtime dependency. The
+isolated `.github/compat/pptxgenjs/` package is allowed only as generation-regression tooling.
 The public sample package and its lockfile should also stay free of `pptxgenjs`; they should smoke
-test `deck.render({ output })` through the local direct-writer package.
+test `write(await deck.render(pptx()), "out.pptx")` through the local root package plus
+`@deckjsx/node`.
 
-Before a v0.8.0 or later release, also confirm that public documentation describes the direct writer,
-`deck.useAssets(loader)`, and the `deckjsx` / `deckjsx/adapter` / `deckjsx/inspect` surface split.
-Writer internals, streaming ZIP controls, fflate settings, XML emitters, Assembly Plan builders, and
-Build Artifact storage should not appear as public usage guidance.
+Before a v0.9.0 or later release, also confirm that public documentation describes the direct
+writer, `@deckjsx/node` filesystem writes, `@deckjsx/vite` project integration, and the `deckjsx` /
+`deckjsx/adapter` / `deckjsx/inspect` / `deckjsx/integration` surface split. Writer internals,
+streaming ZIP controls, fflate settings, XML emitters, Assembly Plan builders, and Build Artifact
+storage should not appear as public usage guidance.
 The package export maps should be reviewed as concrete allowlists, not only as lists of names:
 `deckjsx`, `deckjsx/adapter`, `deckjsx/inspect`, `deckjsx/integration`, the JSX runtimes, and
 `package.json` should point at their intended built entry files with matching `types` conditions.

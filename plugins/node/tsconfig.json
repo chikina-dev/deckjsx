@@ -3,8 +3,8 @@
   "compilerOptions": {
     "rootDir": ".",
     "paths": {
-      "deckjsx": ["../../src/index.ts"],
-      "deckjsx/integration": ["../../src/integration.ts"]
+      "deckjsx": ["../../dist/index.d.mts"],
+      "deckjsx/integration": ["../../dist/integration.d.mts"]
     }
   },
   "include": ["src"]

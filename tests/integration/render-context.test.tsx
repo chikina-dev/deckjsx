@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vite-plus/test";
-import { pptx } from "../../src/adapter.ts";
+import { pptx, type WriterAdapter, type WriterRenderContext } from "../../src/adapter.ts";
+import { createDiagnostics } from "../../src/diagnostics/index.ts";
 import { Deck } from "../../src/index.ts";
+import type { PptxPackageModel } from "../../src/inspect.ts";
 import {
   mediaSourceOrigins,
   withIntegrationContext,
@@ -17,6 +19,45 @@ const pngBytes = new Uint8Array([
 const mp4Bytes = new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112]);
 
 describe("deckjsx/integration", () => {
+  test("withIntegrationContext preserves prototype writer adapter methods", async () => {
+    class PrototypeWriter implements WriterAdapter<PptxPackageModel, "pptx"> {
+      readonly kind = "deckjsx.writerAdapter";
+      readonly name = "test-prototype-writer";
+      readonly projectionFormat = "pptx";
+      readonly format = "pptx";
+      readonly options = {};
+
+      async render(_projection: PptxPackageModel, _context?: WriterRenderContext) {
+        return {
+          diagnostics: createDiagnostics(),
+          artifact: {
+            format: "pptx" as const,
+            mediaType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            extension: "pptx",
+            bytes: new Uint8Array([1, 2, 3]),
+          },
+        };
+      }
+    }
+
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Prototype writer" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>prototype</p>
+    ));
+
+    const render = await deck.render(
+      withIntegrationContext(new PrototypeWriter(), {
+        hmrInvalidation: {
+          importer: "/project/src/deck.tsx",
+          changedModuleIds: ["/project/src/deck.tsx"],
+        },
+      }),
+    );
+
+    expect(render.ok).toBe(true);
+    expect(render.artifact?.bytes).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
   test("withIntegrationContext carries AssetLoaders through ordinary deck.render(pptx())", async () => {
     const seenSources: string[] = [];
     const seenOrigins: string[] = [];

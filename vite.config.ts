@@ -53,10 +53,13 @@ export default defineConfig({
     exports: false,
   },
   lint: {
+    ignorePatterns: ["plugins/**"],
     options: {
       typeAware: true,
       typeCheck: true,
     },
   },
-  fmt: {},
+  fmt: {
+    ignorePatterns: ["plugins/**"],
+  },
 });

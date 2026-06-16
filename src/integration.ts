@@ -1,5 +1,9 @@
 import type { WriterAdapter } from "./adapter";
-import { attachIntegrationContext, type IntegrationContext } from "./integration-context";
+import {
+  attachIntegrationContext,
+  type HmrInvalidation,
+  type IntegrationContext,
+} from "./integration-context";
 import {
   mediaSourceOrigins,
   type MediaSourceOrigin,
@@ -29,6 +33,7 @@ export type {
   RenderPatchPlan,
   RenderPatchPlanPart,
   RenderPatchPlanPartKind,
+  HmrInvalidation,
   IntegrationContext,
   MediaSourceOrigin,
   MediaSourceOriginByField,

@@ -6,6 +6,7 @@ import type {
   AssetProbeResult,
   AssetSource,
   AssetSourceField,
+  HmrInvalidation,
   IntegrationContext,
   MediaSourceOrigin,
   RenderPatchPlan,
@@ -85,6 +86,9 @@ const integrationContext = {
   },
 } satisfies IntegrationContext;
 void integrationContext;
+
+const hmrInvalidation = integrationContext.hmrInvalidation satisfies HmrInvalidation | undefined;
+void hmrInvalidation;
 
 const mediaOriginProps = mediaSourceOrigins({ src: mediaOrigin, poster: mediaOrigin });
 mediaOriginProps satisfies object;

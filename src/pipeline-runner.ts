@@ -1660,16 +1660,17 @@ export async function projectSource<
       artifacts: input.artifacts,
       mediaSourceOrigin: input.mediaSourceOrigin,
     });
+    const hmrReuseSnapshot = input.artifacts?.hmrProjectionReuseSnapshot;
     const projectionReuse = hmrProjectionReusePlan({
       graph: compileResult.graph,
       resolvedStyles: compileResult.resolvedStyles,
       options: input.options,
       assets: assetResult.assetsById,
-      previousGraph: input.artifacts?.staleGraphForReuse,
-      previousProjection: input.artifacts?.staleProjectionForReuse,
-      previousOptions: input.artifacts?.staleProjectionOptionsForReuse,
-      previousAssets: input.artifacts?.staleAssetsByIdForReuse,
-      staleAssetEntityIds: input.artifacts?.staleAssetEntityIdsForReuse,
+      previousGraph: hmrReuseSnapshot?.graph,
+      previousProjection: hmrReuseSnapshot?.projection,
+      previousOptions: hmrReuseSnapshot?.options,
+      previousAssets: hmrReuseSnapshot?.assetsById,
+      staleAssetEntityIds: hmrReuseSnapshot?.staleAssetEntityIds,
     });
     const projected = projectGraphToDocumentModel({
       format: projectionFormat,
@@ -1681,7 +1682,7 @@ export async function projectSource<
     });
     const projection = projectionWithReusablePackageParts({
       projection: projected,
-      previous: input.artifacts?.staleProjectionForReuse,
+      previous: hmrReuseSnapshot?.projection,
       graph: compileResult.graph,
       reusableSlideNodeIds: projectionReuse?.slideNodeIds,
     });

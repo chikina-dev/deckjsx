@@ -136,13 +136,30 @@ function mediaOriginField(input: {
   return `${input.field}: { importer: ${JSON.stringify(input.importer)}, source: ${JSON.stringify(input.source)} }`;
 }
 
+type JsxElementMatchGroups = {
+  readonly tag?: string;
+  readonly attributes?: string;
+  readonly closing?: string;
+};
+
+function jsxElementMatchGroups(args: readonly unknown[]): JsxElementMatchGroups | undefined {
+  const value = args.at(-1);
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const groups = value as Record<string, unknown>;
+  return {
+    ...(typeof groups.tag === "string" ? { tag: groups.tag } : {}),
+    ...(typeof groups.attributes === "string" ? { attributes: groups.attributes } : {}),
+    ...(typeof groups.closing === "string" ? { closing: groups.closing } : {}),
+  };
+}
+
 function transformMediaSourceOriginProps(code: string, id: string): string {
   return code.replace(
     /<(?<tag>[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?)\b(?<attributes>[^<>]*?)(?<closing>\s*\/?>)/g,
     (match: string, ...args: unknown[]) => {
-      const groups = args.at(-1) as
-        | { readonly tag?: string; readonly attributes?: string; readonly closing?: string }
-        | undefined;
+      const groups = jsxElementMatchGroups(args);
       const tag = groups?.tag;
       const attributes = groups?.attributes ?? "";
       const closing = groups?.closing ?? "";

@@ -4,6 +4,7 @@ import { createDiagnostics, type Diagnostic } from "../../src/diagnostics/index.
 import { Deck, StyleSheet, Theme, type RenderInspectionSummary } from "../../src/index.ts";
 import { isPptxMediaPart, isPptxSlidePart, isPptxSupportPart } from "../../src/inspect.ts";
 import {
+  assetSourceCacheKey,
   PipelineArtifactCollection,
   type PptxPackageBuildArtifact,
 } from "../../src/pipeline-artifacts.ts";
@@ -10239,6 +10240,70 @@ describe("project/render pipeline", () => {
     expect(project.ok).toBe(true);
     expect(artifacts.projection?.projection).toBe(project.projection);
     expect(artifacts.projection?.partsById.size).toBe(project.projection?.parts.length);
+  });
+
+  test("HMR invalidation exposes a single projection reuse snapshot until the next projection materializes", async () => {
+    let title = "before";
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const artifacts = new PipelineArtifactCollection();
+
+    deck.slide({ name: "Snapshot" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{title}</p>
+    ));
+
+    const first = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const firstGraph = artifacts.graph;
+    const firstProjection = artifacts.projection;
+
+    title = "after";
+    const invalidated = artifacts.invalidateForHmr({
+      importer: "/project/src/deck.tsx",
+      changedModuleIds: ["/project/src/deck.tsx"],
+    });
+    const snapshot = artifacts.hmrProjectionReuseSnapshot;
+
+    expect(first.ok).toBe(true);
+    expect(invalidated).toBe(true);
+    expect(snapshot).toEqual(
+      expect.objectContaining({
+        graph: firstGraph,
+        projection: firstProjection,
+        options: deck.options,
+        staleAssetEntityIds: expect.any(Set),
+      }),
+    );
+
+    const second = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+
+    expect(second.ok).toBe(true);
+    expect(artifacts.hmrProjectionReuseSnapshot).toBeUndefined();
+  });
+
+  test("byte asset cache keys distinguish equal-length byte sources by content", () => {
+    const first = assetSourceCacheKey({
+      kind: "bytes",
+      bytes: new Uint8Array([1, 2, 3]),
+      mediaType: "image/png",
+      extension: "png",
+    });
+    const second = assetSourceCacheKey({
+      kind: "bytes",
+      bytes: new Uint8Array([1, 2, 4]),
+      mediaType: "image/png",
+      extension: "png",
+    });
+
+    expect(first).not.toBe(second);
   });
 
   test("projection artifacts expose stable slide package part fingerprints", async () => {

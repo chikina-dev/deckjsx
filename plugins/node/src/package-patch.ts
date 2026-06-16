@@ -193,11 +193,49 @@ export function fingerprintPatchableEntry(
 
 export function parsePatchManifest(bytes: Uint8Array): PatchManifest | undefined {
   try {
-    const value = JSON.parse(textDecoder.decode(bytes).trim()) as PatchManifest;
-    return value.kind === "deckjsx.patchManifest" && value.version === 1 ? value : undefined;
+    const value = JSON.parse(textDecoder.decode(bytes).trim());
+    return isPatchManifest(value) ? value : undefined;
   } catch {
     return undefined;
   }
+}
+
+function isPatchManifest(value: unknown): value is PatchManifest {
+  if (!isRecord(value) || value.kind !== "deckjsx.patchManifest" || value.version !== 1) {
+    return false;
+  }
+
+  return Array.isArray(value.parts) && value.parts.every(isPatchManifestPart);
+}
+
+function isPatchManifestPart(value: unknown): value is PatchManifest["parts"][number] {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    typeof value.packagePartId === "string" &&
+    typeof value.path === "string" &&
+    isPatchableKind(value.patchableKind) &&
+    typeof value.reservedCapacity === "number" &&
+    Number.isSafeInteger(value.reservedCapacity) &&
+    value.reservedCapacity >= 0 &&
+    typeof value.logicalByteLength === "number" &&
+    Number.isSafeInteger(value.logicalByteLength) &&
+    value.logicalByteLength >= 0 &&
+    typeof value.storedByteLength === "number" &&
+    Number.isSafeInteger(value.storedByteLength) &&
+    value.storedByteLength >= 0 &&
+    typeof value.fingerprint === "string"
+  );
+}
+
+function isPatchableKind(value: unknown): value is PatchManifest["parts"][number]["patchableKind"] {
+  return value === "manifest" || value === "media" || value === "xml";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 export function parseZipArchive(bytes: Uint8Array): ZipArchive | undefined {
@@ -209,6 +247,13 @@ export function parseZipArchive(bytes: Uint8Array): ZipArchive | undefined {
   const entryCount = readUint16(bytes, eocdOffset + 10);
   const centralDirectorySize = readUint32(bytes, eocdOffset + 12);
   const centralDirectoryOffset = readUint32(bytes, eocdOffset + 16);
+  if (
+    entryCount === undefined ||
+    centralDirectorySize === undefined ||
+    centralDirectoryOffset === undefined
+  ) {
+    return undefined;
+  }
   const centralDirectoryEnd = centralDirectoryOffset + centralDirectorySize;
   if (centralDirectoryEnd > bytes.byteLength) {
     return undefined;
@@ -217,10 +262,7 @@ export function parseZipArchive(bytes: Uint8Array): ZipArchive | undefined {
   const entries = new Map<string, ZipEntry>();
   let cursor = centralDirectoryOffset;
   for (let index = 0; index < entryCount; index += 1) {
-    if (readUint32(bytes, cursor) !== 0x02014b50) {
-      return undefined;
-    }
-
+    const centralSignature = readUint32(bytes, cursor);
     const method = readUint16(bytes, cursor + 10);
     const compressedSize = readUint32(bytes, cursor + 20);
     const uncompressedSize = readUint32(bytes, cursor + 24);
@@ -228,8 +270,24 @@ export function parseZipArchive(bytes: Uint8Array): ZipArchive | undefined {
     const extraByteLength = readUint16(bytes, cursor + 30);
     const commentByteLength = readUint16(bytes, cursor + 32);
     const localHeaderOffset = readUint32(bytes, cursor + 42);
+    if (
+      centralSignature !== 0x02014b50 ||
+      method === undefined ||
+      compressedSize === undefined ||
+      uncompressedSize === undefined ||
+      pathByteLength === undefined ||
+      extraByteLength === undefined ||
+      commentByteLength === undefined ||
+      localHeaderOffset === undefined
+    ) {
+      return undefined;
+    }
+
     const pathStart = cursor + 46;
     const pathEnd = pathStart + pathByteLength;
+    if (pathEnd > bytes.byteLength) {
+      return undefined;
+    }
     const entryPath = textDecoder.decode(bytes.subarray(pathStart, pathEnd));
     const localEntry = localZipEntry(bytes, {
       compressedSize,
@@ -352,6 +410,9 @@ function localZipEntry(
   }
   const pathByteLength = readUint16(bytes, input.localHeaderOffset + 26);
   const extraByteLength = readUint16(bytes, input.localHeaderOffset + 28);
+  if (pathByteLength === undefined || extraByteLength === undefined) {
+    return undefined;
+  }
   const dataOffset = input.localHeaderOffset + 30 + pathByteLength + extraByteLength;
   return dataOffset + input.compressedSize <= bytes.byteLength ? { dataOffset } : undefined;
 }
@@ -366,11 +427,17 @@ function findEndOfCentralDirectory(bytes: Uint8Array): number {
   return -1;
 }
 
-function readUint16(bytes: Uint8Array, offset: number): number {
+function readUint16(bytes: Uint8Array, offset: number): number | undefined {
+  if (offset < 0 || offset + 2 > bytes.byteLength) {
+    return undefined;
+  }
   return bytes[offset]! | (bytes[offset + 1]! << 8);
 }
 
-function readUint32(bytes: Uint8Array, offset: number): number {
+function readUint32(bytes: Uint8Array, offset: number): number | undefined {
+  if (offset < 0 || offset + 4 > bytes.byteLength) {
+    return undefined;
+  }
   return (
     (bytes[offset]! |
       (bytes[offset + 1]! << 8) |

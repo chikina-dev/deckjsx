@@ -209,7 +209,7 @@ describe("public surface", () => {
     }
   });
 
-  test("plugin typecheck paths do not require prebuilt root dist", async () => {
+  test("plugin typecheck paths use root public declarations instead of root source", async () => {
     const pluginTsconfigs = await Promise.all(
       ["plugins/node/tsconfig.json", "plugins/vite/tsconfig.json"].map(
         async (path) =>
@@ -224,15 +224,15 @@ describe("public surface", () => {
 
     for (const [path, tsconfig] of pluginTsconfigs) {
       const paths = tsconfig.compilerOptions?.paths ?? {};
-      expect(paths.deckjsx, `${path} resolves deckjsx from source during check`).toEqual([
-        "../../src/index.ts",
+      expect(paths.deckjsx, `${path} resolves deckjsx through the built public surface`).toEqual([
+        "../../dist/index.d.mts",
       ]);
       expect(
         paths["deckjsx/integration"],
-        `${path} resolves deckjsx/integration from source during check`,
-      ).toEqual(["../../src/integration.ts"]);
-      expect(JSON.stringify(paths), `${path} must not need dist before check`).not.toContain(
-        "../../dist",
+        `${path} resolves deckjsx/integration through the built public surface`,
+      ).toEqual(["../../dist/integration.d.mts"]);
+      expect(JSON.stringify(paths), `${path} must not typecheck against root source`).not.toContain(
+        "../../src",
       );
     }
   });

@@ -4,6 +4,7 @@ import path from "node:path";
 import { unzipSync } from "fflate";
 import { pptx, type WriterAdapter } from "../../src/adapter.ts";
 import { createDiagnostics } from "../../src/diagnostics/index.ts";
+import { createPptxZipBytesFromEntries } from "../../src/writers/pptx/zip.ts";
 import { describe, expect, test } from "vite-plus/test";
 import { Deck } from "../../src/index.ts";
 import { withIntegrationContext, type AssetLoader } from "../../src/integration.ts";
@@ -521,6 +522,39 @@ describe("@deckjsx/node write", () => {
           expect.objectContaining({
             code: "deckjsx.node.inspect.unreadableZip",
             path: outputPath,
+          }),
+        ]),
+      }),
+    );
+  });
+
+  test("reports malformed patch manifest shapes as invalid instead of throwing", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-write-"));
+    const outputPath = path.join(directory, "malformed-manifest.pptx");
+    await writeFile(
+      outputPath,
+      createPptxZipBytesFromEntries([
+        {
+          path: "ppt/deckjsx/patch-manifest.json",
+          bytes: textEncoder.encode(
+            JSON.stringify({
+              kind: "deckjsx.patchManifest",
+              version: 1,
+              parts: "not an array",
+            }),
+          ),
+        },
+      ]),
+    );
+
+    await expect(inspectPatchablePptx(outputPath)).resolves.toEqual(
+      expect.objectContaining({
+        ok: false,
+        patchable: false,
+        diagnostics: expect.arrayContaining([
+          expect.objectContaining({
+            code: "deckjsx.node.inspect.invalidPatchManifest",
+            path: "ppt/deckjsx/patch-manifest.json",
           }),
         ]),
       }),

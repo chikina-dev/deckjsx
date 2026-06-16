@@ -24,17 +24,19 @@ output.
 ## Install
 
 ```bash
-npm install deckjsx
+npm install deckjsx @deckjsx/node
 ```
 
 The package currently targets PPTX output through deckjsx's direct PPTX writer. The public authoring
 surface is `deckjsx`; explicit writer selection lives in `deckjsx/adapter`; inspection helpers live
-in `deckjsx/inspect`.
+in `deckjsx/inspect`; runtime filesystem writes live in `@deckjsx/node`.
 
 ## Usage
 
 ```tsx
 import { Deck, StyleSheet, Theme } from "deckjsx";
+import { pptx } from "deckjsx/adapter";
+import { write } from "@deckjsx/node";
 
 const deck = new Deck({
   layout: { width: 13.333, height: 7.5, unit: "in" },
@@ -105,27 +107,30 @@ if (!projected.ok) {
   console.warn(projected.diagnostics.items);
 }
 
-const rendered = await deck.render({ output: "quarterly-review.pptx" });
+const rendered = await deck.render(pptx());
 if (!rendered.ok) {
   throw new Error("PPTX render failed");
 }
+await write(rendered, "quarterly-review.pptx");
 ```
 
 Use `deck.compile()` for authoring semantics, `await deck.project()` for output-facing inspection,
-and `await deck.render({ output })` when writing a PowerPoint file.
+and `await deck.render(pptx())` for runtime-neutral PPTX bytes and patch metadata. Use
+`@deckjsx/node` when writing those rendered bytes to a filesystem path.
 
 When a hot path only needs the projected model or rendered artifact, inspection summaries can be
 skipped with `await deck.project({ inspection: "none" })` or
-`await deck.render({ inspection: "none" })`.
+`await deck.render(pptx({ inspection: "none" }))`.
 
-The default render path uses deckjsx's built-in direct PPTX writer. If an explicit writer adapter is
-needed, import `pptx()` from `deckjsx/adapter`. Writer internals such as XML emitters, ZIP assembly,
-and output sinks are intentionally not part of the public API.
+The normal PPTX render path uses deckjsx's direct PPTX writer through the `pptx()` adapter. Writer
+internals such as XML emitters, ZIP assembly, and output sinks are intentionally not part of the
+public API.
 
 ```tsx
 import { pptx } from "deckjsx/adapter";
+import { write } from "@deckjsx/node";
 
-await deck.render(pptx({ output: "quarterly-review.pptx" }));
+await write(await deck.render(pptx()), "quarterly-review.pptx");
 ```
 
 ## JSX elements
@@ -283,33 +288,40 @@ how to serialize the corresponding PPTX slide layout structure.
 
 Image sources are resolved through the asset loading boundary. The core package includes
 multi-runtime handling for data/bytes and absolute URL-like sources, while filesystem paths,
-framework-public assets, authenticated URLs, and app media stores should be provided with
-`deck.useAssets(loader)`.
+framework-public assets, authenticated URLs, and app media stores should be provided by integration
+packages through `deckjsx/integration`.
 For built-in data, bytes, and absolute URL-like image sources, Project probes PNG, GIF, JPEG, and
 SVG dimensions into media metadata without putting media bytes into the Pptx Package Model.
 
 ```tsx
-import type { AssetLoader } from "deckjsx";
+import { withIntegrationContext, type AssetLoader } from "deckjsx/integration";
+import { pptx } from "deckjsx/adapter";
 
 const publicAssets = {
-  name: "public-assets",
+  resolverIdentity: "example:public-assets",
   async probe({ source }) {
     if (source.kind !== "path") return undefined;
-    return { mediaType: "image/png", extension: "png", width: 1200, height: 800 };
+    return {
+      ok: true,
+      value: { mediaType: "image/png", extension: "png", width: 1200, height: 800 },
+    };
   },
   async load({ source }) {
     if (source.kind !== "path") return undefined;
     const bytes = await loadFromYourRuntime(source.path);
-    return { bytes, mediaType: "image/png", extension: "png", width: 1200, height: 800 };
+    return {
+      ok: true,
+      value: { bytes, mediaType: "image/png", extension: "png", width: 1200, height: 800 },
+    };
   },
 } satisfies AssetLoader;
 
-deck.useAssets(publicAssets);
+await deck.render(withIntegrationContext(pptx(), { assetLoaders: [publicAssets] }));
 ```
 
-Registered loaders run in registration order before the built-in fallback. Project uses `probe()` for
-metadata needed by the Pptx Package Model, and Render uses the same winning resolver scope for
-`load()` so media metadata and bytes come from the same runtime assumptions.
+Integration Context loaders run before the built-in fallback. Project uses `probe()` for metadata
+needed by the Pptx Package Model, and Render uses the same winning resolver identity for `load()` so
+media metadata and bytes come from the same runtime assumptions.
 If a loader claims an image source but cannot provide dimensions, treat that as an asset data
 retrieval failure and report it through Project diagnostics rather than waiting for the writer to
 guess.
