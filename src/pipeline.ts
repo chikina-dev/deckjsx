@@ -1,4 +1,18 @@
 import type { Diagnostics } from "./diagnostics";
+export {
+  PATCH_MANIFEST_KIND,
+  PATCH_MANIFEST_PATH,
+  PATCH_MANIFEST_VERSION,
+  RENDER_PATCH_PLAN_KIND,
+  patchManifestFromParts,
+} from "./patchable-pptx";
+export type {
+  PatchManifest,
+  PersistentPatchPlanPart,
+  RenderPatchPlan,
+  RenderPatchPlanPart,
+  RenderPatchPlanPartKind,
+} from "./patchable-pptx";
 
 export type ProjectionFormat = "pptx";
 
@@ -59,31 +73,6 @@ export type RenderedArtifact<TFormat extends OutputFormat = OutputFormat> = {
   readonly mediaType: string;
   readonly extension: string;
   readonly bytes: Uint8Array;
-};
-
-export type RenderPatchPlanPartKind = "manifest" | "media" | "xml";
-
-export type RenderPatchPlanPart = {
-  readonly packagePartId: string;
-  readonly path: string;
-  readonly patchableKind: RenderPatchPlanPartKind;
-  readonly reservedCapacity: number;
-  readonly logicalByteLength: number;
-  readonly storedByteLength: number;
-  readonly fingerprint: string;
-  readonly buildStatus?: "rebuilt" | "reused";
-  readonly buildReason?: string;
-};
-
-export type RenderPatchPlan = {
-  readonly kind: "deckjsx.renderPatchPlan";
-  readonly version: 1;
-  readonly manifestPath: "ppt/deckjsx/patch-manifest.json";
-  readonly hmrInvalidation?: {
-    readonly importer?: string;
-    readonly changedModuleIds: readonly string[];
-  };
-  readonly parts: readonly RenderPatchPlanPart[];
 };
 
 export type RenderAssemblyExpectedEntrySummary = {

@@ -8,6 +8,7 @@ import { isPptxMediaPart } from "./model";
 import type {
   ProjectInspectionBackgroundLayerSummary,
   ProjectInspectionAdapterLimitation,
+  ProjectInspectionAssetResolutionSummary,
   ProjectInspectionComposedPaintOrderEntry,
   ProjectInspectionDetails,
   ProjectInspectionEffectiveProjectedStyleEntry,
@@ -723,6 +724,7 @@ export function summarizePptxPackage(
   options: {
     diagnostics?: Diagnostics;
     adapterLimitations?: readonly ProjectInspectionAdapterLimitation[];
+    assetResolutions?: readonly ProjectInspectionAssetResolutionSummary[];
     graph?: SemanticAuthorGraph;
     includeDetails?: boolean;
     resolvedStyles?: ResolvedStyleMap;
@@ -757,6 +759,7 @@ export function summarizePptxPackage(
     parts,
     relationships: packageTopology.relationships,
     packageDependencies: packageTopology.packageDependencies,
+    assetResolutions: options.assetResolutions ?? [],
     media: summarizeMedia(projection),
     filtered: collectFilteredProjectionRecords({
       projection,

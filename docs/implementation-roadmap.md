@@ -6787,11 +6787,10 @@ await write(await deck.render(pptx()), "out.pptx");
 ```
 
 Vite projects install `@deckjsx/vite` in `vite.config.ts` so the normal render call receives
-project-local module origin, asset loading, and HMR invalidation metadata. `@deckjsx/node` remains
+project-local module origin, asset loading, and HMR invalidation event metadata. `@deckjsx/node` remains
 the runtime file-writing package rather than a Vite plugin option or a core Render option.
 For non-Vite Node rendering, `@deckjsx/node` may provide a local file AssetLoader that users pass
-through `withIntegrationContext(...)` or another integration-owned wrapper around the normal
-`deck.render(pptx())` call.
+through `deck.plugin(nodeAssets(...))` before the normal `deck.render(pptx())` call.
 
 ### Validation
 
@@ -6803,7 +6802,7 @@ through `withIntegrationContext(...)` or another integration-owned wrapper aroun
 - `@deckjsx/node` tests for `write(RenderResult, path)` over a new file, existing Patchable PPTX,
   lock/write failure diagnostics, fallback behavior, and local file AssetLoader diagnostics.
 - `@deckjsx/vite` tests for module-origin media resolution, component-authored literal media,
-  prop-authored media forwarding, Vite public-root paths, and HMR invalidation metadata.
+  prop-authored media forwarding, Vite public-root paths, and HMR invalidation event metadata.
 - Integration tests for HMR invalidation refreshing cached graph/projection artifacts while
   retaining package build artifacts for fingerprint-based reuse.
 
@@ -6823,8 +6822,9 @@ through `withIntegrationContext(...)` or another integration-owned wrapper aroun
   Interface.
 - `plugins/node` provides `write(await deck.render(pptx()), "out.pptx")` with create, in-place
   patch, whole-archive rewrite fallback, result-first diagnostics, and a Node local file AssetLoader.
-- `plugins/vite` attaches module-local Media Source Origin, Vite-aware asset loading, Integration
-  Context, and HMR invalidation metadata to ordinary `deck.render(pptx())` execution.
+- `plugins/vite` attaches module-local Media Source Origin, Vite-aware asset loading, render-execution
+  Integration Context, and HMR invalidation event metadata to ordinary `deck.render(pptx())`
+  execution.
 - HMR invalidation refreshes stale process-memory graph/projection/asset artifacts without deleting
   reusable package build artifacts needed for unchanged package-part reuse.
 - v0.9.0 creates no sidecar cache files; persistent patch state lives inside the PPTX package and
@@ -6849,7 +6849,7 @@ through `withIntegrationContext(...)` or another integration-owned wrapper aroun
 4. `plugins/node`: `write(RenderResult, path)`, Patchable PPTX inspection, in-place patch writes,
    result-first diagnostics, locking, and whole-archive rewrite fallback.
 5. `plugins/vite`: Vite transforms for module-local origin metadata, Vite-aware asset loading,
-   Integration Context attachment, and HMR invalidation metadata.
+   Integration Context attachment, and HMR invalidation event metadata.
 
 ## Suggested Release Order
 

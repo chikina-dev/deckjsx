@@ -7,11 +7,17 @@ import type {
   WriteResult,
   WriteStrategy,
 } from "@deckjsx/node";
-import { createNodeFileAssetLoader, inspectPatchablePptx, write } from "@deckjsx/node";
-import type { DeckjsxVitePlugin, ViteAssetLoaderOptions } from "@deckjsx/vite";
-import deckjsx, { createViteAssetLoader } from "@deckjsx/vite";
+import { createNodeFileAssetLoader, inspectPatchablePptx, nodeAssets, write } from "@deckjsx/node";
+import type {
+  DeckjsxVitePlugin,
+  ViteAssetLoaderOptions,
+  ViteRenderIntegrationOptions,
+} from "@deckjsx/vite";
+import deckjsx, { createViteAssetLoader, withViteRenderIntegration } from "@deckjsx/vite";
+import { Deck } from "deckjsx";
 import type { RenderResult } from "deckjsx";
-import type { AssetLoader, RenderPatchPlanPart } from "deckjsx/integration";
+import { pptx } from "deckjsx/adapter";
+import type { AssetLoader, DeckPlugin, RenderPatchPlanPart } from "deckjsx/integration";
 
 type Assert<T extends true> = T;
 type IsAssignable<From, To> = [From] extends [To] ? true : false;
@@ -43,6 +49,12 @@ const nodeLoaderOptions = {
 
 const nodeLoader = createNodeFileAssetLoader(nodeLoaderOptions);
 nodeLoader satisfies AssetLoader;
+
+const nodeAssetsExtension = nodeAssets(nodeLoaderOptions);
+nodeAssetsExtension satisfies DeckPlugin;
+
+const deckWithNodeAssets = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+deckWithNodeAssets.plugin(nodeAssetsExtension);
 
 declare const renderResult: RenderResult;
 const writePromise = write(renderResult, "/project/out.pptx");
@@ -86,6 +98,14 @@ const viteOptions = {
 
 const viteLoader = createViteAssetLoader(viteOptions);
 viteLoader satisfies AssetLoader;
+
+const viteRenderIntegrationOptions = {
+  ...viteOptions,
+  importer: "/project/src/deck.tsx",
+  changedModuleIds: ["/project/src/slide.tsx"],
+} satisfies ViteRenderIntegrationOptions;
+const viteRenderInput = withViteRenderIntegration(pptx(), viteRenderIntegrationOptions);
+void viteRenderInput;
 
 const vitePlugin = deckjsx();
 vitePlugin satisfies DeckjsxVitePlugin;

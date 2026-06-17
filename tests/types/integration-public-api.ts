@@ -4,15 +4,32 @@ import type {
   AssetLoaderContext,
   AssetLoaderOutcome,
   AssetProbeResult,
+  AssetResolutionHashSource,
+  AssetResolutionProvenance,
+  AssetResolutionProvenanceKind,
   AssetSource,
   AssetSourceField,
+  AfterProjectLifecycleContext,
+  DeckIntegrationContext,
+  DeckPluginHooks,
+  DeckPlugin,
+  PluginHookResult,
   HmrInvalidation,
-  IntegrationContext,
+  IntegrationContextId,
   MediaSourceOrigin,
+  RenderExecutionContext,
   RenderPatchPlan,
   RenderPatchPlanPart,
 } from "deckjsx/integration";
-import { mediaSourceOrigins, withIntegrationContext } from "deckjsx/integration";
+import {
+  integrationContextId,
+  mediaSourceOrigins,
+  PATCH_MANIFEST_KIND,
+  PATCH_MANIFEST_PATH,
+  PATCH_MANIFEST_VERSION,
+  RENDER_PATCH_PLAN_KIND,
+  withRenderExecutionContext,
+} from "deckjsx/integration";
 import { pptx } from "deckjsx/adapter";
 
 type Assert<T extends true> = T;
@@ -49,8 +66,26 @@ const probe = {
   height: 64,
   byteLength: 4,
   hash: "fnv1a32:00000000",
+  provenance: {
+    kind: "file",
+    resolvedId: "fnv1a32:00000000",
+    hashSource: "bytes",
+  },
 } satisfies AssetProbeResult;
 void probe;
+
+const provenanceKind = "publicAsset" satisfies AssetResolutionProvenanceKind;
+void provenanceKind;
+
+const hashSource = "loader" satisfies AssetResolutionHashSource;
+void hashSource;
+
+const provenance = {
+  kind: provenanceKind,
+  resolvedId: "/assets/image.png",
+  hashSource,
+} satisfies AssetResolutionProvenance;
+void provenance;
 
 const load = {
   ...probe,
@@ -77,25 +112,53 @@ const loader = {
 } satisfies AssetLoader;
 void loader;
 
+const extension = {
+  kind: "deckjsx.plugin",
+  id: "test-extension",
+  name: "test-extension",
+  integration: {
+    id: integrationContextId("test-extension"),
+    assetLoaders: [loader],
+    mediaSourceOrigin: mediaOrigin,
+  },
+} satisfies DeckPlugin;
+void extension;
+
+const hmrInvalidation = {
+  importer: "/project/src/deck.tsx",
+  changedModuleIds: ["/project/src/deck.tsx"],
+} satisfies HmrInvalidation;
+void hmrInvalidation;
+
 const integrationContext = {
+  id: integrationContextId("test-context"),
   assetLoaders: [loader],
   mediaSourceOrigin: mediaOrigin,
-  hmrInvalidation: {
-    importer: "/project/src/deck.tsx",
-    changedModuleIds: ["/project/src/deck.tsx"],
-  },
-} satisfies IntegrationContext;
+} satisfies DeckIntegrationContext;
 void integrationContext;
+integrationContext.id satisfies IntegrationContextId;
 
-const hmrInvalidation = integrationContext.hmrInvalidation satisfies HmrInvalidation | undefined;
-void hmrInvalidation;
+const lifecycleHooks = {
+  afterProject(context) {
+    context satisfies AfterProjectLifecycleContext;
+    return {
+      projection: context.projection,
+    } satisfies PluginHookResult<{ readonly projection: typeof context.projection }>;
+  },
+} satisfies DeckPluginHooks;
+void lifecycleHooks;
+
+const renderExecutionContext = {
+  integration: integrationContext,
+  hmrInvalidation,
+} satisfies RenderExecutionContext;
+void renderExecutionContext;
+const renderInput = withRenderExecutionContext(pptx(), renderExecutionContext);
+void renderInput;
 
 const mediaOriginProps = mediaSourceOrigins({ src: mediaOrigin, poster: mediaOrigin });
 mediaOriginProps satisfies object;
 void mediaOriginProps;
-
-const integratedAdapter = withIntegrationContext(pptx(), integrationContext);
-integratedAdapter satisfies ReturnType<typeof pptx>;
 
 const patchPart = {
   packagePartId: "pptx:slide:example",
@@ -109,17 +172,23 @@ const patchPart = {
 } satisfies RenderPatchPlanPart;
 
 const patchPlan = {
-  kind: "deckjsx.renderPatchPlan",
-  version: 1,
-  manifestPath: "ppt/deckjsx/patch-manifest.json",
-  hmrInvalidation: integrationContext.hmrInvalidation,
+  kind: RENDER_PATCH_PLAN_KIND,
+  version: PATCH_MANIFEST_VERSION,
+  manifestPath: PATCH_MANIFEST_PATH,
+  hmrInvalidation,
   parts: [patchPart],
 } satisfies RenderPatchPlan;
 void patchPlan;
 
+const patchManifestKind = PATCH_MANIFEST_KIND satisfies "deckjsx.patchManifest";
+void patchManifestKind;
+
 type IntegrationAssertions = {
-  readonly contextCarriesLoaders: Assert<
-    IsAssignable<readonly AssetLoader[], NonNullable<IntegrationContext["assetLoaders"]>>
+  readonly renderExecutionCarriesHmrInvalidation: Assert<
+    IsAssignable<HmrInvalidation, NonNullable<RenderExecutionContext["hmrInvalidation"]>>
+  >;
+  readonly extensionCarriesIntegrationContext: Assert<
+    IsAssignable<DeckIntegrationContext, NonNullable<DeckPlugin["integration"]>>
   >;
   readonly patchPlanReexported: Assert<
     IsAssignable<RenderPatchPlanPart, RenderPatchPlan["parts"][number]>

@@ -154,50 +154,40 @@ jobs:
         run: bun run build
 
       - name: Check @deckjsx/node
-        if: steps.release.outputs.package_name == '@deckjsx/node'
         working-directory: plugins/node
         run: ../../node_modules/.bin/vp check
 
-      - name: Build @deckjsx/node
-        if: steps.release.outputs.package_name == '@deckjsx/node'
+      - name: Pack @deckjsx/node
         working-directory: plugins/node
         run: ../../node_modules/.bin/vp pack
 
       - name: Check @deckjsx/vite
-        if: steps.release.outputs.package_name == '@deckjsx/vite'
         working-directory: plugins/vite
         run: ../../node_modules/.bin/vp check
 
-      - name: Build @deckjsx/vite
-        if: steps.release.outputs.package_name == '@deckjsx/vite'
+      - name: Pack @deckjsx/vite
         working-directory: plugins/vite
         run: ../../node_modules/.bin/vp pack
 
       - name: Install sample dependencies
-        if: steps.release.outputs.package_name == 'deckjsx'
         run: npm ci --prefix sample
 
       - name: Run sample smoke
-        if: steps.release.outputs.package_name == 'deckjsx'
         run: npm run --prefix sample smoke
 
       - name: Test
         run: bun run test
 
       - name: Benchmark direct PPTX writer
-        if: steps.release.outputs.package_name == 'deckjsx'
         run: bash .github/scripts/benchmark-pptx-with-diagnostics.sh
 
       - name: Verify render fixtures
-        if: steps.release.outputs.package_name == 'deckjsx'
         run: bun run verify:render -- --skip-raster
 
       - name: Install PPTX oracle dependencies
-        if: steps.release.outputs.package_name == 'deckjsx'
         run: npm install --no-audit --no-fund --prefix .github/compat/pptxgenjs
 
       - name: Compare direct PPTX writer with oracle
-        if: steps.release.outputs.package_name == 'deckjsx'
         run: npm run --prefix .github/compat/pptxgenjs compare
 
       - name: Pack selected package

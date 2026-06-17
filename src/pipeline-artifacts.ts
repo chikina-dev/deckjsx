@@ -3,8 +3,8 @@ import { resolveComposition } from "./composition/resolve";
 import type { ComposedAuthorRoot } from "./composition/types";
 import type { DeckOptions } from "./authoring/index";
 import type { AssetLoadResult, AssetProbeResult, AssetSource } from "./assets";
-import type { HmrInvalidation } from "./integration-context";
 import type { MediaSourceOrigin } from "./media-source-origin";
+import type { HmrInvalidation } from "./plugin";
 import { createDiagnostics, type Diagnostics } from "./diagnostics";
 import type {
   AssetEntityId,
@@ -89,7 +89,7 @@ export type HmrProjectionReuseSnapshot = {
   readonly staleAssetEntityIds: ReadonlySet<AssetEntityId>;
 };
 
-function fingerprintBytes(bytes: Uint8Array): string {
+export function fingerprintBytes(bytes: Uint8Array): string {
   let hash = 0x811c9dc5;
   for (const byte of bytes) {
     hash ^= byte;
@@ -103,7 +103,9 @@ export function assetSourceCacheKey(
   resolverIdentity = "deckjsx:builtin",
   origin?: MediaSourceOrigin,
 ): string {
-  const originKey = origin ? `:${origin.importer ?? ""}:${origin.source ?? ""}` : "";
+  const originKey = origin
+    ? `:${origin.sourceIdentity ?? ""}:${origin.importer ?? ""}:${origin.source ?? ""}`
+    : "";
   switch (source.kind) {
     case "bytes":
       return `${resolverIdentity}:bytes:${source.mediaType ?? ""}:${source.extension ?? ""}:${source.bytes.byteLength}:${fingerprintBytes(source.bytes)}`;
@@ -426,7 +428,11 @@ export class PipelineArtifactCollection {
 
     const rootsBySourceKey = new Map<
       string,
-      { source: SourceOrigin; rootPaths: string[]; rootCount: number }
+      {
+        source: SourceOrigin;
+        rootPaths: string[];
+        rootCount: number;
+      }
     >();
 
     roots.forEach((root) => {

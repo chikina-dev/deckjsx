@@ -1,37 +1,52 @@
-import type { WriterAdapter } from "./adapter";
 import type { AssetLoader } from "./assets";
+import type { DeckPlugin } from "./plugin";
 import type { MediaSourceOrigin } from "./media-source-origin";
 
-export type HmrInvalidation = {
-  readonly importer?: string;
-  readonly changedModuleIds: readonly string[];
-};
+type Brand<T, B extends string> = T & { readonly __brand: B };
 
-export type IntegrationContext = {
+export type IntegrationContextId = Brand<string, "IntegrationContextId">;
+
+export type DeckIntegrationContext = {
+  readonly id: IntegrationContextId;
   readonly assetLoaders?: readonly AssetLoader[];
   readonly mediaSourceOrigin?: MediaSourceOrigin;
-  readonly hmrInvalidation?: HmrInvalidation;
 };
 
-const integrationContexts = new WeakMap<object, IntegrationContext>();
-
-export function attachIntegrationContext<TAdapter extends WriterAdapter>(
-  adapter: TAdapter,
-  context: IntegrationContext,
-): TAdapter {
-  const wrapped = Object.create(Object.getPrototypeOf(adapter)) as TAdapter;
-  Object.defineProperties(wrapped, Object.getOwnPropertyDescriptors(adapter));
-  integrationContexts.set(wrapped, context);
-  return wrapped;
+export function integrationContextId(value: string): IntegrationContextId {
+  return value as IntegrationContextId;
 }
 
-export function integrationContextFor(value: object | undefined): IntegrationContext | undefined {
-  return value ? integrationContexts.get(value) : undefined;
+export function integrationContextsFromPlugins(
+  plugins: readonly DeckPlugin[] | undefined,
+): readonly DeckIntegrationContext[] {
+  return (plugins ?? []).flatMap((plugin) => (plugin.integration ? [plugin.integration] : []));
 }
 
-export function mergeAssetLoaders(
-  ...groups: readonly (readonly AssetLoader[] | undefined)[]
-): readonly AssetLoader[] | undefined {
-  const loaders = groups.flatMap((group) => group ?? []);
-  return loaders.length > 0 ? loaders : undefined;
+export function mergeIntegrationContexts(
+  contexts: readonly DeckIntegrationContext[],
+): DeckIntegrationContext | undefined {
+  if (contexts.length === 0) {
+    return undefined;
+  }
+
+  const assetLoaders = contexts.flatMap((context) => context.assetLoaders ?? []);
+  const mediaSourceOrigin = [...contexts]
+    .reverse()
+    .find((context) => context.mediaSourceOrigin)?.mediaSourceOrigin;
+  const id =
+    contexts.length === 1
+      ? contexts[0]!.id
+      : integrationContextId(`deckjsx:plugins:${contexts.map((context) => context.id).join("+")}`);
+
+  return {
+    id,
+    ...(assetLoaders.length > 0 ? { assetLoaders } : {}),
+    ...(mediaSourceOrigin ? { mediaSourceOrigin } : {}),
+  };
+}
+
+export function integrationContextFromPlugins(
+  plugins: readonly DeckPlugin[] | undefined,
+): DeckIntegrationContext | undefined {
+  return mergeIntegrationContexts(integrationContextsFromPlugins(plugins));
 }

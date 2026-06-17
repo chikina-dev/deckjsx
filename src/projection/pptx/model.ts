@@ -1,5 +1,10 @@
 import type { DeckOptions } from "../../authoring/index";
-import type { AssetProbeResult } from "../../assets";
+import type {
+  AssetProbeResult,
+  AssetResolutionHashSource,
+  AssetResolutionProvenanceKind,
+  AssetSource,
+} from "../../assets";
 import type { Diagnostics } from "../../diagnostics";
 import type {
   AssetEntity,
@@ -1130,11 +1135,25 @@ export type ProjectInspectionPackageDependencySummary = {
   readonly requirementCondition?: PptxPackagePartRequirementCondition;
 };
 
+export type ProjectInspectionAssetResolutionSummary = {
+  readonly assetEntityId: AssetEntity["id"];
+  readonly sourceKind: AssetSource["kind"];
+  readonly sourceField: AssetEntity["sourceField"];
+  readonly resolverIdentity?: string;
+  readonly provenanceKind: AssetResolutionProvenanceKind;
+  readonly resolvedId?: string;
+  readonly importer?: string;
+  readonly sourceIdentity?: string;
+  readonly hashSource?: AssetResolutionHashSource;
+  readonly diagnosticCodes: readonly string[];
+};
+
 export type ProjectInspectionSummary = {
   readonly format: ProjectionFormat;
   readonly parts: readonly ProjectInspectionPartSummary[];
   readonly relationships: readonly ProjectInspectionRelationshipSummary[];
   readonly packageDependencies: readonly ProjectInspectionPackageDependencySummary[];
+  readonly assetResolutions: readonly ProjectInspectionAssetResolutionSummary[];
   readonly media: readonly ProjectInspectionMediaSummary[];
   readonly filtered: readonly ProjectInspectionFilteredRecord[];
   readonly unsupportedSemantics: readonly ProjectInspectionUnsupportedSemanticRecord[];

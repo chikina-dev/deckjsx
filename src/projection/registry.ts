@@ -13,6 +13,7 @@ import {
 import { collectPptxThemeProjectionDiagnostics } from "./pptx/theme";
 import type {
   ProjectInspectionAdapterLimitation,
+  ProjectInspectionAssetResolutionSummary,
   ProjectInspectionSummary,
   PptxPackageModel,
   PptxProjectionAssetArtifact,
@@ -52,6 +53,7 @@ type ProjectionCapability<TModel extends ProjectedDocumentModel> = {
     options?: {
       diagnostics?: Diagnostics;
       adapterLimitations?: readonly ProjectInspectionAdapterLimitation[];
+      assetResolutions?: readonly ProjectInspectionAssetResolutionSummary[];
       graph?: SemanticAuthorGraph;
       includeDetails?: boolean;
       resolvedStyles?: ResolvedStyleMap;
@@ -137,6 +139,7 @@ export function summarizeProjectedDocumentModel(
   options: {
     diagnostics?: Diagnostics;
     adapterLimitations?: readonly ProjectInspectionAdapterLimitation[];
+    assetResolutions?: readonly ProjectInspectionAssetResolutionSummary[];
     graph?: SemanticAuthorGraph;
     includeDetails?: boolean;
     resolvedStyles?: ResolvedStyleMap;

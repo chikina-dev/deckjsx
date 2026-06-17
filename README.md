@@ -294,8 +294,8 @@ For built-in data, bytes, and absolute URL-like image sources, Project probes PN
 SVG dimensions into media metadata without putting media bytes into the Pptx Package Model.
 
 ```tsx
-import { withIntegrationContext, type AssetLoader } from "deckjsx/integration";
 import { pptx } from "deckjsx/adapter";
+import { integrationContextId, type AssetLoader, type DeckPlugin } from "deckjsx/integration";
 
 const publicAssets = {
   resolverIdentity: "example:public-assets",
@@ -316,12 +316,23 @@ const publicAssets = {
   },
 } satisfies AssetLoader;
 
-await deck.render(withIntegrationContext(pptx(), { assetLoaders: [publicAssets] }));
+deck.plugin({
+  kind: "deckjsx.plugin",
+  id: "example:public-assets",
+  name: "example:public-assets",
+  integration: {
+    id: integrationContextId("example:public-assets"),
+    assetLoaders: [publicAssets],
+  },
+} satisfies DeckPlugin);
+
+await deck.render(pptx());
 ```
 
-Integration Context loaders run before the built-in fallback. Project uses `probe()` for metadata
-needed by the Pptx Package Model, and Render uses the same winning resolver identity for `load()` so
-media metadata and bytes come from the same runtime assumptions.
+Integration Context loaders belong to the root Deck Plugin stack for the current compile/project/render
+execution, then built-in runtime-neutral handling may resolve inline data and fetchable absolute URLs.
+Project uses `probe()` for metadata needed by the Pptx Package Model, and Render uses the same winning
+resolver identity for `load()` so media metadata and bytes come from the same runtime assumptions.
 If a loader claims an image source but cannot provide dimensions, treat that as an asset data
 retrieval failure and report it through Project diagnostics rather than waiting for the writer to
 guess.

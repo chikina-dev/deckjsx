@@ -398,8 +398,6 @@ typedGraph.documentId satisfies string;
 const typedInspect = typedDeck.compile();
 typedInspect satisfies CompileResult;
 typedInspect.diagnostics satisfies Diagnostics;
-// @ts-expect-error Asset loading is integration-managed and not a root Deck authoring method.
-typedDeck.useAssets({ probe: async () => undefined });
 void (typedDeck.project() satisfies Promise<ProjectResult>);
 void (typedDeck.project({ inspection: "none" }) satisfies Promise<ProjectResult>);
 

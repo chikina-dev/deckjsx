@@ -9,8 +9,10 @@ import type {
   AssetLoaderOutcome,
   AssetProbeResult,
   AssetSource,
+  DeckPlugin,
   RenderPatchPlanPart,
 } from "deckjsx/integration";
+import { integrationContextId } from "deckjsx/integration";
 import {
   PATCH_MANIFEST_PATH,
   STORE_METHOD,
@@ -140,6 +142,18 @@ export function createNodeFileAssetLoader(options: NodeFileAssetLoaderOptions = 
           error,
         });
       }
+    },
+  };
+}
+
+export function nodeAssets(options: NodeFileAssetLoaderOptions = {}): DeckPlugin {
+  return {
+    kind: "deckjsx.plugin",
+    id: "@deckjsx/node/assets",
+    name: "@deckjsx/node/assets",
+    integration: {
+      id: integrationContextId("@deckjsx/node/assets"),
+      assetLoaders: [createNodeFileAssetLoader(options)],
     },
   };
 }
@@ -565,6 +579,11 @@ async function probeFileAsset(filePath: string): Promise<AssetProbeResult> {
     ...(dimensions.height ? { height: dimensions.height } : {}),
     byteLength: metadata.size,
     hash: fingerprintBytes(bytes),
+    provenance: {
+      kind: "file",
+      resolvedId: fingerprintBytes(bytes),
+      hashSource: "bytes",
+    },
   };
 }
 

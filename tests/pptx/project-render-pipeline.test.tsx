@@ -8,6 +8,7 @@ import {
   PipelineArtifactCollection,
   type PptxPackageBuildArtifact,
 } from "../../src/pipeline-artifacts.ts";
+import { mediaSourceOrigins } from "../../src/integration.ts";
 import { compileSource, projectSource, renderSource } from "../../src/pipeline-runner.ts";
 import { withPackagePartFingerprints } from "../../src/projection/pptx/fingerprint.ts";
 import {
@@ -11323,6 +11324,164 @@ describe("project/render pipeline", () => {
     expect(diagnostic?.notes?.some((note) => note.startsWith("assetEntityId="))).toBe(true);
   });
 
+  test("project stops asset probing after a handled loader failure", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    let fallbackProbeCount = 0;
+    const failingLoader: AssetLoader = {
+      resolverIdentity: "terminal-failure",
+      async probe({ source }) {
+        if (source.kind !== "path") {
+          return undefined;
+        }
+        return {
+          ok: false as const,
+          diagnostics: [
+            {
+              severity: "error" as const,
+              code: "E_TEST_TERMINAL_ASSET_FAILURE",
+              title: "terminal asset failure",
+              message: "The first loader handled this path and failed.",
+              labels: [],
+            },
+          ],
+        };
+      },
+    };
+    const fallbackLoader = testAssetLoader({
+      resolverIdentity: "fallback-loader",
+      async probe({ source }) {
+        if (source.kind !== "path") {
+          return undefined;
+        }
+        fallbackProbeCount += 1;
+        return { mediaType: "image/png", extension: "png", width: 1, height: 1 };
+      },
+    });
+    deck.slide({ name: "Terminal failure" }, () => (
+      <img src="/public/terminal.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+    ));
+
+    const project = await projectSource({
+      source: deck,
+      options: deck.options,
+      assetLoaders: [failingLoader, fallbackLoader],
+    });
+
+    expect(project.ok).toBe(false);
+    expect(fallbackProbeCount).toBe(0);
+    expect(
+      project.diagnostics.items.some((item) => item.code === "E_TEST_TERMINAL_ASSET_FAILURE"),
+    ).toBe(true);
+  });
+
+  test("project reports missing integration context for project-local path sources", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Missing context" }, () => (
+      <img src="./local.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+    ));
+
+    const project = await projectSource({
+      source: deck,
+      options: deck.options,
+    });
+    const diagnostic = project.diagnostics.items.find(
+      (item) => item.code === "E_PROJECT_ASSET_CONTEXT_MISSING",
+    );
+
+    expect(project.ok).toBe(false);
+    expect(diagnostic).toMatchObject({
+      message: "Project-local asset paths require an Integration Context.",
+      labels: [expect.objectContaining({ message: "./local.png" })],
+      notes: expect.arrayContaining(["phase=probe", "sourceKind=path", "sourceField=src"]),
+    });
+  });
+
+  test("project reports missing integration context when no loader handles a path source", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const unrelatedLoader = testAssetLoader({
+      resolverIdentity: "unrelated-assets",
+      async probe() {
+        return undefined;
+      },
+    });
+    deck.slide({ name: "Unhandled context" }, () => (
+      <img src="./local.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+    ));
+
+    const project = await projectSource({
+      source: deck,
+      options: deck.options,
+      assetLoaders: [unrelatedLoader],
+    });
+    const diagnostic = project.diagnostics.items.find(
+      (item) => item.code === "E_PROJECT_ASSET_CONTEXT_MISSING",
+    );
+
+    expect(project.ok).toBe(false);
+    expect(diagnostic).toMatchObject({
+      message: "Project-local asset paths require an Integration Context.",
+      labels: [expect.objectContaining({ message: "./local.png" })],
+      notes: expect.arrayContaining(["phase=probe", "sourceKind=path", "sourceField=src"]),
+    });
+  });
+
+  test("project inspection exposes asset resolution provenance", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const pngBytes = pngHeaderBytes(1, 1);
+    const loader = testAssetLoader({
+      resolverIdentity: "inspect-assets",
+      async probe({ source }) {
+        return source.kind === "path"
+          ? {
+              mediaType: "image/png",
+              extension: "png",
+              width: 1,
+              height: 1,
+              byteLength: pngBytes.byteLength,
+              hash: "fnv1a32:inspect",
+            }
+          : undefined;
+      },
+    });
+    deck.slide({ name: "Inspect assets" }, () => (
+      <img
+        src="./inspect.png"
+        style={{ x: 1, y: 1, width: 1, height: 1 }}
+        {...mediaSourceOrigins({
+          src: {
+            importer: "/project/src/deck.tsx",
+            source: "./inspect.png",
+            sourceIdentity: "project-src-deck",
+          },
+        })}
+      />
+    ));
+
+    const project = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "summary" },
+      assetLoaders: [loader],
+    });
+
+    expect(project.diagnostics.items.map((item) => item.code)).toEqual([]);
+    expect(project.ok).toBe(true);
+    expect(project.summary?.assetResolutions).toEqual([
+      expect.objectContaining({
+        sourceKind: "path",
+        sourceField: "src",
+        resolverIdentity: "inspect-assets",
+        provenanceKind: "file",
+        resolvedId: "fnv1a32:inspect",
+        importer: "/project/src/deck.tsx",
+        sourceIdentity: "project-src-deck",
+        hashSource: "loader",
+        diagnosticCodes: [],
+      }),
+    ]);
+    expect(project.summary?.assetResolutions[0]?.assetEntityId).toContain("asset");
+  });
+
   test("project reports invalid asset probe result shapes", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     const loader = testAssetLoader({
@@ -11674,6 +11833,128 @@ describe("project/render pipeline", () => {
       expect(render.ok).toBe(true);
       expect(fetchedUrls).toEqual(["https://cdn.example.test/chart.png"]);
       expect(Array.from(zip["ppt/media/media1.png"] ?? [])).toEqual(Array.from(pngBytes));
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("project inspection exposes built-in fetch asset provenance and byte hash", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const pngBytes = pngHeaderBytes(8, 5);
+    const originalFetch = globalThis.fetch;
+
+    globalThis.fetch = (async () =>
+      new Response(pngBytes, {
+        status: 200,
+        headers: { "content-type": "image/png; charset=utf-8" },
+      })) as typeof fetch;
+
+    try {
+      deck.slide({ name: "Inspect URL asset" }, () => (
+        <img
+          src="https://cdn.example.test/inspect.png"
+          style={{ x: 1, y: 1, width: 2, height: 1 }}
+        />
+      ));
+
+      const project = await projectSource({
+        source: deck,
+        options: deck.options,
+        projectOptions: { inspection: "summary" },
+      });
+
+      expect(project.ok).toBe(true);
+      expect(project.summary?.assetResolutions).toEqual([
+        expect.objectContaining({
+          sourceKind: "url",
+          sourceField: "src",
+          resolverIdentity: "deckjsx:builtin",
+          provenanceKind: "fetch",
+          resolvedId: expect.stringMatching(/^fnv1a32:/),
+          hashSource: "bytes",
+          diagnosticCodes: [],
+        }),
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("project inspection summarizes asset source identity without raw media source payloads", async () => {
+    const child = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    child.slide({ name: "Child asset" }, () => (
+      <img src="./child.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+    ));
+    const parent = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    parent.mount("child-source", child);
+    const loader = testAssetLoader({
+      resolverIdentity: "mounted-assets",
+      async probe({ source }) {
+        return source.kind === "path"
+          ? {
+              mediaType: "image/png",
+              extension: "png",
+              width: 1,
+              height: 1,
+              byteLength: pngHeaderBytes(1, 1).byteLength,
+              hash: "fnv1a32:mounted",
+            }
+          : undefined;
+      },
+    });
+
+    const project = await projectSource({
+      source: parent,
+      options: parent.options,
+      projectOptions: { inspection: "summary" },
+      assetLoaders: [loader],
+    });
+    const resolution = project.summary?.assetResolutions[0];
+
+    expect(project.ok).toBe(true);
+    expect(resolution).toEqual(
+      expect.objectContaining({
+        sourceKind: "path",
+        sourceField: "src",
+        sourceIdentity: "child-source",
+      }),
+    );
+    expect(resolution).not.toHaveProperty("source", "./child.png");
+  });
+
+  test("project reports an asset boundary diagnostic when URL fetch is unavailable", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = undefined as never;
+
+    try {
+      deck.slide({ name: "Missing fetch URL asset" }, () => (
+        <img
+          src="https://cdn.example.test/missing-fetch.png"
+          style={{ x: 1, y: 1, width: 2, height: 1 }}
+        />
+      ));
+
+      const project = await projectSource({
+        source: deck,
+        options: deck.options,
+      });
+      const diagnostic = project.diagnostics.items.find(
+        (item) => item.code === "E_PROJECT_ASSET_FETCH_UNAVAILABLE",
+      );
+
+      expect(project.ok).toBe(false);
+      expect(diagnostic).toMatchObject({
+        title: "asset URL fetch is unavailable",
+        labels: [
+          expect.objectContaining({ message: "https://cdn.example.test/missing-fetch.png" }),
+        ],
+        notes: expect.arrayContaining([
+          "phase=probe",
+          "resolverIdentity=deckjsx:builtin",
+          "sourceKind=url",
+        ]),
+      });
     } finally {
       globalThis.fetch = originalFetch;
     }

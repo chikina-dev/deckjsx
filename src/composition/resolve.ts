@@ -93,6 +93,7 @@ function propsRecordForSlideOptions(
 }
 
 function compositionDiagnostic(input: {
+  severity?: Diagnostic["severity"];
   code: string;
   title: string;
   path: string;
@@ -100,7 +101,7 @@ function compositionDiagnostic(input: {
   help?: readonly string[];
 }): Diagnostic {
   return diagnostic({
-    severity: "error",
+    severity: input.severity ?? "error",
     code: input.code,
     title: input.title,
     message: input.message,
@@ -298,6 +299,23 @@ function resolveSource<
       }),
     );
     return undefined;
+  }
+
+  if (context.depth > 0 && sourceState.plugins.length > 0) {
+    addDiagnostic(
+      context,
+      compositionDiagnostic({
+        severity: "warning",
+        code: "W_COMPOSITION_CHILD_PLUGIN_IGNORED",
+        title: "child Deck plugins are ignored",
+        path: context.sourcePath,
+        message:
+          "Mounted child sources cannot install Deck Plugins into the parent render execution.",
+        help: [
+          "Register Deck Plugins on the root Deck that owns compile(), project(), or render().",
+        ],
+      }),
+    );
   }
 
   const cycleAt = context.stack.indexOf(sourceState.cycleId);

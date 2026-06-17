@@ -1,9 +1,3 @@
-import type { WriterAdapter } from "./adapter";
-import {
-  attachIntegrationContext,
-  type HmrInvalidation,
-  type IntegrationContext,
-} from "./integration-context";
 import {
   mediaSourceOrigins,
   type MediaSourceOrigin,
@@ -16,10 +10,57 @@ import type {
   AssetLoaderOutcome,
   AssetMediaType,
   AssetProbeResult,
+  AssetResolutionHashSource,
+  AssetResolutionProvenance,
+  AssetResolutionProvenanceKind,
   AssetSource,
   AssetSourceField,
 } from "./assets";
-import type { RenderPatchPlan, RenderPatchPlanPart, RenderPatchPlanPartKind } from "./pipeline";
+import {
+  type AfterAssetLifecycleContext,
+  type AfterAssetLifecycleUpdate,
+  type AfterGraphLifecycleContext,
+  type AfterGraphLifecycleUpdate,
+  type AfterProjectLifecycleContext,
+  type AfterProjectLifecycleUpdate,
+  type AfterRenderLifecycleContext,
+  type AfterRenderLifecycleUpdate,
+  type AfterTreeLifecycleContext,
+  type AfterTreeLifecycleUpdate,
+  type BeforeAssetLifecycleContext,
+  type BeforeAssetLifecycleUpdate,
+  type BeforeGraphLifecycleContext,
+  type BeforeGraphLifecycleUpdate,
+  type BeforeProjectLifecycleContext,
+  type BeforeProjectLifecycleUpdate,
+  type BeforeRenderLifecycleContext,
+  type BeforeRenderLifecycleUpdate,
+  type BeforeTreeLifecycleContext,
+  type DeckPluginHooks,
+  type DeckPlugin,
+  type PluginHookResult,
+  type HmrInvalidation,
+} from "./plugin";
+import { withRenderExecutionContext, type RenderExecutionContext } from "./render-execution";
+import {
+  integrationContextId,
+  type DeckIntegrationContext,
+  type IntegrationContextId,
+} from "./integration-context";
+import type {
+  PatchManifest,
+  PersistentPatchPlanPart,
+  RenderPatchPlan,
+  RenderPatchPlanPart,
+  RenderPatchPlanPartKind,
+} from "./patchable-pptx";
+import {
+  PATCH_MANIFEST_KIND,
+  PATCH_MANIFEST_PATH,
+  PATCH_MANIFEST_VERSION,
+  RENDER_PATCH_PLAN_KIND,
+  patchManifestFromParts,
+} from "./patchable-pptx";
 
 export type {
   AssetLoadResult,
@@ -28,22 +69,53 @@ export type {
   AssetLoaderOutcome,
   AssetMediaType,
   AssetProbeResult,
+  AssetResolutionHashSource,
+  AssetResolutionProvenance,
+  AssetResolutionProvenanceKind,
   AssetSource,
   AssetSourceField,
+  AfterAssetLifecycleContext,
+  AfterAssetLifecycleUpdate,
+  AfterGraphLifecycleContext,
+  AfterGraphLifecycleUpdate,
+  AfterProjectLifecycleContext,
+  AfterProjectLifecycleUpdate,
+  AfterRenderLifecycleContext,
+  AfterRenderLifecycleUpdate,
+  AfterTreeLifecycleContext,
+  AfterTreeLifecycleUpdate,
+  BeforeAssetLifecycleContext,
+  BeforeAssetLifecycleUpdate,
+  BeforeGraphLifecycleContext,
+  BeforeGraphLifecycleUpdate,
+  BeforeProjectLifecycleContext,
+  BeforeProjectLifecycleUpdate,
+  BeforeRenderLifecycleContext,
+  BeforeRenderLifecycleUpdate,
+  BeforeTreeLifecycleContext,
+  DeckPluginHooks,
+  DeckPlugin,
+  DeckIntegrationContext,
+  PluginHookResult,
+  IntegrationContextId,
+  PatchManifest,
+  PersistentPatchPlanPart,
   RenderPatchPlan,
   RenderPatchPlanPart,
   RenderPatchPlanPartKind,
   HmrInvalidation,
-  IntegrationContext,
+  RenderExecutionContext,
   MediaSourceOrigin,
   MediaSourceOriginByField,
 };
 
-export function withIntegrationContext<TAdapter extends WriterAdapter>(
-  adapter: TAdapter,
-  context: IntegrationContext,
-): TAdapter {
-  return attachIntegrationContext(adapter, context);
-}
+export { integrationContextId, withRenderExecutionContext };
 
 export { mediaSourceOrigins };
+export {
+  PATCH_MANIFEST_KIND,
+  PATCH_MANIFEST_PATH,
+  PATCH_MANIFEST_VERSION,
+  RENDER_PATCH_PLAN_KIND,
+  patchManifestFromParts,
+};

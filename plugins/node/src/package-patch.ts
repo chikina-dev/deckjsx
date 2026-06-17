@@ -1,4 +1,13 @@
-import type { RenderPatchPlan, RenderPatchPlanPart } from "deckjsx/integration";
+import {
+  PATCH_MANIFEST_KIND,
+  PATCH_MANIFEST_PATH,
+  PATCH_MANIFEST_VERSION,
+  patchManifestFromParts,
+  type PatchManifest,
+  type RenderPatchPlan,
+} from "deckjsx/integration";
+
+export { PATCH_MANIFEST_PATH };
 
 export type WriteDiagnostic = {
   readonly code: string;
@@ -39,13 +48,6 @@ type InPlacePatchFailure = {
 
 export type InPlacePatchResult = InPlacePatch | InPlacePatchFailure;
 
-export type PatchManifest = {
-  readonly kind: "deckjsx.patchManifest";
-  readonly version: 1;
-  readonly parts: readonly Omit<RenderPatchPlanPart, "buildReason" | "buildStatus">[];
-};
-
-export const PATCH_MANIFEST_PATH = "ppt/deckjsx/patch-manifest.json";
 export const STORE_METHOD = 0;
 
 const PATCH_RESERVE_MARKER = "deckjsx-patch-reserve:";
@@ -201,7 +203,11 @@ export function parsePatchManifest(bytes: Uint8Array): PatchManifest | undefined
 }
 
 function isPatchManifest(value: unknown): value is PatchManifest {
-  if (!isRecord(value) || value.kind !== "deckjsx.patchManifest" || value.version !== 1) {
+  if (
+    !isRecord(value) ||
+    value.kind !== PATCH_MANIFEST_KIND ||
+    value.version !== PATCH_MANIFEST_VERSION
+  ) {
     return false;
   }
 
@@ -337,14 +343,7 @@ function inPlacePatchFailure(code: string, message: string, path?: string): InPl
 }
 
 function patchManifestLogicalBytes(patchPlan: RenderPatchPlan): Uint8Array {
-  const manifest: PatchManifest = {
-    kind: "deckjsx.patchManifest",
-    version: 1,
-    parts: patchPlan.parts.flatMap(
-      ({ buildReason: _buildReason, buildStatus: _buildStatus, ...part }) =>
-        part.patchableKind === "manifest" ? [] : [part],
-    ),
-  };
+  const manifest = patchManifestFromParts(patchPlan.parts);
   return textEncoder.encode(`${JSON.stringify(manifest, null, 2)}\n`);
 }
 

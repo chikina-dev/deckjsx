@@ -1,24 +1,37 @@
 import type { DeckOptions } from "./authoring/index";
 import type { RenderOptions, WriterAdapter } from "./adapter";
 import { createWriterRenderContext } from "./adapter-context";
-import type {
-  AssetLoader,
-  AssetLoaderOutcome,
-  AssetLoadResult,
-  AssetProbeResult,
-  AssetSource,
-} from "./assets";
+import type { AssetLoader, AssetLoadResult, AssetProbeResult, AssetSource } from "./assets";
+import {
+  BUILTIN_ASSET_RESOLVER_IDENTITY,
+  assetDiagnosticFromError,
+  assetLoaderForIdentity,
+  assetLoaderOutcomeValue,
+  assetLoadersWithIdentities,
+  assetSourceFromEntity,
+  missingAssetContextDiagnostics,
+  missingRequiredAssetProbeDiagnostics,
+  missingRequiredAssetProbeFields,
+  normalizedAssetLoadResult,
+  normalizedAssetProbeResult,
+  summarizeAssetResolutions,
+} from "./asset-loading";
 import {
   defaultAdapterLimitationsFor,
   defaultWriterAdapterFor,
   isWriterAdapter,
 } from "./adapter-registry";
 import { createDiagnostics, diagnostic, type Diagnostics } from "./diagnostics";
-import type { CompositionSource, SourceContextValue } from "./composition/types";
+import {
+  COMPOSITION_SOURCE,
+  type CompositionSource,
+  type SourceContextValue,
+} from "./composition/types";
 import { resolveComposition } from "./composition/resolve";
+import { applyPluginHooks } from "./plugin";
+import { createRenderExecution, type RenderExecution } from "./render-execution";
 import {
   buildSemanticAuthorGraph,
-  type AssetEntity,
   type AssetEntityId,
   type GraphNodeId,
   type SemanticAuthorGraph,
@@ -41,20 +54,21 @@ import {
 import {
   PipelineArtifactCollection,
   assetSourceCacheKey,
+  fingerprintBytes,
   type AssetArtifact,
   type DefinedGraphArtifact,
   type DefinedProjectionArtifact,
+  type PptxProjectionArtifact,
 } from "./pipeline-artifacts";
-import {
-  integrationContextFor,
-  mergeAssetLoaders,
-  type IntegrationContext,
-} from "./integration-context";
+import type { MediaSourceOrigin } from "./media-source-origin";
 import { isPptxPackageModel, isPptxSlidePart } from "./projection/pptx/model";
+import { withPackagePartFingerprints } from "./projection/pptx/fingerprint";
 import type {
   ProjectInspectionSummary,
   PptxPackageModel,
+  PptxPackagePart,
   PptxPackagePartCandidate,
+  PptxSlidePart,
 } from "./projection/pptx/model";
 import {
   projectGraphToDocumentModel,
@@ -72,6 +86,13 @@ import { pptxMediaAssetLoadRequirements } from "./writers/pptx";
 type PresentStageArtifactStatus = Exclude<StageArtifactStatus, "missing">;
 
 type PptxPackagePartModel = PptxPackageModel["parts"][number];
+type DefinedPptxPackageModelArtifact = PptxProjectionArtifact<PptxPackageModel>;
+
+function isDefinedPptxPackageModelArtifact(
+  artifact: DefinedProjectionArtifact | undefined,
+): artifact is DefinedPptxPackageModelArtifact {
+  return artifact !== undefined && isPptxPackageModel(artifact.projection);
+}
 
 export type CompileResult = CompileResultWithGraph | CompileResultWithoutGraph;
 
@@ -145,336 +166,32 @@ function emptyDiagnostics(): Diagnostics {
   return createDiagnostics();
 }
 
-const BUILTIN_ASSET_RESOLVER_IDENTITY = "deckjsx:builtin";
-
-function assetLoadersWithIdentities(
-  loaders: readonly AssetLoader[] | undefined,
-): readonly { readonly loader: AssetLoader; readonly resolverIdentity: string }[] {
-  return (loaders ?? []).map((loader) => ({
-    loader,
-    resolverIdentity: loader.resolverIdentity,
-  }));
+function directPluginsForSource<
+  TSourceContext extends SourceContextValue | void,
+  TTemplates extends SlideTemplateSet,
+>(source: CompositionSource<TSourceContext, TTemplates>) {
+  return source[COMPOSITION_SOURCE]().plugins;
 }
 
-function assetLoaderForIdentity(
-  loaders: readonly { readonly loader: AssetLoader; readonly resolverIdentity: string }[],
-  resolverIdentity: string,
-): { readonly loader: AssetLoader; readonly resolverIdentity: string } | undefined {
-  return loaders.find((loader) => loader.resolverIdentity === resolverIdentity);
+function materializeAssetMap(
+  artifacts: PipelineArtifactCollection,
+  assetsById: ReadonlyMap<AssetEntityId, AssetArtifact>,
+): void {
+  assetsById.forEach((asset) => artifacts.materializeAsset(asset));
 }
 
-function assetSourceDiagnosticValue(source: AssetSource): string {
-  switch (source.kind) {
-    case "bytes":
-      return `bytes:${source.mediaType ?? "unknown"}:${source.bytes.byteLength}`;
-    case "data":
-      return source.data.startsWith("data:")
-        ? source.data.slice(0, source.data.indexOf(",") + 1)
-        : "data";
-    case "path":
-      return source.path;
-    case "url":
-      return source.url;
-  }
-}
-
-function assetDiagnosticFromError(input: {
-  readonly stage: "project" | "render";
-  readonly code: string;
-  readonly title: string;
-  readonly phase: "load" | "probe";
-  readonly source: AssetSource;
-  readonly resolverIdentity: string;
-  readonly assetEntityId?: AssetEntityId;
-  readonly packagePartPath?: string;
-  readonly error: unknown;
-}): Diagnostics {
-  const message = input.error instanceof Error ? input.error.message : String(input.error);
-  return createDiagnostics([
-    diagnostic({
-      severity: "error",
-      code: input.code,
-      title: input.title,
-      message,
-      labels: [
-        {
-          path: input.packagePartPath ?? `asset.${input.phase}`,
-          message: assetSourceDiagnosticValue(input.source),
-          severity: "primary",
-        },
-      ],
-      notes: [
-        `phase=${input.phase}`,
-        `resolverIdentity=${input.resolverIdentity}`,
-        input.assetEntityId ? `assetEntityId=${input.assetEntityId}` : undefined,
-        input.packagePartPath ? `packagePartPath=${input.packagePartPath}` : undefined,
-        `sourceKind=${input.source.kind}`,
-      ].filter((note): note is string => note !== undefined),
-    }),
-  ]);
-}
-
-function invalidAssetResultDiagnostics(input: {
-  readonly stage: "project" | "render";
-  readonly code: string;
-  readonly title: string;
-  readonly phase: "load" | "probe";
-  readonly source: AssetSource;
-  readonly resolverIdentity: string;
-  readonly invalidFields: readonly string[];
-  readonly assetEntityId?: AssetEntityId;
-  readonly packagePartPath?: string;
-}): Diagnostics {
-  return createDiagnostics([
-    diagnostic({
-      severity: "error",
-      code: input.code,
-      title: input.title,
-      message: "Asset loader returned an invalid result shape.",
-      labels: [
-        {
-          path: input.packagePartPath ?? `asset.${input.phase}`,
-          message: assetSourceDiagnosticValue(input.source),
-          severity: "primary",
-        },
-      ],
-      notes: [
-        `phase=${input.phase}`,
-        `resolverIdentity=${input.resolverIdentity}`,
-        `invalidFields=${input.invalidFields.join(",")}`,
-        input.assetEntityId ? `assetEntityId=${input.assetEntityId}` : undefined,
-        input.packagePartPath ? `packagePartPath=${input.packagePartPath}` : undefined,
-        `sourceKind=${input.source.kind}`,
-      ].filter((note): note is string => note !== undefined),
-    }),
-  ]);
-}
-
-function invalidAssetOutcomeDiagnostics(input: {
-  readonly stage: "project" | "render";
-  readonly code: string;
-  readonly title: string;
-  readonly phase: "load" | "probe";
-  readonly source: AssetSource;
-  readonly resolverIdentity: string;
-  readonly assetEntityId?: AssetEntityId;
-  readonly packagePartPath?: string;
-}): Diagnostics {
-  return createDiagnostics([
-    diagnostic({
-      severity: "error",
-      code: input.code,
-      title: input.title,
-      message:
-        "Asset loader returned ok=false without at least one error diagnostic to explain the failed resolution.",
-      labels: [
-        {
-          path: input.packagePartPath ?? `asset.${input.phase}`,
-          message: assetSourceDiagnosticValue(input.source),
-          severity: "primary",
-        },
-      ],
-      notes: [
-        `phase=${input.phase}`,
-        `resolverIdentity=${input.resolverIdentity}`,
-        input.assetEntityId ? `assetEntityId=${input.assetEntityId}` : undefined,
-        input.packagePartPath ? `packagePartPath=${input.packagePartPath}` : undefined,
-        `sourceKind=${input.source.kind}`,
-      ].filter((note): note is string => note !== undefined),
-    }),
-  ]);
-}
-
-function assetLoaderOutcomeValue<T>(input: {
-  readonly outcome: AssetLoaderOutcome<T>;
-  readonly stage: "project" | "render";
-  readonly code: string;
-  readonly title: string;
-  readonly phase: "load" | "probe";
-  readonly source: AssetSource;
-  readonly resolverIdentity: string;
-  readonly assetEntityId?: AssetEntityId;
-  readonly packagePartPath?: string;
-}):
-  | { readonly kind: "unresolved" }
-  | { readonly kind: "resolved"; readonly value: T; readonly diagnostics: Diagnostics }
-  | { readonly kind: "failed"; readonly diagnostics: Diagnostics } {
-  if (input.outcome === undefined) {
-    return { kind: "unresolved" };
-  }
-
-  if (!input.outcome.ok) {
-    const diagnostics = createDiagnostics(input.outcome.diagnostics);
-    return diagnostics.hasErrors
-      ? { kind: "failed", diagnostics }
-      : {
-          kind: "failed",
-          diagnostics: invalidAssetOutcomeDiagnostics(input),
-        };
-  }
+function normalizePptxPackageProjection(projection: PptxPackageModel): PptxPackageModel {
+  const parts = withPackagePartFingerprints(projection.parts);
+  const partsById = new Map(parts.map((part) => [part.id, part]));
+  const slides = projection.slides
+    .map((slide): PptxPackagePart | undefined => partsById.get(slide.id))
+    .filter((part): part is PptxSlidePart => part !== undefined && isPptxSlidePart(part));
 
   return {
-    kind: "resolved",
-    value: input.outcome.value,
-    diagnostics: createDiagnostics(input.outcome.diagnostics ?? []),
+    ...projection,
+    parts,
+    slides,
   };
-}
-
-function missingRequiredAssetProbeDiagnostics(input: {
-  readonly source: AssetSource;
-  readonly resolverIdentity: string;
-  readonly assetEntityId?: AssetEntityId;
-  readonly missingFields: readonly string[];
-}): Diagnostics {
-  return createDiagnostics([
-    diagnostic({
-      severity: "error",
-      code: "E_PROJECT_ASSET_PROBE_INCOMPLETE",
-      title: "asset probe result is incomplete",
-      message: "Asset probe did not return metadata required by the projected package model.",
-      labels: [
-        {
-          path: "asset.probe",
-          message: assetSourceDiagnosticValue(input.source),
-          severity: "primary",
-        },
-      ],
-      notes: [
-        "phase=probe",
-        `resolverIdentity=${input.resolverIdentity}`,
-        `missingFields=${input.missingFields.join(",")}`,
-        input.assetEntityId ? `assetEntityId=${input.assetEntityId}` : undefined,
-        `sourceKind=${input.source.kind}`,
-      ].filter((note): note is string => note !== undefined),
-    }),
-  ]);
-}
-
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
-function assetProbeInvalidFields(result: AssetProbeResult): readonly string[] {
-  const invalidFields: string[] = [];
-
-  if (result.mediaType !== undefined && !isNonEmptyString(result.mediaType)) {
-    invalidFields.push("mediaType");
-  }
-  if (result.extension !== undefined && !isNonEmptyString(result.extension)) {
-    invalidFields.push("extension");
-  }
-  if (result.hash !== undefined && !isNonEmptyString(result.hash)) {
-    invalidFields.push("hash");
-  }
-  if (result.width !== undefined && (!isFiniteNumber(result.width) || result.width <= 0)) {
-    invalidFields.push("width");
-  }
-  if (result.height !== undefined && (!isFiniteNumber(result.height) || result.height <= 0)) {
-    invalidFields.push("height");
-  }
-  if (
-    result.byteLength !== undefined &&
-    (!isFiniteNumber(result.byteLength) || result.byteLength < 0)
-  ) {
-    invalidFields.push("byteLength");
-  }
-
-  return invalidFields;
-}
-
-function missingRequiredAssetProbeFields(input: {
-  probe: AssetProbeResult | undefined;
-  assetKind: AssetEntity["kind"];
-}): readonly string[] {
-  if (input.assetKind === "video") {
-    return [];
-  }
-
-  const missingFields: string[] = [];
-  if (input.probe?.width === undefined) {
-    missingFields.push("width");
-  }
-  if (input.probe?.height === undefined) {
-    missingFields.push("height");
-  }
-  return missingFields;
-}
-
-function normalizedAssetProbeResult(input: {
-  readonly result: AssetProbeResult;
-  readonly source: AssetSource;
-  readonly resolverIdentity: string;
-  readonly assetEntityId?: AssetEntityId;
-}):
-  | { readonly ok: true; readonly result: AssetProbeResult }
-  | { readonly ok: false; readonly diagnostics: Diagnostics } {
-  const invalidFields = assetProbeInvalidFields(input.result);
-  if (invalidFields.length > 0) {
-    return {
-      ok: false,
-      diagnostics: invalidAssetResultDiagnostics({
-        stage: "project",
-        code: "E_PROJECT_ASSET_PROBE_INVALID",
-        title: "asset probe result is invalid",
-        phase: "probe",
-        source: input.source,
-        resolverIdentity: input.resolverIdentity,
-        assetEntityId: input.assetEntityId,
-        invalidFields,
-      }),
-    };
-  }
-
-  return { ok: true, result: input.result };
-}
-
-function normalizedAssetLoadResult(input: {
-  readonly result: AssetLoadResult;
-  readonly source: AssetSource;
-  readonly resolverIdentity: string;
-  readonly assetEntityId?: AssetEntityId;
-  readonly packagePartPath?: string;
-}):
-  | { readonly ok: true; readonly result: AssetLoadResult }
-  | { readonly ok: false; readonly diagnostics: Diagnostics } {
-  const invalidFields = [...assetProbeInvalidFields(input.result)];
-  if (!(input.result.bytes instanceof Uint8Array)) {
-    invalidFields.push("bytes");
-  }
-
-  if (invalidFields.length > 0) {
-    return {
-      ok: false,
-      diagnostics: invalidAssetResultDiagnostics({
-        stage: "render",
-        code: "E_RENDER_ASSET_LOAD_INVALID",
-        title: "asset load result is invalid",
-        phase: "load",
-        source: input.source,
-        resolverIdentity: input.resolverIdentity,
-        assetEntityId: input.assetEntityId,
-        packagePartPath: input.packagePartPath,
-        invalidFields,
-      }),
-    };
-  }
-
-  return { ok: true, result: input.result };
-}
-
-function assetSourceFromEntity(asset: AssetEntity): AssetSource {
-  switch (asset.source.kind) {
-    case "path":
-      return { kind: "path", path: asset.source.path };
-    case "url":
-      return { kind: "url", url: asset.source.url };
-    case "data":
-      return { kind: "data", data: asset.source.data };
-  }
 }
 
 function extensionFromPath(value: string): string | undefined {
@@ -647,6 +364,7 @@ function imageDimensionsFromBytes(input: {
 type BuiltInAssetProbeResult = {
   readonly probe: AssetProbeResult;
   readonly load?: AssetLoadResult;
+  readonly diagnostics?: Diagnostics;
 };
 
 async function probeBuiltInAssetSource(
@@ -677,6 +395,7 @@ async function probeBuiltInAssetSource(
           ...(mediaType ? { mediaType } : {}),
           ...(extension ? { extension } : {}),
         },
+        diagnostics: builtInAssetFetchUnavailableDiagnostics(source),
       };
     }
 
@@ -693,12 +412,20 @@ async function probeBuiltInAssetSource(
       mediaType: contentType,
       extension: resolvedExtension,
     });
+    const hash = fingerprintBytes(bytes);
+    const provenance = {
+      kind: "fetch",
+      resolvedId: hash,
+      hashSource: "bytes",
+    } as const;
     const probe = {
       ...(contentType ? { mediaType: contentType.split(";")[0] } : {}),
       ...(resolvedExtension ? { extension: resolvedExtension } : {}),
       ...(dimensions.width ? { width: dimensions.width } : {}),
       ...(dimensions.height ? { height: dimensions.height } : {}),
       byteLength: bytes.byteLength,
+      hash,
+      provenance,
     };
     return { probe, load: { ...probe, bytes } };
   }
@@ -728,6 +455,30 @@ async function probeBuiltInAssetSource(
   };
 
   return { probe, load: { ...probe, bytes } };
+}
+
+function builtInAssetFetchUnavailableDiagnostics(source: AssetSource): Diagnostics {
+  return createDiagnostics([
+    diagnostic({
+      severity: "error",
+      code: "E_PROJECT_ASSET_FETCH_UNAVAILABLE",
+      title: "asset URL fetch is unavailable",
+      message:
+        "The built-in Asset Loading Boundary cannot fetch this URL because the current runtime does not provide fetch.",
+      labels: [
+        {
+          path: "asset.probe",
+          message: source.kind === "url" ? source.url : JSON.stringify(source),
+          severity: "primary",
+        },
+      ],
+      notes: [
+        "phase=probe",
+        `resolverIdentity=${BUILTIN_ASSET_RESOLVER_IDENTITY}`,
+        `sourceKind=${source.kind}`,
+      ],
+    }),
+  ]);
 }
 
 function dataPayloadText(metadata: string, payload: string): string {
@@ -782,6 +533,7 @@ async function loadBuiltInAssetSource(source: AssetSource): Promise<AssetLoadRes
     const contentType = response.headers.get("content-type") ?? undefined;
     const extension = extensionFromPath(source.url) ?? extensionFromMediaType(contentType);
     const dimensions = imageDimensionsFromBytes({ bytes, mediaType: contentType, extension });
+    const hash = fingerprintBytes(bytes);
     return {
       bytes,
       ...(contentType ? { mediaType: contentType.split(";")[0] } : {}),
@@ -789,6 +541,12 @@ async function loadBuiltInAssetSource(source: AssetSource): Promise<AssetLoadRes
       ...(dimensions.width ? { width: dimensions.width } : {}),
       ...(dimensions.height ? { height: dimensions.height } : {}),
       byteLength: bytes.byteLength,
+      hash,
+      provenance: {
+        kind: "fetch",
+        resolvedId: hash,
+        hashSource: "bytes",
+      },
     };
   }
 
@@ -823,27 +581,29 @@ async function resolveAssetArtifacts(input: {
   graph: SemanticAuthorGraph;
   loaders?: readonly AssetLoader[];
   artifacts?: PipelineArtifactCollection;
-  mediaSourceOrigin?: IntegrationContext["mediaSourceOrigin"];
+  mediaSourceOrigin?: MediaSourceOrigin;
 }): Promise<{
   diagnostics: Diagnostics;
   assetsById: ReadonlyMap<AssetEntityId, AssetArtifact>;
 }> {
   const diagnostics: Diagnostics[] = [];
   const assetsById = new Map<AssetEntityId, AssetArtifact>();
-  const loaders = assetLoadersWithIdentities(input.loaders);
 
   for (const [assetEntityId, asset] of input.graph.assets) {
     const source = assetSourceFromEntity(asset);
+    const assetOrigin = asset.origin ?? input.mediaSourceOrigin;
+    const loaders = assetLoadersWithIdentities(input.loaders);
     let probe: AssetProbeResult | undefined;
     let load: AssetLoadResult | undefined;
     let resolverIdentity = BUILTIN_ASSET_RESOLVER_IDENTITY;
     let assetDiagnostics = emptyDiagnostics();
+    let resolutionStopped = false;
     let cached = input.artifacts?.assetsById.get(assetEntityId);
 
     if (!cached) {
       for (const { resolverIdentity } of loaders) {
         cached = input.artifacts?.assetsBySourceCacheKey.get(
-          assetSourceCacheKey(source, resolverIdentity, asset.origin),
+          assetSourceCacheKey(source, resolverIdentity, assetOrigin),
         );
         if (cached?.probe) {
           break;
@@ -853,7 +613,7 @@ async function resolveAssetArtifacts(input: {
 
     if (!cached) {
       cached = input.artifacts?.assetsBySourceCacheKey.get(
-        assetSourceCacheKey(source, BUILTIN_ASSET_RESOLVER_IDENTITY, asset.origin),
+        assetSourceCacheKey(source, BUILTIN_ASSET_RESOLVER_IDENTITY, assetOrigin),
       );
     }
 
@@ -876,9 +636,7 @@ async function resolveAssetArtifacts(input: {
             resolverIdentity: loaderResolverIdentity,
             assetEntityId,
             sourceField: asset.sourceField,
-            ...((asset.origin ?? input.mediaSourceOrigin)
-              ? { origin: asset.origin ?? input.mediaSourceOrigin }
-              : {}),
+            ...(assetOrigin ? { origin: assetOrigin } : {}),
           }),
           stage: "project",
           code: "E_PROJECT_ASSET_PROBE_OUTCOME_INVALID",
@@ -889,8 +647,10 @@ async function resolveAssetArtifacts(input: {
           assetEntityId,
         });
         if (outcome.kind === "failed") {
-          diagnostics.push(outcome.diagnostics);
-          continue;
+          assetDiagnostics = outcome.diagnostics;
+          resolverIdentity = loaderResolverIdentity;
+          resolutionStopped = true;
+          break;
         }
         if (outcome.kind === "resolved") {
           const normalized = normalizedAssetProbeResult({
@@ -925,7 +685,7 @@ async function resolveAssetArtifacts(input: {
       }
     }
 
-    if (!probe) {
+    if (!probe && !resolutionStopped) {
       try {
         const builtInProbe = await probeBuiltInAssetSource(source);
         if (builtInProbe) {
@@ -938,6 +698,10 @@ async function resolveAssetArtifacts(input: {
           if (normalized.ok) {
             probe = normalized.result;
             load = builtInProbe.load;
+            if (builtInProbe.diagnostics) {
+              assetDiagnostics = builtInProbe.diagnostics;
+              resolutionStopped = builtInProbe.diagnostics.hasErrors;
+            }
           } else {
             diagnostics.push(normalized.diagnostics);
           }
@@ -959,11 +723,20 @@ async function resolveAssetArtifacts(input: {
       resolverIdentity = BUILTIN_ASSET_RESOLVER_IDENTITY;
     }
 
+    if (!probe && !resolutionStopped && source.kind === "path") {
+      assetDiagnostics = missingAssetContextDiagnostics({
+        source,
+        sourceField: asset.sourceField,
+        assetEntityId,
+      });
+      resolutionStopped = true;
+    }
+
     const missingRequiredFields = missingRequiredAssetProbeFields({
       probe,
       assetKind: asset.kind,
     });
-    if (missingRequiredFields.length > 0) {
+    if (!resolutionStopped && missingRequiredFields.length > 0) {
       diagnostics.push(
         missingRequiredAssetProbeDiagnostics({
           source,
@@ -981,7 +754,7 @@ async function resolveAssetArtifacts(input: {
       source,
       sourceField: asset.sourceField,
       resolverIdentity,
-      ...(asset.origin ? { origin: asset.origin } : {}),
+      ...(assetOrigin ? { origin: assetOrigin } : {}),
       ...(probe ? { probe } : {}),
       ...(load ? { load } : {}),
       diagnostics: artifactDiagnostics,
@@ -996,7 +769,7 @@ async function resolveAssetArtifacts(input: {
 async function loadAssetArtifacts(input: {
   artifacts?: PipelineArtifactCollection;
   loaders?: readonly AssetLoader[];
-  mediaSourceOrigin?: IntegrationContext["mediaSourceOrigin"];
+  mediaSourceOrigin?: MediaSourceOrigin;
   projection: PptxPackageModel;
 }): Promise<Diagnostics> {
   if (!input.artifacts) {
@@ -1004,7 +777,6 @@ async function loadAssetArtifacts(input: {
   }
 
   const diagnostics: Diagnostics[] = [];
-  const loaders = assetLoadersWithIdentities(input.loaders);
   const mediaPayloads = pptxMediaAssetLoadRequirements({
     projection: input.projection,
     assetsById: input.artifacts.assetsById,
@@ -1013,6 +785,8 @@ async function loadAssetArtifacts(input: {
 
   mediaLoop: for (const media of mediaPayloads) {
     const current = input.artifacts.assetsById.get(media.assetEntityId);
+    const mediaOrigin = current?.origin ?? input.mediaSourceOrigin;
+    const loaders = assetLoadersWithIdentities(input.loaders);
     const currentMatchesSource =
       current !== undefined &&
       assetSourceCacheKey(current.source, current.resolverIdentity, current.origin) ===
@@ -1024,7 +798,7 @@ async function loadAssetArtifacts(input: {
 
     const currentResolverIdentity = currentMatchesSource ? current.resolverIdentity : undefined;
     const cached = input.artifacts.assetsBySourceCacheKey.get(
-      assetSourceCacheKey(media.source, currentResolverIdentity, current?.origin),
+      assetSourceCacheKey(media.source, currentResolverIdentity, mediaOrigin),
     );
     if (cached?.load) {
       input.artifacts.materializeAsset({
@@ -1038,6 +812,7 @@ async function loadAssetArtifacts(input: {
     let load: AssetLoadResult | undefined;
     let resolverIdentity = currentResolverIdentity ?? BUILTIN_ASSET_RESOLVER_IDENTITY;
     let assetDiagnostics = emptyDiagnostics();
+    let resolutionStopped = false;
     const scopedLoader = currentResolverIdentity
       ? assetLoaderForIdentity(loaders, currentResolverIdentity)
       : undefined;
@@ -1045,7 +820,7 @@ async function loadAssetArtifacts(input: {
 
     for (const { loader, resolverIdentity: loaderResolverIdentity } of scopedLoaders) {
       const loaderCached = input.artifacts.assetsBySourceCacheKey.get(
-        assetSourceCacheKey(media.source, loaderResolverIdentity, current?.origin),
+        assetSourceCacheKey(media.source, loaderResolverIdentity, mediaOrigin),
       );
       if (loaderCached?.load) {
         input.artifacts.materializeAsset({
@@ -1063,9 +838,7 @@ async function loadAssetArtifacts(input: {
             resolverIdentity: loaderResolverIdentity,
             assetEntityId: media.assetEntityId,
             sourceField: media.sourceField,
-            ...((current?.origin ?? input.mediaSourceOrigin)
-              ? { origin: current?.origin ?? input.mediaSourceOrigin }
-              : {}),
+            ...(mediaOrigin ? { origin: mediaOrigin } : {}),
           }),
           stage: "render",
           code: "E_RENDER_ASSET_LOAD_OUTCOME_INVALID",
@@ -1077,8 +850,10 @@ async function loadAssetArtifacts(input: {
           packagePartPath: media.packagePartPath,
         });
         if (outcome.kind === "failed") {
-          diagnostics.push(outcome.diagnostics);
-          continue;
+          assetDiagnostics = outcome.diagnostics;
+          resolverIdentity = loaderResolverIdentity;
+          resolutionStopped = true;
+          break;
         }
         if (outcome.kind === "resolved") {
           const normalized = normalizedAssetLoadResult({
@@ -1117,6 +892,7 @@ async function loadAssetArtifacts(input: {
 
     if (
       !load &&
+      !resolutionStopped &&
       (!currentResolverIdentity || currentResolverIdentity === BUILTIN_ASSET_RESOLVER_IDENTITY)
     ) {
       try {
@@ -1153,6 +929,20 @@ async function loadAssetArtifacts(input: {
       }
     }
 
+    if (!load && resolutionStopped) {
+      diagnostics.push(assetDiagnostics);
+      input.artifacts.materializeAsset({
+        assetEntityId: media.assetEntityId,
+        source: currentMatchesSource ? current.source : media.source,
+        sourceField: media.sourceField,
+        resolverIdentity,
+        ...(currentMatchesSource && current.origin ? { origin: current.origin } : {}),
+        ...(currentMatchesSource && current.probe ? { probe: current.probe } : {}),
+        diagnostics: assetDiagnostics,
+      });
+      continue;
+    }
+
     if (!load) {
       diagnostics.push(
         assetDiagnosticFromError({
@@ -1179,6 +969,7 @@ async function loadAssetArtifacts(input: {
       source: currentMatchesSource ? current.source : media.source,
       sourceField: media.sourceField,
       resolverIdentity,
+      ...(currentMatchesSource && current.origin ? { origin: current.origin } : {}),
       ...(currentMatchesSource && current.probe ? { probe: current.probe } : {}),
       load,
       diagnostics: artifactDiagnostics,
@@ -1338,19 +1129,20 @@ function projectionWithReusablePackageParts(input: {
   graph?: SemanticAuthorGraph;
   reusableSlideNodeIds?: ReadonlySet<GraphNodeId>;
 }): PptxPackageModel {
-  if (!input.previous || !isPptxPackageModel(input.previous.projection) || !input.graph) {
+  if (!isDefinedPptxPackageModelArtifact(input.previous) || !input.graph) {
     return input.projection;
   }
+  const previousArtifact = input.previous;
 
   const reusableSlideUnits = reusableSlideUnitIndex({
     graph: input.graph,
-    previous: input.previous,
+    previous: previousArtifact,
     projection: input.projection,
     reusableSlideNodeIds: input.reusableSlideNodeIds,
   });
   let reused = false;
   const parts = input.projection.parts.map((part): PptxPackagePartModel => {
-    const previous = input.previous?.partsById.get(part.id);
+    const previous = previousArtifact.partsById.get(part.id);
     if (
       isHmrReusableSlideUnitPart(part, reusableSlideUnits) &&
       previous &&
@@ -1359,7 +1151,7 @@ function projectionWithReusablePackageParts(input: {
       previous.fingerprint === part.fingerprint
     ) {
       reused = true;
-      return previous as PptxPackagePartModel;
+      return previous;
     }
 
     return part;
@@ -1500,38 +1292,73 @@ export function compileSource<
   source: CompositionSource<TSourceContext, TTemplates>,
   artifacts?: PipelineArtifactCollection,
 ): CompileResult {
+  const plugins = directPluginsForSource(source);
+  const beforeTree = applyPluginHooks(plugins, "beforeTree", {
+    stage: "tree" as const,
+    phase: "before" as const,
+  });
+  const beforeTreeDiagnostics = createDiagnostics(beforeTree.diagnostics);
   const composition = resolveComposition(source);
+  const afterTree = applyPluginHooks(plugins, "afterTree", {
+    stage: "tree" as const,
+    phase: "after" as const,
+    roots: composition.roots ?? [],
+  });
+  const treeDiagnostics = combineDiagnostics(
+    beforeTreeDiagnostics,
+    composition.diagnostics,
+    createDiagnostics(afterTree.diagnostics),
+  );
+  const roots = afterTree.context.roots;
 
-  if (composition.diagnostics.hasErrors) {
-    artifacts?.materializeComposition(composition.roots, composition.diagnostics);
+  if (treeDiagnostics.hasErrors) {
+    artifacts?.materializeComposition(roots, treeDiagnostics);
 
     return {
       ok: false,
-      diagnostics: composition.diagnostics,
+      diagnostics: treeDiagnostics,
       stages: {
-        compile: stageSummary("compile", composition.diagnostics, "missing"),
+        compile: stageSummary("compile", treeDiagnostics, "missing"),
       },
     };
   }
 
-  const result = buildSemanticAuthorGraph(composition.roots ?? []);
-  const styleResult = result.graph
-    ? resolveStyles(result.graph, composition.roots ?? [])
-    : undefined;
-  const diagnostics = styleResult
-    ? combineDiagnostics(result.diagnostics, styleResult.diagnostics)
-    : result.diagnostics;
-  artifacts?.materializeComposition(composition.roots, composition.diagnostics);
-  if (result.graph && styleResult) {
+  const beforeGraph = applyPluginHooks(plugins, "beforeGraph", {
+    stage: "graph" as const,
+    phase: "before" as const,
+    roots,
+  });
+  const graphRoots = beforeGraph.context.roots;
+  const beforeGraphDiagnostics = createDiagnostics(beforeGraph.diagnostics);
+  const result = buildSemanticAuthorGraph(graphRoots);
+  const styleResult = result.graph ? resolveStyles(result.graph, graphRoots) : undefined;
+  const afterGraph = applyPluginHooks(plugins, "afterGraph", {
+    stage: "graph" as const,
+    phase: "after" as const,
+    roots: graphRoots,
+    ...(result.graph ? { graph: result.graph } : {}),
+    ...(styleResult ? { resolvedStyles: styleResult.resolvedStyles } : {}),
+  });
+  const graph = afterGraph.context.graph;
+  const resolvedStyles = afterGraph.context.resolvedStyles;
+  const diagnostics = combineDiagnostics(
+    treeDiagnostics,
+    beforeGraphDiagnostics,
+    result.diagnostics,
+    styleResult?.diagnostics ?? emptyDiagnostics(),
+    createDiagnostics(afterGraph.diagnostics),
+  );
+  artifacts?.materializeComposition(graphRoots, treeDiagnostics);
+  if (graph && resolvedStyles) {
     artifacts?.materializeGraphFromComposition({
-      graph: result.graph,
-      resolvedStyles: styleResult.resolvedStyles,
-      roots: composition.roots ?? [],
+      graph,
+      resolvedStyles,
+      roots: graphRoots,
       diagnostics,
     });
   }
 
-  if (!result.graph || !styleResult) {
+  if (!graph || !resolvedStyles) {
     return {
       ok: resultOk(diagnostics),
       diagnostics,
@@ -1545,14 +1372,10 @@ export function compileSource<
     ok: resultOk(diagnostics),
     diagnostics,
     stages: {
-      compile: stageSummary(
-        "compile",
-        diagnostics,
-        projectedArtifactStatus(result.graph, diagnostics),
-      ),
+      compile: stageSummary("compile", diagnostics, projectedArtifactStatus(graph, diagnostics)),
     },
-    graph: result.graph,
-    resolvedStyles: styleResult.resolvedStyles,
+    graph,
+    resolvedStyles,
   };
 }
 
@@ -1568,8 +1391,10 @@ export async function projectSource<
   definedProjection?: DefinedProjectionArtifact;
   artifacts?: PipelineArtifactCollection;
   assetLoaders?: readonly AssetLoader[];
-  mediaSourceOrigin?: IntegrationContext["mediaSourceOrigin"];
+  mediaSourceOrigin?: MediaSourceOrigin;
+  execution?: RenderExecution;
 }): Promise<ProjectResult> {
+  const artifacts = input.artifacts ?? new PipelineArtifactCollection();
   const projectionFormat = input.projectionFormat ?? projectionFormatFor(input.options);
 
   if (input.definedProjection) {
@@ -1635,7 +1460,7 @@ export async function projectSource<
         graph: input.definedGraph.graph,
         resolvedStyles: input.definedGraph.resolvedStyles,
       }
-    : compileSource(input.source, input.artifacts);
+    : compileSource(input.source, artifacts);
 
   if (
     compileResult.diagnostics.hasErrors ||
@@ -1654,63 +1479,134 @@ export async function projectSource<
   }
 
   try {
-    const assetResult = await resolveAssetArtifacts({
-      graph: compileResult.graph,
-      loaders: input.assetLoaders,
-      artifacts: input.artifacts,
-      mediaSourceOrigin: input.mediaSourceOrigin,
-    });
-    const hmrReuseSnapshot = input.artifacts?.hmrProjectionReuseSnapshot;
-    const projectionReuse = hmrProjectionReusePlan({
+    const execution =
+      input.execution ??
+      createRenderExecution({
+        plugins: directPluginsForSource(input.source),
+        assetLoaders: input.assetLoaders,
+        mediaSourceOrigin: input.mediaSourceOrigin,
+      });
+    const beforeAsset = applyPluginHooks(execution.plugins, "beforeAsset", {
+      stage: "asset" as const,
+      phase: "before" as const,
+      operation: "probe" as const,
       graph: compileResult.graph,
       resolvedStyles: compileResult.resolvedStyles,
+      assetLoaders: execution.assetLoaders,
+      mediaSourceOrigin: execution.mediaSourceOrigin,
+      ...(execution.integrationContext ? { integrationContext: execution.integrationContext } : {}),
+    });
+    const beforeAssetDiagnostics = createDiagnostics(beforeAsset.diagnostics);
+    const assetResult = await resolveAssetArtifacts({
+      graph: compileResult.graph,
+      loaders: beforeAsset.context.assetLoaders,
+      artifacts,
+      mediaSourceOrigin: beforeAsset.context.mediaSourceOrigin,
+    });
+    const afterAsset = applyPluginHooks(execution.plugins, "afterAsset", {
+      stage: "asset" as const,
+      phase: "after" as const,
+      operation: "probe" as const,
+      graph: compileResult.graph,
+      resolvedStyles: compileResult.resolvedStyles,
+      assetsById: assetResult.assetsById,
+      assetLoaders: beforeAsset.context.assetLoaders,
+      mediaSourceOrigin: beforeAsset.context.mediaSourceOrigin,
+      ...(beforeAsset.context.integrationContext
+        ? { integrationContext: beforeAsset.context.integrationContext }
+        : {}),
+    });
+    const assetsById = afterAsset.context.assetsById;
+    if (assetsById !== assetResult.assetsById) {
+      materializeAssetMap(artifacts, assetsById);
+    }
+    const assetDiagnostics = combineDiagnostics(
+      beforeAssetDiagnostics,
+      assetResult.diagnostics,
+      createDiagnostics(afterAsset.diagnostics),
+    );
+    const beforeProject = applyPluginHooks(execution.plugins, "beforeProject", {
+      stage: "project" as const,
+      phase: "before" as const,
+      format: projectionFormat,
+      graph: compileResult.graph,
+      resolvedStyles: compileResult.resolvedStyles,
+      assetsById,
+    });
+    const projectGraph = beforeProject.context.graph;
+    const projectResolvedStyles = beforeProject.context.resolvedStyles;
+    const projectAssetsById = beforeProject.context.assetsById;
+    if (projectAssetsById !== assetsById) {
+      materializeAssetMap(artifacts, projectAssetsById);
+    }
+    const hmrReuseSnapshot = artifacts.hmrProjectionReuseSnapshot;
+    const projectionReuse = hmrProjectionReusePlan({
+      graph: projectGraph,
+      resolvedStyles: projectResolvedStyles,
       options: input.options,
-      assets: assetResult.assetsById,
+      assets: projectAssetsById,
       previousGraph: hmrReuseSnapshot?.graph,
       previousProjection: hmrReuseSnapshot?.projection,
       previousOptions: hmrReuseSnapshot?.options,
       previousAssets: hmrReuseSnapshot?.assetsById,
       staleAssetEntityIds: hmrReuseSnapshot?.staleAssetEntityIds,
     });
+    const beforeProjectDiagnostics = createDiagnostics(beforeProject.diagnostics);
     const projected = projectGraphToDocumentModel({
       format: projectionFormat,
-      graph: compileResult.graph,
-      resolvedStyles: compileResult.resolvedStyles,
+      graph: projectGraph,
+      resolvedStyles: projectResolvedStyles,
       options: input.options,
-      assets: assetResult.assetsById,
+      assets: projectAssetsById,
       ...(projectionReuse ? { reuse: projectionReuse } : {}),
     });
-    const projection = projectionWithReusablePackageParts({
+    const reusedProjection = projectionWithReusablePackageParts({
       projection: projected,
       previous: hmrReuseSnapshot?.projection,
-      graph: compileResult.graph,
+      graph: projectGraph,
       reusableSlideNodeIds: projectionReuse?.slideNodeIds,
     });
+    const afterProject = applyPluginHooks(execution.plugins, "afterProject", {
+      stage: "project" as const,
+      phase: "after" as const,
+      format: projectionFormat,
+      graph: projectGraph,
+      resolvedStyles: projectResolvedStyles,
+      assetsById: projectAssetsById,
+      projection: reusedProjection,
+    });
+    const projection =
+      afterProject.context.projection === reusedProjection
+        ? reusedProjection
+        : normalizePptxPackageProjection(afterProject.context.projection);
     const unsupportedProjectionDiagnostics = projectionDiagnosticsForGraph({
       format: projectionFormat,
-      graph: compileResult.graph,
-      resolvedStyles: compileResult.resolvedStyles,
+      graph: projectGraph,
+      resolvedStyles: projectResolvedStyles,
       options: input.options,
     });
     const unsupportedProjectionModelDiagnostics = projectionDiagnosticsForModel({ projection });
     const projectionDiagnostics = validatePptxPackageModel(projection);
     const diagnostics = combineDiagnostics(
       compileResult.diagnostics,
-      assetResult.diagnostics,
+      assetDiagnostics,
+      beforeProjectDiagnostics,
       unsupportedProjectionDiagnostics,
       unsupportedProjectionModelDiagnostics,
       projectionDiagnostics,
+      createDiagnostics(afterProject.diagnostics),
     );
     const summary = includeInspectionSummary(input.projectOptions?.inspection)
       ? summarizeProjectedDocumentModel(projection, {
           diagnostics,
           adapterLimitations: defaultAdapterLimitationsFor(projectionFormat),
-          graph: compileResult.graph,
+          assetResolutions: summarizeAssetResolutions(projectAssetsById),
+          graph: projectGraph,
           includeDetails: includeInspectionDetails(input.projectOptions?.inspection),
-          resolvedStyles: compileResult.resolvedStyles,
+          resolvedStyles: projectResolvedStyles,
         })
       : undefined;
-    input.artifacts?.materializeProjection(projection, diagnostics, input.options);
+    artifacts.materializeProjection(projection, diagnostics, input.options);
 
     return {
       ok: resultOk(diagnostics),
@@ -1719,7 +1615,7 @@ export async function projectSource<
         ...compileResult.stages,
         project: stageSummary(
           "project",
-          projectionDiagnostics,
+          diagnostics,
           projectedArtifactStatus(projection, diagnostics),
         ),
       },
@@ -1752,7 +1648,7 @@ export async function projectSource<
         validatePptxPackageModel(partialProjection),
       );
       diagnostics = partialDiagnostics;
-      input.artifacts?.materializeProjection(partialProjection, partialDiagnostics, input.options);
+      artifacts.materializeProjection(partialProjection, partialDiagnostics, input.options);
     } catch {
       partialProjection = undefined;
     }
@@ -1830,13 +1726,15 @@ export async function renderSource<
   }
 
   const adapter = adapterSelection.adapter;
-  const integrationContext = isRenderInputObject(input.renderInput)
-    ? integrationContextFor(input.renderInput)
-    : undefined;
-  const hmrInvalidated = integrationContext?.hmrInvalidation
-    ? artifacts.invalidateForHmr(integrationContext.hmrInvalidation)
+  const execution = createRenderExecution({
+    plugins: directPluginsForSource(input.source),
+    renderInput:
+      input.renderInput && typeof input.renderInput === "object" ? input.renderInput : adapter,
+    assetLoaders: input.assetLoaders,
+  });
+  const hmrInvalidated = execution.hmrInvalidation
+    ? artifacts.invalidateForHmr(execution.hmrInvalidation)
     : false;
-  const assetLoaders = mergeAssetLoaders(input.assetLoaders, integrationContext?.assetLoaders);
   const projectResult = await projectSource({
     source: input.source,
     options: input.options,
@@ -1844,8 +1742,9 @@ export async function renderSource<
     definedGraph: hmrInvalidated ? artifacts.graph : input.definedGraph,
     definedProjection: hmrInvalidated ? artifacts.projection : input.definedProjection,
     artifacts,
-    assetLoaders,
-    mediaSourceOrigin: integrationContext?.mediaSourceOrigin,
+    assetLoaders: execution.assetLoaders,
+    mediaSourceOrigin: execution.mediaSourceOrigin,
+    execution,
     projectOptions: { inspection: "none" },
   });
   const formatDiagnostics = writerAdapterFormatDiagnostics({
@@ -1866,15 +1765,95 @@ export async function renderSource<
     };
   }
 
+  const beforeRender = applyPluginHooks(execution.plugins, "beforeRender", {
+    stage: "render" as const,
+    phase: "before" as const,
+    format: adapter.format,
+    projection: projectResult.projection,
+  });
+  const renderProjection = beforeRender.context.projection;
+  const beforeRenderDiagnostics = createDiagnostics(beforeRender.diagnostics);
+  const preRenderDiagnostics = combineDiagnostics(projectDiagnostics, beforeRenderDiagnostics);
+  if (preRenderDiagnostics.hasErrors) {
+    return {
+      ok: false,
+      diagnostics: preRenderDiagnostics,
+      stages: {
+        ...projectResult.stages,
+        render: stageSummary("render", preRenderDiagnostics, "missing"),
+      },
+      format: adapter.format,
+    };
+  }
+
   try {
+    const graphArtifact = artifacts.graph;
+    const beforeAssetLoad =
+      graphArtifact && graphArtifact.graph && graphArtifact.resolvedStyles
+        ? applyPluginHooks(execution.plugins, "beforeAsset", {
+            stage: "asset" as const,
+            phase: "before" as const,
+            operation: "load" as const,
+            graph: graphArtifact.graph,
+            resolvedStyles: graphArtifact.resolvedStyles,
+            assetLoaders: execution.assetLoaders,
+            mediaSourceOrigin: execution.mediaSourceOrigin,
+            ...(execution.integrationContext
+              ? { integrationContext: execution.integrationContext }
+              : {}),
+          })
+        : undefined;
+    const beforeAssetLoadDiagnostics = createDiagnostics(beforeAssetLoad?.diagnostics);
+    const loadPreRenderDiagnostics = combineDiagnostics(
+      preRenderDiagnostics,
+      beforeAssetLoadDiagnostics,
+    );
+    if (loadPreRenderDiagnostics.hasErrors) {
+      return {
+        ok: false,
+        diagnostics: loadPreRenderDiagnostics,
+        stages: {
+          ...projectResult.stages,
+          render: stageSummary("render", loadPreRenderDiagnostics, "missing"),
+        },
+        format: adapter.format,
+      };
+    }
     const assetLoadDiagnostics = await loadAssetArtifacts({
       artifacts,
-      loaders: assetLoaders,
-      mediaSourceOrigin: integrationContext?.mediaSourceOrigin,
-      projection: projectResult.projection,
+      loaders: beforeAssetLoad?.context.assetLoaders ?? execution.assetLoaders,
+      mediaSourceOrigin: beforeAssetLoad?.context.mediaSourceOrigin ?? execution.mediaSourceOrigin,
+      projection: renderProjection,
     });
-    if (assetLoadDiagnostics.hasErrors) {
-      const diagnostics = combineDiagnostics(projectDiagnostics, assetLoadDiagnostics);
+    const afterAssetLoad =
+      graphArtifact && graphArtifact.graph && graphArtifact.resolvedStyles
+        ? applyPluginHooks(execution.plugins, "afterAsset", {
+            stage: "asset" as const,
+            phase: "after" as const,
+            operation: "load" as const,
+            graph: graphArtifact.graph,
+            resolvedStyles: graphArtifact.resolvedStyles,
+            assetsById: artifacts.assetsById,
+            assetLoaders: beforeAssetLoad?.context.assetLoaders ?? execution.assetLoaders,
+            mediaSourceOrigin:
+              beforeAssetLoad?.context.mediaSourceOrigin ?? execution.mediaSourceOrigin,
+            ...(beforeAssetLoad?.context.integrationContext
+              ? { integrationContext: beforeAssetLoad.context.integrationContext }
+              : execution.integrationContext
+                ? { integrationContext: execution.integrationContext }
+                : {}),
+          })
+        : undefined;
+    if (afterAssetLoad && afterAssetLoad.context.assetsById !== artifacts.assetsById) {
+      materializeAssetMap(artifacts, afterAssetLoad.context.assetsById);
+    }
+    const assetLoadLifecycleDiagnostics = combineDiagnostics(
+      beforeAssetLoadDiagnostics,
+      assetLoadDiagnostics,
+      createDiagnostics(afterAssetLoad?.diagnostics),
+    );
+    if (assetLoadLifecycleDiagnostics.hasErrors) {
+      const diagnostics = combineDiagnostics(preRenderDiagnostics, assetLoadLifecycleDiagnostics);
       return {
         ok: false,
         diagnostics,
@@ -1892,13 +1871,23 @@ export async function renderSource<
       onBuildArtifacts: (buildArtifacts) => artifacts.materializePptxBuildArtifacts(buildArtifacts),
     });
 
-    const adapterResult = await adapter.render(projectResult.projection, writerContext);
+    const adapterResult = await adapter.render(renderProjection, writerContext);
+    const afterRender = applyPluginHooks(execution.plugins, "afterRender", {
+      stage: "render" as const,
+      phase: "after" as const,
+      format: adapter.format,
+      projection: renderProjection,
+      ...(adapterResult.artifact ? { artifact: adapterResult.artifact } : {}),
+    });
+    const afterRenderDiagnostics = createDiagnostics(afterRender.diagnostics);
     const renderDiagnostics = combineDiagnostics(
-      projectDiagnostics,
-      assetLoadDiagnostics,
+      preRenderDiagnostics,
+      assetLoadLifecycleDiagnostics,
       adapterResult.diagnostics,
+      afterRenderDiagnostics,
     );
-    if (!adapterResult.artifact) {
+    const artifact = afterRender.context.artifact;
+    if (!artifact) {
       return {
         ok: resultOk(renderDiagnostics),
         diagnostics: renderDiagnostics,
@@ -1914,8 +1903,8 @@ export async function renderSource<
       ? adapterResult.summary
       : undefined;
     const patchPlan =
-      adapterResult.patchPlan && integrationContext?.hmrInvalidation
-        ? { ...adapterResult.patchPlan, hmrInvalidation: integrationContext.hmrInvalidation }
+      adapterResult.patchPlan && execution.hmrInvalidation
+        ? { ...adapterResult.patchPlan, hmrInvalidation: execution.hmrInvalidation }
         : adapterResult.patchPlan;
 
     return {
@@ -1926,11 +1915,11 @@ export async function renderSource<
         render: stageSummary(
           "render",
           renderDiagnostics,
-          projectedArtifactStatus(adapterResult.artifact, renderDiagnostics),
+          projectedArtifactStatus(artifact, renderDiagnostics),
         ),
       },
       format: adapter.format,
-      artifact: adapterResult.artifact,
+      artifact,
       ...(patchPlan ? { patchPlan } : {}),
       ...(summary ? { summary } : {}),
     };
@@ -1941,7 +1930,7 @@ export async function renderSource<
       title: "render failed",
       error,
     });
-    const diagnostics = combineDiagnostics(projectDiagnostics, renderDiagnostics);
+    const diagnostics = combineDiagnostics(preRenderDiagnostics, renderDiagnostics);
 
     return {
       ok: false,

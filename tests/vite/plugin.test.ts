@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vite-plus/test";
 import deckjsx, { createViteAssetLoader } from "../../plugins/vite/src/index.ts";
+import { registerViteProjectAssetResolver } from "../../plugins/vite/src/project-integration.ts";
 
 const pngBytes = new Uint8Array([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
@@ -22,7 +23,7 @@ describe("@deckjsx/vite", () => {
     expect(plugin).not.toHaveProperty("options");
   });
 
-  test("wraps deck.render(pptx()) with module-local integration context", async () => {
+  test("attaches module-local project integration to deck.render(pptx())", async () => {
     const plugin = deckjsx();
     const source = [
       'import { Deck } from "deckjsx";',
@@ -41,10 +42,72 @@ describe("@deckjsx/vite", () => {
     const code = typeof transformed === "string" ? transformed : transformed?.code;
 
     expect(code).toContain('from "deckjsx/integration"');
-    expect(code).toContain('from "@deckjsx/vite"');
-    expect(code).toContain("withIntegrationContext(pptx()");
-    expect(code).toContain("assetLoaders: [__deckjsxCreateViteAssetLoader(");
+    expect(code).toContain('from "virtual:deckjsx/vite"');
+    expect(code).toContain("deck.render(__deckjsxViteRenderIntegration(pptx()");
+    expect(code).toContain("root: ");
+    expect(code).toContain("resolverToken: ");
     expect(code).toContain('importer: "/project/src/deck.tsx"');
+    expect(code).not.toContain(".plugin(");
+  });
+
+  test("honors include and exclude transform filters", async () => {
+    const plugin = deckjsx({ include: /deck\.tsx$/, exclude: /skip/ });
+    const source = [
+      'import { Deck } from "deckjsx";',
+      'import { pptx } from "deckjsx/adapter";',
+      "const deck = new Deck({ layout: { width: 10, height: 5.625, unit: 'in' } });",
+      "await deck.render(pptx());",
+    ].join("\n");
+    const transform = plugin.transform as
+      | ((
+          code: string,
+          id: string,
+        ) => string | { code: string } | null | Promise<string | { code: string } | null>)
+      | undefined;
+
+    const included = await transform?.(source, "/project/src/deck.tsx");
+    const unmatched = await transform?.(source, "/project/src/other.tsx");
+    const excluded = await transform?.(source, "/project/src/skip.deck.tsx");
+    const includedCode = typeof included === "string" ? included : included?.code;
+
+    expect(includedCode).toContain("deck.render(__deckjsxViteRenderIntegration(pptx()");
+    expect(unmatched).toBeNull();
+    expect(excluded).toBeNull();
+  });
+
+  test("honors glob-like include transform filters", async () => {
+    const plugin = deckjsx({ include: "src/slides/**/*.tsx" });
+    const source = [
+      'import { Deck } from "deckjsx";',
+      'import { pptx } from "deckjsx/adapter";',
+      "const deck = new Deck({ layout: { width: 10, height: 5.625, unit: 'in' } });",
+      "await deck.render(pptx());",
+    ].join("\n");
+    const transform = plugin.transform as
+      | ((
+          code: string,
+          id: string,
+        ) => string | { code: string } | null | Promise<string | { code: string } | null>)
+      | undefined;
+
+    const included = await transform?.(source, "/project/src/slides/deck.tsx");
+    const unmatched = await transform?.(source, "/project/src/components/deck.tsx");
+    const includedCode = typeof included === "string" ? included : included?.code;
+
+    expect(includedCode).toContain("deck.render(__deckjsxViteRenderIntegration(pptx()");
+    expect(unmatched).toBeNull();
+  });
+
+  test("serves transformed render integration through a Vite virtual module", () => {
+    const plugin = deckjsx();
+    const resolveId = plugin.resolveId as ((id: string) => string | null | undefined) | undefined;
+    const load = plugin.load as ((id: string) => string | null | undefined) | undefined;
+    const resolved = resolveId?.("virtual:deckjsx/vite");
+
+    expect(resolved).toBe("\0virtual:deckjsx/vite");
+    expect(load?.(resolved ?? "")).toContain(
+      'export { withViteRenderIntegration } from "@deckjsx/vite";',
+    );
   });
 
   test("wraps deck.render(pptx(options)) without changing the public render API", async () => {
@@ -65,9 +128,69 @@ describe("@deckjsx/vite", () => {
     const transformed = await transform?.(source, "/project/src/deck.tsx");
     const code = typeof transformed === "string" ? transformed : transformed?.code;
 
-    expect(code ?? "").toContain('withIntegrationContext(pptx({ inspection: "summary" })');
-    expect(code ?? "").toContain("assetLoaders: [__deckjsxCreateViteAssetLoader(");
+    expect(code ?? "").toContain(
+      'deck.render(__deckjsxViteRenderIntegration(pptx({ inspection: "summary" })',
+    );
     expect(code ?? "").toContain('importer: "/project/src/deck.tsx"');
+  });
+
+  test("wraps render calls on expression receivers", async () => {
+    const plugin = deckjsx();
+    const source = [
+      'import { pptx } from "deckjsx/adapter";',
+      "function makeDeck() { return globalThis.deck; }",
+      "await makeDeck().render(pptx());",
+    ].join("\n");
+
+    const transform = plugin.transform as
+      | ((
+          code: string,
+          id: string,
+        ) => string | { code: string } | null | Promise<string | { code: string } | null>)
+      | undefined;
+    const transformed = await transform?.(source, "/project/src/deck.tsx");
+    const code = typeof transformed === "string" ? transformed : transformed?.code;
+
+    expect(code ?? "").toContain("makeDeck().render(__deckjsxViteRenderIntegration(pptx()");
+    expect(code ?? "").toContain('importer: "/project/src/deck.tsx"');
+  });
+
+  test("does not wrap render-looking text in comments or strings", async () => {
+    const plugin = deckjsx();
+    const source = [
+      'const example = "deck.render(pptx())";',
+      "// await deck.render(pptx());",
+      "/* deck.render(pptx()) */",
+    ].join("\n");
+
+    const transform = plugin.transform as
+      | ((
+          code: string,
+          id: string,
+        ) => string | { code: string } | null | Promise<string | { code: string } | null>)
+      | undefined;
+    const transformed = await transform?.(source, "/project/src/deck.tsx");
+
+    expect(transformed).toBeNull();
+  });
+
+  test("does not annotate media-looking JSX in comments or strings", async () => {
+    const plugin = deckjsx();
+    const source = [
+      'const example = "<img src=\\"./hero.png\\" />";',
+      '// <video src="./clip.mp4" poster="./poster.png" />',
+      '/* <Card src="./card.png" /> */',
+    ].join("\n");
+
+    const transform = plugin.transform as
+      | ((
+          code: string,
+          id: string,
+        ) => string | { code: string } | null | Promise<string | { code: string } | null>)
+      | undefined;
+    const transformed = await transform?.(source, "/project/src/deck.tsx");
+
+    expect(transformed).toBeNull();
   });
 
   test("feeds in-memory HMR invalidation metadata into transformed render calls", async () => {
@@ -92,9 +215,8 @@ describe("@deckjsx/vite", () => {
     const transformed = await transform?.(source, "/project/src/deck.tsx");
     const code = typeof transformed === "string" ? transformed : transformed?.code;
 
-    expect(code).toContain(
-      'hmrInvalidation: { importer: "/project/src/deck.tsx", changedModuleIds: ["/project/src/slide.tsx"] }',
-    );
+    expect(code).toContain('changedModuleIds: ["/project/src/slide.tsx"]');
+    expect(code).toContain('importer: "/project/src/deck.tsx"');
   });
 
   test("consumes HMR invalidation metadata after it is attached to a render module", async () => {
@@ -363,7 +485,7 @@ describe("@deckjsx/vite", () => {
     );
     expect(code).toContain('from "deckjsx/integration"');
     expect(code).not.toContain("__deckjsxCreateViteAssetLoader");
-    expect(code).not.toContain("withIntegrationContext(");
+    expect(code).not.toContain("deck.plugin(");
   });
 
   test("creates a Vite-aware AssetLoader for importer-relative and public-root paths", async () => {
@@ -425,11 +547,135 @@ describe("@deckjsx/vite", () => {
       root: "/project-a",
       publicDir: "/project-a/static",
     });
+    const differentBase = createViteAssetLoader({
+      root: "/project-a",
+      publicDir: "/project-a/public",
+      base: "/docs/",
+    });
+    const differentAlias = createViteAssetLoader({
+      root: "/project-a",
+      publicDir: "/project-a/public",
+      aliases: [{ find: "@", replacement: "/project-a/src" }],
+    });
 
     expect(first.resolverIdentity).toBe(same.resolverIdentity);
     expect(first.resolverIdentity).toMatch(/^@deckjsx\/vite:fnv1a32:[0-9a-f]{8}$/);
     expect(differentRoot.resolverIdentity).not.toBe(first.resolverIdentity);
     expect(differentPublicDir.resolverIdentity).not.toBe(first.resolverIdentity);
+    expect(differentBase.resolverIdentity).not.toBe(first.resolverIdentity);
+    expect(differentAlias.resolverIdentity).not.toBe(first.resolverIdentity);
+  });
+
+  test("resolves aliased Vite asset paths", async () => {
+    const root = path.join(tmpdir(), `deckjsx-vite-loader-alias-${process.pid}-${Date.now()}`);
+    const sourceDir = path.join(root, "src", "assets");
+    await mkdir(sourceDir, { recursive: true });
+    await writeFile(path.join(sourceDir, "hero.png"), pngBytes);
+
+    const loader = createViteAssetLoader({
+      root,
+      aliases: [{ find: "@", replacement: path.join(root, "src") }],
+    });
+    const probe = await loader.probe?.({
+      source: { kind: "path", path: "@/assets/hero.png" },
+      sourceField: "src",
+      resolverIdentity: loader.resolverIdentity,
+      assetEntityId: "asset:alias",
+      origin: { importer: path.join(root, "slides", "deck.tsx") },
+    });
+
+    expect(probe).toEqual(
+      expect.objectContaining({
+        ok: true,
+        value: expect.objectContaining({
+          mediaType: "image/png",
+          width: 2,
+          height: 3,
+          hash: expect.stringMatching(/^fnv1a32:/),
+        }),
+      }),
+    );
+  });
+
+  test("resolves plugin-owned Vite asset paths before fallback aliases", async () => {
+    const root = path.join(
+      tmpdir(),
+      `deckjsx-vite-loader-project-resolver-${process.pid}-${Date.now()}`,
+    );
+    const resolvedDir = path.join(root, "resolved-by-vite");
+    const fallbackDir = path.join(root, "fallback");
+    await mkdir(resolvedDir, { recursive: true });
+    await mkdir(fallbackDir, { recursive: true });
+    await writeFile(path.join(resolvedDir, "hero.png"), pngBytes);
+
+    const unregister = registerViteProjectAssetResolver("test:vite-resolver", async (input) =>
+      input.sourcePath === "@assets/hero.png"
+        ? { filePath: path.join(resolvedDir, "hero.png"), provenanceKind: "generatedAsset" }
+        : undefined,
+    );
+    try {
+      const loader = createViteAssetLoader({
+        root,
+        aliases: [{ find: "@assets", replacement: fallbackDir }],
+        resolverToken: "test:vite-resolver",
+      });
+      const probe = await loader.probe?.({
+        source: { kind: "path", path: "@assets/hero.png" },
+        sourceField: "src",
+        resolverIdentity: loader.resolverIdentity,
+        assetEntityId: "asset:vite-resolver",
+        origin: { importer: path.join(root, "slides", "deck.tsx") },
+      });
+
+      expect(probe).toEqual(
+        expect.objectContaining({
+          ok: true,
+          value: expect.objectContaining({
+            mediaType: "image/png",
+            provenance: expect.objectContaining({ kind: "generatedAsset" }),
+          }),
+        }),
+      );
+    } finally {
+      unregister();
+    }
+  });
+
+  test("resolves overlapping Vite aliases by the most specific prefix", async () => {
+    const root = path.join(
+      tmpdir(),
+      `deckjsx-vite-loader-overlapping-alias-${process.pid}-${Date.now()}`,
+    );
+    const broadDir = path.join(root, "src", "assets");
+    const specificDir = path.join(root, "src", "asset-icons");
+    await mkdir(path.join(broadDir, "icons"), { recursive: true });
+    await mkdir(specificDir, { recursive: true });
+    await writeFile(path.join(specificDir, "hero.png"), pngBytes);
+
+    const loader = createViteAssetLoader({
+      root,
+      aliases: [
+        { find: "@assets", replacement: broadDir },
+        { find: "@assets/icons", replacement: specificDir },
+      ],
+    });
+    const probe = await loader.probe?.({
+      source: { kind: "path", path: "@assets/icons/hero.png" },
+      sourceField: "src",
+      resolverIdentity: loader.resolverIdentity,
+      assetEntityId: "asset:overlapping-alias",
+      origin: { importer: path.join(root, "slides", "deck.tsx") },
+    });
+
+    expect(probe).toEqual(
+      expect.objectContaining({
+        ok: true,
+        value: expect.objectContaining({
+          mediaType: "image/png",
+          hash: expect.stringMatching(/^fnv1a32:/),
+        }),
+      }),
+    );
   });
 
   test("returns loader diagnostics for missing Vite-owned asset paths", async () => {

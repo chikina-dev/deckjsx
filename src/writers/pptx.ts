@@ -3,10 +3,16 @@ import type {
   InspectionDetailLevel,
   OutputFormat,
   RenderInspectionSummary,
-  RenderPatchPlan,
-  RenderPatchPlanPart,
   RenderedArtifact,
 } from "../pipeline";
+import {
+  PATCH_MANIFEST_PATH,
+  PATCH_MANIFEST_VERSION,
+  RENDER_PATCH_PLAN_KIND,
+  patchManifestFromParts,
+  type RenderPatchPlan,
+  type RenderPatchPlanPart,
+} from "../patchable-pptx";
 import type { AssetArtifact, PptxPackageBuildArtifact } from "../pipeline-artifacts";
 import type {
   PackagePartId,
@@ -70,7 +76,6 @@ export type PptxMediaAssetLoadRequirement = {
   readonly sourceField: AssetArtifact["sourceField"];
 };
 
-const PATCH_MANIFEST_PATH = "ppt/deckjsx/patch-manifest.json";
 const PATCH_MANIFEST_PART_ID = "deckjsx:patch-manifest";
 const PATCH_RESERVE_MARKER = "deckjsx-patch-reserve:";
 const PATCH_MANIFEST_RESERVE_MIN_BYTES = 16 * 1024;
@@ -84,14 +89,6 @@ type PatchableXmlBytes = {
   readonly logicalByteLength: number;
   readonly reservedCapacity: number;
 };
-
-type PatchManifest = {
-  readonly kind: "deckjsx.patchManifest";
-  readonly version: 1;
-  readonly parts: readonly PersistentPatchPlanPart[];
-};
-
-type PersistentPatchPlanPart = Omit<RenderPatchPlanPart, "buildReason" | "buildStatus">;
 
 function isXmlPatchablePath(path: string): boolean {
   return path.endsWith(".xml") || path.endsWith(".rels");
@@ -209,8 +206,8 @@ function renderPatchPlan(plan: readonly PptxAssemblyPlanEntry[]): RenderPatchPla
     manifestLogicalBytes.byteLength + PATCH_MANIFEST_RESERVE_MIN_BYTES;
 
   return {
-    kind: "deckjsx.renderPatchPlan",
-    version: 1,
+    kind: RENDER_PATCH_PLAN_KIND,
+    version: PATCH_MANIFEST_VERSION,
     manifestPath: PATCH_MANIFEST_PATH,
     parts: [
       ...parts,
@@ -230,13 +227,7 @@ function renderPatchPlan(plan: readonly PptxAssemblyPlanEntry[]): RenderPatchPla
 }
 
 function patchManifestLogicalBytes(parts: readonly RenderPatchPlanPart[]): Uint8Array {
-  const manifest: PatchManifest = {
-    kind: "deckjsx.patchManifest",
-    version: 1,
-    parts: parts.flatMap(({ buildReason: _buildReason, buildStatus: _buildStatus, ...part }) =>
-      part.patchableKind === "manifest" ? [] : [part],
-    ),
-  };
+  const manifest = patchManifestFromParts(parts);
   return TEXT_ENCODER.encode(`${JSON.stringify(manifest, null, 2)}\n`);
 }
 

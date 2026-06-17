@@ -47,8 +47,9 @@ Trusted Publishing uses GitHub Actions OIDC, so no `NPM_TOKEN` secret is needed.
    - `@deckjsx/node`: `deckjsx-node-v0.9.0`
    - `@deckjsx/vite`: `deckjsx-vite-v0.9.0`
 
-The workflow validates that the selected package version matches the release tag, runs checks and
-tests, creates the GitHub release, and publishes only the selected npm package.
+The workflow validates that the selected package version matches the release tag, checks and packs
+the root package plus both integration packages, runs the root smoke/render/oracle gates, creates the
+GitHub release, and publishes only the selected npm package.
 `bun run build` intentionally runs before `vp test` in release gates because the public-surface tests
 inspect generated declaration files in `dist`.
 The sample dependency install intentionally runs after `bun run build` because `sample` depends on
@@ -56,7 +57,7 @@ the local package via `file:..`, exercising the built direct-writer package inst
 release.
 For v0.8.0 and later, the release workflow also runs the strict direct PPTX writer benchmark,
 render fixture verification, and the isolated pinned `pptxgenjs` generation-regression oracle before
-packing or publishing.
+publishing any selected package.
 
 For v0.9.0 and later, the Node and Vite integration packages release separately from the root
 package. The plugin packages should publish only built `dist` artifacts, declare `deckjsx` as a peer

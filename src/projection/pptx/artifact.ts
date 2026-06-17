@@ -19,10 +19,16 @@ export type ProjectionArtifact<TProjection> = {
   readonly diagnostics: Diagnostics;
 };
 
+type PptxProjectionPart<TProjection extends PptxPackageModelCandidate> = TProjection extends {
+  readonly parts: readonly (infer TPart)[];
+}
+  ? Extract<TPart, PptxPackagePartCandidate>
+  : PptxPackagePartCandidate;
+
 export type PptxProjectionArtifact<
   TProjection extends PptxPackageModelCandidate = PptxPackageModel,
 > = ProjectionArtifact<TProjection> & {
-  readonly partsById: ReadonlyMap<PackagePartId, PptxPackagePartCandidate>;
+  readonly partsById: ReadonlyMap<PackagePartId, PptxProjectionPart<TProjection>>;
   readonly partsBySourceKey: ReadonlyMap<string, readonly PackagePartId[]>;
   readonly partsByGraphNodeId: ReadonlyMap<GraphNodeId, readonly PackagePartId[]>;
   readonly slidePackagePartFingerprints: ReadonlyMap<

@@ -7,11 +7,12 @@ import { createDiagnostics } from "../../src/diagnostics/index.ts";
 import { createPptxZipBytesFromEntries } from "../../src/writers/pptx/zip.ts";
 import { describe, expect, test } from "vite-plus/test";
 import { Deck } from "../../src/index.ts";
-import { withIntegrationContext, type AssetLoader } from "../../src/integration.ts";
+import { integrationContextId, type AssetLoader } from "../../src/integration.ts";
 import type { PptxPackageModel } from "../../src/inspect.ts";
 import {
   createNodeFileAssetLoader,
   inspectPatchablePptx,
+  nodeAssets,
   write,
 } from "../../plugins/node/src/index.ts";
 
@@ -216,13 +217,37 @@ async function renderMediaDeck(bytes: Uint8Array) {
   deck.slide({ name: "Media" }, () => (
     <img src="./media.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
   ));
-  return deck.render(
-    withIntegrationContext(pptx({ inspection: "none" }), {
+  deck.plugin({
+    kind: "deckjsx.plugin",
+    id: "test:node-media-extension",
+    name: "test:node-media-extension",
+    integration: {
+      id: integrationContextId("test:node-media-extension"),
       assetLoaders: [loader],
       mediaSourceOrigin: { importer: "/project/src/deck.tsx" },
-    }),
-  );
+    },
+  });
+  return deck.render(pptx({ inspection: "none" }));
 }
+
+test("nodeAssets resolves local media through the deck lifecycle", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "deckjsx-node-assets-"));
+  const bytes = pngHeaderBytes(2, 2, 7);
+  await writeFile(path.join(root, "media.png"), bytes);
+
+  const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+  deck.plugin(nodeAssets({ root }));
+  deck.slide({ name: "Node assets" }, () => (
+    <img src="media.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+  ));
+
+  const result = await deck.render(pptx({ inspection: "none" }));
+
+  expect(result.ok).toBe(true);
+  expect(result.artifact).toBeDefined();
+  const zip = unzipSync(result.artifact!.bytes);
+  expect(Array.from(zip["ppt/media/media1.png"] ?? [])).toEqual(Array.from(bytes));
+});
 
 async function renderDeckWithOptionalMedia(includeMedia: boolean) {
   const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
@@ -267,12 +292,17 @@ async function renderDeckWithOptionalMedia(includeMedia: boolean) {
       ) : undefined}
     </>
   ));
-  return deck.render(
-    withIntegrationContext(pptx({ inspection: "none" }), {
+  deck.plugin({
+    kind: "deckjsx.plugin",
+    id: "test:node-optional-media-extension",
+    name: "test:node-optional-media-extension",
+    integration: {
+      id: integrationContextId("test:node-optional-media-extension"),
       assetLoaders: [loader],
       mediaSourceOrigin: { importer: "/project/src/deck.tsx" },
-    }),
-  );
+    },
+  });
+  return deck.render(pptx({ inspection: "none" }));
 }
 
 describe("@deckjsx/node write", () => {

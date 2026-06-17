@@ -12,6 +12,7 @@ import {
   type SourceContextValue,
 } from "./composition/types";
 import type { Diagnostics } from "./diagnostics";
+import type { DeckPlugin } from "./plugin";
 import type { SemanticAuthorGraph } from "./graph";
 import { resultOk, stageSummary, type ProjectOptions, type StageArtifactStatus } from "./pipeline";
 import { PipelineArtifactCollection } from "./pipeline-artifacts";
@@ -90,6 +91,7 @@ export class BoundSource<
     return {
       entries: source.entries,
       stylesheets: source.stylesheets,
+      plugins: source.plugins,
       ...(source.theme ? { theme: source.theme } : {}),
       ...(source.templates ? { templates: source.templates } : {}),
       cycleId: source.cycleId,
@@ -155,6 +157,7 @@ export class Deck<
   readonly #options: DeckOptions<TTemplates>;
   readonly #entries: CompositionEntry<TSourceContext, TTemplates>[] = [];
   readonly #stylesheets: StyleSheet[] = [];
+  readonly #plugins: DeckPlugin[] = [];
   readonly #artifacts = new PipelineArtifactCollection();
 
   /** Bind Source Context to this Deck so it can be compiled, projected, rendered, or mounted. */
@@ -177,6 +180,7 @@ export class Deck<
     return {
       entries: this.#entries,
       stylesheets: this.#stylesheets,
+      plugins: this.#plugins,
       ...(this.#options.theme ? { theme: this.#options.theme } : {}),
       ...(this.#options.templates ? { templates: this.#options.templates } : {}),
       cycleId: this,
@@ -192,6 +196,23 @@ export class Deck<
    */
   useStyles(stylesheet: StyleSheet): this {
     this.#stylesheets.push(stylesheet);
+    this.#artifacts.invalidateFromSource();
+    return this;
+  }
+
+  /**
+   * Register a Deck Plugin for this root Deck's pipeline executions.
+   *
+   * Plugins participate in deckjsx pipeline stages without changing ordinary authoring props.
+   */
+  plugin(plugin: DeckPlugin): this {
+    const existing = this.#plugins.findIndex((item) => item.id === plugin.id);
+    if (existing >= 0) {
+      this.#plugins.splice(existing, 1, plugin);
+      this.#artifacts.invalidateFromSource();
+      return this;
+    }
+    this.#plugins.push(plugin);
     this.#artifacts.invalidateFromSource();
     return this;
   }
