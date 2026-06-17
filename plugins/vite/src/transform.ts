@@ -87,8 +87,7 @@ function isIdentifierCall(code: string, start: number, name: string): boolean {
   return (
     code.slice(start, start + name.length) === name &&
     code[start + name.length] === "(" &&
-    !/[\w$]/.test(code[start - 1] ?? "") &&
-    !/[\w$]/.test(code[start + name.length + 1] ?? "")
+    !/[\w$]/.test(code[start - 1] ?? "")
   );
 }
 

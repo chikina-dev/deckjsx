@@ -257,10 +257,11 @@ function resolveViteAssetPathFallback(input: {
   }
 
   if (input.source.path.startsWith("/")) {
-    return path.join(
-      input.options.publicDir ?? path.join(input.options.root, "public"),
-      input.source.path,
-    );
+    return resolveVitePublicFilePath({
+      root: input.options.root,
+      publicDir: input.options.publicDir,
+      sourcePath: input.source.path,
+    });
   }
 
   if (!input.importer) {
@@ -268,6 +269,17 @@ function resolveViteAssetPathFallback(input: {
   }
 
   return path.resolve(path.dirname(input.importer), input.source.path);
+}
+
+function resolveVitePublicFilePath(input: {
+  readonly root: string;
+  readonly publicDir?: string;
+  readonly sourcePath: string;
+}): string {
+  return path.join(
+    input.publicDir ?? path.join(input.root, "public"),
+    input.sourcePath.replace(/^\/+/, ""),
+  );
 }
 
 function isImporterRequiredViteAsset(source: AssetSource): boolean {
@@ -477,10 +489,11 @@ function createPluginViteAssetResolver(input: {
 }): ViteProjectAssetResolver {
   return async ({ sourcePath, importer }) => {
     if (sourcePath.startsWith("/")) {
-      const publicFilePath = path.join(
-        input.publicDir ?? path.join(input.root, "public"),
+      const publicFilePath = resolveVitePublicFilePath({
+        root: input.root,
+        publicDir: input.publicDir,
         sourcePath,
-      );
+      });
       return { filePath: publicFilePath, provenanceKind: "publicAsset" };
     }
 

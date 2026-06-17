@@ -134,6 +134,29 @@ describe("@deckjsx/vite", () => {
     expect(code ?? "").toContain('importer: "/project/src/deck.tsx"');
   });
 
+  test("wraps deck.render(pptx(optionsVariable)) calls", async () => {
+    const plugin = deckjsx();
+    const source = [
+      'import { Deck } from "deckjsx";',
+      'import { pptx } from "deckjsx/adapter";',
+      "const deck = new Deck({ layout: { width: 10, height: 5.625, unit: 'in' } });",
+      'const options = { inspection: "summary" } as const;',
+      "await deck.render(pptx(options));",
+    ].join("\n");
+
+    const transform = plugin.transform as
+      | ((
+          code: string,
+          id: string,
+        ) => string | { code: string } | null | Promise<string | { code: string } | null>)
+      | undefined;
+    const transformed = await transform?.(source, "/project/src/deck.tsx");
+    const code = typeof transformed === "string" ? transformed : transformed?.code;
+
+    expect(code ?? "").toContain("deck.render(__deckjsxViteRenderIntegration(pptx(options)");
+    expect(code ?? "").toContain('importer: "/project/src/deck.tsx"');
+  });
+
   test("wraps render calls on expression receivers", async () => {
     const plugin = deckjsx();
     const source = [
