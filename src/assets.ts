@@ -2,6 +2,21 @@ import type { Diagnostic } from "./diagnostics";
 
 export type AssetMediaType = string;
 
+export type AssetResolutionProvenanceKind =
+  | "inline"
+  | "fetch"
+  | "file"
+  | "publicAsset"
+  | "generatedAsset";
+
+export type AssetResolutionHashSource = "loader" | "bytes";
+
+export type AssetResolutionProvenance = {
+  readonly kind: AssetResolutionProvenanceKind;
+  readonly resolvedId?: string;
+  readonly hashSource?: AssetResolutionHashSource;
+};
+
 export type AssetSource =
   | {
       readonly kind: "data";
@@ -29,6 +44,7 @@ export type AssetProbeResult = {
   readonly height?: number;
   readonly byteLength?: number;
   readonly hash?: string;
+  readonly provenance?: AssetResolutionProvenance;
 };
 
 export type AssetLoadResult = AssetProbeResult & {

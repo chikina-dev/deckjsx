@@ -280,6 +280,21 @@ function sourceKeyFor(source: SourceOrigin | undefined): string {
   return !source || source.kind === "root" ? "root" : source.sourceIdentity;
 }
 
+function mediaSourceOriginFor(
+  context: BuildContext,
+  explicitOrigin: AssetEntity["origin"] | undefined,
+): AssetEntity["origin"] | undefined {
+  const source = sourceFor(context);
+  const sourceIdentity = source.kind === "mounted" ? source.sourceIdentity : undefined;
+  if (explicitOrigin) {
+    return {
+      ...explicitOrigin,
+      ...(explicitOrigin.sourceIdentity ? {} : sourceIdentity ? { sourceIdentity } : {}),
+    };
+  }
+  return sourceIdentity ? { sourceIdentity } : undefined;
+}
+
 function mergedAuthoredStyle(props: AuthorElementProps): StyleDeclaration | undefined {
   const inlineStyle = props.style;
 
@@ -510,7 +525,9 @@ function validateAuthoringProps(state: BuildState, node: AuthorElementNode, path
 function assetForImage(
   state: BuildState,
   idMaterial: readonly string[],
+  node: AuthorImageElementNode,
   props: ImageNodeProps,
+  context: BuildContext,
   path: string,
 ): AssetEntityId | undefined {
   const hasSrc = props.src !== undefined;
@@ -576,11 +593,16 @@ function assetForImage(
     return undefined;
   }
   const id = assetEntityId(idMaterial);
+  const origin =
+    typeof props.src === "string"
+      ? mediaSourceOriginFor(context, node.mediaSourceOrigins?.src)
+      : mediaSourceOriginFor(context, node.mediaSourceOrigins?.data);
   const entity: AssetEntity = {
     id,
     kind: "image",
     sourceField: typeof props.src === "string" ? "src" : "data",
     source,
+    ...(origin ? { origin } : {}),
     metadata:
       typeof props.data === "string" && props.data.startsWith("data:")
         ? { mediaType: props.data.slice(5, props.data.indexOf(";")) || undefined }
@@ -612,7 +634,9 @@ function dataMediaType(value: string): string | undefined {
 function assetForVideoSource(input: {
   state: BuildState;
   idMaterial: readonly string[];
+  node: AuthorVideoElementNode;
   props: Pick<VideoNodeProps, "data" | "src">;
+  context: BuildContext;
   path: string;
 }): AssetEntityId | undefined {
   const { state, props, path } = input;
@@ -683,11 +707,16 @@ function assetForVideoSource(input: {
     source = { kind: "data", data };
   }
   const id = assetEntityId(input.idMaterial);
+  const origin =
+    typeof props.src === "string"
+      ? mediaSourceOriginFor(input.context, input.node.mediaSourceOrigins?.src)
+      : mediaSourceOriginFor(input.context, input.node.mediaSourceOrigins?.data);
   state.assets.set(id, {
     id,
     kind: "video",
     sourceField: typeof props.src === "string" ? "src" : "data",
     source,
+    ...(origin ? { origin } : {}),
     metadata: source.kind === "data" ? { mediaType: dataMediaType(source.data) } : {},
     resolution: "unresolved",
   });
@@ -697,7 +726,9 @@ function assetForVideoSource(input: {
 function assetForVideoPoster(
   state: BuildState,
   idMaterial: readonly string[],
+  node: AuthorVideoElementNode,
   props: VideoNodeProps,
+  context: BuildContext,
   path: string,
 ): AssetEntityId | undefined {
   const hasPoster = props.poster !== undefined;
@@ -757,11 +788,16 @@ function assetForVideoPoster(
     source = { kind: "data", data };
   }
   const id = assetEntityId(idMaterial);
+  const origin =
+    typeof props.poster === "string"
+      ? mediaSourceOriginFor(context, node.mediaSourceOrigins?.poster)
+      : mediaSourceOriginFor(context, node.mediaSourceOrigins?.posterData);
   state.assets.set(id, {
     id,
     kind: "image",
     sourceField: typeof props.poster === "string" ? "poster" : "posterData",
     source,
+    ...(origin ? { origin } : {}),
     metadata: source.kind === "data" ? { mediaType: dataMediaType(source.data) } : {},
     resolution: "unresolved",
   });
@@ -1682,7 +1718,7 @@ function buildNode(
       );
     }
 
-    const assetRef = assetForImage(state, material, node.props, path);
+    const assetRef = assetForImage(state, material, node, node.props, nodeContext, path);
     state.nodes.set(id, {
       ...semanticBase(state, node, id, "image", path, material, nodeContext),
       kind: "image",
@@ -1702,10 +1738,19 @@ function buildNode(
     const assetRef = assetForVideoSource({
       state,
       idMaterial: material,
+      node,
       props: node.props,
+      context: nodeContext,
       path,
     });
-    const posterAssetRef = assetForVideoPoster(state, [...material, "poster"], node.props, path);
+    const posterAssetRef = assetForVideoPoster(
+      state,
+      [...material, "poster"],
+      node,
+      node.props,
+      nodeContext,
+      path,
+    );
     if (node.props.poster === undefined && node.props.posterData === undefined) {
       addDiagnostic(state, videoPosterMissingDiagnostic({ path }));
     }

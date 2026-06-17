@@ -398,8 +398,6 @@ typedGraph.documentId satisfies string;
 const typedInspect = typedDeck.compile();
 typedInspect satisfies CompileResult;
 typedInspect.diagnostics satisfies Diagnostics;
-// @ts-expect-error Asset loading is integration-managed and not a root Deck authoring method.
-typedDeck.useAssets({ probe: async () => undefined });
 void (typedDeck.project() satisfies Promise<ProjectResult>);
 void (typedDeck.project({ inspection: "none" }) satisfies Promise<ProjectResult>);
 
@@ -477,6 +475,10 @@ declare const renderResultForArtifactNarrowing: RenderResult;
 if (renderResultForArtifactNarrowing.artifact) {
   renderResultForArtifactNarrowing.artifact.bytes satisfies Uint8Array;
   renderResultForArtifactNarrowing.artifact.format satisfies import("deckjsx").OutputFormat;
+  renderResultForArtifactNarrowing.patchPlan satisfies
+    | import("deckjsx").RenderPatchPlan
+    | undefined;
 } else {
   renderResultForArtifactNarrowing.artifact satisfies undefined;
+  renderResultForArtifactNarrowing.patchPlan satisfies undefined;
 }

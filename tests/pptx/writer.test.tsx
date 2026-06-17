@@ -2100,8 +2100,11 @@ describe("direct pptx writer", () => {
     expect(project.ok).toBe(true);
     expect(render.ok).toBe(true);
     expect(packagePaths(zip)).toEqual(
-      emittedEntries.map((entry) => entry.path).sort((left, right) => left.localeCompare(right)),
+      [...emittedEntries.map((entry) => entry.path), "ppt/deckjsx/patch-manifest.json"].sort(
+        (left, right) => left.localeCompare(right),
+      ),
     );
+    expect(zip["ppt/deckjsx/patch-manifest.json"]).toBeDefined();
     expect(emittedEntries).toHaveLength(projection.parts.length);
 
     for (const entry of emittedEntries) {

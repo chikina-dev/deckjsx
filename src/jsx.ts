@@ -12,6 +12,7 @@ import {
   collectChildren,
   isAuthorTreeNode,
 } from "./authoring/tree";
+import { MEDIA_SOURCE_ORIGINS, type MediaSourceOriginByField } from "./media-source-origin";
 import {
   isAuthoredTag,
   isIntrinsicTableTag,
@@ -51,6 +52,7 @@ type ComponentProps = {
 };
 type RuntimeProps = Readonly<Record<string, AuthorElementPropValue | AuthorTreeChild>> & {
   readonly children?: AuthorTreeChild;
+  readonly [MEDIA_SOURCE_ORIGINS]?: MediaSourceOriginByField;
 };
 type ElementChildren<P> = P extends { children?: infer Child } ? Child : never;
 type ElementChildArgs<P> = P extends { children?: never } ? [] : ElementChildren<P>[];
@@ -75,6 +77,19 @@ function splitProps<TProps extends AuthorElementProps>(
   return {
     props: propsRecordWithoutChildren<TProps>(props),
     children: rawChildren === undefined ? [] : [rawChildren],
+    mediaSourceOrigins: props[MEDIA_SOURCE_ORIGINS],
+  };
+}
+
+function authorMetadata(input: {
+  readonly key?: JsxKey;
+  readonly sourceSpan?: SourceSpan;
+  readonly mediaSourceOrigins?: MediaSourceOriginByField;
+}) {
+  return {
+    ...(input.key !== undefined ? { key: input.key } : {}),
+    ...(input.sourceSpan ? { sourceSpan: input.sourceSpan } : {}),
+    ...(input.mediaSourceOrigins ? { mediaSourceOrigins: input.mediaSourceOrigins } : {}),
   };
 }
 
@@ -98,8 +113,7 @@ function intrinsicElement(
       source: { kind: "tag", tag: type },
       props: authored.props,
       children: authored.children,
-      ...(key !== undefined ? { key } : {}),
-      ...(sourceSpan ? { sourceSpan } : {}),
+      ...authorMetadata({ key, sourceSpan, mediaSourceOrigins: authored.mediaSourceOrigins }),
     });
   }
 
@@ -109,8 +123,7 @@ function intrinsicElement(
       source: { kind: "tag", tag: type },
       props: authored.props,
       children: authored.children,
-      ...(key !== undefined ? { key } : {}),
-      ...(sourceSpan ? { sourceSpan } : {}),
+      ...authorMetadata({ key, sourceSpan, mediaSourceOrigins: authored.mediaSourceOrigins }),
     });
   }
 
@@ -120,8 +133,7 @@ function intrinsicElement(
       source: { kind: "tag", tag: type },
       props: authored.props,
       children: authored.children,
-      ...(key !== undefined ? { key } : {}),
-      ...(sourceSpan ? { sourceSpan } : {}),
+      ...authorMetadata({ key, sourceSpan, mediaSourceOrigins: authored.mediaSourceOrigins }),
     });
   }
 
@@ -131,8 +143,7 @@ function intrinsicElement(
       source: { kind: "tag", tag: type },
       props: authored.props,
       children: authored.children,
-      ...(key !== undefined ? { key } : {}),
-      ...(sourceSpan ? { sourceSpan } : {}),
+      ...authorMetadata({ key, sourceSpan, mediaSourceOrigins: authored.mediaSourceOrigins }),
     });
   }
 
@@ -142,8 +153,7 @@ function intrinsicElement(
       source: { kind: "tag", tag: type },
       props: authored.props,
       children: authored.children,
-      ...(key !== undefined ? { key } : {}),
-      ...(sourceSpan ? { sourceSpan } : {}),
+      ...authorMetadata({ key, sourceSpan, mediaSourceOrigins: authored.mediaSourceOrigins }),
     });
   }
 
@@ -153,8 +163,7 @@ function intrinsicElement(
       source: { kind: "tag", tag: type },
       props: authored.props,
       children: authored.children,
-      ...(key !== undefined ? { key } : {}),
-      ...(sourceSpan ? { sourceSpan } : {}),
+      ...authorMetadata({ key, sourceSpan, mediaSourceOrigins: authored.mediaSourceOrigins }),
     });
   }
 
@@ -164,8 +173,7 @@ function intrinsicElement(
       source: { kind: "tag", tag: type },
       props: authored.props,
       children: authored.children,
-      ...(key !== undefined ? { key } : {}),
-      ...(sourceSpan ? { sourceSpan } : {}),
+      ...authorMetadata({ key, sourceSpan, mediaSourceOrigins: authored.mediaSourceOrigins }),
     });
   }
 
@@ -175,8 +183,7 @@ function intrinsicElement(
       source: { kind: "tag", tag: type },
       props: authored.props,
       children: authored.children,
-      ...(key !== undefined ? { key } : {}),
-      ...(sourceSpan ? { sourceSpan } : {}),
+      ...authorMetadata({ key, sourceSpan, mediaSourceOrigins: authored.mediaSourceOrigins }),
     });
   }
 
@@ -186,8 +193,7 @@ function intrinsicElement(
       source: { kind: "tag", tag: type },
       props: authored.props,
       children: authored.children,
-      ...(key !== undefined ? { key } : {}),
-      ...(sourceSpan ? { sourceSpan } : {}),
+      ...authorMetadata({ key, sourceSpan, mediaSourceOrigins: authored.mediaSourceOrigins }),
     });
   }
 
@@ -196,8 +202,7 @@ function intrinsicElement(
     source: { kind: "tag", tag: type },
     props: authored.props,
     children: authored.children,
-    ...(key !== undefined ? { key } : {}),
-    ...(sourceSpan ? { sourceSpan } : {}),
+    ...authorMetadata({ key, sourceSpan, mediaSourceOrigins: authored.mediaSourceOrigins }),
   });
 }
 

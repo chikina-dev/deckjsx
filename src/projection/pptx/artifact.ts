@@ -6,6 +6,8 @@ import type {
   PptxPackageModelCandidate,
   PptxPackagePartCandidate,
 } from "./model";
+import { isPptxSlidePart } from "./model";
+import { packagePartFingerprint } from "./fingerprint";
 import {
   packageDependencyEdges,
   type PackageDependencyEdge,
@@ -17,16 +19,34 @@ export type ProjectionArtifact<TProjection> = {
   readonly diagnostics: Diagnostics;
 };
 
+type PptxProjectionPart<TProjection extends PptxPackageModelCandidate> = TProjection extends {
+  readonly parts: readonly (infer TPart)[];
+}
+  ? Extract<TPart, PptxPackagePartCandidate>
+  : PptxPackagePartCandidate;
+
 export type PptxProjectionArtifact<
   TProjection extends PptxPackageModelCandidate = PptxPackageModel,
 > = ProjectionArtifact<TProjection> & {
-  readonly partsById: ReadonlyMap<PackagePartId, PptxPackagePartCandidate>;
+  readonly partsById: ReadonlyMap<PackagePartId, PptxProjectionPart<TProjection>>;
   readonly partsBySourceKey: ReadonlyMap<string, readonly PackagePartId[]>;
   readonly partsByGraphNodeId: ReadonlyMap<GraphNodeId, readonly PackagePartId[]>;
+  readonly slidePackagePartFingerprints: ReadonlyMap<
+    PackagePartId,
+    SlidePackagePartFingerprintSnapshot
+  >;
   readonly packageDependencies: PackageDependencySnapshot;
 };
 
 export type { PackageDependencyEdge, PackageDependencyReason };
+
+export type SlidePackagePartFingerprintSnapshot = {
+  readonly slidePartId: PackagePartId;
+  readonly slideId: string;
+  readonly name?: string;
+  readonly fingerprint: string;
+  readonly graphNodeIds: readonly GraphNodeId[];
+};
 
 export type PackageDependencySnapshot = {
   readonly edges: readonly PackageDependencyEdge[];
@@ -139,6 +159,7 @@ export function pptxProjectionArtifact(
     partsById: new Map(parts.map((part) => [part.id, part])),
     partsBySourceKey: partsBySourceKey(parts),
     partsByGraphNodeId: partsByGraphNodeId(parts),
+    slidePackagePartFingerprints: slidePackagePartFingerprints(parts),
     packageDependencies: packageDependencySnapshot(parts),
   };
 }
@@ -169,6 +190,28 @@ function partsByGraphNodeId(
   parts.forEach((part) => {
     part.origin?.graphNodeIds?.forEach((graphNodeId) => {
       appendIndexValue(index, graphNodeId, part.id);
+    });
+  });
+
+  return index;
+}
+
+function slidePackagePartFingerprints(
+  parts: readonly PptxPackagePartCandidate[],
+): ReadonlyMap<PackagePartId, SlidePackagePartFingerprintSnapshot> {
+  const index = new Map<PackagePartId, SlidePackagePartFingerprintSnapshot>();
+
+  parts.forEach((part) => {
+    if (!isPptxSlidePart(part)) {
+      return;
+    }
+
+    index.set(part.id, {
+      slidePartId: part.id,
+      slideId: part.payload.slideId,
+      ...(part.payload.name ? { name: part.payload.name } : {}),
+      fingerprint: part.fingerprint ?? packagePartFingerprint(part),
+      graphNodeIds: part.origin?.graphNodeIds ?? [],
     });
   });
 

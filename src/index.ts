@@ -4,6 +4,7 @@ import type { JsxKey } from "./jsx-runtime";
 export { Deck } from "./deck";
 export { StyleSheet } from "./style/stylesheet";
 export { Theme, type ThemeInput } from "./style/theme";
+export type { DeckPlugin } from "./plugin";
 export {
   CompositionDiagnosticError,
   DeckDiagnosticError,
@@ -94,6 +95,9 @@ export type {
   RenderAssemblyReasonDetails,
   RenderedArtifact,
   RenderInspectionSummary,
+  RenderPatchPlan,
+  RenderPatchPlanPart,
+  RenderPatchPlanPartKind,
   StageArtifactStatus,
   StageName,
   StageSummary,

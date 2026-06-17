@@ -4,9 +4,11 @@ import { createDiagnostics, type Diagnostic } from "../../src/diagnostics/index.
 import { Deck, StyleSheet, Theme, type RenderInspectionSummary } from "../../src/index.ts";
 import { isPptxMediaPart, isPptxSlidePart, isPptxSupportPart } from "../../src/inspect.ts";
 import {
+  assetSourceCacheKey,
   PipelineArtifactCollection,
   type PptxPackageBuildArtifact,
 } from "../../src/pipeline-artifacts.ts";
+import { mediaSourceOrigins } from "../../src/integration.ts";
 import { compileSource, projectSource, renderSource } from "../../src/pipeline-runner.ts";
 import { withPackagePartFingerprints } from "../../src/projection/pptx/fingerprint.ts";
 import {
@@ -1339,6 +1341,129 @@ describe("project/render pipeline", () => {
       expect(entry.final).not.toHaveProperty("bytes");
       expect(entry.build).not.toHaveProperty("bytes");
     }
+  });
+
+  test("render emits patchable package metadata for node runtime writers", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Patchable" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>patchable</p>
+    ));
+
+    const render = await deck.render({ inspection: "none" });
+    const zip = unzipSync(render.artifact?.bytes ?? new Uint8Array());
+    const manifestBytes = zip["ppt/deckjsx/patch-manifest.json"];
+    const contentTypes = new TextDecoder().decode(zip["[Content_Types].xml"] ?? new Uint8Array());
+    const manifest = JSON.parse(new TextDecoder().decode(manifestBytes)) as {
+      readonly kind: string;
+      readonly version: number;
+      readonly parts: readonly {
+        readonly packagePartId: string;
+        readonly path: string;
+        readonly patchableKind: string;
+        readonly reservedCapacity: number;
+        readonly logicalByteLength: number;
+        readonly storedByteLength: number;
+        readonly fingerprint: string;
+        readonly buildStatus?: string;
+      }[];
+    };
+    const patchPlan = render.patchPlan;
+    const slideEntry = manifest.parts.find((part) => part.path.endsWith(".xml"));
+    const relationshipEntry = manifest.parts.find((part) => part.path.endsWith(".rels"));
+    const slideBytes = zip[slideEntry?.path ?? ""];
+    const slideText = new TextDecoder().decode(slideBytes ?? new Uint8Array());
+
+    expect(render.ok).toBe(true);
+    expect(patchPlan).toEqual(
+      expect.objectContaining({
+        kind: "deckjsx.renderPatchPlan",
+        version: 1,
+      }),
+    );
+    expect(manifest).toEqual(
+      expect.objectContaining({
+        kind: "deckjsx.patchManifest",
+        version: 1,
+      }),
+    );
+    expect(contentTypes).toContain('Extension="json"');
+    expect(contentTypes).toContain('ContentType="application/json"');
+    expect(manifest.parts.length).toBeGreaterThan(0);
+    expect(patchPlan?.parts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          packagePartId: "deckjsx:patch-manifest",
+          path: "ppt/deckjsx/patch-manifest.json",
+          patchableKind: "manifest",
+          reservedCapacity: expect.any(Number),
+          storedByteLength: expect.any(Number),
+          fingerprint: expect.stringMatching(/^fnv1a32:/),
+          buildStatus: "rebuilt",
+        }),
+        expect.objectContaining({
+          packagePartId: slideEntry?.packagePartId,
+          path: slideEntry?.path,
+          reservedCapacity: slideEntry?.reservedCapacity,
+          logicalByteLength: slideEntry?.logicalByteLength,
+          storedByteLength: slideEntry?.storedByteLength,
+          fingerprint: slideEntry?.fingerprint,
+          buildStatus: "rebuilt",
+        }),
+      ]),
+    );
+    expect(patchPlan?.parts.find((part) => part.patchableKind === "manifest")).toEqual(
+      expect.objectContaining({
+        logicalByteLength: expect.any(Number),
+        reservedCapacity: expect.any(Number),
+        storedByteLength: expect.any(Number),
+      }),
+    );
+    expect(slideEntry).toEqual(
+      expect.objectContaining({
+        patchableKind: "xml",
+        reservedCapacity: expect.any(Number),
+        logicalByteLength: expect.any(Number),
+        storedByteLength: expect.any(Number),
+        fingerprint: expect.stringMatching(/^fnv1a32:/),
+      }),
+    );
+    expect(slideEntry!.reservedCapacity).toBeGreaterThan(0);
+    expect(slideEntry!.storedByteLength).toBeGreaterThan(slideEntry!.logicalByteLength);
+    expect(slideText).toContain("deckjsx-patch-reserve:");
+    expect(slideEntry).not.toHaveProperty("buildStatus");
+    expect(relationshipEntry).toEqual(
+      expect.objectContaining({
+        patchableKind: "xml",
+        reservedCapacity: expect.any(Number),
+      }),
+    );
+    expect(relationshipEntry!.reservedCapacity).toBeGreaterThan(0);
+  });
+
+  test("render patch plan reports warm package part reuse without persisting reuse state", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Patch reuse" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>patch reuse</p>
+    ));
+
+    const cold = await deck.render({ inspection: "none" });
+    const warm = await deck.render({ inspection: "none" });
+    const warmZip = unzipSync(warm.artifact?.bytes ?? new Uint8Array());
+    const manifest = JSON.parse(
+      new TextDecoder().decode(warmZip["ppt/deckjsx/patch-manifest.json"]),
+    ) as {
+      readonly parts: readonly { readonly path: string; readonly buildStatus?: string }[];
+    };
+    const warmXmlPart = warm.patchPlan?.parts.find((part) => part.patchableKind === "xml");
+    const manifestXmlPart = manifest.parts.find((part) => part.path === warmXmlPart?.path);
+
+    expect(cold.patchPlan?.parts.some((part) => part.buildStatus === "rebuilt")).toBe(true);
+    expect(warmXmlPart).toEqual(
+      expect.objectContaining({
+        buildStatus: "reused",
+      }),
+    );
+    expect(manifestXmlPart).not.toHaveProperty("buildStatus");
   });
 
   test("render explains rebuilds when a defined projection changes a package part fingerprint", async () => {
@@ -10118,6 +10243,494 @@ describe("project/render pipeline", () => {
     expect(artifacts.projection?.partsById.size).toBe(project.projection?.parts.length);
   });
 
+  test("HMR invalidation exposes a single projection reuse snapshot until the next projection materializes", async () => {
+    let title = "before";
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const artifacts = new PipelineArtifactCollection();
+
+    deck.slide({ name: "Snapshot" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{title}</p>
+    ));
+
+    const first = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const firstGraph = artifacts.graph;
+    const firstProjection = artifacts.projection;
+
+    title = "after";
+    const invalidated = artifacts.invalidateForHmr({
+      importer: "/project/src/deck.tsx",
+      changedModuleIds: ["/project/src/deck.tsx"],
+    });
+    const snapshot = artifacts.hmrProjectionReuseSnapshot;
+
+    expect(first.ok).toBe(true);
+    expect(invalidated).toBe(true);
+    expect(snapshot).toEqual(
+      expect.objectContaining({
+        graph: firstGraph,
+        projection: firstProjection,
+        options: deck.options,
+        staleAssetEntityIds: expect.any(Set),
+      }),
+    );
+
+    const second = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+
+    expect(second.ok).toBe(true);
+    expect(artifacts.hmrProjectionReuseSnapshot).toBeUndefined();
+  });
+
+  test("byte asset cache keys distinguish equal-length byte sources by content", () => {
+    const first = assetSourceCacheKey({
+      kind: "bytes",
+      bytes: new Uint8Array([1, 2, 3]),
+      mediaType: "image/png",
+      extension: "png",
+    });
+    const second = assetSourceCacheKey({
+      kind: "bytes",
+      bytes: new Uint8Array([1, 2, 4]),
+      mediaType: "image/png",
+      extension: "png",
+    });
+
+    expect(first).not.toBe(second);
+  });
+
+  test("projection artifacts expose stable slide package part fingerprints", async () => {
+    async function projectDeck(firstSlideText: string) {
+      const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+      const artifacts = new PipelineArtifactCollection();
+
+      deck.slide({ name: "Edited" }, () => (
+        <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{firstSlideText}</p>
+      ));
+      deck.slide({ name: "Stable" }, () => (
+        <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>unchanged</p>
+      ));
+
+      const project = await projectSource({
+        source: deck,
+        options: deck.options,
+        projectOptions: { inspection: "none" },
+        artifacts,
+      });
+
+      return { artifacts, project };
+    }
+
+    const first = await projectDeck("before");
+    const second = await projectDeck("after");
+    const firstEditedSlide = first.project.projection?.slides.find(
+      (slide) => slide.payload.name === "Edited",
+    );
+    const firstStableSlide = first.project.projection?.slides.find(
+      (slide) => slide.payload.name === "Stable",
+    );
+    const secondEditedSlide = second.project.projection?.slides.find(
+      (slide) => slide.payload.name === "Edited",
+    );
+    const secondStableSlide = second.project.projection?.slides.find(
+      (slide) => slide.payload.name === "Stable",
+    );
+
+    const firstEditedFingerprint = first.artifacts.projection?.slidePackagePartFingerprints.get(
+      firstEditedSlide!.id,
+    );
+    const firstStableFingerprint = first.artifacts.projection?.slidePackagePartFingerprints.get(
+      firstStableSlide!.id,
+    );
+    const secondEditedFingerprint = second.artifacts.projection?.slidePackagePartFingerprints.get(
+      secondEditedSlide!.id,
+    );
+    const secondStableFingerprint = second.artifacts.projection?.slidePackagePartFingerprints.get(
+      secondStableSlide!.id,
+    );
+
+    expect(firstEditedFingerprint).toEqual(
+      expect.objectContaining({
+        slidePartId: firstEditedSlide?.id,
+        fingerprint: expect.stringMatching(/^fnv1a32:/),
+      }),
+    );
+    expect(firstStableFingerprint?.fingerprint).toBe(secondStableFingerprint?.fingerprint);
+    expect(firstEditedFingerprint?.fingerprint).not.toBe(secondEditedFingerprint?.fingerprint);
+  });
+
+  test("HMR projection reuses unchanged slide package parts from the stale projection", async () => {
+    let editedText = "before";
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const artifacts = new PipelineArtifactCollection();
+
+    deck.slide({ name: "Edited" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{editedText}</p>
+    ));
+    deck.slide({ name: "Stable" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>unchanged</p>
+    ));
+
+    const first = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const firstEditedSlide = first.projection?.slides.find(
+      (slide) => slide.payload.name === "Edited",
+    );
+    const firstStableSlide = first.projection?.slides.find(
+      (slide) => slide.payload.name === "Stable",
+    );
+    const firstStableSlideRelationships = first.projection?.parts.find(
+      (part) =>
+        part.kind === "relationships" &&
+        firstStableSlide?.origin?.graphNodeIds?.some((id) =>
+          part.origin?.graphNodeIds?.includes(id),
+        ),
+    );
+
+    editedText = "after";
+    artifacts.invalidateForHmr({
+      importer: "/project/src/deck.tsx",
+      changedModuleIds: ["/project/src/deck.tsx"],
+    });
+    const second = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const secondEditedSlide = second.projection?.slides.find(
+      (slide) => slide.payload.name === "Edited",
+    );
+    const secondStableSlide = second.projection?.slides.find(
+      (slide) => slide.payload.name === "Stable",
+    );
+    const secondStableSlideRelationships = second.projection?.parts.find(
+      (part) =>
+        part.kind === "relationships" &&
+        secondStableSlide?.origin?.graphNodeIds?.some((id) =>
+          part.origin?.graphNodeIds?.includes(id),
+        ),
+    );
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(firstStableSlideRelationships).toBeDefined();
+    expect(secondStableSlideRelationships).toBeDefined();
+    expect(secondEditedSlide).not.toBe(firstEditedSlide);
+    expect(secondStableSlide).toBe(firstStableSlide);
+    expect(secondStableSlideRelationships).toBe(firstStableSlideRelationships);
+  });
+
+  test("HMR projection does not reuse a slide when deck layout changes", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const artifacts = new PipelineArtifactCollection();
+
+    deck.slide({ name: "Layout sensitive" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>unchanged graph</p>
+    ));
+
+    const first = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const firstSlide = first.projection?.slides[0];
+
+    artifacts.invalidateForHmr({
+      importer: "/project/src/deck.tsx",
+      changedModuleIds: ["/project/src/deck.tsx"],
+    });
+    const second = await projectSource({
+      source: deck,
+      options: { ...deck.options, layout: { width: 12, height: 6.75, unit: "in" } },
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const secondSlide = second.projection?.slides[0];
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(firstSlide).toBeDefined();
+    expect(secondSlide).toBeDefined();
+    expect(secondSlide).not.toBe(firstSlide);
+  });
+
+  test("HMR projection does not reuse a slide when asset probe metadata changes", async () => {
+    let imageWidth = 2;
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const artifacts = new PipelineArtifactCollection();
+    const loader = testAssetLoader({
+      resolverIdentity: "test:hmr-probe-sensitive-assets",
+      async probe({ source }) {
+        return source.kind === "path"
+          ? {
+              mediaType: "image/png",
+              extension: "png",
+              width: imageWidth,
+              height: 2,
+              byteLength: pngHeaderBytes(imageWidth, 2).byteLength,
+              hash: `fnv1a32:image-width-${imageWidth}`,
+            }
+          : undefined;
+      },
+    });
+
+    deck.slide({ name: "Probe sensitive" }, () => (
+      <img src="./chart.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+    ));
+
+    const first = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+      assetLoaders: [loader],
+      mediaSourceOrigin: { importer: "/project/src/deck.tsx" },
+    });
+    const firstSlide = first.projection?.slides[0];
+
+    imageWidth = 3;
+    artifacts.invalidateForHmr({
+      importer: "/project/src/deck.tsx",
+      changedModuleIds: ["/project/src/deck.tsx"],
+    });
+    const second = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+      assetLoaders: [loader],
+      mediaSourceOrigin: { importer: "/project/src/deck.tsx" },
+    });
+    const secondSlide = second.projection?.slides[0];
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(firstSlide).toBeDefined();
+    expect(secondSlide).toBeDefined();
+    expect(secondSlide).not.toBe(firstSlide);
+  });
+
+  test("HMR projection reuses unchanged slide media package parts from the stale projection", async () => {
+    let editedText = "before";
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const artifacts = new PipelineArtifactCollection();
+
+    deck.slide({ name: "Edited" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{editedText}</p>
+    ));
+    deck.slide({ name: "Stable media" }, () => (
+      <img data={SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1, width: 1, height: 1 }} />
+    ));
+
+    const first = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const firstStableMedia = first.projection?.parts.find((part) => part.kind === "media");
+
+    editedText = "after";
+    artifacts.invalidateForHmr({
+      importer: "/project/src/deck.tsx",
+      changedModuleIds: ["/project/src/deck.tsx"],
+    });
+    const second = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const secondStableMedia = second.projection?.parts.find(
+      (part) => part.id === firstStableMedia?.id,
+    );
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(firstStableMedia).toBeDefined();
+    expect(secondStableMedia).toBe(firstStableMedia);
+  });
+
+  test("HMR projection keeps media reuse scoped to unchanged slide units", async () => {
+    let editedText = "before";
+    const stableImage =
+      "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2210%22%20height%3D%2210%22%3E%3Crect%20width%3D%2210%22%20height%3D%2210%22%20fill%3D%22%2300ff00%22%2F%3E%3C%2Fsvg%3E";
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const artifacts = new PipelineArtifactCollection();
+
+    deck.slide({ name: "Edited media" }, () => (
+      <>
+        <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{editedText}</p>
+        <img data={SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 2, width: 1, height: 1 }} />
+      </>
+    ));
+    deck.slide({ name: "Stable media" }, () => (
+      <img data={stableImage} style={{ x: 1, y: 1, width: 1, height: 1 }} />
+    ));
+
+    const first = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const firstEditedMedia = first.projection?.parts.find(
+      (part) => part.kind === "media" && part.path === "ppt/media/media1.svg",
+    );
+    const firstStableMedia = first.projection?.parts.find(
+      (part) => part.kind === "media" && part.path === "ppt/media/media2.svg",
+    );
+
+    editedText = "after";
+    artifacts.invalidateForHmr({
+      importer: "/project/src/deck.tsx",
+      changedModuleIds: ["/project/src/deck.tsx"],
+    });
+    const second = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const secondEditedMedia = second.projection?.parts.find(
+      (part) => part.id === firstEditedMedia?.id,
+    );
+    const secondStableMedia = second.projection?.parts.find(
+      (part) => part.id === firstStableMedia?.id,
+    );
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(firstEditedMedia).toBeDefined();
+    expect(firstStableMedia).toBeDefined();
+    expect(secondEditedMedia).not.toBe(firstEditedMedia);
+    expect(secondStableMedia).toBe(firstStableMedia);
+  });
+
+  test("HMR render reports reused patch plan parts for unchanged slide projection units", async () => {
+    let editedText = "before";
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const artifacts = new PipelineArtifactCollection();
+
+    deck.slide({ name: "Edited" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{editedText}</p>
+    ));
+    deck.slide({ name: "Stable" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>unchanged</p>
+    ));
+
+    const firstProject = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const firstRender = await renderPptxPackage(
+      firstProject.projection!,
+      { inspection: "none" },
+      {
+        pptxBuildArtifactsByPartId: artifacts.pptxBuildArtifactsByPartId,
+      },
+    );
+    artifacts.materializePptxBuildArtifacts(firstRender.buildArtifacts ?? []);
+    const firstStableSlide = firstProject.projection?.slides.find(
+      (slide) => slide.payload.name === "Stable",
+    );
+    const firstStableSlideRelationships = firstProject.projection?.parts.find(
+      (part) =>
+        part.kind === "relationships" &&
+        firstStableSlide?.origin?.graphNodeIds?.some((id) =>
+          part.origin?.graphNodeIds?.includes(id),
+        ),
+    );
+
+    editedText = "after";
+    artifacts.invalidateForHmr({
+      importer: "/project/src/deck.tsx",
+      changedModuleIds: ["/project/src/deck.tsx"],
+    });
+    const secondProject = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const secondRender = await renderPptxPackage(
+      secondProject.projection!,
+      { inspection: "none" },
+      {
+        pptxBuildArtifactsByPartId: artifacts.pptxBuildArtifactsByPartId,
+      },
+    );
+    const secondStableSlide = secondProject.projection?.slides.find(
+      (slide) => slide.payload.name === "Stable",
+    );
+    const secondStableSlideRelationships = secondProject.projection?.parts.find(
+      (part) =>
+        part.kind === "relationships" &&
+        secondStableSlide?.origin?.graphNodeIds?.some((id) =>
+          part.origin?.graphNodeIds?.includes(id),
+        ),
+    );
+    const stableSlidePatchPart = secondRender.patchPlan?.parts.find(
+      (part) => part.packagePartId === firstStableSlide?.id,
+    );
+    const stableRelationshipsPatchPart = secondRender.patchPlan?.parts.find(
+      (part) => part.packagePartId === firstStableSlideRelationships?.id,
+    );
+    const stableSlideAssemblyEntry = secondRender.summary?.assembly?.entries.find(
+      (entry) => entry.path === firstStableSlide?.path,
+    );
+    const stableRelationshipsAssemblyEntry = secondRender.summary?.assembly?.entries.find(
+      (entry) => entry.path === firstStableSlideRelationships?.path,
+    );
+
+    expect(firstProject.ok).toBe(true);
+    expect(firstRender.artifact).toBeDefined();
+    expect(secondProject.ok).toBe(true);
+    expect(secondRender.artifact).toBeDefined();
+    expect(secondStableSlide).toBe(firstStableSlide);
+    expect(secondStableSlideRelationships).toBe(firstStableSlideRelationships);
+    expect(stableSlidePatchPart).toEqual(
+      expect.objectContaining({
+        buildStatus: "reused",
+        buildReason: "buildArtifactFingerprintMatched",
+      }),
+    );
+    expect(stableRelationshipsPatchPart).toEqual(
+      expect.objectContaining({
+        buildStatus: "reused",
+        buildReason: "buildArtifactFingerprintMatched",
+      }),
+    );
+    expect(stableSlideAssemblyEntry).toEqual(
+      expect.objectContaining({
+        status: "reused",
+        reason: "buildArtifactFingerprintMatched",
+      }),
+    );
+    expect(stableRelationshipsAssemblyEntry).toEqual(
+      expect.objectContaining({
+        status: "reused",
+        reason: "buildArtifactFingerprintMatched",
+      }),
+    );
+  });
+
   test("stage artifacts keep mounted source and package part indexes", async () => {
     const parent = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     const child = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
@@ -10711,6 +11324,164 @@ describe("project/render pipeline", () => {
     expect(diagnostic?.notes?.some((note) => note.startsWith("assetEntityId="))).toBe(true);
   });
 
+  test("project stops asset probing after a handled loader failure", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    let fallbackProbeCount = 0;
+    const failingLoader: AssetLoader = {
+      resolverIdentity: "terminal-failure",
+      async probe({ source }) {
+        if (source.kind !== "path") {
+          return undefined;
+        }
+        return {
+          ok: false as const,
+          diagnostics: [
+            {
+              severity: "error" as const,
+              code: "E_TEST_TERMINAL_ASSET_FAILURE",
+              title: "terminal asset failure",
+              message: "The first loader handled this path and failed.",
+              labels: [],
+            },
+          ],
+        };
+      },
+    };
+    const fallbackLoader = testAssetLoader({
+      resolverIdentity: "fallback-loader",
+      async probe({ source }) {
+        if (source.kind !== "path") {
+          return undefined;
+        }
+        fallbackProbeCount += 1;
+        return { mediaType: "image/png", extension: "png", width: 1, height: 1 };
+      },
+    });
+    deck.slide({ name: "Terminal failure" }, () => (
+      <img src="/public/terminal.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+    ));
+
+    const project = await projectSource({
+      source: deck,
+      options: deck.options,
+      assetLoaders: [failingLoader, fallbackLoader],
+    });
+
+    expect(project.ok).toBe(false);
+    expect(fallbackProbeCount).toBe(0);
+    expect(
+      project.diagnostics.items.some((item) => item.code === "E_TEST_TERMINAL_ASSET_FAILURE"),
+    ).toBe(true);
+  });
+
+  test("project reports missing integration context for project-local path sources", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Missing context" }, () => (
+      <img src="./local.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+    ));
+
+    const project = await projectSource({
+      source: deck,
+      options: deck.options,
+    });
+    const diagnostic = project.diagnostics.items.find(
+      (item) => item.code === "E_PROJECT_ASSET_CONTEXT_MISSING",
+    );
+
+    expect(project.ok).toBe(false);
+    expect(diagnostic).toMatchObject({
+      message: "Project-local asset paths require an Integration Context.",
+      labels: [expect.objectContaining({ message: "./local.png" })],
+      notes: expect.arrayContaining(["phase=probe", "sourceKind=path", "sourceField=src"]),
+    });
+  });
+
+  test("project reports missing integration context when no loader handles a path source", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const unrelatedLoader = testAssetLoader({
+      resolverIdentity: "unrelated-assets",
+      async probe() {
+        return undefined;
+      },
+    });
+    deck.slide({ name: "Unhandled context" }, () => (
+      <img src="./local.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+    ));
+
+    const project = await projectSource({
+      source: deck,
+      options: deck.options,
+      assetLoaders: [unrelatedLoader],
+    });
+    const diagnostic = project.diagnostics.items.find(
+      (item) => item.code === "E_PROJECT_ASSET_CONTEXT_MISSING",
+    );
+
+    expect(project.ok).toBe(false);
+    expect(diagnostic).toMatchObject({
+      message: "Project-local asset paths require an Integration Context.",
+      labels: [expect.objectContaining({ message: "./local.png" })],
+      notes: expect.arrayContaining(["phase=probe", "sourceKind=path", "sourceField=src"]),
+    });
+  });
+
+  test("project inspection exposes asset resolution provenance", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const pngBytes = pngHeaderBytes(1, 1);
+    const loader = testAssetLoader({
+      resolverIdentity: "inspect-assets",
+      async probe({ source }) {
+        return source.kind === "path"
+          ? {
+              mediaType: "image/png",
+              extension: "png",
+              width: 1,
+              height: 1,
+              byteLength: pngBytes.byteLength,
+              hash: "fnv1a32:inspect",
+            }
+          : undefined;
+      },
+    });
+    deck.slide({ name: "Inspect assets" }, () => (
+      <img
+        src="./inspect.png"
+        style={{ x: 1, y: 1, width: 1, height: 1 }}
+        {...mediaSourceOrigins({
+          src: {
+            importer: "/project/src/deck.tsx",
+            source: "./inspect.png",
+            sourceIdentity: "project-src-deck",
+          },
+        })}
+      />
+    ));
+
+    const project = await projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "summary" },
+      assetLoaders: [loader],
+    });
+
+    expect(project.diagnostics.items.map((item) => item.code)).toEqual([]);
+    expect(project.ok).toBe(true);
+    expect(project.summary?.assetResolutions).toEqual([
+      expect.objectContaining({
+        sourceKind: "path",
+        sourceField: "src",
+        resolverIdentity: "inspect-assets",
+        provenanceKind: "file",
+        resolvedId: "fnv1a32:inspect",
+        importer: "/project/src/deck.tsx",
+        sourceIdentity: "project-src-deck",
+        hashSource: "loader",
+        diagnosticCodes: [],
+      }),
+    ]);
+    expect(project.summary?.assetResolutions[0]?.assetEntityId).toContain("asset");
+  });
+
   test("project reports invalid asset probe result shapes", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     const loader = testAssetLoader({
@@ -11062,6 +11833,128 @@ describe("project/render pipeline", () => {
       expect(render.ok).toBe(true);
       expect(fetchedUrls).toEqual(["https://cdn.example.test/chart.png"]);
       expect(Array.from(zip["ppt/media/media1.png"] ?? [])).toEqual(Array.from(pngBytes));
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("project inspection exposes built-in fetch asset provenance and byte hash", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const pngBytes = pngHeaderBytes(8, 5);
+    const originalFetch = globalThis.fetch;
+
+    globalThis.fetch = (async () =>
+      new Response(pngBytes, {
+        status: 200,
+        headers: { "content-type": "image/png; charset=utf-8" },
+      })) as typeof fetch;
+
+    try {
+      deck.slide({ name: "Inspect URL asset" }, () => (
+        <img
+          src="https://cdn.example.test/inspect.png"
+          style={{ x: 1, y: 1, width: 2, height: 1 }}
+        />
+      ));
+
+      const project = await projectSource({
+        source: deck,
+        options: deck.options,
+        projectOptions: { inspection: "summary" },
+      });
+
+      expect(project.ok).toBe(true);
+      expect(project.summary?.assetResolutions).toEqual([
+        expect.objectContaining({
+          sourceKind: "url",
+          sourceField: "src",
+          resolverIdentity: "deckjsx:builtin",
+          provenanceKind: "fetch",
+          resolvedId: expect.stringMatching(/^fnv1a32:/),
+          hashSource: "bytes",
+          diagnosticCodes: [],
+        }),
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("project inspection summarizes asset source identity without raw media source payloads", async () => {
+    const child = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    child.slide({ name: "Child asset" }, () => (
+      <img src="./child.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+    ));
+    const parent = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    parent.mount("child-source", child);
+    const loader = testAssetLoader({
+      resolverIdentity: "mounted-assets",
+      async probe({ source }) {
+        return source.kind === "path"
+          ? {
+              mediaType: "image/png",
+              extension: "png",
+              width: 1,
+              height: 1,
+              byteLength: pngHeaderBytes(1, 1).byteLength,
+              hash: "fnv1a32:mounted",
+            }
+          : undefined;
+      },
+    });
+
+    const project = await projectSource({
+      source: parent,
+      options: parent.options,
+      projectOptions: { inspection: "summary" },
+      assetLoaders: [loader],
+    });
+    const resolution = project.summary?.assetResolutions[0];
+
+    expect(project.ok).toBe(true);
+    expect(resolution).toEqual(
+      expect.objectContaining({
+        sourceKind: "path",
+        sourceField: "src",
+        sourceIdentity: "child-source",
+      }),
+    );
+    expect(resolution).not.toHaveProperty("source", "./child.png");
+  });
+
+  test("project reports an asset boundary diagnostic when URL fetch is unavailable", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = undefined as never;
+
+    try {
+      deck.slide({ name: "Missing fetch URL asset" }, () => (
+        <img
+          src="https://cdn.example.test/missing-fetch.png"
+          style={{ x: 1, y: 1, width: 2, height: 1 }}
+        />
+      ));
+
+      const project = await projectSource({
+        source: deck,
+        options: deck.options,
+      });
+      const diagnostic = project.diagnostics.items.find(
+        (item) => item.code === "E_PROJECT_ASSET_FETCH_UNAVAILABLE",
+      );
+
+      expect(project.ok).toBe(false);
+      expect(diagnostic).toMatchObject({
+        title: "asset URL fetch is unavailable",
+        labels: [
+          expect.objectContaining({ message: "https://cdn.example.test/missing-fetch.png" }),
+        ],
+        notes: expect.arrayContaining([
+          "phase=probe",
+          "resolverIdentity=deckjsx:builtin",
+          "sourceKind=url",
+        ]),
+      });
     } finally {
       globalThis.fetch = originalFetch;
     }

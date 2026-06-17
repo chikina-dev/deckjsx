@@ -6,6 +6,7 @@ import type {
   ProjectionFormat,
   RenderedArtifact,
   RenderInspectionSummary,
+  RenderPatchPlan,
 } from "./pipeline";
 import { pptxWriterContext } from "./adapter-context";
 import { renderPptxPackage } from "./writers/pptx";
@@ -19,6 +20,7 @@ export type RenderOptions = PptxRenderOptions;
 export type WriterAdapterResult<TFormat extends OutputFormat = OutputFormat> = {
   readonly diagnostics: Diagnostics;
   readonly artifact?: RenderedArtifact<TFormat>;
+  readonly patchPlan?: RenderPatchPlan;
   readonly summary?: RenderInspectionSummary;
 };
 

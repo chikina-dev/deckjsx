@@ -1,0 +1,52 @@
+import type { AssetLoader } from "./assets";
+import type { DeckPlugin } from "./plugin";
+import type { MediaSourceOrigin } from "./media-source-origin";
+
+type Brand<T, B extends string> = T & { readonly __brand: B };
+
+export type IntegrationContextId = Brand<string, "IntegrationContextId">;
+
+export type DeckIntegrationContext = {
+  readonly id: IntegrationContextId;
+  readonly assetLoaders?: readonly AssetLoader[];
+  readonly mediaSourceOrigin?: MediaSourceOrigin;
+};
+
+export function integrationContextId(value: string): IntegrationContextId {
+  return value as IntegrationContextId;
+}
+
+export function integrationContextsFromPlugins(
+  plugins: readonly DeckPlugin[] | undefined,
+): readonly DeckIntegrationContext[] {
+  return (plugins ?? []).flatMap((plugin) => (plugin.integration ? [plugin.integration] : []));
+}
+
+export function mergeIntegrationContexts(
+  contexts: readonly DeckIntegrationContext[],
+): DeckIntegrationContext | undefined {
+  if (contexts.length === 0) {
+    return undefined;
+  }
+
+  const assetLoaders = contexts.flatMap((context) => context.assetLoaders ?? []);
+  const mediaSourceOrigin = [...contexts]
+    .reverse()
+    .find((context) => context.mediaSourceOrigin)?.mediaSourceOrigin;
+  const id =
+    contexts.length === 1
+      ? contexts[0]!.id
+      : integrationContextId(`deckjsx:plugins:${contexts.map((context) => context.id).join("+")}`);
+
+  return {
+    id,
+    ...(assetLoaders.length > 0 ? { assetLoaders } : {}),
+    ...(mediaSourceOrigin ? { mediaSourceOrigin } : {}),
+  };
+}
+
+export function integrationContextFromPlugins(
+  plugins: readonly DeckPlugin[] | undefined,
+): DeckIntegrationContext | undefined {
+  return mergeIntegrationContexts(integrationContextsFromPlugins(plugins));
+}

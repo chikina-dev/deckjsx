@@ -1,6 +1,7 @@
 import type { DeckOptions } from "../authoring/index";
 import { createDiagnostics, type Diagnostics } from "../diagnostics";
 import type { AssetEntity, SemanticAuthorGraph } from "../graph";
+import type { GraphNodeId } from "../graph";
 import type { ProjectionFormat } from "../pipeline";
 import type { ResolvedStyleMap } from "../style/resolve";
 import { summarizePptxPackage } from "./pptx/inspect";
@@ -12,6 +13,7 @@ import {
 import { collectPptxThemeProjectionDiagnostics } from "./pptx/theme";
 import type {
   ProjectInspectionAdapterLimitation,
+  ProjectInspectionAssetResolutionSummary,
   ProjectInspectionSummary,
   PptxPackageModel,
   PptxProjectionAssetArtifact,
@@ -27,6 +29,7 @@ type ProjectionCapability<TModel extends ProjectedDocumentModel> = {
     options: DeckOptions;
     diagnostics?: Diagnostics;
     assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
+    reuse?: ProjectionReuseOptions<TModel>;
   }): TModel;
   diagnostics(input: {
     graph: SemanticAuthorGraph;
@@ -50,11 +53,17 @@ type ProjectionCapability<TModel extends ProjectedDocumentModel> = {
     options?: {
       diagnostics?: Diagnostics;
       adapterLimitations?: readonly ProjectInspectionAdapterLimitation[];
+      assetResolutions?: readonly ProjectInspectionAssetResolutionSummary[];
       graph?: SemanticAuthorGraph;
       includeDetails?: boolean;
       resolvedStyles?: ResolvedStyleMap;
     },
   ): ProjectInspectionSummary;
+};
+
+export type ProjectionReuseOptions<TProjection extends ProjectedDocumentModel> = {
+  readonly previousProjection: TProjection;
+  readonly slideNodeIds: ReadonlySet<GraphNodeId>;
 };
 
 const pptxProjectionCapability: ProjectionCapability<PptxPackageModel> = {
@@ -109,6 +118,7 @@ export function projectGraphToDocumentModel(input: {
   options: DeckOptions;
   diagnostics?: Diagnostics;
   assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
+  reuse?: ProjectionReuseOptions<ProjectedDocumentModel>;
 }): ProjectedDocumentModel {
   return projectionCapabilityFor(input.format).project(input);
 }
@@ -129,6 +139,7 @@ export function summarizeProjectedDocumentModel(
   options: {
     diagnostics?: Diagnostics;
     adapterLimitations?: readonly ProjectInspectionAdapterLimitation[];
+    assetResolutions?: readonly ProjectInspectionAssetResolutionSummary[];
     graph?: SemanticAuthorGraph;
     includeDetails?: boolean;
     resolvedStyles?: ResolvedStyleMap;

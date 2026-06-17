@@ -1,5 +1,6 @@
 import type { AuthoredTag, SectioningTag } from "../authoring/tags";
 import type { JsxKey, SourceSpan } from "../authoring/tree";
+import type { MediaSourceOrigin } from "../media-source-origin";
 import type { StyleDeclaration } from "../style/types";
 
 export type Brand<T, B extends string> = T & { readonly __brand: B };
@@ -181,6 +182,7 @@ export type AssetEntity = {
     | { readonly kind: "path"; readonly path: string }
     | { readonly kind: "data"; readonly data: string }
     | { readonly kind: "url"; readonly url: string };
+  readonly origin?: MediaSourceOrigin;
   readonly metadata: {
     readonly mediaType?: string;
     readonly byteLength?: number;

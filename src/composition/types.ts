@@ -1,6 +1,7 @@
 import type { JsxNode } from "../authoring/index";
 import type { AuthorElementNode, AuthorTreeNode } from "../authoring/tree";
 import type { Diagnostics } from "../diagnostics";
+import type { DeckPlugin } from "../plugin";
 import type { SourceIdentity, SourceOrigin } from "../graph/types";
 import type { StyleSheet } from "../style/stylesheet";
 import type { Theme } from "../style/theme";
@@ -161,6 +162,7 @@ export type CompositionSourceInternals<
 > = {
   readonly entries: readonly CompositionEntry<TSourceContext, TTemplates>[];
   readonly stylesheets: readonly StyleSheet[];
+  readonly plugins: readonly DeckPlugin[];
   readonly theme?: Theme;
   readonly templates?: SlideTemplateSet;
   readonly cycleId: object;

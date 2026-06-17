@@ -13,6 +13,7 @@ import type {
   VideoNodeProps,
   ViewNodeProps,
 } from "./props";
+import type { MediaSourceOriginByField } from "../media-source-origin";
 
 export type JsxKey = string | number | bigint;
 
@@ -40,6 +41,7 @@ type AuthorElementNodeBase<
   readonly props: TProps;
   readonly children: readonly AuthorTreeNode[];
   readonly sourceSpan?: SourceSpan;
+  readonly mediaSourceOrigins?: MediaSourceOriginByField;
 };
 
 export type AuthorElementPropValue =
@@ -192,6 +194,7 @@ type AuthorElementInput<TNode extends AuthorElementNode> = {
   children?: readonly AuthorTreeChild[];
   key?: JsxKey;
   sourceSpan?: SourceSpan;
+  mediaSourceOrigins?: MediaSourceOriginByField;
 };
 
 type RequiredAuthorElementInput<TNode extends AuthorElementNode> = Omit<
@@ -223,6 +226,7 @@ function buildAuthorElement<
   children?: readonly AuthorTreeChild[];
   key?: JsxKey;
   sourceSpan?: SourceSpan;
+  mediaSourceOrigins?: MediaSourceOriginByField;
 }): AuthorElementNodeBase<TSource, TProps> {
   return {
     $$typeof: "deckjsx.author-tree",
@@ -232,6 +236,7 @@ function buildAuthorElement<
     props: input.props,
     children: normalizeAuthorChildren(input.children ?? []),
     ...(input.sourceSpan ? { sourceSpan: input.sourceSpan } : {}),
+    ...(input.mediaSourceOrigins ? { mediaSourceOrigins: input.mediaSourceOrigins } : {}),
   };
 }
 

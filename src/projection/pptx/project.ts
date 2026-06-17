@@ -1,6 +1,7 @@
 import type { DeckOptions } from "../../authoring/index";
 import type { Diagnostics } from "../../diagnostics";
 import type { AssetEntity, SemanticAuthorGraph } from "../../graph";
+import type { GraphNodeId } from "../../graph";
 import { buildLayoutInputSnapshot } from "../../layout/input";
 import type { FrameIR } from "../../layout/projected";
 import { resolveProjectedLayout } from "../../layout/resolve";
@@ -40,6 +41,10 @@ function projectGraphToPptxPackageInternal(input: {
   options: DeckOptions;
   diagnostics?: Diagnostics;
   assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
+  reuse?: {
+    readonly previousProjection: PptxPackageModel;
+    readonly slideNodeIds: ReadonlySet<GraphNodeId>;
+  };
   partial?: boolean;
 }): PptxPackageModel {
   const size = sizeFromOptions(input.options);
@@ -78,6 +83,15 @@ function projectGraphToPptxPackageInternal(input: {
     }
     const layoutSlide = projectedLayout?.slides[slideIndex];
     const partId = slidePartIdFor(slide);
+    const reusableSlide = input.reuse?.slideNodeIds.has(slideId)
+      ? input.reuse.previousProjection.slides.find(
+          (previous) =>
+            previous.id === partId && previous.path === `ppt/slides/slide${slideIndex + 1}.xml`,
+        )
+      : undefined;
+    if (reusableSlide) {
+      return [reusableSlide];
+    }
     const slideLayoutPart = slideLayoutPartForSlide({
       graph: input.graph,
       slideId,
@@ -184,6 +198,10 @@ export function projectGraphToPptxPackage(input: {
   options: DeckOptions;
   diagnostics?: Diagnostics;
   assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
+  reuse?: {
+    readonly previousProjection: PptxPackageModel;
+    readonly slideNodeIds: ReadonlySet<GraphNodeId>;
+  };
 }): PptxPackageModel {
   return projectGraphToPptxPackageInternal(input);
 }
