@@ -1,6 +1,6 @@
 {
   "name": "@deckjsx/vite",
-  "version": "0.9.0",
+  "version": "0.1.0",
   "description": "Vite dev integration for deckjsx projects.",
   "license": "MIT",
   "files": [

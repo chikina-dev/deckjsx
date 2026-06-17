@@ -162,7 +162,7 @@ describe("public surface", () => {
     expect(pkg.dependencies).toEqual({});
   });
 
-  test("package manifests are versioned for the v0.9 release line", async () => {
+  test("package manifests use independent release lines", async () => {
     const rootPackage = await readPackageJson();
     const pluginPackages = await Promise.all(
       ["plugins/node/package.json", "plugins/vite/package.json"].map(
@@ -172,7 +172,7 @@ describe("public surface", () => {
 
     expect(rootPackage.version).toBe("0.9.0");
     for (const [path, pkg] of pluginPackages) {
-      expect(pkg.version, `${path} version should match the v0.9 release line`).toBe("0.9.0");
+      expect(pkg.version, `${path} version should start at its own initial release`).toBe("0.1.0");
     }
   });
 
