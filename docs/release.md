@@ -42,12 +42,13 @@ Trusted Publishing uses GitHub Actions OIDC, so no `NPM_TOKEN` secret is needed.
    - for `@deckjsx/node`: `(cd plugins/node && npm pack)`
    - for `@deckjsx/vite`: `(cd plugins/vite && npm pack)`
 3. Push the change to `main`.
-4. Run the `Release` workflow from GitHub Actions with the package selector and matching tag:
+4. Run the `Release` workflow from GitHub Actions with the package selector and matching package version:
    - `deckjsx`: `v0.9.0`
-   - `@deckjsx/node`: `deckjsx-node-v0.1.0`
-   - `@deckjsx/vite`: `deckjsx-vite-v0.1.0`
+   - `@deckjsx/node`: `v0.1.0`
+   - `@deckjsx/vite`: `v0.1.0`
 
-The workflow validates that the selected package version matches the release tag, checks and packs
+The workflow validates that the selected package version matches the requested version, derives the
+GitHub release tag for the selected package, checks and packs
 the root package plus both integration packages, runs the root smoke/render/oracle gates, creates the
 GitHub release, and publishes only the selected npm package.
 `bun run build` intentionally runs before `vp test` in release gates because the public-surface tests

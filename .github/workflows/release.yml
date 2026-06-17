@@ -11,8 +11,8 @@ on:
           - deckjsx
           - "@deckjsx/node"
           - "@deckjsx/vite"
-      tag:
-        description: Release tag, for example v0.9.0, deckjsx-node-v0.1.0, or deckjsx-vite-v0.1.0
+      version:
+        description: Package version to release, for example v0.9.0 or v0.1.0
         required: true
         type: string
       prerelease:
@@ -49,52 +49,73 @@ jobs:
             dry_run="false"
             selected_package=""
           else
-            tag="${{ inputs.tag }}"
+            input_version="${{ inputs.version }}"
             prerelease="${{ inputs.prerelease }}"
             dry_run="${{ inputs.dry_run }}"
             selected_package="${{ inputs.package }}"
           fi
 
-          package_name=""
-          package_dir="."
-          package_json="package.json"
-          version=""
+          resolve_package() {
+            case "$1" in
+              deckjsx)
+                package_name="deckjsx"
+                package_dir="."
+                package_json="package.json"
+                tag="v$version"
+                ;;
+              @deckjsx/node)
+                package_name="@deckjsx/node"
+                package_dir="plugins/node"
+                package_json="plugins/node/package.json"
+                tag="deckjsx-node-v$version"
+                ;;
+              @deckjsx/vite)
+                package_name="@deckjsx/vite"
+                package_dir="plugins/vite"
+                package_json="plugins/vite/package.json"
+                tag="deckjsx-vite-v$version"
+                ;;
+              *)
+                echo "Unknown package: $1" >&2
+                exit 1
+                ;;
+            esac
+          }
 
-          case "$tag" in
-            v*)
-              package_name="deckjsx"
-              package_dir="."
-              package_json="package.json"
-              version="${tag#v}"
-              expected_package="deckjsx"
-              ;;
-            deckjsx-node-v*)
-              package_name="@deckjsx/node"
-              package_dir="plugins/node"
-              package_json="plugins/node/package.json"
-              version="${tag#deckjsx-node-v}"
-              expected_package="@deckjsx/node"
-              ;;
-            deckjsx-vite-v*)
-              package_name="@deckjsx/vite"
-              package_dir="plugins/vite"
-              package_json="plugins/vite/package.json"
-              version="${tag#deckjsx-vite-v}"
-              expected_package="@deckjsx/vite"
-              ;;
-            *)
-              echo "Release tag must look like v0.9.0, deckjsx-node-v0.1.0, or deckjsx-vite-v0.1.0." >&2
-              exit 1
-              ;;
-          esac
-
-          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "Release tag contains invalid package version: $tag" >&2
-            exit 1
+          if [ -n "$selected_package" ]; then
+            case "$input_version" in
+              v*)
+                version="${input_version#v}"
+                ;;
+              *)
+                echo "Release version must look like v0.9.0 or v0.1.0." >&2
+                exit 1
+                ;;
+            esac
+            resolve_package "$selected_package"
+          else
+            case "$tag" in
+              v*)
+                version="${tag#v}"
+                resolve_package "deckjsx"
+                ;;
+              deckjsx-node-v*)
+                version="${tag#deckjsx-node-v}"
+                resolve_package "@deckjsx/node"
+                ;;
+              deckjsx-vite-v*)
+                version="${tag#deckjsx-vite-v}"
+                resolve_package "@deckjsx/vite"
+                ;;
+              *)
+                echo "Release tag must look like v0.9.0, deckjsx-node-v0.1.0, or deckjsx-vite-v0.1.0." >&2
+                exit 1
+                ;;
+            esac
           fi
 
-          if [ -n "$selected_package" ] && [ "$selected_package" != "$expected_package" ]; then
-            echo "Selected package $selected_package does not match release tag $tag; expected $expected_package." >&2
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release version contains invalid package version: $version" >&2
             exit 1
           fi
 

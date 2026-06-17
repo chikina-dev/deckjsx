@@ -318,8 +318,10 @@ describe("public surface", () => {
 
     expect(workflow).toContain("dry_run");
     expect(workflow).toContain("package:");
-    expect(workflow).toContain("deckjsx-node-v");
-    expect(workflow).toContain("deckjsx-vite-v");
+    expect(workflow).toContain("version:");
+    expect(workflow).toContain('input_version="${{ inputs.version }}"');
+    expect(workflow).toContain('tag="deckjsx-node-v$version"');
+    expect(workflow).toContain('tag="deckjsx-vite-v$version"');
     expect(workflow).toContain("package_dir=");
     expect(workflow).toContain("working-directory: ${{ steps.release.outputs.package_dir }}");
     expect(workflow).not.toContain("package_paths=(");
