@@ -234,6 +234,7 @@ function originFor(node: AuthorElementNode, path: string, context: BuildContext)
     path,
     source: sourceFor(context),
     ...(node.sourceSpan ? { sourceSpan: node.sourceSpan } : {}),
+    ...(node.componentProvenance ? { componentProvenance: node.componentProvenance } : {}),
   };
 }
 

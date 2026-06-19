@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 import { Deck } from "../../src/index.ts";
+import { jsxDEV } from "../../src/jsx-dev-runtime.ts";
 
 function values<T>(map: ReadonlyMap<PropertyKey, T>): T[] {
   return [...map.values()];
@@ -40,6 +41,45 @@ describe("Semantic Author Graph", () => {
     expect(image).toMatchObject({ kind: "image", authoredTag: "img", role: { kind: "image" } });
     expect(graph.styles.size).toBeGreaterThanOrEqual(2);
     expect(graph.assets.size).toBe(1);
+  });
+
+  test("compile preserves component provenance on semantic origins", async () => {
+    function MetricCard() {
+      return jsxDEV("p", { children: "Revenue" }, undefined, false, {
+        fileName: "/project/src/components/MetricCard.tsx",
+        lineNumber: 7,
+        columnNumber: 10,
+      });
+    }
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Component provenance" }, () =>
+      jsxDEV(MetricCard, {}, "metric-card", false, {
+        fileName: "/project/src/slides/Overview.tsx",
+        lineNumber: 12,
+        columnNumber: 5,
+      }),
+    );
+
+    const graph = deck.compile().graph!;
+    const metric = values(graph.nodes).find(
+      (node) => node.kind === "text" && node.authoredTag === "p",
+    );
+
+    expect(metric?.origin.sourceSpan).toEqual({
+      file: "/project/src/components/MetricCard.tsx",
+      line: 7,
+      column: 10,
+    });
+    expect(metric?.origin.componentProvenance).toEqual({
+      stack: [
+        {
+          name: "MetricCard",
+          sourceSpan: { file: "/project/src/slides/Overview.tsx", line: 12, column: 5 },
+          key: "metric-card",
+        },
+      ],
+    });
   });
 
   test("compile represents video nodes with separate video and poster assets", async () => {

@@ -12,6 +12,12 @@ import {
   collectChildren,
   isAuthorTreeNode,
 } from "./authoring/tree";
+import {
+  AUTHORING_METADATA,
+  type AuthoringMetadata,
+  type ComponentFrame,
+  type ComponentProvenance,
+} from "./authoring-metadata";
 import { MEDIA_SOURCE_ORIGINS, type MediaSourceOriginByField } from "./media-source-origin";
 import {
   isAuthoredTag,
@@ -52,10 +58,13 @@ type ComponentProps = {
 };
 type RuntimeProps = Readonly<Record<string, AuthorElementPropValue | AuthorTreeChild>> & {
   readonly children?: AuthorTreeChild;
+  readonly [AUTHORING_METADATA]?: AuthoringMetadata;
   readonly [MEDIA_SOURCE_ORIGINS]?: MediaSourceOriginByField;
 };
 type ElementChildren<P> = P extends { children?: infer Child } ? Child : never;
 type ElementChildArgs<P> = P extends { children?: never } ? [] : ElementChildren<P>[];
+
+let activeComponentStack: readonly ComponentFrame[] = [];
 
 function isRecord(value: unknown): value is RuntimeProps {
   return typeof value === "object" && value !== null;
@@ -73,11 +82,13 @@ function splitProps<TProps extends AuthorElementProps>(
   props: RuntimeProps,
   children: readonly AuthorTreeChild[],
 ) {
+  const metadata = props[AUTHORING_METADATA];
   const rawChildren = collectChildren(props, children);
   return {
     props: propsRecordWithoutChildren<TProps>(props),
     children: rawChildren === undefined ? [] : [rawChildren],
-    mediaSourceOrigins: props[MEDIA_SOURCE_ORIGINS],
+    mediaSourceOrigins: metadata?.mediaSourceOrigins ?? props[MEDIA_SOURCE_ORIGINS],
+    componentProvenance: metadata?.componentProvenance ?? currentComponentProvenance(),
   };
 }
 
@@ -85,12 +96,45 @@ function authorMetadata(input: {
   readonly key?: JsxKey;
   readonly sourceSpan?: SourceSpan;
   readonly mediaSourceOrigins?: MediaSourceOriginByField;
+  readonly componentProvenance?: ComponentProvenance;
 }) {
   return {
     ...(input.key !== undefined ? { key: input.key } : {}),
     ...(input.sourceSpan ? { sourceSpan: input.sourceSpan } : {}),
     ...(input.mediaSourceOrigins ? { mediaSourceOrigins: input.mediaSourceOrigins } : {}),
+    ...(input.componentProvenance ? { componentProvenance: input.componentProvenance } : {}),
   };
+}
+
+function currentComponentProvenance(): ComponentProvenance | undefined {
+  return activeComponentStack.length > 0 ? { stack: activeComponentStack } : undefined;
+}
+
+function componentNameFor(type: Function): string {
+  const displayName = (type as { readonly displayName?: unknown }).displayName;
+  return typeof displayName === "string" && displayName.length > 0
+    ? displayName
+    : type.name || "Anonymous";
+}
+
+function componentFrameFor(
+  type: Function,
+  key: JsxKey | undefined,
+  sourceSpan: SourceSpan | undefined,
+): ComponentFrame {
+  return {
+    name: componentNameFor(type),
+    ...(sourceSpan ? { sourceSpan } : {}),
+    ...(key !== undefined ? { key } : {}),
+  };
+}
+
+function mergeComponentProvenance(
+  current: ComponentProvenance | undefined,
+  additional: ComponentProvenance | undefined,
+): ComponentProvenance | undefined {
+  const stack = [...(additional?.stack ?? []), ...(current?.stack ?? [])];
+  return stack.length > 0 ? { stack } : undefined;
 }
 
 function intrinsicElement(
@@ -113,7 +157,12 @@ function intrinsicElement(
       source: { kind: "tag", tag: type },
       props: authored.props,
       children: authored.children,
-      ...authorMetadata({ key, sourceSpan, mediaSourceOrigins: authored.mediaSourceOrigins }),
+      ...authorMetadata({
+        key,
+        sourceSpan,
+        mediaSourceOrigins: authored.mediaSourceOrigins,
+        componentProvenance: authored.componentProvenance,
+      }),
     });
   }
 
@@ -123,7 +172,12 @@ function intrinsicElement(
       source: { kind: "tag", tag: type },
       props: authored.props,
       children: authored.children,
-      ...authorMetadata({ key, sourceSpan, mediaSourceOrigins: authored.mediaSourceOrigins }),
+      ...authorMetadata({
+        key,
+        sourceSpan,
+        mediaSourceOrigins: authored.mediaSourceOrigins,
+        componentProvenance: authored.componentProvenance,
+      }),
     });
   }
 
@@ -133,7 +187,12 @@ function intrinsicElement(
       source: { kind: "tag", tag: type },
       props: authored.props,
       children: authored.children,
-      ...authorMetadata({ key, sourceSpan, mediaSourceOrigins: authored.mediaSourceOrigins }),
+      ...authorMetadata({
+        key,
+        sourceSpan,
+        mediaSourceOrigins: authored.mediaSourceOrigins,
+        componentProvenance: authored.componentProvenance,
+      }),
     });
   }
 
@@ -143,7 +202,12 @@ function intrinsicElement(
       source: { kind: "tag", tag: type },
       props: authored.props,
       children: authored.children,
-      ...authorMetadata({ key, sourceSpan, mediaSourceOrigins: authored.mediaSourceOrigins }),
+      ...authorMetadata({
+        key,
+        sourceSpan,
+        mediaSourceOrigins: authored.mediaSourceOrigins,
+        componentProvenance: authored.componentProvenance,
+      }),
     });
   }
 
@@ -153,7 +217,12 @@ function intrinsicElement(
       source: { kind: "tag", tag: type },
       props: authored.props,
       children: authored.children,
-      ...authorMetadata({ key, sourceSpan, mediaSourceOrigins: authored.mediaSourceOrigins }),
+      ...authorMetadata({
+        key,
+        sourceSpan,
+        mediaSourceOrigins: authored.mediaSourceOrigins,
+        componentProvenance: authored.componentProvenance,
+      }),
     });
   }
 
@@ -163,7 +232,12 @@ function intrinsicElement(
       source: { kind: "tag", tag: type },
       props: authored.props,
       children: authored.children,
-      ...authorMetadata({ key, sourceSpan, mediaSourceOrigins: authored.mediaSourceOrigins }),
+      ...authorMetadata({
+        key,
+        sourceSpan,
+        mediaSourceOrigins: authored.mediaSourceOrigins,
+        componentProvenance: authored.componentProvenance,
+      }),
     });
   }
 
@@ -173,7 +247,12 @@ function intrinsicElement(
       source: { kind: "tag", tag: type },
       props: authored.props,
       children: authored.children,
-      ...authorMetadata({ key, sourceSpan, mediaSourceOrigins: authored.mediaSourceOrigins }),
+      ...authorMetadata({
+        key,
+        sourceSpan,
+        mediaSourceOrigins: authored.mediaSourceOrigins,
+        componentProvenance: authored.componentProvenance,
+      }),
     });
   }
 
@@ -183,7 +262,12 @@ function intrinsicElement(
       source: { kind: "tag", tag: type },
       props: authored.props,
       children: authored.children,
-      ...authorMetadata({ key, sourceSpan, mediaSourceOrigins: authored.mediaSourceOrigins }),
+      ...authorMetadata({
+        key,
+        sourceSpan,
+        mediaSourceOrigins: authored.mediaSourceOrigins,
+        componentProvenance: authored.componentProvenance,
+      }),
     });
   }
 
@@ -193,7 +277,12 @@ function intrinsicElement(
       source: { kind: "tag", tag: type },
       props: authored.props,
       children: authored.children,
-      ...authorMetadata({ key, sourceSpan, mediaSourceOrigins: authored.mediaSourceOrigins }),
+      ...authorMetadata({
+        key,
+        sourceSpan,
+        mediaSourceOrigins: authored.mediaSourceOrigins,
+        componentProvenance: authored.componentProvenance,
+      }),
     });
   }
 
@@ -202,7 +291,12 @@ function intrinsicElement(
     source: { kind: "tag", tag: type },
     props: authored.props,
     children: authored.children,
-    ...authorMetadata({ key, sourceSpan, mediaSourceOrigins: authored.mediaSourceOrigins }),
+    ...authorMetadata({
+      key,
+      sourceSpan,
+      mediaSourceOrigins: authored.mediaSourceOrigins,
+      componentProvenance: authored.componentProvenance,
+    }),
   });
 }
 
@@ -323,21 +417,33 @@ export function createElementWithMetadata(
     ...propsObject,
     children: rawChildren,
   };
-  const result = type(nextProps);
+  const previousStack = activeComponentStack;
+  activeComponentStack = [...activeComponentStack, componentFrameFor(type, key, sourceSpan)];
+  let result: AuthorTreeNode;
+  try {
+    result = type(nextProps);
+  } finally {
+    activeComponentStack = previousStack;
+  }
 
   if (!isAuthorTreeNode(result)) {
     throw new Error("Function components must return a deckjsx author tree node.");
   }
 
-  if (key === undefined && sourceSpan === undefined) {
+  const injectedComponentProvenance = propsObject[AUTHORING_METADATA]?.componentProvenance;
+  if (key === undefined && !injectedComponentProvenance) {
     return result;
   }
 
   if (result.kind === "element") {
+    const componentProvenance = mergeComponentProvenance(
+      result.componentProvenance,
+      injectedComponentProvenance,
+    );
     return {
       ...result,
       ...(key !== undefined ? { key } : {}),
-      ...(sourceSpan ? { sourceSpan } : {}),
+      ...(componentProvenance ? { componentProvenance } : {}),
     };
   }
 

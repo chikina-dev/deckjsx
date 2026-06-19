@@ -1,5 +1,5 @@
-const DECKJSX_MEDIA_ORIGIN_IMPORT =
-  'import { mediaSourceOrigins as __deckjsxMediaSourceOrigins } from "deckjsx/integration";';
+const DECKJSX_AUTHORING_METADATA_IMPORT =
+  'import { authoringMetadata as __deckjsxAuthoringMetadata } from "deckjsx/integration";';
 
 export function isDeckjsxTransformableModule(id: string): boolean {
   return /\.[cm]?[jt]sx?(?:\?.*)?$/.test(id) && !/(?:^|\/)node_modules\//.test(id);
@@ -11,7 +11,7 @@ export function transformDeckjsxMediaSourceOrigins(code: string, id: string): st
   }
 
   const transformed = transformMediaSourceOriginProps(code, id);
-  return transformed === code ? undefined : `${DECKJSX_MEDIA_ORIGIN_IMPORT}\n${transformed}`;
+  return transformed === code ? undefined : `${DECKJSX_AUTHORING_METADATA_IMPORT}\n${transformed}`;
 }
 
 function skipQuotedLiteral(code: string, start: number, quote: "'" | '"' | "`"): number {
@@ -91,7 +91,7 @@ function transformMediaSourceOriginProps(code: string, id: string): string {
       continue;
     }
 
-    const replacement = transformJsxStartTag(tag, id);
+    const replacement = transformJsxStartTag(tag, code, id);
     if (replacement !== tag.match) {
       output += code.slice(cursor, index);
       output += replacement;
@@ -108,6 +108,7 @@ type JsxStartTag = {
   readonly tag: string;
   readonly attributes: string;
   readonly closing: string;
+  readonly start: number;
   readonly end: number;
 };
 
@@ -160,6 +161,7 @@ function readJsxStartTag(code: string, start: number): JsxStartTag | undefined {
       tag: tagMatch[1],
       attributes: code.slice(tagEnd, closingStart),
       closing: code.slice(closingStart, end),
+      start,
       end,
     };
   }
@@ -167,8 +169,30 @@ function readJsxStartTag(code: string, start: number): JsxStartTag | undefined {
   return undefined;
 }
 
-function transformJsxStartTag(input: JsxStartTag, id: string): string {
-  if (input.attributes.includes("__deckjsxMediaSourceOrigins")) {
+function sourceSpanFor(code: string, offset: number, id: string): string {
+  let line = 1;
+  let column = 1;
+  for (let index = 0; index < offset; index += 1) {
+    if (code[index] === "\n") {
+      line += 1;
+      column = 1;
+    } else {
+      column += 1;
+    }
+  }
+
+  return `{ file: ${JSON.stringify(id)}, line: ${line}, column: ${column} }`;
+}
+
+function componentProvenanceField(input: JsxStartTag, code: string, id: string): string {
+  return `componentProvenance: { stack: [{ name: ${JSON.stringify(input.tag)}, moduleId: ${JSON.stringify(id)}, sourceSpan: ${sourceSpanFor(code, input.start, id)} }] }`;
+}
+
+function transformJsxStartTag(input: JsxStartTag, code: string, id: string): string {
+  if (
+    input.attributes.includes("__deckjsxAuthoringMetadata") ||
+    input.attributes.includes("__deckjsxMediaSourceOrigins")
+  ) {
     return input.match;
   }
   const isMediaIntrinsic = input.tag === "img" || input.tag === "video";
@@ -177,7 +201,7 @@ function transformJsxStartTag(input: JsxStartTag, id: string): string {
     return input.match;
   }
 
-  const fields = [
+  const mediaFields = [
     mediaOriginField({
       field: "src",
       importer: id,
@@ -191,9 +215,15 @@ function transformJsxStartTag(input: JsxStartTag, id: string): string {
         })
       : undefined,
   ].filter((field): field is string => field !== undefined);
+
+  const fields = [
+    mediaFields.length > 0 ? `mediaSourceOrigins: { ${mediaFields.join(", ")} }` : undefined,
+    isComponent ? componentProvenanceField(input, code, id) : undefined,
+  ].filter((field): field is string => field !== undefined);
+
   if (fields.length === 0) {
     return input.match;
   }
 
-  return `<${input.tag} {...__deckjsxMediaSourceOrigins({ ${fields.join(", ")} })}${input.attributes}${input.closing}`;
+  return `<${input.tag} {...__deckjsxAuthoringMetadata({ ${fields.join(", ")} })}${input.attributes}${input.closing}`;
 }

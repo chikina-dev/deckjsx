@@ -1,4 +1,4 @@
-import { access, mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vite-plus/test";
@@ -224,7 +224,7 @@ describe("@deckjsx/node dev compiler output coordinator", () => {
 });
 
 describe("@deckjsx/node dev artifact plan applier", () => {
-  test("retains slots only when an artifact plan is ready", () => {
+  test("clears retained slots when an artifact plan is blocked", () => {
     const retainedSlots: Array<readonly number[]> = [];
     const applier = createDevArtifactPlanApplier({
       session: {
@@ -236,6 +236,22 @@ describe("@deckjsx/node dev artifact plan applier", () => {
         },
         snapshot() {
           return { cycle: 0, writes: [] };
+        },
+        inspectArtifacts() {
+          return {
+            retainedSlots() {
+              return [];
+            },
+            graphNode() {
+              return undefined;
+            },
+            projectionForSlot() {
+              return undefined;
+            },
+            firstProjection() {
+              return undefined;
+            },
+          };
         },
         retainArtifactSlots(slots) {
           retainedSlots.push(slots);
@@ -256,7 +272,7 @@ describe("@deckjsx/node dev artifact plan applier", () => {
       diagnostics: [],
     });
 
-    expect(retainedSlots).toEqual([[0, 2]]);
+    expect(retainedSlots).toEqual([[0, 2], []]);
   });
 });
 
@@ -999,6 +1015,13 @@ describe("@deckjsx/node dev compiler", () => {
   test("creates the tracked output on the first real Rolldown compilation", async () => {
     const cwd = await mkdtemp(path.join(process.cwd(), ".deckjsx-dev-smoke-"));
     const outputPath = path.join(cwd, "output.pptx");
+    await mkdir(path.join(cwd, "node_modules", "@deckjsx"), { recursive: true });
+    await symlink(path.resolve("."), path.join(cwd, "node_modules", "deckjsx"), "dir");
+    await symlink(
+      path.resolve("plugins/node"),
+      path.join(cwd, "node_modules", "@deckjsx", "node"),
+      "dir",
+    );
     await writeFile(
       path.join(cwd, "entry.cts"),
       [

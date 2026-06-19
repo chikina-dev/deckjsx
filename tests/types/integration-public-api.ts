@@ -10,6 +10,8 @@ import type {
   AssetResolutionProvenanceKind,
   AssetSource,
   AssetSourceField,
+  AuthoringMetadata,
+  ComponentProvenance,
   AfterProjectLifecycleContext,
   DeckIntegrationContext,
   DeckPluginHooks,
@@ -23,12 +25,14 @@ import type {
   SourceInvalidation,
   ArtifactWriteRecord,
   ArtifactWriteToken,
+  IncrementalArtifactInspection,
   IncrementalArtifactCycleResult,
   IncrementalArtifactSession,
   IncrementalArtifactSessionSnapshot,
   IncrementalArtifactWriteRecord,
 } from "deckjsx/integration";
 import {
+  authoringMetadata,
   createIncrementalArtifactSession,
   integrationContextId,
   mediaSourceOrigins,
@@ -179,6 +183,13 @@ incrementalSession satisfies IncrementalArtifactSession;
 incrementalSession.slotArtifacts(0);
 const incrementalSnapshot = incrementalSession.snapshot();
 incrementalSnapshot satisfies IncrementalArtifactSessionSnapshot;
+// @ts-expect-error Retained Pipeline Artifact collections stay behind inspectArtifacts().
+void incrementalSnapshot.artifactSlots;
+const incrementalInspection = incrementalSession.inspectArtifacts();
+incrementalInspection satisfies IncrementalArtifactInspection;
+incrementalInspection.retainedSlots() satisfies readonly number[];
+incrementalInspection.graphNode("node-id");
+incrementalInspection.firstProjection();
 const cyclePromise = runIncrementalArtifactCycle(incrementalSession, { sourceInvalidation }, () => {
   const token = undefined satisfies ArtifactWriteToken | undefined;
   const writeRecord = {
@@ -201,6 +212,25 @@ cycleResult.renderCount satisfies number;
 const mediaOriginProps = mediaSourceOrigins({ src: mediaOrigin, poster: mediaOrigin });
 mediaOriginProps satisfies object;
 void mediaOriginProps;
+
+const componentProvenance = {
+  stack: [
+    {
+      name: "MetricCard",
+      moduleId: "/project/src/components/MetricCard.tsx",
+      sourceSpan: { file: "/project/src/slides/Overview.tsx", line: 12, column: 5 },
+      key: "metric-card",
+    },
+  ],
+} satisfies ComponentProvenance;
+void componentProvenance;
+
+const authoredMetadata = {
+  mediaSourceOrigins: { src: mediaOrigin },
+  componentProvenance,
+} satisfies AuthoringMetadata;
+void authoredMetadata;
+authoringMetadata(authoredMetadata) satisfies object;
 
 const patchPart = {
   packagePartId: "pptx:slide:example",

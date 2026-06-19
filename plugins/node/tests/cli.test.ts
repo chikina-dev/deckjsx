@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 import type { DeckjsxNodeCliDiagnostic } from "../src/cli.ts";
+import type { DeckjsxDevCompilationResult } from "../src/dev-compilation.ts";
+import type { IncrementalArtifactSession } from "deckjsx/integration";
 import {
   devWatchFiles,
   devWriteRecords,
@@ -7,6 +9,10 @@ import {
   parseDeckjsxNodeCliArgs,
   runDeckjsxDevCompilerHost,
 } from "../src/cli.ts";
+
+function asCompilationResult(value: unknown): DeckjsxDevCompilationResult {
+  return value as DeckjsxDevCompilationResult;
+}
 
 describe("@deckjsx/node cli", () => {
   test("parses dev entry, required out, extra output paths, and short diagnostics", () => {
@@ -17,6 +23,7 @@ describe("@deckjsx/node cli", () => {
       "output.pptx",
       "components.pptx",
       "--short",
+      "--interactive",
     ]);
 
     expect(parsed).toEqual({
@@ -26,6 +33,7 @@ describe("@deckjsx/node cli", () => {
       out: "output.pptx",
       outputs: ["output.pptx", "components.pptx"],
       detail: "summary",
+      interactive: true,
     });
   });
 
@@ -180,5 +188,165 @@ describe("@deckjsx/node cli", () => {
 
     expect(calls).toEqual(["start", "close"]);
     expect(lines).toEqual(['["deckjsx.node.dev.bundleFailed"]']);
+  });
+
+  test("hosts an interactive session alongside the dev compiler", async () => {
+    const calls: string[] = [];
+
+    await runDeckjsxDevCompilerHost({
+      detail: "summary",
+      interactive: true,
+      maxCompilations: 1,
+      createInteractiveSession() {
+        calls.push("interactive:start");
+        return {
+          async dispatch() {
+            return { ok: true, result: undefined };
+          },
+          close() {
+            calls.push("interactive:close");
+          },
+        };
+      },
+      compiler: {
+        on() {
+          return () => undefined;
+        },
+        start() {
+          calls.push("compiler:start");
+        },
+        invalidate() {},
+        async runNextCompilation() {
+          return asCompilationResult({
+            ok: true,
+            status: "artifactUpdated",
+            compilation: 1,
+            diagnostics: [],
+          });
+        },
+        async close() {
+          calls.push("compiler:close");
+        },
+      },
+    });
+
+    expect(calls).toEqual([
+      "interactive:start",
+      "compiler:start",
+      "interactive:close",
+      "compiler:close",
+    ]);
+  });
+
+  test("dispatches interactive input lines through the compiler host", async () => {
+    const output: string[] = [];
+    const commands: unknown[] = [];
+
+    await runDeckjsxDevCompilerHost({
+      detail: "summary",
+      interactive: true,
+      interactiveLines: (async function* () {
+        yield "status";
+        yield "exit";
+      })(),
+      interactiveWriteLine(line) {
+        output.push(line);
+      },
+      createInteractiveSession() {
+        return {
+          async dispatch(command) {
+            commands.push(command);
+            return { ok: true, result: { method: command.method } };
+          },
+          close() {},
+        };
+      },
+      maxCompilations: 1,
+      compiler: {
+        on() {
+          return () => undefined;
+        },
+        start() {},
+        invalidate() {},
+        async runNextCompilation() {
+          return asCompilationResult({
+            ok: true,
+            status: "artifactUpdated",
+            compilation: 1,
+            diagnostics: [],
+          });
+        },
+        async close() {},
+      },
+    });
+
+    expect(commands).toEqual([{ method: "session.status" }]);
+    expect(output.map((line) => JSON.parse(line))).toEqual([
+      { ok: true, result: { method: "session.status" } },
+    ]);
+  });
+
+  test("passes artifact session to the default interactive session factory boundary", async () => {
+    const artifactSession = {
+      cycle: 0,
+      beginCycle() {
+        throw new Error("not used");
+      },
+      retainArtifactSlots() {},
+      snapshot() {
+        return { cycle: 0, writes: [] };
+      },
+      inspectArtifacts() {
+        return {
+          retainedSlots() {
+            return [];
+          },
+          graphNode() {
+            return undefined;
+          },
+          projectionForSlot() {
+            return undefined;
+          },
+          firstProjection() {
+            return undefined;
+          },
+        };
+      },
+    } as unknown as IncrementalArtifactSession;
+    let receivedArtifactSession: IncrementalArtifactSession | undefined;
+
+    await runDeckjsxDevCompilerHost({
+      detail: "summary",
+      interactive: true,
+      artifactSession,
+      maxCompilations: 1,
+      createInteractiveSession(input) {
+        receivedArtifactSession = input.artifactSession;
+        return {
+          async dispatch() {
+            return { ok: true, result: undefined };
+          },
+          close() {},
+        };
+      },
+      compiler: {
+        on() {
+          return () => undefined;
+        },
+        start() {},
+        invalidate() {},
+        async runNextCompilation() {
+          return asCompilationResult({
+            ok: true,
+            status: "artifactUpdated",
+            compilation: 1,
+            diagnostics: [],
+          });
+        },
+        async close() {},
+      },
+    });
+
+    expect(receivedArtifactSession).toBe(artifactSession);
   });
 });

@@ -11,6 +11,7 @@ export function createDevArtifactPlanApplier(input: {
   return {
     apply(artifactPlan) {
       if (artifactPlan.status !== "ready") {
+        input.session.retainArtifactSlots([]);
         return;
       }
       input.session.retainArtifactSlots(artifactPlan.retainedSlots);

@@ -1128,6 +1128,7 @@ function elementOriginFromLayoutOrigin(
     ...(origin?.styleEntityIds ? { styleEntityIds: origin.styleEntityIds } : {}),
     ...(origin?.assetEntityIds ? { assetEntityIds: origin.assetEntityIds } : {}),
     ...(origin?.source ? { source: origin.source } : {}),
+    ...(origin?.componentProvenance ? { componentProvenance: origin.componentProvenance } : {}),
   };
 }
 
