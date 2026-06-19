@@ -34,6 +34,7 @@ Trusted Publishing uses GitHub Actions OIDC, so no `NPM_TOKEN` secret is needed.
    - `npm run --prefix .github/compat/pptxgenjs compare`
    - `vp pack`
    - for `@deckjsx/node`: `(cd plugins/node && npm pack)`
+   - the temporary fresh-install smoke in [Pre-publish temporary install smoke](#pre-publish-temporary-install-smoke)
 3. Push the change to `main`.
 4. Run the `Release` workflow from GitHub Actions with the package selector and matching package version:
    - `deckjsx`: `v0.9.2`
@@ -58,6 +59,337 @@ normal `deck.render(pptx())` path and must not publish `pptxgenjs` as a runtime 
 isolated `.github/compat/pptxgenjs/` package is allowed only as generation-regression tooling.
 The public sample package and its lockfile should also stay free of `pptxgenjs`. It is a minimal
 Node dev project for checking the published `deckjsx` and `@deckjsx/node` packages together.
+
+## Pre-publish temporary install smoke
+
+Before publishing either `deckjsx` or `@deckjsx/node`, test the exact packed artifacts in a
+throwaway project. This catches issues that local workspace tests can hide, such as broken package
+metadata, missing built files, CLI bin entrypoint problems, resident `deckjsx dev` behavior, and
+tarball-only peer dependency mistakes. Do not use `npm install deckjsx @deckjsx/node` for this gate:
+that verifies the registry after publishing, which is too late. Use `npm pack` output from the
+release candidate.
+
+Create a temporary project and install the packed packages:
+
+```bash
+vp run build
+(cd plugins/node && ../../node_modules/.bin/vp pack)
+SMOKE_DIR="$(mktemp -d /private/tmp/deckjsx-release-smoke.XXXXXX)"
+npm pack --pack-destination "$SMOKE_DIR"
+(cd plugins/node && npm pack --pack-destination "$SMOKE_DIR")
+(cd "$SMOKE_DIR" && npm init -y)
+(cd "$SMOKE_DIR" && npm install ./deckjsx-*.tgz ./deckjsx-node-*.tgz typescript@latest)
+```
+
+Create the TSX config in the temporary project:
+
+```bash
+cat > "$SMOKE_DIR/tsconfig.json" <<'JSON'
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "deckjsx",
+    "strict": true,
+    "skipLibCheck": true
+  },
+  "include": ["*.tsx"]
+}
+JSON
+```
+
+Create `deep-cli-smoke.mjs` in the temporary project:
+
+```bash
+cat > "$SMOKE_DIR/deep-cli-smoke.mjs" <<'JS'
+import { spawn, spawnSync } from "node:child_process";
+import { access, stat, unlink, writeFile } from "node:fs/promises";
+import { inspectPatchablePptx } from "@deckjsx/node";
+
+const runId = Date.now();
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function unlinkIfExists(path) {
+  await unlink(path).catch(() => undefined);
+}
+
+function validSource({ label, outputPath, secondOutputPath, secondLabel }) {
+  const secondWrite = secondOutputPath
+    ? `
+const componentDeck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+componentDeck.slide({ name: "Component" }, () => (
+  <p style={{ x: 1, y: 1, width: 7, height: 0.8, fontSize: 24 }}>${secondLabel}</p>
+));
+await write(await componentDeck.render(pptx()), "${secondOutputPath}");
+`
+    : "";
+  return `/** @jsxImportSource deckjsx */
+import { write } from "@deckjsx/node";
+import { Deck } from "deckjsx";
+import { pptx } from "deckjsx/adapter";
+
+const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+deck.slide({ name: "Deep TSX smoke" }, () => (
+  <p style={{ x: 1, y: 1, width: 7, height: 0.8, fontSize: 28 }}>
+    ${label}
+  </p>
+));
+
+await write(await deck.render(pptx()), "${outputPath}");
+${secondWrite}`;
+}
+
+function invalidSource(outputPath) {
+  return `/** @jsxImportSource deckjsx */
+import { write } from "@deckjsx/node";
+import { Deck } from "deckjsx";
+import { pptx } from "deckjsx/adapter";
+
+const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+deck.slide({ name: "Broken" }, () => (
+  <p style={{ x: 1, y: }}>
+    BROKEN_TSX_${runId}
+  </p>
+));
+
+await write(await deck.render(pptx()), "${outputPath}");
+`;
+}
+
+function slideXml(outputPath) {
+  const result = spawnSync("unzip", ["-p", outputPath, "ppt/slides/slide1.xml"], {
+    encoding: "utf8",
+  });
+  return result.status === 0 ? result.stdout : "";
+}
+
+async function waitFor(label, read, timeoutMs = 20_000) {
+  const startedAt = Date.now();
+  let lastValue = "";
+  while (Date.now() - startedAt < timeoutMs) {
+    lastValue = await read();
+    if (lastValue.includes(label)) {
+      return lastValue;
+    }
+    await sleep(100);
+  }
+  throw new Error(`timed out waiting for ${label}; last value:\n${lastValue}`);
+}
+
+function startDev(args) {
+  const child = spawn(process.execPath, ["./node_modules/.bin/deckjsx", ...args], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const logs = { stdout: "", stderr: "" };
+  child.stdout.on("data", (chunk) => {
+    logs.stdout += chunk;
+  });
+  child.stderr.on("data", (chunk) => {
+    logs.stderr += chunk;
+  });
+  return { child, logs };
+}
+
+async function stopDev(child) {
+  if (child.exitCode !== null) {
+    return;
+  }
+  child.kill("SIGINT");
+  await new Promise((resolve) => child.on("exit", resolve));
+}
+
+async function assertPatchable(outputPath) {
+  const inspection = await inspectPatchablePptx(outputPath);
+  if (!inspection.ok || !inspection.patchable || inspection.diagnostics.length > 0) {
+    throw new Error(`${outputPath} is not cleanly patchable: ${JSON.stringify(inspection)}`);
+  }
+  return inspection;
+}
+
+async function scenarioLiveUpdateErrorRecovery() {
+  const entry = "main.tsx";
+  const output = "live-output.pptx";
+  const first = `LIVE_FIRST_${runId}`;
+  const second = `LIVE_SECOND_${runId}`;
+  const recovered = `LIVE_RECOVERED_${runId}`;
+  await unlinkIfExists(output);
+  await writeFile(entry, validSource({ label: first, outputPath: output }));
+
+  const { child, logs } = startDev(["dev", entry, "--out", output]);
+  try {
+    await waitFor(first, () => slideXml(output));
+    const firstStat = await stat(output);
+    await assertPatchable(output);
+
+    await writeFile(entry, validSource({ label: second, outputPath: output }));
+    const secondXml = await waitFor(second, () => slideXml(output));
+    const secondStat = await stat(output);
+    if (secondXml.includes(first)) {
+      throw new Error("live update left the first label in slide XML");
+    }
+    if (secondStat.mtimeMs <= firstStat.mtimeMs) {
+      throw new Error("live update did not advance output mtime");
+    }
+    await assertPatchable(output);
+
+    await writeFile(entry, invalidSource(output));
+    await waitFor("error[deckjsx.node.dev.bundleFailed]", () => logs.stderr);
+    await waitFor(`${entry}:9:24`, () => logs.stderr);
+    const errorXml = slideXml(output);
+    if (!errorXml.includes(second) || errorXml.includes(`BROKEN_TSX_${runId}`)) {
+      throw new Error("failed build should leave previous PPTX content intact");
+    }
+
+    await writeFile(entry, validSource({ label: recovered, outputPath: output }));
+    await waitFor(recovered, () => slideXml(output));
+    await assertPatchable(output);
+    return logs.stderr.trim().split("\n").filter(Boolean).slice(-8);
+  } finally {
+    await stopDev(child);
+  }
+}
+
+async function scenarioShortDiagnostics() {
+  const entry = "short-broken.tsx";
+  const output = "short-output.pptx";
+  await unlinkIfExists(output);
+  await writeFile(entry, invalidSource(output));
+  const { child, logs } = startDev(["dev", entry, "--out", output, "--short"]);
+  try {
+    await waitFor("[\"deckjsx.node.dev.bundleFailed\"]", () => logs.stderr);
+    let exists = true;
+    await access(output).catch(() => {
+      exists = false;
+    });
+    if (exists) {
+      throw new Error("invalid initial build unexpectedly created short-output.pptx");
+    }
+    const stderr = logs.stderr.trim().split("\n").filter(Boolean);
+    if (stderr.length !== 1) {
+      throw new Error(`short diagnostics should emit only diagnostic codes: ${JSON.stringify(stderr)}`);
+    }
+    return stderr;
+  } finally {
+    await stopDev(child);
+  }
+}
+
+async function scenarioMultipleOutputs() {
+  const entry = "multi.tsx";
+  const primary = "primary-output.pptx";
+  const secondary = "components-output.pptx";
+  const firstPrimary = `PRIMARY_FIRST_${runId}`;
+  const firstSecondary = `COMPONENT_FIRST_${runId}`;
+  const secondPrimary = `PRIMARY_SECOND_${runId}`;
+  const secondSecondary = `COMPONENT_SECOND_${runId}`;
+  await unlinkIfExists(primary);
+  await unlinkIfExists(secondary);
+  await writeFile(
+    entry,
+    validSource({
+      label: firstPrimary,
+      outputPath: primary,
+      secondOutputPath: secondary,
+      secondLabel: firstSecondary,
+    }),
+  );
+
+  const { child, logs } = startDev(["dev", entry, "--out", primary, secondary]);
+  try {
+    await waitFor(firstPrimary, () => slideXml(primary));
+    await waitFor(firstSecondary, () => slideXml(secondary));
+    const firstPrimaryStat = await stat(primary);
+    const firstSecondaryStat = await stat(secondary);
+    await assertPatchable(primary);
+    await assertPatchable(secondary);
+
+    await writeFile(
+      entry,
+      validSource({
+        label: secondPrimary,
+        outputPath: primary,
+        secondOutputPath: secondary,
+        secondLabel: secondSecondary,
+      }),
+    );
+    await waitFor(secondPrimary, () => slideXml(primary));
+    await waitFor(secondSecondary, () => slideXml(secondary));
+    const secondPrimaryStat = await stat(primary);
+    const secondSecondaryStat = await stat(secondary);
+    await assertPatchable(primary);
+    await assertPatchable(secondary);
+
+    if (secondPrimaryStat.mtimeMs <= firstPrimaryStat.mtimeMs) {
+      throw new Error("primary output mtime did not advance");
+    }
+    if (secondSecondaryStat.mtimeMs <= firstSecondaryStat.mtimeMs) {
+      throw new Error("secondary output mtime did not advance");
+    }
+    if (logs.stderr.trim()) {
+      throw new Error(`multiple-output smoke emitted unexpected stderr: ${logs.stderr}`);
+    }
+    return { primaryUpdated: true, secondaryUpdated: true };
+  } finally {
+    await stopDev(child);
+  }
+}
+
+const results = {
+  packageVersions: {
+    deckjsx: (await import("deckjsx/package.json", { with: { type: "json" } })).default.version,
+    node: (await import("@deckjsx/node/package.json", { with: { type: "json" } })).default.version,
+  },
+  liveUpdateErrorRecovery: await scenarioLiveUpdateErrorRecovery(),
+  shortDiagnostics: await scenarioShortDiagnostics(),
+  multipleOutputs: await scenarioMultipleOutputs(),
+};
+
+console.log(JSON.stringify(results, null, 2));
+JS
+```
+
+Run the smoke:
+
+```bash
+(cd "$SMOKE_DIR" && node deep-cli-smoke.mjs)
+```
+
+Then verify the generated PPTX files as ZIPs and, when LibreOffice is available, as readable
+presentations:
+
+```bash
+(cd "$SMOKE_DIR" && unzip -t live-output.pptx)
+(cd "$SMOKE_DIR" && unzip -t primary-output.pptx)
+(cd "$SMOKE_DIR" && unzip -t components-output.pptx)
+(cd "$SMOKE_DIR" && soffice --headless --convert-to pdf --outdir "$SMOKE_DIR" live-output.pptx primary-output.pptx components-output.pptx)
+```
+
+This smoke must prove all of the following before publishing:
+
+- The installed package versions are the intended release candidates, not the registry's current
+  `latest` versions.
+- `deckjsx dev main.tsx --out live-output.pptx` starts from a TSX entry and creates a PPTX.
+- Editing only the TSX source updates the existing PPTX in the same resident CLI process.
+- The updated PPTX remains patchable according to `inspectPatchablePptx()`.
+- A broken TSX edit emits detailed diagnostics with file, line, column, source line, caret, phase,
+  compilation number, and help.
+- A failed build does not corrupt or replace the previous good PPTX.
+- Fixing the TSX source after a failed build updates the PPTX without restarting the CLI.
+- `--short`/`-s` emits only the diagnostic code summary.
+- `deckjsx dev <entry> --out primary-output.pptx components-output.pptx` creates and updates all
+  declared output files while retaining the primary output as the tracked artifact.
+- The generated PPTX files pass `unzip -t`; PDF conversion is a strong additional compatibility
+  check when `soffice` is installed.
+
+Any failure in this temporary install smoke is a release blocker. Fix the package, repack, reinstall
+the tarballs into a fresh temporary directory, and rerun the smoke before publishing.
 
 Before a v0.9.0 or later release, also confirm that public documentation describes the direct
 writer, `@deckjsx/node` filesystem writes and dev CLI, and the `deckjsx` /
