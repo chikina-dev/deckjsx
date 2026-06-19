@@ -16,6 +16,9 @@ import {
   type ArtifactWriteToken,
   type AssetLoader,
   type DeckPlugin,
+  type IncrementalArtifactCycle,
+  type IncrementalArtifactSession,
+  type IncrementalArtifactWriteRecord,
 } from "../../src/integration.ts";
 import { unzipSync } from "../helpers.ts";
 
@@ -660,6 +663,14 @@ describe("deckjsx/integration", () => {
       result: { status: "created" },
     });
     expect(session.snapshot().writes).toEqual([record]);
+    const snapshot = session.snapshot();
+    (snapshot.writes as IncrementalArtifactWriteRecord[]).push({
+      cycle: 999,
+      slot: 999,
+      path: "/project/mutated.pptx",
+      result: { status: "created" },
+    });
+    expect(session.snapshot().writes).toEqual([record]);
   });
 
   test("incremental artifact cycle complete rejects active and repeated completion", async () => {
@@ -742,6 +753,96 @@ describe("deckjsx/integration", () => {
     );
     expect(outer.complete().writes).toEqual([]);
     expect(inner.complete().writes).toEqual([]);
+  });
+
+  test("incremental artifact session scopes active cycles to async execution", async () => {
+    const session = createIncrementalArtifactSession();
+    const outer = session.beginCycle();
+    const inner = session.beginCycle();
+    let markInnerReady!: () => void;
+    let releaseInner!: () => void;
+    const innerReady = new Promise<void>((resolve) => {
+      markInnerReady = resolve;
+    });
+    const keepInnerRunning = new Promise<void>((resolve) => {
+      releaseInner = resolve;
+    });
+    let outerRecord: ReturnType<typeof recordArtifactWrite> | undefined;
+
+    const outerRun = outer.run(async () => {
+      await innerReady;
+      const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+      deck.slide({ name: "Outer async" }, () => (
+        <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>outer async</p>
+      ));
+      outerRecord = recordArtifactWrite(getArtifactWriteToken(await deck.render(pptx())), {
+        path: "/project/outer.pptx",
+        result: { status: "created" },
+      });
+    });
+    const innerRun = inner.run(async () => {
+      markInnerReady();
+      await keepInnerRunning;
+    });
+
+    await outerRun;
+    releaseInner();
+    await innerRun;
+
+    expect(outerRecord).toEqual({
+      cycle: outer.cycle,
+      slot: 0,
+      path: "/project/outer.pptx",
+      result: { status: "created" },
+    });
+    expect(outer.complete().writes).toEqual([outerRecord]);
+    expect(inner.complete().writes).toEqual([]);
+  });
+
+  test("runIncrementalArtifactCycle uses the public session interface", async () => {
+    let beginOptions: unknown;
+    let retainedSlots: readonly number[] = [];
+    const cycle: IncrementalArtifactCycle = {
+      cycle: 7,
+      renderExecutionContext: {},
+      renderCount: 2,
+      async run(callback) {
+        return callback();
+      },
+      complete() {
+        return {
+          cycle: 7,
+          renderCount: 2,
+          writes: [],
+        };
+      },
+    };
+    const session: IncrementalArtifactSession = {
+      cycle: 6,
+      beginCycle(options) {
+        beginOptions = options;
+        return cycle;
+      },
+      snapshot() {
+        return { cycle: 6, writes: [] };
+      },
+      retainArtifactSlots(slots) {
+        retainedSlots = slots;
+      },
+    };
+
+    await expect(
+      runIncrementalArtifactCycle(
+        session,
+        { sourceInvalidation: { changedSourceIds: ["/project/src/deck.tsx"] } },
+        async () => "ok",
+      ),
+    ).resolves.toBe("ok");
+
+    expect(beginOptions).toEqual({
+      sourceInvalidation: { changedSourceIds: ["/project/src/deck.tsx"] },
+    });
+    expect(retainedSlots).toEqual([0, 1]);
   });
 
   test("runIncrementalArtifactCycle completes the cycle before resolving", async () => {

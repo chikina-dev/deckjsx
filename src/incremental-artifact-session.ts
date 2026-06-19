@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { RenderExecutionContext } from "./render-execution";
 import type { RenderResult } from "./pipeline-runner";
 import { PipelineArtifactCollection } from "./pipeline-artifacts";
@@ -65,7 +66,15 @@ type IncrementalArtifactCycleState = {
   readonly writes: IncrementalArtifactWriteRecord[];
 };
 
-const activeCycles: IncrementalArtifactCycleState[] = [];
+const activeCycleStack = new AsyncLocalStorage<readonly IncrementalArtifactCycleState[]>();
+
+function currentActiveCycleStack(): readonly IncrementalArtifactCycleState[] {
+  return activeCycleStack.getStore() ?? [];
+}
+
+function currentActiveCycle(): IncrementalArtifactCycleState | undefined {
+  return currentActiveCycleStack().at(-1);
+}
 
 export type IncrementalArtifactSession = {
   readonly cycle: number;
@@ -108,7 +117,7 @@ class IncrementalArtifactSessionImpl {
   snapshot(): IncrementalArtifactSessionSnapshot {
     return {
       cycle: this.#cycle,
-      writes: this.#writes,
+      writes: [...this.#writes],
     };
   }
 
@@ -152,7 +161,7 @@ class IncrementalArtifactSessionImpl {
     if (this.#completedCycles.has(token.cycle)) {
       throw new Error(`Incremental artifact cycle ${token.cycle} has already completed.`);
     }
-    const active = activeCycles.at(-1);
+    const active = currentActiveCycle();
     if (active?.session !== this || active.cycle !== token.cycle) {
       throw new Error(
         `Incremental artifact cycle ${token.cycle} is not the active artifact write cycle.`,
@@ -216,13 +225,12 @@ class IncrementalArtifactCycleImpl {
     if (this.#state.completed) {
       throw new Error(`Incremental artifact cycle ${this.#state.cycle} has already completed.`);
     }
-    activeCycles.push(this.#state);
     this.#state.running = true;
+    const stack = [...currentActiveCycleStack(), this.#state];
     try {
-      return await callback();
+      return await activeCycleStack.run(stack, callback);
     } finally {
       this.#state.running = false;
-      activeCycles.pop();
     }
   }
 
@@ -240,7 +248,7 @@ class IncrementalArtifactCycleImpl {
     return {
       cycle: this.#state.cycle,
       renderCount: this.#state.renderCount,
-      writes: this.#state.writes,
+      writes: [...this.#state.writes],
     };
   }
 }
@@ -254,7 +262,7 @@ export async function runIncrementalArtifactCycle<T>(
   options: IncrementalArtifactCycleOptions,
   callback: () => T | Promise<T>,
 ): Promise<T> {
-  const cycle = (session as IncrementalArtifactSessionImpl).beginCycle(options);
+  const cycle = session.beginCycle(options);
   let completed = false;
   try {
     const result = await cycle.run(callback);
@@ -273,7 +281,7 @@ export async function runIncrementalArtifactCycle<T>(
 }
 
 export function claimIncrementalArtifactRenderSlot(): IncrementalArtifactRenderSlot | undefined {
-  const active = activeCycles.at(-1);
+  const active = currentActiveCycle();
   if (!active) {
     return undefined;
   }

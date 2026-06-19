@@ -198,6 +198,28 @@ describe("@deckjsx/node dev compiler output coordinator", () => {
       "/project/output.pptx",
     ]);
   });
+
+  test("classifies writes from a normalized cwd", () => {
+    const cwd = path.join(".", "relative-project");
+    const out = "output.pptx";
+    const absoluteOut = path.resolve(cwd, out);
+
+    const result = classifyDevWrites({
+      cwd,
+      out,
+      writes: [{ cycle: 1, slot: 0, path: out, result: { status: "created" } }],
+    });
+
+    expect(result.records).toEqual([
+      {
+        path: absoluteOut,
+        tracked: true,
+        result: { status: "created" },
+      },
+    ]);
+    expect(result.retainedSlots).toEqual([0]);
+    expect(result.diagnostics).toEqual([]);
+  });
 });
 
 describe("@deckjsx/node dev artifact plan applier", () => {

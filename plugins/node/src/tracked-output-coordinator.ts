@@ -55,9 +55,10 @@ export function classifyDevWrites(input: {
   readonly outputs?: readonly string[];
   readonly writes: readonly IncrementalArtifactWriteRecord[];
 }): ClassifiedDevWrites {
-  const normalized = normalizeDevOutputPaths(input);
+  const cwd = path.resolve(input.cwd);
+  const normalized = normalizeDevOutputPaths({ ...input, cwd });
   const records = input.writes.map((write) => {
-    const writePath = path.resolve(input.cwd, write.path);
+    const writePath = path.resolve(cwd, write.path);
     return {
       path: writePath,
       tracked: writePath === normalized.out,
@@ -65,7 +66,7 @@ export function classifyDevWrites(input: {
     };
   });
   const failedWrites = input.writes.flatMap((write) => {
-    const writePath = path.resolve(input.cwd, write.path);
+    const writePath = path.resolve(cwd, write.path);
     return isFailedWriteResult(write.result)
       ? [
           {
@@ -76,7 +77,7 @@ export function classifyDevWrites(input: {
       : [];
   });
   const successfulTrackedSlots = input.writes.flatMap((write) =>
-    path.resolve(input.cwd, write.path) === normalized.out && !isFailedWriteResult(write.result)
+    path.resolve(cwd, write.path) === normalized.out && !isFailedWriteResult(write.result)
       ? [write.slot]
       : [],
   );
@@ -84,7 +85,7 @@ export function classifyDevWrites(input: {
   const diagnostics: readonly DeckjsxDevDiagnostic[] = [
     ...failedWrites.map(({ path: writePath, diagnostics }) =>
       outputWriteFailedDiagnostic({
-        relativePath: path.relative(path.resolve(input.cwd), writePath),
+        relativePath: path.relative(cwd, writePath),
         file: writePath,
         notes: diagnostics,
       }),
@@ -93,7 +94,7 @@ export function classifyDevWrites(input: {
       ? []
       : [
           missingTrackedOutputDiagnostic({
-            relativePath: path.relative(path.resolve(input.cwd), normalized.out),
+            relativePath: path.relative(cwd, normalized.out),
             file: normalized.out,
           }),
         ]),
