@@ -3,12 +3,12 @@
   "version": "0.1.1",
   "description": "Node.js runtime helpers for deckjsx render artifacts.",
   "license": "MIT",
-  "bin": {
-    "deckjsx": "./dist/cli.mjs"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/chikina-dev/deckjsx.git"
+  },
+  "bin": {
+    "deckjsx": "./dist/cli.mjs"
   },
   "files": [
     "dist"
