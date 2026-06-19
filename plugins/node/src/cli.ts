@@ -1,11 +1,18 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
 import path from "node:path";
+import { createInterface } from "node:readline";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import type { IncrementalArtifactWriteRecord } from "deckjsx/integration";
+import {
+  createIncrementalArtifactSession,
+  type IncrementalArtifactSession,
+  type IncrementalArtifactWriteRecord,
+} from "deckjsx/integration";
 import type { DeckjsxDevCompiler } from "./dev-compiler";
 import { createDevModuleGraphSnapshot } from "./dev-module-graph";
 import { cliUsageDiagnostic } from "./dev-diagnostics";
+import { createInteractiveDevSession, type InteractiveDevSession } from "./interactive/session";
+import { runInteractiveDevCommandLoop } from "./interactive/repl";
 import {
   classifyDevWrites,
   devOutputIgnoreFiles,
@@ -24,6 +31,7 @@ export type DeckjsxNodeCliParseResult =
       readonly out: string;
       readonly outputs: readonly string[];
       readonly detail: DeckjsxNodeCliDetail;
+      readonly interactive: boolean;
     }
   | {
       readonly ok: false;
@@ -54,12 +62,16 @@ export type DeckjsxDevOptions = {
   readonly out: string;
   readonly outputs?: readonly string[];
   readonly detail: DeckjsxNodeCliDetail;
+  readonly interactive?: boolean;
 };
 
 export function parseDeckjsxNodeCliArgs(args: readonly string[]): DeckjsxNodeCliParseResult {
   const detail: DeckjsxNodeCliDetail =
     args.includes("--short") || args.includes("-s") ? "summary" : "details";
-  const [command, entry, ...rest] = args.filter((arg) => arg !== "--short" && arg !== "-s");
+  const interactive = args.includes("--interactive");
+  const [command, entry, ...rest] = args.filter(
+    (arg) => arg !== "--short" && arg !== "-s" && arg !== "--interactive",
+  );
   if (command !== "dev") {
     return {
       ok: false,
@@ -110,6 +122,7 @@ export function parseDeckjsxNodeCliArgs(args: readonly string[]): DeckjsxNodeCli
     out,
     outputs,
     detail,
+    interactive,
   };
 }
 
@@ -124,14 +137,18 @@ export function devWriteRecords(input: {
 export async function runDeckjsxDev(input: DeckjsxDevOptions): Promise<never> {
   const cwd = input.cwd ? path.resolve(input.cwd) : process.cwd();
   const { createDeckjsxDevCompiler } = await import("./dev-compiler");
+  const artifactSession = createIncrementalArtifactSession();
   await runDeckjsxDevCompilerHost({
     compiler: createDeckjsxDevCompiler({
       entry: input.entry,
       cwd,
       out: input.out,
       outputs: input.outputs,
+      session: artifactSession,
     }),
     detail: input.detail,
+    interactive: input.interactive,
+    artifactSession,
   });
   return new Promise<never>(() => {
     // Resident dev process. The compiler wakes through Rolldown watch events.
@@ -141,8 +158,16 @@ export async function runDeckjsxDev(input: DeckjsxDevOptions): Promise<never> {
 export async function runDeckjsxDevCompilerHost(input: {
   readonly compiler: DeckjsxDevCompiler;
   readonly detail: DeckjsxNodeCliDetail;
+  readonly interactive?: boolean;
   readonly maxCompilations?: number;
   readonly writeLine?: (line: string) => void;
+  readonly createInteractiveSession?: (input: {
+    readonly compiler: DeckjsxDevCompiler;
+    readonly artifactSession?: IncrementalArtifactSession;
+  }) => InteractiveDevSession;
+  readonly artifactSession?: IncrementalArtifactSession;
+  readonly interactiveLines?: AsyncIterable<string>;
+  readonly interactiveWriteLine?: (line: string) => void;
 }): Promise<void> {
   const writeLine = input.writeLine ?? ((line: string) => console.error(line));
   const unsubscribe = input.compiler.on((event) => {
@@ -150,18 +175,63 @@ export async function runDeckjsxDevCompilerHost(input: {
       formatDeckjsxNodeDiagnostics([event.diagnostic], input.detail).forEach(writeLine);
     }
   });
+  const interactiveSession = input.interactive
+    ? (input.createInteractiveSession ?? createInteractiveDevSession)({
+        compiler: input.compiler,
+        artifactSession: input.artifactSession,
+      })
+    : undefined;
+  const stdinLines = interactiveSession && !input.interactiveLines ? createStdinLines() : undefined;
+  const startInteractiveLoop = () =>
+    interactiveSession
+      ? runInteractiveDevCommandLoop({
+          session: interactiveSession,
+          lines: input.interactiveLines ?? stdinLines?.lines ?? emptyInteractiveLines(),
+          writeLine: input.interactiveWriteLine ?? ((line) => console.log(line)),
+        })
+      : undefined;
   input.compiler.start();
   let completed = 0;
   try {
-    while (input.maxCompilations === undefined || completed < input.maxCompilations) {
-      await input.compiler.runNextCompilation();
-      completed += 1;
+    const compilationLoop = async () => {
+      while (input.maxCompilations === undefined || completed < input.maxCompilations) {
+        await input.compiler.runNextCompilation();
+        completed += 1;
+      }
+    };
+    if (interactiveSession && input.maxCompilations === undefined) {
+      await Promise.race([compilationLoop(), startInteractiveLoop()]);
+    } else {
+      await compilationLoop();
+      if (input.interactiveLines) {
+        await startInteractiveLoop();
+      }
     }
   } finally {
     unsubscribe();
+    interactiveSession?.close();
+    stdinLines?.close();
     await input.compiler.close();
   }
 }
+
+function createStdinLines(): {
+  readonly lines: AsyncIterable<string>;
+  close(): void;
+} {
+  const terminal = createInterface({
+    input: process.stdin,
+    terminal: false,
+  });
+  return {
+    lines: terminal,
+    close() {
+      terminal.close();
+    },
+  };
+}
+
+async function* emptyInteractiveLines(): AsyncIterable<string> {}
 
 export function devWatchFiles(input: {
   readonly cwd: string;

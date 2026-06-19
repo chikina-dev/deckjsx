@@ -160,6 +160,18 @@ An inspection-only view computed from a Projected Document Model, diagnostics, a
 Derived Projection Inspection Views may be materialized lazily or by detail level so ordinary Project and Render calls do not pay for every sandbox explanation. They must not be writer input and must not duplicate ownership from the Pptx Package Model or Pptx Package Assembly Plan.
 _Avoid_: Projected Document Model, writer input, eager debug payload, root authoring export
 
+**Interactive Dev Session**:
+A resident `@deckjsx/node` development session that lets tooling inspect, explain, and compare the current artifact-producing compiler state through internal commands and events. It is an interactive layer over the Node Incremental Artifact Runtime, not a browser automation protocol or a public authoring API.
+_Avoid_: WebDriver BiDi compatibility, public protocol, browser HMR session, Deck Plugin
+
+**Component Provenance**:
+The component owner context that explains which function components produced an authored node and its downstream graph, projection, and artifact effects. It is distinct from Source Span, which identifies a direct source location, and may be carried as internal dev metadata without exposing component props through the Authoring Interface.
+_Avoid_: Source Span, Media Source Origin, public component node, props inspection payload
+
+**Authoring Metadata Carrier**:
+An internal transport for integration-supplied metadata that travels beside authored JSX without changing author-facing prop values. Its fields are a core-owned closed vocabulary, such as Media Source Origin and Component Provenance, rather than an open plugin-defined metadata bag.
+_Avoid_: public authoring prop, arbitrary metadata map, plugin-owned payload bag
+
 **Integration Interface**:
 The plugin-facing public subpath, such as `deckjsx/integration`, that exposes the minimum contracts Deck Plugins and Runtime Integration Packages need to connect to core without becoming ordinary authoring APIs. It may expose Integration Context, Media Source Origin helpers, AssetLoader contracts, lifecycle hook context types, and patch plan DTOs, while root `deckjsx` keeps authoring vocabulary separate.
 Root `deckjsx` may expose the user-facing Deck Plugin type and `deck.plugin(...)` registration API, but low-level plugin-author contracts belong to the Integration Interface.
@@ -325,6 +337,7 @@ _Avoid_: output path identity, Deck object identity, source file identity
 
 **Incremental Artifact Session**:
 The core-owned execution context for one Incremental Artifact Runtime that assigns Render Slots, carries Source Invalidation into render executions, and retains Pipeline Artifacts for tracked slots between cycles. Runtime Integration Packages may enter a session and report observed writes through integration contracts, but the session owns artifact reuse policy.
+Retained artifact inspection should go through the session's narrow Incremental Artifact Inspection view rather than exposing private Pipeline Artifact collections on the session snapshot.
 Artifact write tokens are valid only for their active cycle. A cycle rejects completion while it is
 still running, rejects repeated completion, and rejects late writes after completion so a runtime
 cannot silently diverge its observed writes from the completed cycle result.

@@ -3,6 +3,12 @@ import {
   type MediaSourceOrigin,
   type MediaSourceOriginByField,
 } from "./media-source-origin";
+import {
+  authoringMetadata,
+  type AuthoringMetadata,
+  type ComponentFrame,
+  type ComponentProvenance,
+} from "./authoring-metadata";
 import type {
   AssetLoadResult,
   AssetLoader,
@@ -54,6 +60,9 @@ import {
   runIncrementalArtifactCycle,
   type ArtifactWriteRecord,
   type ArtifactWriteToken,
+  type IncrementalArtifactGraphNodeInspection,
+  type IncrementalArtifactInspection,
+  type IncrementalArtifactProjectionInspection,
   type IncrementalArtifactCycle,
   type IncrementalArtifactCycleOptions,
   type IncrementalArtifactCycleResult,
@@ -121,8 +130,14 @@ export type {
   RenderExecutionContext,
   MediaSourceOrigin,
   MediaSourceOriginByField,
+  AuthoringMetadata,
+  ComponentFrame,
+  ComponentProvenance,
   ArtifactWriteRecord,
   ArtifactWriteToken,
+  IncrementalArtifactGraphNodeInspection,
+  IncrementalArtifactInspection,
+  IncrementalArtifactProjectionInspection,
   IncrementalArtifactCycle,
   IncrementalArtifactCycleOptions,
   IncrementalArtifactCycleResult,
@@ -133,6 +148,7 @@ export type {
 
 export {
   integrationContextId,
+  authoringMetadata,
   createIncrementalArtifactSession,
   getArtifactWriteToken,
   recordArtifactWrite,

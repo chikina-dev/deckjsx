@@ -35,7 +35,7 @@ describe("@deckjsx/node dev executor", () => {
     expect(result.code).toContain('from "deckjsx/adapter"');
     expect(result.code).toContain('from "@deckjsx/node"');
     expect(result.code).toContain('from "deckjsx/integration"');
-    expect(result.code).toContain("mediaSourceOrigins({ src:");
+    expect(result.code).toContain("authoringMetadata({ mediaSourceOrigins: { src:");
     const bundledEntry = result.moduleIds.find((id) => id.endsWith("/main.tsx"));
     expect(bundledEntry).toBeDefined();
     expect(result.code).toContain(`importer: ${JSON.stringify(bundledEntry)}`);

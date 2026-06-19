@@ -27,6 +27,7 @@ Trusted Publishing uses GitHub Actions OIDC, so no `NPM_TOKEN` secret is needed.
    - `bun run build`
    - for `@deckjsx/node`: `(cd plugins/node && bun install && ../../node_modules/.bin/vp check && ../../node_modules/.bin/vp pack && ../../node_modules/.bin/vp test)`
    - `vp test`
+   - `bun run benchmark:interactive -- --iterations 1`
    - `bun run benchmark:pptx -- --iterations 1 --strict`
    - `bun run verify:render -- --skip-raster`
    - `bun run verify:render -- --skip-raster --baseline <previous-render-manifest.json>` when a
@@ -37,8 +38,8 @@ Trusted Publishing uses GitHub Actions OIDC, so no `NPM_TOKEN` secret is needed.
    - the temporary fresh-install smoke in [Pre-publish temporary install smoke](#pre-publish-temporary-install-smoke)
 3. Push the change to `main`.
 4. Run the `Release` workflow from GitHub Actions with the package selector and matching package version:
-   - `deckjsx`: `v0.9.2`
-   - `@deckjsx/node`: `v0.1.2`
+   - `deckjsx`: `v0.9.3`
+   - `@deckjsx/node`: `v0.1.3`
 
 The workflow validates that the selected package version matches the requested version, derives the
 GitHub release tag for the selected package, checks and packs
@@ -65,7 +66,9 @@ Node dev project for checking the published `deckjsx` and `@deckjsx/node` packag
 Before publishing either `deckjsx` or `@deckjsx/node`, test the exact packed artifacts in a
 throwaway project. This catches issues that local workspace tests can hide, such as broken package
 metadata, missing built files, CLI bin entrypoint problems, resident `deckjsx dev` behavior, and
-tarball-only peer dependency mistakes. Do not use `npm install deckjsx @deckjsx/node` for this gate:
+tarball-only peer dependency mistakes. For v0.9.3 and later, include `deckjsx dev --interactive`
+commands such as `status`, `projection`, and `exit` in this smoke. Do not use
+`npm install deckjsx @deckjsx/node` for this gate:
 that verifies the registry after publishing, which is too late. Use `npm pack` output from the
 release candidate.
 

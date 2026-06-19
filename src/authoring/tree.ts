@@ -14,6 +14,7 @@ import type {
   ViewNodeProps,
 } from "./props";
 import type { MediaSourceOriginByField } from "../media-source-origin";
+import type { ComponentProvenance } from "../authoring-metadata";
 
 export type JsxKey = string | number | bigint;
 
@@ -42,6 +43,7 @@ type AuthorElementNodeBase<
   readonly children: readonly AuthorTreeNode[];
   readonly sourceSpan?: SourceSpan;
   readonly mediaSourceOrigins?: MediaSourceOriginByField;
+  readonly componentProvenance?: ComponentProvenance;
 };
 
 export type AuthorElementPropValue =
@@ -195,6 +197,7 @@ type AuthorElementInput<TNode extends AuthorElementNode> = {
   key?: JsxKey;
   sourceSpan?: SourceSpan;
   mediaSourceOrigins?: MediaSourceOriginByField;
+  componentProvenance?: ComponentProvenance;
 };
 
 type RequiredAuthorElementInput<TNode extends AuthorElementNode> = Omit<
@@ -227,6 +230,7 @@ function buildAuthorElement<
   key?: JsxKey;
   sourceSpan?: SourceSpan;
   mediaSourceOrigins?: MediaSourceOriginByField;
+  componentProvenance?: ComponentProvenance;
 }): AuthorElementNodeBase<TSource, TProps> {
   return {
     $$typeof: "deckjsx.author-tree",
@@ -237,6 +241,7 @@ function buildAuthorElement<
     children: normalizeAuthorChildren(input.children ?? []),
     ...(input.sourceSpan ? { sourceSpan: input.sourceSpan } : {}),
     ...(input.mediaSourceOrigins ? { mediaSourceOrigins: input.mediaSourceOrigins } : {}),
+    ...(input.componentProvenance ? { componentProvenance: input.componentProvenance } : {}),
   };
 }
 

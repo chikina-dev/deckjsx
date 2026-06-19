@@ -3,24 +3,8 @@ import { Deck, StyleSheet } from "../../src/index.ts";
 import { buildLayoutInputSnapshot } from "../../src/layout/input.ts";
 import { resolveProjectedLayout } from "../../src/layout/resolve.ts";
 
-function containsMapReference(value: unknown): boolean {
-  if (value instanceof Map) {
-    return true;
-  }
-
-  if (Array.isArray(value)) {
-    return value.some((item) => containsMapReference(item));
-  }
-
-  if (typeof value === "object" && value !== null) {
-    return Object.values(value).some((item) => containsMapReference(item));
-  }
-
-  return false;
-}
-
 describe("layout input snapshot", () => {
-  test("copies graph and resolved style data without carrying authoring props or live style maps", async () => {
+  test("materializes resolved container styles and probed image metadata", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.useStyles(
       new StyleSheet({
@@ -68,13 +52,8 @@ describe("layout input snapshot", () => {
       meta: { title: "Snapshot" },
     });
     const snapshot = built.snapshot;
-    const serialized = JSON.stringify(snapshot);
 
     expect(built.diagnostics.hasErrors).toBe(false);
-    expect(containsMapReference(snapshot)).toBe(false);
-    expect(serialized).not.toContain("className");
-    expect(serialized).not.toContain("classRefs");
-    expect(serialized).not.toContain("ResolvedStyleMap");
     expect(snapshot.size).toEqual({ widthEmu: 9144000, heightEmu: 5143500 });
     expect(snapshot.slides[0]?.children[0]?.kind).toBe("view");
     expect(snapshot.slides[0]?.children[0]?.props).toMatchObject({

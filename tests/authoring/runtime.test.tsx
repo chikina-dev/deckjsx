@@ -1,10 +1,12 @@
 import { describe, expect, test } from "vite-plus/test";
 import { Deck } from "../../src/index.ts";
 import { isAuthorTreeNode } from "../../src/authoring/tree.ts";
-import { Fragment } from "../../src/jsx-runtime.ts";
+import { authoringMetadata } from "../../src/integration.ts";
+import { jsxDEV } from "../../src/jsx-dev-runtime.ts";
+import { Fragment, jsx } from "../../src/jsx-runtime.ts";
 
 describe("authoring and JSX runtime", () => {
-  test("JSX primitives produce author nodes with flattened children outside props", async () => {
+  test("JSX primitives produce nested Author Tree nodes", async () => {
     const node = (
       <div key="outer" style={{ x: 1, y: 2 }}>
         <>
@@ -20,8 +22,7 @@ describe("authoring and JSX runtime", () => {
     }
 
     expect(node.source).toEqual({ kind: "tag", tag: "div" });
-    expect(Object.hasOwn(node.props, "children")).toBe(false);
-    expect(Object.hasOwn(node.props, "key")).toBe(false);
+    expect(node.props).toEqual({ style: { x: 1, y: 2 } });
     expect(node.children).toHaveLength(1);
     expect(node.children[0]).toMatchObject({ kind: "fragment" });
     if (node.children[0]?.kind !== "fragment") {
@@ -46,6 +47,148 @@ describe("authoring and JSX runtime", () => {
     expect(fragment.children[0]).toMatchObject({
       kind: "element",
       source: { kind: "tag", tag: "p" },
+    });
+  });
+
+  test("authoring metadata carrier transports media source origins", async () => {
+    const origin = { importer: "/project/src/components/Logo.tsx", source: "./logo.png" };
+    const node = (
+      <img {...authoringMetadata({ mediaSourceOrigins: { src: origin } })} src="./logo.png" />
+    );
+
+    if (!isAuthorTreeNode(node) || node.kind !== "element") {
+      throw new Error("Expected author tree element.");
+    }
+
+    expect(node.mediaSourceOrigins).toEqual({ src: origin });
+    expect(node.props).toEqual({ src: "./logo.png" });
+  });
+
+  test("authoring metadata carrier transports component provenance", async () => {
+    const componentProvenance = {
+      stack: [
+        {
+          name: "MetricCard",
+          moduleId: "/project/src/components/MetricCard.tsx",
+          sourceSpan: { file: "/project/src/slides/Overview.tsx", line: 12, column: 5 },
+          key: "metric-card",
+        },
+      ],
+    };
+    const node = <p {...authoringMetadata({ componentProvenance })}>Revenue</p>;
+
+    if (!isAuthorTreeNode(node) || node.kind !== "element") {
+      throw new Error("Expected author tree element.");
+    }
+
+    expect(node.componentProvenance).toEqual(componentProvenance);
+    expect(node.props).toEqual({});
+  });
+
+  test("function components add component provenance without replacing intrinsic source span", async () => {
+    function MetricCard() {
+      return jsxDEV("p", { children: "Revenue" }, undefined, false, {
+        fileName: "/project/src/components/MetricCard.tsx",
+        lineNumber: 7,
+        columnNumber: 10,
+      });
+    }
+
+    const node = jsxDEV(MetricCard, {}, "metric-card", false, {
+      fileName: "/project/src/slides/Overview.tsx",
+      lineNumber: 12,
+      columnNumber: 5,
+    });
+
+    if (!isAuthorTreeNode(node) || node.kind !== "element") {
+      throw new Error("Expected author tree element.");
+    }
+
+    expect(node.sourceSpan).toEqual({
+      file: "/project/src/components/MetricCard.tsx",
+      line: 7,
+      column: 10,
+    });
+    expect(node.componentProvenance).toEqual({
+      stack: [
+        {
+          name: "MetricCard",
+          sourceSpan: { file: "/project/src/slides/Overview.tsx", line: 12, column: 5 },
+          key: "metric-card",
+        },
+      ],
+    });
+  });
+
+  test("unkeyed function components merge injected component provenance", async () => {
+    const injected = {
+      stack: [
+        {
+          name: "MetricCard",
+          moduleId: "/project/src/slides/Overview.tsx",
+          sourceSpan: { file: "/project/src/slides/Overview.tsx", line: 12, column: 5 },
+        },
+      ],
+    };
+    function MetricCard() {
+      return jsxDEV("p", { children: "Revenue" }, undefined, false, {
+        fileName: "/project/src/components/MetricCard.tsx",
+        lineNumber: 7,
+        columnNumber: 10,
+      });
+    }
+
+    const node = jsx(MetricCard, authoringMetadata({ componentProvenance: injected }));
+
+    if (!isAuthorTreeNode(node) || node.kind !== "element") {
+      throw new Error("Expected author tree element.");
+    }
+
+    expect(node.componentProvenance).toEqual({
+      stack: [
+        {
+          name: "MetricCard",
+          moduleId: "/project/src/slides/Overview.tsx",
+          sourceSpan: { file: "/project/src/slides/Overview.tsx", line: 12, column: 5 },
+        },
+        {
+          name: "MetricCard",
+        },
+      ],
+    });
+  });
+
+  test("component provenance reaches projected elements", async () => {
+    function MetricCard() {
+      return jsxDEV(
+        "p",
+        { children: "Revenue", style: { x: 1, y: 1, width: 3, height: 1 } },
+        undefined,
+        false,
+        { fileName: "/project/src/components/MetricCard.tsx", lineNumber: 7, columnNumber: 10 },
+      );
+    }
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Projected component provenance" }, () =>
+      jsxDEV(MetricCard, {}, "metric-card", false, {
+        fileName: "/project/src/slides/Overview.tsx",
+        lineNumber: 12,
+        columnNumber: 5,
+      }),
+    );
+
+    const result = await deck.project();
+    const [element] = result.projection?.slides[0]?.payload.drawing.children ?? [];
+
+    expect(element?.origin.componentProvenance).toEqual({
+      stack: [
+        {
+          name: "MetricCard",
+          sourceSpan: { file: "/project/src/slides/Overview.tsx", line: 12, column: 5 },
+          key: "metric-card",
+        },
+      ],
     });
   });
 
@@ -158,7 +301,7 @@ describe("authoring and JSX runtime", () => {
     ]);
   });
 
-  test("slide factories return slide content without a public Slide root", async () => {
+  test("slide factory content projects into the declared slide", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Content slide" }, () => (

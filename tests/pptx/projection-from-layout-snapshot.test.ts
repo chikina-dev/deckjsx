@@ -6,7 +6,7 @@ import type { PptxPackagePart } from "../../src/projection/pptx/model.ts";
 import { pptxSlidePartFor } from "../../src/projection/pptx/slide.ts";
 
 describe("pptx projection from layout snapshot", () => {
-  test("projects a slide part from ProjectedLayoutSlide without graph or resolved style inputs", () => {
+  test("projects a slide part from a standalone ProjectedLayoutSlide", () => {
     const slideNodeId = "graph:slide:snapshot" as GraphNodeId;
     const textNodeId = "graph:text:title" as GraphNodeId;
     const slideLayoutPart: PptxPackagePart = {
@@ -28,7 +28,17 @@ describe("pptx projection from layout snapshot", () => {
         {
           id: "layout-node:1",
           kind: "text",
-          origin: { graphNodeIds: [textNodeId] },
+          origin: {
+            graphNodeIds: [textNodeId],
+            componentProvenance: {
+              stack: [
+                {
+                  name: "MetricCard",
+                  moduleId: "/project/src/components/MetricCard.tsx",
+                },
+              ],
+            },
+          },
           frame: { xEmu: 100, yEmu: 200, widthEmu: 300, heightEmu: 400 },
           siblingOrder: 0,
           content: {
@@ -54,7 +64,17 @@ describe("pptx projection from layout snapshot", () => {
     expect(part.payload.drawing.children).toHaveLength(1);
     expect(part.payload.drawing.children[0]).toMatchObject({
       kind: "text",
-      origin: { graphNodeIds: [textNodeId] },
+      origin: {
+        graphNodeIds: [textNodeId],
+        componentProvenance: {
+          stack: [
+            {
+              name: "MetricCard",
+              moduleId: "/project/src/components/MetricCard.tsx",
+            },
+          ],
+        },
+      },
       content: { text: "Hello layout" },
     });
     expect(part.relationships?.[0]).toMatchObject({

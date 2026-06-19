@@ -8,6 +8,7 @@ import type {
   VerticalAlign,
 } from "../style/types";
 import type { AssetEntityId, GraphNodeId, SourceOrigin, StyleEntityId } from "../graph";
+import type { ComponentProvenance } from "../authoring-metadata";
 import type { SemanticTemplateAreaRef } from "../graph/types";
 import type { TemplateAreaKind } from "../templates";
 
@@ -16,6 +17,7 @@ export type ProjectedLayoutOrigin = {
   readonly styleEntityIds?: readonly StyleEntityId[];
   readonly assetEntityIds?: readonly AssetEntityId[];
   readonly source?: SourceOrigin;
+  readonly componentProvenance?: ComponentProvenance;
   readonly templateAreaRef?: SemanticTemplateAreaRef;
   readonly templateAreaKind?: TemplateAreaKind;
 };

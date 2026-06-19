@@ -6,6 +6,7 @@ import type {
   AssetSource,
 } from "../../assets";
 import type { Diagnostics } from "../../diagnostics";
+import type { ComponentProvenance } from "../../authoring-metadata";
 import type {
   AssetEntity,
   Brand,
@@ -67,6 +68,7 @@ export type PptxElementOrigin = {
   readonly styleEntityIds?: readonly StyleEntityId[];
   readonly assetEntityIds?: readonly AssetEntity["id"][];
   readonly source?: SourceOrigin;
+  readonly componentProvenance?: ComponentProvenance;
 };
 
 export type PptxSerializedIdentities = {

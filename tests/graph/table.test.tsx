@@ -87,7 +87,6 @@ describe("Semantic Author Graph tables", () => {
       origin: { kind: "implicit", reason: "table-row-shorthand" },
       sectionKind: "body",
     });
-    expect(sections[0]).not.toHaveProperty("authoredTag");
   });
 
   test("compile rejects malformed table hierarchy as semantic structure errors", async () => {

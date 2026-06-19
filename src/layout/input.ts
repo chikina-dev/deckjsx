@@ -230,7 +230,7 @@ function templateAreaKindFor(
 function collectTextOrigin(
   graph: SemanticAuthorGraph,
   node: SemanticTextNode,
-): Pick<ProjectedLayoutOrigin, "graphNodeIds" | "styleEntityIds"> {
+): Pick<ProjectedLayoutOrigin, "componentProvenance" | "graphNodeIds" | "styleEntityIds"> {
   const graphNodeIds: GraphNodeId[] = [node.id];
   const styleEntityIds: StyleEntityId[] = [];
   pushDefined(styleEntityIds, node.styleRef);
@@ -253,6 +253,9 @@ function collectTextOrigin(
   return {
     graphNodeIds: [...new Set(graphNodeIds)],
     ...(styleEntityIds.length > 0 ? { styleEntityIds: [...new Set(styleEntityIds)] } : {}),
+    ...(node.origin.componentProvenance
+      ? { componentProvenance: node.origin.componentProvenance }
+      : {}),
   };
 }
 
@@ -285,6 +288,9 @@ function layoutOriginFor(
       ? { assetEntityIds: collectVideoAssetIds(node) }
       : {}),
     ...(node.origin.source ? { source: node.origin.source } : {}),
+    ...(node.origin.componentProvenance
+      ? { componentProvenance: node.origin.componentProvenance }
+      : {}),
     ...(node.templateAreaRef ? { templateAreaRef: node.templateAreaRef } : {}),
     ...(templateAreaKind ? { templateAreaKind } : {}),
   };

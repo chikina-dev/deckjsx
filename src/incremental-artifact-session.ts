@@ -3,6 +3,7 @@ import type { RenderExecutionContext } from "./render-execution";
 import type { RenderResult } from "./pipeline-runner";
 import { PipelineArtifactCollection } from "./pipeline-artifacts";
 import type { SourceInvalidation } from "./plugin";
+import type { GraphNodeId } from "./graph";
 
 const ARTIFACT_WRITE_TOKEN = Symbol.for("deckjsx.artifactWriteToken");
 declare const ARTIFACT_WRITE_TOKEN_BRAND: unique symbol;
@@ -32,9 +33,33 @@ export type IncrementalArtifactWriteRecord<TWriteResult extends object = object>
     readonly slot: number;
   };
 
+type IncrementalArtifactSlotSnapshot = {
+  readonly slot: number;
+  readonly artifacts: PipelineArtifactCollection;
+};
+
 export type IncrementalArtifactSessionSnapshot = {
   readonly cycle: number;
   readonly writes: readonly IncrementalArtifactWriteRecord[];
+};
+
+export type IncrementalArtifactGraphNodeInspection = {
+  readonly slot: number;
+  readonly sourceKey: string;
+  readonly node: unknown;
+  readonly resolvedStyle?: unknown;
+};
+
+export type IncrementalArtifactProjectionInspection = {
+  readonly slot: number;
+  readonly projection: unknown;
+};
+
+export type IncrementalArtifactInspection = {
+  retainedSlots(): readonly number[];
+  graphNode(nodeId: string): IncrementalArtifactGraphNodeInspection | undefined;
+  projectionForSlot(slot: number): unknown;
+  firstProjection(): IncrementalArtifactProjectionInspection | undefined;
 };
 
 export type IncrementalArtifactCycleOptions = {
@@ -80,6 +105,7 @@ export type IncrementalArtifactSession = {
   readonly cycle: number;
   beginCycle(options?: IncrementalArtifactCycleOptions): IncrementalArtifactCycle;
   snapshot(): IncrementalArtifactSessionSnapshot;
+  inspectArtifacts(): IncrementalArtifactInspection;
   retainArtifactSlots(slots: readonly number[]): void;
 };
 
@@ -117,8 +143,17 @@ class IncrementalArtifactSessionImpl {
   snapshot(): IncrementalArtifactSessionSnapshot {
     return {
       cycle: this.#cycle,
-      writes: [...this.#writes],
+      writes: clonePublicValue(this.#writes),
     };
+  }
+
+  inspectArtifacts(): IncrementalArtifactInspection {
+    return new IncrementalArtifactInspectionImpl(
+      [...this.#slots.entries()].map(([slot, artifacts]) => ({
+        slot,
+        artifacts: artifacts.clone(),
+      })),
+    );
   }
 
   slotArtifactsForCycle(
@@ -171,11 +206,11 @@ class IncrementalArtifactSessionImpl {
       cycle: token.cycle,
       slot: token.slot,
       path: record.path,
-      result: record.result,
+      result: clonePublicValue(record.result),
     };
     this.#writes = [...this.#writes, write];
     active.writes.push(write);
-    return write;
+    return clonePublicValue(write);
   }
 
   completeCycle(
@@ -186,6 +221,53 @@ class IncrementalArtifactSessionImpl {
     this.#completedCycleSlots.clear();
     this.#completedCycleSlots.set(cycle, new Map(slotArtifacts));
     this.#latestCompletedCycle = cycle;
+  }
+}
+
+class IncrementalArtifactInspectionImpl implements IncrementalArtifactInspection {
+  readonly #slots: readonly IncrementalArtifactSlotSnapshot[];
+
+  constructor(slots: readonly IncrementalArtifactSlotSnapshot[]) {
+    this.#slots = slots;
+  }
+
+  retainedSlots(): readonly number[] {
+    return this.#slots.map((slot) => slot.slot);
+  }
+
+  graphNode(nodeId: string): IncrementalArtifactGraphNodeInspection | undefined {
+    for (const slot of this.#slots) {
+      for (const [sourceKey, graph] of slot.artifacts.graphsBySourceKey) {
+        const id = nodeId as GraphNodeId;
+        const node = graph.graph.nodes.get(id);
+        if (node) {
+          const resolvedStyle = graph.resolvedStyles.get(id);
+          return {
+            slot: slot.slot,
+            sourceKey,
+            node: clonePublicValue(node),
+            ...(resolvedStyle ? { resolvedStyle: clonePublicValue(resolvedStyle) } : {}),
+          };
+        }
+      }
+    }
+    return undefined;
+  }
+
+  projectionForSlot(slot: number): unknown {
+    const projection = this.#slots.find((entry) => entry.slot === slot)?.artifacts.projection
+      ?.projection;
+    return projection === undefined ? undefined : clonePublicValue(projection);
+  }
+
+  firstProjection(): IncrementalArtifactProjectionInspection | undefined {
+    for (const slot of this.#slots) {
+      const projection = slot.artifacts.projection;
+      if (projection) {
+        return { slot: slot.slot, projection: clonePublicValue(projection.projection) };
+      }
+    }
+    return undefined;
   }
 }
 
@@ -248,9 +330,13 @@ class IncrementalArtifactCycleImpl {
     return {
       cycle: this.#state.cycle,
       renderCount: this.#state.renderCount,
-      writes: [...this.#state.writes],
+      writes: clonePublicValue(this.#state.writes),
     };
   }
+}
+
+function clonePublicValue<T>(value: T): T {
+  return globalThis.structuredClone(value) as T;
 }
 
 export function createIncrementalArtifactSession(): IncrementalArtifactSession {

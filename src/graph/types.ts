@@ -1,5 +1,6 @@
 import type { AuthoredTag, SectioningTag } from "../authoring/tags";
 import type { JsxKey, SourceSpan } from "../authoring/tree";
+import type { ComponentProvenance } from "../authoring-metadata";
 import type { MediaSourceOrigin } from "../media-source-origin";
 import type { StyleDeclaration } from "../style/types";
 
@@ -55,6 +56,7 @@ export type SemanticOrigin = {
   readonly path: string;
   readonly source?: SourceOrigin;
   readonly sourceSpan?: SourceSpan;
+  readonly componentProvenance?: ComponentProvenance;
   readonly reason?: "primitive-text-in-container" | "table-row-shorthand";
 };
 

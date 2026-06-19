@@ -42,10 +42,22 @@ export type ResolvedStyleProperty = {
   readonly source: ResolvedStyleSource;
 };
 
+export type ResolvedStylePropertyTraceCandidate = {
+  readonly value: ResolvedStyleValue | undefined;
+  readonly source: ResolvedStyleSource;
+  readonly applied: boolean;
+};
+
+export type ResolvedStylePropertyTrace = {
+  readonly property: string;
+  readonly candidates: readonly ResolvedStylePropertyTraceCandidate[];
+};
+
 export type ResolvedStyle = {
   readonly style: Readonly<ResolvedStyleDeclaration>;
   readonly properties: Readonly<Record<string, ResolvedStyleProperty>>;
   readonly appliedClasses: readonly ResolvedStyleSource[];
+  readonly propertyTraces: Readonly<Record<string, ResolvedStylePropertyTrace>>;
 };
 
 export type ResolvedStyleMap = ReadonlyMap<GraphNodeId, ResolvedStyle>;
@@ -92,9 +104,12 @@ function applyProperties(
   style: ResolvedStyleDeclaration,
   source: ResolvedStyleSource,
   properties: Record<string, ResolvedStyleProperty>,
+  traceCandidates: Record<string, ResolvedStyleProperty[]>,
 ): void {
   Object.entries<StyleDeclarationValue | undefined>(style).forEach(([key, value]) => {
-    properties[key] = { value, source };
+    const property = { value, source };
+    properties[key] = property;
+    traceCandidates[key] = [...(traceCandidates[key] ?? []), property];
   });
 }
 
@@ -123,6 +138,7 @@ function applyInheritedProperties(
   parentId: GraphNodeId | undefined,
   parent: ResolvedStyle | undefined,
   properties: Record<string, ResolvedStyleProperty>,
+  traceCandidates: Record<string, ResolvedStyleProperty[]>,
 ): void {
   if (parentId === undefined || parent === undefined) {
     return;
@@ -135,8 +151,27 @@ function applyInheritedProperties(
         value: property.value,
         source: { layer: "inherited", parentId },
       };
+      traceCandidates[key] = [...(traceCandidates[key] ?? []), properties[key]];
     }
   }
+}
+
+function propertyTracesFor(
+  traceCandidates: Record<string, ResolvedStyleProperty[]>,
+): Record<string, ResolvedStylePropertyTrace> {
+  return Object.fromEntries(
+    Object.entries(traceCandidates).map(([property, candidates]) => [
+      property,
+      {
+        property,
+        candidates: candidates.map((candidate, index) => ({
+          value: candidate.value,
+          source: candidate.source,
+          applied: index === candidates.length - 1,
+        })),
+      },
+    ]),
+  );
 }
 
 function resolvedStyleFor(
@@ -149,14 +184,15 @@ function resolvedStyleFor(
   diagnostics: Diagnostic[],
 ): ResolvedStyle {
   const properties: Record<string, ResolvedStyleProperty> = {};
+  const traceCandidates: Record<string, ResolvedStyleProperty[]> = {};
   const appliedClasses: ResolvedStyleSource[] = [];
 
   const defaults = elementDefaultsFor(node);
   if (defaults) {
-    applyProperties(defaults, { layer: "default" }, properties);
+    applyProperties(defaults, { layer: "default" }, properties, traceCandidates);
   }
 
-  applyInheritedProperties(inherited.parentId, inherited.style, properties);
+  applyInheritedProperties(inherited.parentId, inherited.style, properties, traceCandidates);
 
   const themeDefaults = node.authoredTag && theme ? themeInput(theme).defaults : undefined;
   const themeDefault = node.authoredTag ? themeDefaults?.[node.authoredTag] : undefined;
@@ -168,6 +204,7 @@ function resolvedStyleFor(
         defaultKey: node.authoredTag,
       },
       properties,
+      traceCandidates,
     );
   }
 
@@ -182,12 +219,12 @@ function resolvedStyleFor(
         selector: match.selector,
       };
       appliedClasses.push(source);
-      applyProperties(match.style, source, properties);
+      applyProperties(match.style, source, properties, traceCandidates);
     });
   }
 
   if (entity?.authored.style) {
-    applyProperties(entity.authored.style, { layer: "style" }, properties);
+    applyProperties(entity.authored.style, { layer: "style" }, properties, traceCandidates);
   }
 
   return {
@@ -196,6 +233,7 @@ function resolvedStyleFor(
     ),
     properties,
     appliedClasses,
+    propertyTraces: propertyTracesFor(traceCandidates),
   };
 }
 
