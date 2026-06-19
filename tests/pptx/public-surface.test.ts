@@ -204,7 +204,7 @@ describe("public surface", () => {
         "vp run build",
       );
       expect(pkg.peerDependencies?.deckjsx, `${path} declares deckjsx as a peer`).toBe("^0.9.1");
-      expect(pkg.bin?.deckjsx, `${path} exposes the deckjsx CLI`).toBe("./dist/cli.mjs");
+      expect(pkg.bin?.deckjsx, `${path} exposes the deckjsx CLI`).toBe("dist/cli.mjs");
       expect(pkg.dependencies?.deckjsx, `${path} must not publish a runtime file dependency`).toBe(
         undefined,
       );
