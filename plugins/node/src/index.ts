@@ -12,7 +12,12 @@ import type {
   DeckPlugin,
   RenderPatchPlanPart,
 } from "deckjsx/integration";
-import { integrationContextId } from "deckjsx/integration";
+import {
+  getArtifactWriteToken,
+  integrationContextId,
+  recordArtifactWrite,
+} from "deckjsx/integration";
+import { observeDeckjsxDevAssetFile } from "./dev-asset-observer";
 import {
   PATCH_MANIFEST_PATH,
   STORE_METHOD,
@@ -26,7 +31,6 @@ import {
 } from "./package-patch";
 
 export type { WriteDiagnostic } from "./package-patch";
-
 export type WriteStrategy = "atomic-replace" | "in-place" | "write-file";
 
 export type WriteResult = {
@@ -106,7 +110,9 @@ export function createNodeFileAssetLoader(options: NodeFileAssetLoaderOptions = 
       }
 
       try {
-        return { ok: true, value: await probeFileAsset(filePath.path) };
+        const value = await probeFileAsset(filePath.path);
+        observeDeckjsxDevAssetFile(filePath.path);
+        return { ok: true, value };
       } catch (error) {
         return nodeFileAssetReadFailure({
           phase: "probe",
@@ -133,7 +139,9 @@ export function createNodeFileAssetLoader(options: NodeFileAssetLoaderOptions = 
       }
 
       try {
-        return { ok: true, value: await loadFileAsset(filePath.path) };
+        const value = await loadFileAsset(filePath.path);
+        observeDeckjsxDevAssetFile(filePath.path);
+        return { ok: true, value };
       } catch (error) {
         return nodeFileAssetReadFailure({
           phase: "load",
@@ -183,9 +191,15 @@ export async function inspectPatchablePptx(
 }
 
 export async function write(render: RenderResult, outputPath: string): Promise<WriteResult> {
+  const writeToken = getArtifactWriteToken(render);
+  const finishWrite = (result: WriteResult): WriteResult => {
+    recordArtifactWrite(writeToken, { path: outputPath, result });
+    return result;
+  };
+
   if (!render.ok) {
     const renderDiagnosticCodes = render.diagnostics.items.map((item) => item.code);
-    return {
+    return finishWrite({
       path: outputPath,
       status: "failed",
       strategy: "write-file",
@@ -200,12 +214,12 @@ export async function write(render: RenderResult, outputPath: string): Promise<W
           path: outputPath,
         },
       ],
-    };
+    });
   }
 
   const artifact = render.artifact;
   if (!artifact) {
-    return {
+    return finishWrite({
       path: outputPath,
       status: "failed",
       strategy: "write-file",
@@ -218,10 +232,10 @@ export async function write(render: RenderResult, outputPath: string): Promise<W
           path: outputPath,
         },
       ],
-    };
+    });
   }
   if (artifact.format !== "pptx") {
-    return {
+    return finishWrite({
       path: outputPath,
       status: "failed",
       strategy: "write-file",
@@ -234,32 +248,32 @@ export async function write(render: RenderResult, outputPath: string): Promise<W
           path: outputPath,
         },
       ],
-    };
+    });
   }
 
   const lock = await acquireWriteLock(outputPath);
   if (!lock.ok) {
-    return {
+    return finishWrite({
       path: outputPath,
       status: "failed",
       strategy: "write-file",
       bytesWritten: 0,
       patchedParts: [],
       diagnostics: lock.diagnostics,
-    };
+    });
   }
 
   try {
     if (!(await pathExists(outputPath))) {
       await writeFile(outputPath, artifact.bytes);
-      return {
+      return finishWrite({
         path: outputPath,
         status: "created",
         strategy: "write-file",
         bytesWritten: artifact.bytes.byteLength,
         patchedParts: [],
         diagnostics: [],
-      };
+      });
     }
 
     const patch = render.patchPlan
@@ -267,7 +281,7 @@ export async function write(render: RenderResult, outputPath: string): Promise<W
       : undefined;
     if (patch?.ok) {
       await writePatchSegments(outputPath, patch.segments);
-      return {
+      return finishWrite({
         path: outputPath,
         status: "patched",
         strategy: "in-place",
@@ -277,20 +291,20 @@ export async function write(render: RenderResult, outputPath: string): Promise<W
         ),
         patchedParts: patch.patchedParts,
         diagnostics: [],
-      };
+      });
     }
 
     await replaceFile(outputPath, artifact.bytes);
-    return {
+    return finishWrite({
       path: outputPath,
       status: "replaced",
       strategy: "atomic-replace",
       bytesWritten: artifact.bytes.byteLength,
       patchedParts: [],
       diagnostics: patch?.diagnostics ?? [],
-    };
+    });
   } catch (error) {
-    return {
+    return finishWrite({
       path: outputPath,
       status: "failed",
       strategy: "write-file",
@@ -303,7 +317,7 @@ export async function write(render: RenderResult, outputPath: string): Promise<W
           path: outputPath,
         },
       ],
-    };
+    });
   } finally {
     await releaseWriteLock(lock.lock);
   }

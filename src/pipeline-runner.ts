@@ -29,7 +29,15 @@ import {
 } from "./composition/types";
 import { resolveComposition } from "./composition/resolve";
 import { applyPluginHooks } from "./plugin";
-import { createRenderExecution, type RenderExecution } from "./render-execution";
+import {
+  createRenderExecution,
+  withRenderExecutionContext,
+  type RenderExecution,
+} from "./render-execution";
+import {
+  attachArtifactWriteToken,
+  claimIncrementalArtifactRenderSlot,
+} from "./incremental-artifact-session";
 import {
   buildSemanticAuthorGraph,
   type AssetEntityId,
@@ -78,7 +86,7 @@ import {
   summarizeProjectedDocumentModel,
 } from "./projection/registry";
 import { validatePptxPackageModel } from "./projection/pptx/validation";
-import { hmrProjectionReusePlan } from "./projection/pptx/reuse";
+import { incrementalProjectionReusePlan } from "./projection/pptx/reuse";
 import { resolveStyles, type ResolvedStyleMap } from "./style/resolve";
 import type { SlideTemplateSet } from "./templates";
 import { pptxMediaAssetLoadRequirements } from "./writers/pptx";
@@ -1144,9 +1152,9 @@ function projectionWithReusablePackageParts(input: {
   const parts = input.projection.parts.map((part): PptxPackagePartModel => {
     const previous = previousArtifact.partsById.get(part.id);
     if (
-      isHmrReusableSlideUnitPart(part, reusableSlideUnits) &&
+      isIncrementalReusableSlideUnitPart(part, reusableSlideUnits) &&
       previous &&
-      isHmrReusableSlideUnitPart(previous, reusableSlideUnits) &&
+      isIncrementalReusableSlideUnitPart(previous, reusableSlideUnits) &&
       previous.fingerprint &&
       previous.fingerprint === part.fingerprint
     ) {
@@ -1267,7 +1275,7 @@ function graphNodeIdsBelongToReusableSlideUnit(
   return ownerSlideNodeId !== undefined;
 }
 
-function isHmrReusableSlideUnitPart(
+function isIncrementalReusableSlideUnitPart(
   part: PptxPackagePartCandidate,
   reusableSlideUnits: ReusableSlideUnitIndex,
 ): boolean {
@@ -1539,17 +1547,17 @@ export async function projectSource<
     if (projectAssetsById !== assetsById) {
       materializeAssetMap(artifacts, projectAssetsById);
     }
-    const hmrReuseSnapshot = artifacts.hmrProjectionReuseSnapshot;
-    const projectionReuse = hmrProjectionReusePlan({
+    const incrementalReuseSnapshot = artifacts.incrementalProjectionReuseSnapshot;
+    const projectionReuse = incrementalProjectionReusePlan({
       graph: projectGraph,
       resolvedStyles: projectResolvedStyles,
       options: input.options,
       assets: projectAssetsById,
-      previousGraph: hmrReuseSnapshot?.graph,
-      previousProjection: hmrReuseSnapshot?.projection,
-      previousOptions: hmrReuseSnapshot?.options,
-      previousAssets: hmrReuseSnapshot?.assetsById,
-      staleAssetEntityIds: hmrReuseSnapshot?.staleAssetEntityIds,
+      previousGraph: incrementalReuseSnapshot?.graph,
+      previousProjection: incrementalReuseSnapshot?.projection,
+      previousOptions: incrementalReuseSnapshot?.options,
+      previousAssets: incrementalReuseSnapshot?.assetsById,
+      staleAssetEntityIds: incrementalReuseSnapshot?.staleAssetEntityIds,
     });
     const beforeProjectDiagnostics = createDiagnostics(beforeProject.diagnostics);
     const projected = projectGraphToDocumentModel({
@@ -1562,7 +1570,7 @@ export async function projectSource<
     });
     const reusedProjection = projectionWithReusablePackageParts({
       projection: projected,
-      previous: hmrReuseSnapshot?.projection,
+      previous: incrementalReuseSnapshot?.projection,
       graph: projectGraph,
       reusableSlideNodeIds: projectionReuse?.slideNodeIds,
     });
@@ -1705,7 +1713,11 @@ export async function renderSource<
   artifacts?: PipelineArtifactCollection;
   assetLoaders?: readonly AssetLoader[];
 }): Promise<RenderResult> {
-  const artifacts = input.artifacts ?? new PipelineArtifactCollection();
+  const incrementalSlot = claimIncrementalArtifactRenderSlot();
+  const artifacts =
+    incrementalSlot?.artifacts ?? input.artifacts ?? new PipelineArtifactCollection();
+  const finishRender = <TResult extends RenderResult>(result: TResult): TResult =>
+    attachArtifactWriteToken(result, incrementalSlot?.token);
   const projectionFormat = projectionFormatFor(input.options);
   const adapterSelection = selectWriterAdapter({
     renderInput: input.renderInput,
@@ -1713,7 +1725,7 @@ export async function renderSource<
   });
 
   if (!adapterSelection.ok) {
-    return {
+    return finishRender({
       ok: false,
       diagnostics: adapterSelection.diagnostics,
       stages: {
@@ -1722,25 +1734,32 @@ export async function renderSource<
         render: stageSummary("render", adapterSelection.diagnostics, "missing"),
       },
       format: adapterSelection.format,
-    };
+    });
   }
 
   const adapter = adapterSelection.adapter;
+  const renderInputForExecution =
+    input.renderInput && typeof input.renderInput === "object" ? input.renderInput : adapter;
   const execution = createRenderExecution({
     plugins: directPluginsForSource(input.source),
-    renderInput:
-      input.renderInput && typeof input.renderInput === "object" ? input.renderInput : adapter,
+    renderInput: incrementalSlot
+      ? withRenderExecutionContext(renderInputForExecution, incrementalSlot.renderExecutionContext)
+      : renderInputForExecution,
     assetLoaders: input.assetLoaders,
   });
-  const hmrInvalidated = execution.hmrInvalidation
-    ? artifacts.invalidateForHmr(execution.hmrInvalidation)
+  const sourceInvalidated = execution.sourceInvalidation
+    ? artifacts.invalidateForSourceChange(execution.sourceInvalidation)
     : false;
   const projectResult = await projectSource({
     source: input.source,
     options: input.options,
     projectionFormat: adapter.projectionFormat,
-    definedGraph: hmrInvalidated ? artifacts.graph : input.definedGraph,
-    definedProjection: hmrInvalidated ? artifacts.projection : input.definedProjection,
+    definedGraph: sourceInvalidated
+      ? artifacts.graph
+      : (incrementalSlot?.artifacts.graph ?? input.definedGraph),
+    definedProjection: sourceInvalidated
+      ? artifacts.projection
+      : (incrementalSlot?.artifacts.projection ?? input.definedProjection),
     artifacts,
     assetLoaders: execution.assetLoaders,
     mediaSourceOrigin: execution.mediaSourceOrigin,
@@ -1754,7 +1773,7 @@ export async function renderSource<
   const projectDiagnostics = combineDiagnostics(projectResult.diagnostics, formatDiagnostics);
 
   if (!projectResult.projection || projectDiagnostics.hasErrors) {
-    return {
+    return finishRender({
       ok: false,
       diagnostics: projectDiagnostics,
       stages: {
@@ -1762,7 +1781,7 @@ export async function renderSource<
         render: stageSummary("render", projectDiagnostics, "missing"),
       },
       format: adapter.format,
-    };
+    });
   }
 
   const beforeRender = applyPluginHooks(execution.plugins, "beforeRender", {
@@ -1775,7 +1794,7 @@ export async function renderSource<
   const beforeRenderDiagnostics = createDiagnostics(beforeRender.diagnostics);
   const preRenderDiagnostics = combineDiagnostics(projectDiagnostics, beforeRenderDiagnostics);
   if (preRenderDiagnostics.hasErrors) {
-    return {
+    return finishRender({
       ok: false,
       diagnostics: preRenderDiagnostics,
       stages: {
@@ -1783,7 +1802,7 @@ export async function renderSource<
         render: stageSummary("render", preRenderDiagnostics, "missing"),
       },
       format: adapter.format,
-    };
+    });
   }
 
   try {
@@ -1809,7 +1828,7 @@ export async function renderSource<
       beforeAssetLoadDiagnostics,
     );
     if (loadPreRenderDiagnostics.hasErrors) {
-      return {
+      return finishRender({
         ok: false,
         diagnostics: loadPreRenderDiagnostics,
         stages: {
@@ -1817,7 +1836,7 @@ export async function renderSource<
           render: stageSummary("render", loadPreRenderDiagnostics, "missing"),
         },
         format: adapter.format,
-      };
+      });
     }
     const assetLoadDiagnostics = await loadAssetArtifacts({
       artifacts,
@@ -1854,7 +1873,7 @@ export async function renderSource<
     );
     if (assetLoadLifecycleDiagnostics.hasErrors) {
       const diagnostics = combineDiagnostics(preRenderDiagnostics, assetLoadLifecycleDiagnostics);
-      return {
+      return finishRender({
         ok: false,
         diagnostics,
         stages: {
@@ -1862,7 +1881,7 @@ export async function renderSource<
           render: stageSummary("render", diagnostics, "missing"),
         },
         format: adapter.format,
-      };
+      });
     }
 
     const writerContext = createWriterRenderContext({
@@ -1888,7 +1907,7 @@ export async function renderSource<
     );
     const artifact = afterRender.context.artifact;
     if (!artifact) {
-      return {
+      return finishRender({
         ok: resultOk(renderDiagnostics),
         diagnostics: renderDiagnostics,
         stages: {
@@ -1896,18 +1915,18 @@ export async function renderSource<
           render: stageSummary("render", renderDiagnostics, "missing"),
         },
         format: adapter.format,
-      };
+      });
     }
 
     const summary = includeInspectionSummary(adapter.options.inspection)
       ? adapterResult.summary
       : undefined;
     const patchPlan =
-      adapterResult.patchPlan && execution.hmrInvalidation
-        ? { ...adapterResult.patchPlan, hmrInvalidation: execution.hmrInvalidation }
+      adapterResult.patchPlan && execution.sourceInvalidation
+        ? { ...adapterResult.patchPlan, sourceInvalidation: execution.sourceInvalidation }
         : adapterResult.patchPlan;
 
-    return {
+    return finishRender({
       ok: resultOk(renderDiagnostics),
       diagnostics: renderDiagnostics,
       stages: {
@@ -1922,7 +1941,7 @@ export async function renderSource<
       artifact,
       ...(patchPlan ? { patchPlan } : {}),
       ...(summary ? { summary } : {}),
-    };
+    });
   } catch (error) {
     const renderDiagnostics = diagnosticFromError({
       stage: "render",
@@ -1932,7 +1951,7 @@ export async function renderSource<
     });
     const diagnostics = combineDiagnostics(preRenderDiagnostics, renderDiagnostics);
 
-    return {
+    return finishRender({
       ok: false,
       diagnostics,
       stages: {
@@ -1940,6 +1959,6 @@ export async function renderSource<
         render: stageSummary("render", renderDiagnostics, "missing"),
       },
       format: adapter.format,
-    };
+    });
   }
 }

@@ -39,7 +39,7 @@ import {
   type DeckPluginHooks,
   type DeckPlugin,
   type PluginHookResult,
-  type HmrInvalidation,
+  type SourceInvalidation,
 } from "./plugin";
 import { withRenderExecutionContext, type RenderExecutionContext } from "./render-execution";
 import {
@@ -47,6 +47,20 @@ import {
   type DeckIntegrationContext,
   type IntegrationContextId,
 } from "./integration-context";
+import {
+  createIncrementalArtifactSession,
+  getArtifactWriteToken,
+  recordArtifactWrite,
+  runIncrementalArtifactCycle,
+  type ArtifactWriteRecord,
+  type ArtifactWriteToken,
+  type IncrementalArtifactCycle,
+  type IncrementalArtifactCycleOptions,
+  type IncrementalArtifactCycleResult,
+  type IncrementalArtifactSession,
+  type IncrementalArtifactSessionSnapshot,
+  type IncrementalArtifactWriteRecord,
+} from "./incremental-artifact-session";
 import type {
   PatchManifest,
   PersistentPatchPlanPart,
@@ -103,13 +117,28 @@ export type {
   RenderPatchPlan,
   RenderPatchPlanPart,
   RenderPatchPlanPartKind,
-  HmrInvalidation,
+  SourceInvalidation,
   RenderExecutionContext,
   MediaSourceOrigin,
   MediaSourceOriginByField,
+  ArtifactWriteRecord,
+  ArtifactWriteToken,
+  IncrementalArtifactCycle,
+  IncrementalArtifactCycleOptions,
+  IncrementalArtifactCycleResult,
+  IncrementalArtifactSession,
+  IncrementalArtifactSessionSnapshot,
+  IncrementalArtifactWriteRecord,
 };
 
-export { integrationContextId, withRenderExecutionContext };
+export {
+  integrationContextId,
+  createIncrementalArtifactSession,
+  getArtifactWriteToken,
+  recordArtifactWrite,
+  runIncrementalArtifactCycle,
+  withRenderExecutionContext,
+};
 
 export { mediaSourceOrigins };
 export {

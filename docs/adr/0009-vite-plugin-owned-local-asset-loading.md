@@ -1,5 +1,7 @@
 # Vite plugin owns project-local asset loading
 
+Status: superseded by [ADR 0012](./0012-node-incremental-artifact-runtime.md).
+
 deckjsx core keeps the Asset Loading Boundary runtime-neutral: built-in handling may cover inline bytes, data sources, and fetchable absolute URLs, but relative paths and local file sources require an explicit AssetLoader. Project-local default asset loading will live in integration packages, starting with a monorepo plugin package shaped like `plugins/vite` and published as `@deckjsx/vite`, so Node filesystem access, project-root resolution, and bundler module-graph behavior do not become dependencies or hidden assumptions of the core authoring, Project, or Render pipeline.
 
 Core built-in asset handling should stay narrow: already-provided bytes, data/data URI sources, and absolute HTTP(S) URL sources when the runtime provides `fetch`. Core built-in handling should not interpret relative paths, root-absolute project paths, `file:` URLs, Vite public-directory assets, or local filesystem paths. If an absolute URL needs built-in fetching but `fetch` is unavailable, Project should surface an Asset Loading Boundary diagnostic through the existing probe diagnostics because Project-time image metadata cannot be completed. HTTP non-2xx responses and network failures should also become Project-time Asset Loading Boundary diagnostics rather than thrown exceptions for expected user-manageable external asset problems. It should not fall through to path or Node behavior.

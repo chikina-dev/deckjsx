@@ -9314,7 +9314,7 @@ function packageSelfDependencyDiagnostic(input: {
     code: "E_PPTX_PACKAGE_INVALID_PACKAGE_DEPENDENCY",
     title: "pptx package part dependency is invalid",
     message:
-      "Pptx Package Model package dependencies must connect distinct package parts so inspection, artifact snapshots, and HMR invalidation can explain cross-part topology.",
+      "Pptx Package Model package dependencies must connect distinct package parts so inspection, artifact snapshots, and Source invalidation can explain cross-part topology.",
     labels: [
       {
         path: input.path,
@@ -9842,7 +9842,7 @@ export function validatePptxPackageConsistency(
           code: "E_PPTX_PACKAGE_MISSING_PART_FINGERPRINT",
           title: "pptx package part fingerprint is missing",
           message:
-            "Pptx Package Model parts must carry fingerprints for render-stage reuse and HMR invalidation.",
+            "Pptx Package Model parts must carry fingerprints for render-stage reuse and Source invalidation.",
           labels: [
             { path: `projection.parts.${part.id}.fingerprint`, message: "missing fingerprint" },
           ],

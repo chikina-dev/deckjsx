@@ -1,0 +1,166 @@
+import path from "node:path";
+import type { IncrementalArtifactWriteRecord } from "deckjsx/integration";
+import {
+  missingTrackedOutputDiagnostic,
+  outputWriteFailedDiagnostic,
+  type DeckjsxDevDiagnostic,
+} from "./dev-diagnostics";
+
+export type { DeckjsxDevDiagnostic } from "./dev-diagnostics";
+
+export type DeckjsxDevWriteRecord = {
+  readonly path: string;
+  readonly tracked: boolean;
+  readonly result: object;
+};
+
+export type NormalizedDevOutputPaths = {
+  readonly out: string;
+  readonly outputs: readonly string[];
+};
+
+export type ClassifiedDevWrites = {
+  readonly records: readonly DeckjsxDevWriteRecord[];
+  readonly retainedSlots: readonly number[];
+  readonly diagnostics: readonly DeckjsxDevDiagnostic[];
+};
+
+export type DeckjsxDevArtifactPlan = {
+  readonly status: "ready" | "blocked";
+  readonly writes: readonly DeckjsxDevWriteRecord[];
+  readonly retainedSlots: readonly number[];
+  readonly diagnostics: readonly DeckjsxDevDiagnostic[];
+};
+
+export function normalizeDevOutputPaths(input: {
+  readonly cwd: string;
+  readonly out: string;
+  readonly outputs?: readonly string[];
+}): NormalizedDevOutputPaths {
+  const cwd = path.resolve(input.cwd);
+  const out = path.resolve(cwd, input.out);
+  const extraOutputs = (input.outputs ?? [])
+    .map((output) => path.resolve(cwd, output))
+    .filter((output) => output !== out);
+  const outputs = [out, ...uniqueSorted(extraOutputs)];
+  return {
+    out,
+    outputs,
+  };
+}
+
+export function classifyDevWrites(input: {
+  readonly cwd: string;
+  readonly out: string;
+  readonly outputs?: readonly string[];
+  readonly writes: readonly IncrementalArtifactWriteRecord[];
+}): ClassifiedDevWrites {
+  const cwd = path.resolve(input.cwd);
+  const normalized = normalizeDevOutputPaths({ ...input, cwd });
+  const records = input.writes.map((write) => {
+    const writePath = path.resolve(cwd, write.path);
+    return {
+      path: writePath,
+      tracked: writePath === normalized.out,
+      result: write.result,
+    };
+  });
+  const failedWrites = input.writes.flatMap((write) => {
+    const writePath = path.resolve(cwd, write.path);
+    return isFailedWriteResult(write.result)
+      ? [
+          {
+            path: writePath,
+            diagnostics: diagnosticsFromWriteResult(write.result),
+          },
+        ]
+      : [];
+  });
+  const successfulTrackedSlots = input.writes.flatMap((write) =>
+    path.resolve(cwd, write.path) === normalized.out && !isFailedWriteResult(write.result)
+      ? [write.slot]
+      : [],
+  );
+  const retainedSlots = failedWrites.length > 0 ? [] : uniqueSortedNumbers(successfulTrackedSlots);
+  const diagnostics: readonly DeckjsxDevDiagnostic[] = [
+    ...failedWrites.map(({ path: writePath, diagnostics }) =>
+      outputWriteFailedDiagnostic({
+        relativePath: path.relative(cwd, writePath),
+        file: writePath,
+        notes: diagnostics,
+      }),
+    ),
+    ...(successfulTrackedSlots.length > 0 || failedWrites.length > 0
+      ? []
+      : [
+          missingTrackedOutputDiagnostic({
+            relativePath: path.relative(cwd, normalized.out),
+            file: normalized.out,
+          }),
+        ]),
+  ];
+
+  return {
+    records,
+    retainedSlots,
+    diagnostics,
+  };
+}
+
+export function planDevArtifactUpdate(input: {
+  readonly cwd: string;
+  readonly out: string;
+  readonly outputs?: readonly string[];
+  readonly writes: readonly IncrementalArtifactWriteRecord[];
+}): DeckjsxDevArtifactPlan {
+  const classified = classifyDevWrites(input);
+  return {
+    status: classified.diagnostics.length === 0 ? "ready" : "blocked",
+    writes: classified.records,
+    retainedSlots: classified.retainedSlots,
+    diagnostics: classified.diagnostics,
+  };
+}
+
+export function devOutputIgnoreFiles(input: {
+  readonly cwd: string;
+  readonly out: string;
+  readonly outputs?: readonly string[];
+}): readonly string[] {
+  const normalized = normalizeDevOutputPaths(input);
+  return uniqueSorted([
+    ...normalized.outputs,
+    ...normalized.outputs.map((output) =>
+      path.join(path.dirname(output), `.${path.basename(output)}.deckjsx-lock`),
+    ),
+  ]);
+}
+
+function uniqueSorted(values: readonly string[]): readonly string[] {
+  return [...new Set(values)].sort();
+}
+
+function uniqueSortedNumbers(values: readonly number[]): readonly number[] {
+  return [...new Set(values)].sort((left, right) => left - right);
+}
+
+function isFailedWriteResult(result: object): boolean {
+  return "status" in result && result.status === "failed";
+}
+
+function diagnosticsFromWriteResult(result: object): readonly string[] {
+  if (!("diagnostics" in result) || !Array.isArray(result.diagnostics)) {
+    return [];
+  }
+  return result.diagnostics.flatMap((diagnostic) => {
+    if (!isObject(diagnostic) || typeof diagnostic.code !== "string") {
+      return [];
+    }
+    const message = typeof diagnostic.message === "string" ? `: ${diagnostic.message}` : "";
+    return [`${diagnostic.code}${message}`];
+  });
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}

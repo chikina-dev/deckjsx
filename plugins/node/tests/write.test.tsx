@@ -1,23 +1,51 @@
 import { access, mkdir, mkdtemp, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { unzipSync } from "fflate";
-import { pptx, type WriterAdapter } from "../../src/adapter.ts";
-import { createDiagnostics } from "../../src/diagnostics/index.ts";
-import { createPptxZipBytesFromEntries } from "../../src/writers/pptx/zip.ts";
+import { unzipSync, zipSync } from "fflate";
+import { pptx, type WriterAdapter } from "deckjsx/adapter";
 import { describe, expect, test } from "vite-plus/test";
-import { Deck } from "../../src/index.ts";
-import { integrationContextId, type AssetLoader } from "../../src/integration.ts";
-import type { PptxPackageModel } from "../../src/inspect.ts";
+import { Deck } from "deckjsx";
+import {
+  createIncrementalArtifactSession,
+  integrationContextId,
+  runIncrementalArtifactCycle,
+  type AssetLoader,
+} from "deckjsx/integration";
+import type { PptxPackageModel } from "deckjsx/inspect";
 import {
   createNodeFileAssetLoader,
   inspectPatchablePptx,
   nodeAssets,
   write,
-} from "../../plugins/node/src/index.ts";
+} from "../src/index.ts";
+import { withDeckjsxDevAssetObserver } from "../src/dev-asset-observer.ts";
 
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
+
+function createDiagnostics(
+  items: readonly {
+    readonly severity: "error" | "warning";
+    readonly code: string;
+    readonly title: string;
+    readonly message?: string;
+    readonly labels: readonly { readonly path: string; readonly message: string }[];
+  }[] = [],
+) {
+  return {
+    items,
+    hasErrors: items.some((item) => item.severity === "error"),
+    hasWarnings: items.some((item) => item.severity === "warning"),
+  };
+}
+
+function createPptxZipBytesFromEntries(
+  entries: readonly { readonly path: string; readonly bytes: Uint8Array }[],
+): Uint8Array {
+  return zipSync(Object.fromEntries(entries.map((entry) => [entry.path, entry.bytes])), {
+    level: 0,
+  });
+}
 
 function lockPathFor(outputPath: string): string {
   return path.join(path.dirname(outputPath), `.${path.basename(outputPath)}.deckjsx-lock`);
@@ -249,6 +277,32 @@ test("nodeAssets resolves local media through the deck lifecycle", async () => {
   expect(Array.from(zip["ppt/media/media1.png"] ?? [])).toEqual(Array.from(bytes));
 });
 
+test("node file asset loader reports observed files only inside a dev asset observer scope", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "deckjsx-node-assets-observer-"));
+  const mediaPath = path.join(root, "media.png");
+  await writeFile(mediaPath, pngHeaderBytes(2, 2, 11));
+  const loader = createNodeFileAssetLoader({ root });
+  const observed: string[] = [];
+  const context = {
+    resolverIdentity: "test:node-file-loader",
+    assetEntityId: "asset:test",
+    sourceField: "src",
+    source: { kind: "path", path: "media.png" },
+  } as const;
+
+  await loader.probe?.(context);
+  await withDeckjsxDevAssetObserver(
+    (filePath) => {
+      observed.push(filePath);
+    },
+    async () => {
+      await loader.load?.(context);
+    },
+  );
+
+  expect(observed).toEqual([mediaPath]);
+});
+
 async function renderDeckWithOptionalMedia(includeMedia: boolean) {
   const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
   const loader = {
@@ -412,6 +466,34 @@ describe("@deckjsx/node write", () => {
     expect(output.byteLength).toBe(render.artifact?.bytes.byteLength);
     expect(slideXml).toContain("created");
     expect(await fileExists(lockPathFor(outputPath))).toBe(false);
+  });
+
+  test("records successful incremental artifact writes through the render token", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-write-"));
+    const outputPath = path.join(directory, "session-write.pptx");
+    const session = createIncrementalArtifactSession();
+    let render = await renderDeck("outside");
+    let result: Awaited<ReturnType<typeof write>> | undefined;
+
+    await runIncrementalArtifactCycle(session, {}, async () => {
+      render = await renderDeck("session");
+      result = await write(render, outputPath);
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        path: outputPath,
+        status: "created",
+      }),
+    );
+    expect(session.snapshot().writes).toEqual([
+      {
+        cycle: 1,
+        slot: 0,
+        path: outputPath,
+        result,
+      },
+    ]);
   });
 
   test("returns result-first diagnostics without touching the target when render has no artifact", async () => {

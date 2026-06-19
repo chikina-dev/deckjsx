@@ -19,8 +19,6 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "paths": {
-      "@deckjsx/node": ["./plugins/node/src/index.ts"],
-      "@deckjsx/vite": ["./plugins/vite/src/index.ts"],
       "deckjsx": ["./src/index.ts"],
       "deckjsx/adapter": ["./src/adapter.ts"],
       "deckjsx/inspect": ["./src/inspect.ts"],
@@ -29,5 +27,5 @@
       "deckjsx/jsx-runtime": ["./src/jsx-runtime.ts"]
     }
   },
-  "exclude": [".github", "dist", "sample"]
+  "exclude": [".github", "dist", "plugins", "sample"]
 }

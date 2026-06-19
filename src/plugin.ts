@@ -9,9 +9,8 @@ import type { AssetArtifact } from "./pipeline-artifacts";
 import { isPptxPackageModel, type PptxPackageModel } from "./projection/pptx/model";
 import type { ResolvedStyleMap } from "./style/resolve";
 
-export type HmrInvalidation = {
-  readonly importer?: string;
-  readonly changedModuleIds: readonly string[];
+export type SourceInvalidation = {
+  readonly changedSourceIds: readonly string[];
 };
 
 export type PluginHookResult<TUpdate extends object = object> =

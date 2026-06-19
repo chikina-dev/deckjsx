@@ -14,7 +14,7 @@ export type PptxProjectionReusePlan = {
   readonly slideNodeIds: ReadonlySet<GraphNodeId>;
 };
 
-export function hmrProjectionReusePlan(input: {
+export function incrementalProjectionReusePlan(input: {
   graph: SemanticAuthorGraph;
   resolvedStyles: ResolvedStyleMap;
   options: DeckOptions;

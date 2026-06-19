@@ -6,14 +6,7 @@
     "strict": true,
     "jsx": "react-jsx",
     "jsxImportSource": "deckjsx",
-    "types": ["node"],
-    "paths": {
-      "deckjsx": ["../src/index.ts"],
-      "deckjsx/jsx-runtime": ["../src/jsx-runtime.ts"],
-      "deckjsx/jsx-dev-runtime": ["../src/jsx-dev-runtime.ts"],
-      "deckjsx/inspect": ["../src/inspect.ts"],
-      "deckjsx/adapter": ["../src/adapter.ts"]
-    }
+    "types": ["node"]
   },
   "include": ["*.ts", "*.tsx"]
 }

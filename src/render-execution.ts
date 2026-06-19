@@ -3,14 +3,14 @@ import type { AssetLoader } from "./assets";
 import type { DeckIntegrationContext } from "./integration-context";
 import { integrationContextFromPlugins, mergeIntegrationContexts } from "./integration-context";
 import type { MediaSourceOrigin } from "./media-source-origin";
-import { mergeAssetLoaders, type DeckPlugin, type HmrInvalidation } from "./plugin";
+import { mergeAssetLoaders, type DeckPlugin, type SourceInvalidation } from "./plugin";
 import type { PptxPackageModel } from "./projection/pptx/model";
 
 const RENDER_EXECUTION_CONTEXT = Symbol.for("deckjsx.renderExecutionContext");
 
 export type RenderExecutionContext = {
   readonly integration?: DeckIntegrationContext;
-  readonly hmrInvalidation?: HmrInvalidation;
+  readonly sourceInvalidation?: SourceInvalidation;
 };
 
 export type RenderInputWithExecutionContext = RenderOptions | WriterAdapter<PptxPackageModel>;
@@ -24,7 +24,7 @@ export type RenderExecution = {
   readonly integrationContext?: DeckIntegrationContext;
   readonly assetLoaders?: readonly AssetLoader[];
   readonly mediaSourceOrigin?: MediaSourceOrigin;
-  readonly hmrInvalidation?: HmrInvalidation;
+  readonly sourceInvalidation?: SourceInvalidation;
 };
 
 export function withRenderExecutionContext<TInput extends RenderInputWithExecutionContext>(
@@ -73,8 +73,8 @@ export function createRenderExecution(input: {
     ...(integrationContext ? { integrationContext } : {}),
     ...(assetLoaders ? { assetLoaders } : {}),
     ...(mediaSourceOrigin ? { mediaSourceOrigin } : {}),
-    ...(renderExecutionContext?.hmrInvalidation
-      ? { hmrInvalidation: renderExecutionContext.hmrInvalidation }
+    ...(renderExecutionContext?.sourceInvalidation
+      ? { sourceInvalidation: renderExecutionContext.sourceInvalidation }
       : {}),
   };
 }
@@ -83,24 +83,23 @@ function mergeRenderExecutionContext(
   current: RenderExecutionContext | undefined,
   next: RenderExecutionContext,
 ): RenderExecutionContext {
-  const hmrInvalidation =
-    current?.hmrInvalidation && next.hmrInvalidation
+  const sourceInvalidation =
+    current?.sourceInvalidation && next.sourceInvalidation
       ? {
-          importer: next.hmrInvalidation.importer ?? current.hmrInvalidation.importer,
-          changedModuleIds: [
+          changedSourceIds: [
             ...new Set([
-              ...current.hmrInvalidation.changedModuleIds,
-              ...next.hmrInvalidation.changedModuleIds,
+              ...current.sourceInvalidation.changedSourceIds,
+              ...next.sourceInvalidation.changedSourceIds,
             ]),
           ],
         }
-      : (next.hmrInvalidation ?? current?.hmrInvalidation);
+      : (next.sourceInvalidation ?? current?.sourceInvalidation);
   return {
     integration: mergeIntegrationContexts(
       [current?.integration, next.integration].filter(
         (context): context is DeckIntegrationContext => context !== undefined,
       ),
     ),
-    ...(hmrInvalidation ? { hmrInvalidation } : {}),
+    ...(sourceInvalidation ? { sourceInvalidation } : {}),
   };
 }

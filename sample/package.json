@@ -8,18 +8,15 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "smoke": "tsx smoke.tsx",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "check": "tsc --noEmit",
+    "dev": "deckjsx dev main.tsx --out output-tsx.pptx"
   },
   "dependencies": {
-    "deckjsx": "file:.."
+    "@deckjsx/node": "^0.1.1",
+    "deckjsx": "^0.9.1"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",
-    "tsx": "^4.22.4",
     "typescript": "^6.0.3"
-  },
-  "overrides": {
-    "esbuild": "0.28.1"
   }
 }

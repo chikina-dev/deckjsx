@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: Check and test
+  core:
+    name: Core check and test
     runs-on: ubuntu-latest
 
     steps:
@@ -38,6 +38,41 @@ jobs:
       - name: Build
         run: bun run build
 
+      - name: Test
+        run: bun run test
+
+      - name: Benchmark direct PPTX writer
+        run: bash .github/scripts/benchmark-pptx-with-diagnostics.sh
+
+  node:
+    name: "@deckjsx/node check and test"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install root dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build deckjsx package
+        run: bun run build
+
+      - name: Install @deckjsx/node dependencies
+        working-directory: plugins/node
+        run: bun install
+
       - name: Check @deckjsx/node
         working-directory: plugins/node
         run: ../../node_modules/.bin/vp check
@@ -46,22 +81,6 @@ jobs:
         working-directory: plugins/node
         run: ../../node_modules/.bin/vp pack
 
-      - name: Check @deckjsx/vite
-        working-directory: plugins/vite
-        run: ../../node_modules/.bin/vp check
-
-      - name: Build @deckjsx/vite
-        working-directory: plugins/vite
-        run: ../../node_modules/.bin/vp pack
-
-      - name: Install sample dependencies
-        run: npm ci --prefix sample
-
-      - name: Run sample smoke
-        run: npm run --prefix sample smoke
-
-      - name: Test
-        run: bun run test
-
-      - name: Benchmark direct PPTX writer
-        run: bash .github/scripts/benchmark-pptx-with-diagnostics.sh
+      - name: Test @deckjsx/node
+        working-directory: plugins/node
+        run: ../../node_modules/.bin/vp test
