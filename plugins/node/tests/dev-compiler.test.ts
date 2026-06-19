@@ -1,4 +1,4 @@
-import { mkdtemp, realpath } from "node:fs/promises";
+import { access, mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vite-plus/test";
@@ -467,6 +467,23 @@ describe("@deckjsx/node entry execution host", () => {
     expect(process.cwd()).toBe(previousCwd);
   });
 
+  test("awaits promise-like default exports from generated async entry wrappers", async () => {
+    const project = await mkdtemp(path.join(tmpdir(), "deckjsx-entry-host-async-"));
+    const report = path.join(project, "async.txt");
+    const host = createEntryExecutionHost({ cwd: project });
+
+    await host.execute({
+      code: [
+        'import { writeFile } from "node:fs/promises";',
+        `export default new Promise((resolve) => setTimeout(resolve, 0)).then(() => writeFile(${JSON.stringify(report)}, "done"));`,
+      ].join("\n"),
+    });
+
+    await expect(
+      import("node:fs/promises").then((fs) => fs.readFile(report, "utf8")),
+    ).resolves.toBe("done");
+  });
+
   test("restores cwd after generated module failures", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "deckjsx-entry-host-fail-"));
     const previousCwd = process.cwd();
@@ -860,6 +877,58 @@ describe("@deckjsx/node rolldown watch adapter", () => {
 });
 
 describe("@deckjsx/node dev compiler", () => {
+  test("creates the tracked output on the first real Rolldown compilation", async () => {
+    const cwd = await mkdtemp(path.join(process.cwd(), ".deckjsx-dev-smoke-"));
+    const outputPath = path.join(cwd, "output.pptx");
+    await writeFile(
+      path.join(cwd, "entry.cts"),
+      [
+        'import { write } from "@deckjsx/node";',
+        'import { Deck } from "deckjsx";',
+        'import { pptx } from "deckjsx/adapter";',
+        'import { jsx } from "deckjsx/jsx-runtime";',
+        "module.exports = (async () => {",
+        '  const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });',
+        '  deck.slide({ name: "Dev smoke" }, () => jsx("p", { style: { x: 1, y: 1, width: 5, height: 0.5 }, children: "dev smoke" }));',
+        '  await write(await deck.render(pptx()), "output.pptx");',
+        "})();",
+      ].join("\n"),
+    );
+
+    const compiler = createDeckjsxDevCompiler({
+      cwd,
+      entry: "entry.cts",
+      out: "output.pptx",
+    });
+    try {
+      compiler.start();
+      const result = await compiler.runNextCompilation();
+
+      if (!result.ok) {
+        throw new Error(
+          `expected first real Rolldown compilation to succeed: ${JSON.stringify(result.diagnostics)}`,
+        );
+      }
+      expect(result.status).toBe("artifactUpdated");
+      await expect(access(outputPath)).resolves.toBeUndefined();
+      await expect(stat(outputPath)).resolves.toEqual(
+        expect.objectContaining({
+          size: expect.any(Number),
+        }),
+      );
+      expect(result.writes).toEqual([
+        {
+          path: outputPath,
+          tracked: true,
+          result: expect.objectContaining({ status: "created" }),
+        },
+      ]);
+    } finally {
+      await compiler.close();
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
   test("runs one compilation, retains only the tracked output slot, and emits events", async () => {
     const events: string[] = [];
     const compiler = createDeckjsxDevCompiler({

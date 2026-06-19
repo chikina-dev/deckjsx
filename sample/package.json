@@ -12,8 +12,8 @@
     "dev": "deckjsx dev main.tsx --out output-tsx.pptx"
   },
   "dependencies": {
-    "@deckjsx/node": "^0.1.1",
-    "deckjsx": "^0.9.1"
+    "@deckjsx/node": "^0.1.2",
+    "deckjsx": "^0.9.2"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",

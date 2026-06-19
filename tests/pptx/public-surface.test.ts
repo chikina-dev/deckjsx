@@ -171,9 +171,9 @@ describe("public surface", () => {
       ),
     );
 
-    expect(rootPackage.version).toBe("0.9.1");
+    expect(rootPackage.version).toBe("0.9.2");
     for (const [path, pkg] of pluginPackages) {
-      expect(pkg.version, `${path} version should follow its own release line`).toBe("0.1.1");
+      expect(pkg.version, `${path} version should follow its own release line`).toBe("0.1.2");
     }
   });
 
@@ -203,7 +203,7 @@ describe("public surface", () => {
       expect(pkg.scripts?.prepublishOnly, `${path} builds before direct npm publish`).toBe(
         "vp run build",
       );
-      expect(pkg.peerDependencies?.deckjsx, `${path} declares deckjsx as a peer`).toBe("^0.9.1");
+      expect(pkg.peerDependencies?.deckjsx, `${path} declares deckjsx as a peer`).toBe("^0.9.2");
       expect(pkg.bin?.deckjsx, `${path} exposes the deckjsx CLI`).toBe("dist/cli.mjs");
       expect(pkg.dependencies?.deckjsx, `${path} must not publish a runtime file dependency`).toBe(
         undefined,

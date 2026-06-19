@@ -1,6 +1,7 @@
 #!/usr/bin/env node
+import { realpathSync } from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { IncrementalArtifactWriteRecord } from "deckjsx/integration";
 import type { DeckjsxDevCompiler } from "./dev-compiler";
 import { createDevModuleGraphSnapshot } from "./dev-module-graph";
@@ -272,6 +273,17 @@ function printDiagnostics(
   formatDeckjsxNodeDiagnostics(diagnostics, detail).forEach((line) => console.error(line));
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+function isDeckjsxNodeCliEntrypoint(): boolean {
+  if (!process.argv[1]) {
+    return false;
+  }
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return import.meta.url === pathToFileURL(process.argv[1]).href;
+  }
+}
+
+if (isDeckjsxNodeCliEntrypoint()) {
   await main();
 }

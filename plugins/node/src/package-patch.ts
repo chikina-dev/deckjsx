@@ -380,7 +380,7 @@ function paddedXmlBytes(bytes: Uint8Array, targetSize: number): Uint8Array | und
 
 function stripXmlReserve(bytes: Uint8Array): Uint8Array {
   const text = textDecoder.decode(bytes);
-  const markerIndex = text.lastIndexOf(`<!--${PATCH_RESERVE_MARKER}`);
+  const markerIndex = text.lastIndexOf(`\n<!--${PATCH_RESERVE_MARKER}`);
   if (markerIndex < 0) {
     return bytes;
   }

@@ -117,7 +117,7 @@ function patchReserveComment(capacity: number): Uint8Array {
 
 function stripPatchReserve(bytes: Uint8Array): PatchableXmlBytes {
   const text = TEXT_DECODER.decode(bytes);
-  const markerIndex = text.lastIndexOf(`<!--${PATCH_RESERVE_MARKER}`);
+  const markerIndex = text.lastIndexOf(`\n<!--${PATCH_RESERVE_MARKER}`);
   if (markerIndex < 0) {
     return {
       bytes,
@@ -126,7 +126,7 @@ function stripPatchReserve(bytes: Uint8Array): PatchableXmlBytes {
     };
   }
 
-  const reserveStart = markerIndex + `<!--${PATCH_RESERVE_MARKER}`.length;
+  const reserveStart = markerIndex + `\n<!--${PATCH_RESERVE_MARKER}`.length;
   const reserveEnd = text.indexOf("-->", reserveStart);
   if (reserveEnd < 0) {
     return {

@@ -29,11 +29,24 @@ export function createEntryExecutionHost(input: {
       const previousCwd = process.cwd();
       process.chdir(cwd);
       try {
-        await import(`${pathToFileURL(modulePath).href}?t=${Date.now()}-${serial}`);
+        const module = await import(`${pathToFileURL(modulePath).href}?t=${Date.now()}-${serial}`);
+        const defaultExport = (module as { readonly default?: unknown }).default;
+        if (isPromiseLike(defaultExport)) {
+          await defaultExport;
+        }
       } finally {
         process.chdir(previousCwd);
         await rm(modulePath, { force: true });
       }
     },
   };
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "then" in value &&
+    typeof value.then === "function"
+  );
 }

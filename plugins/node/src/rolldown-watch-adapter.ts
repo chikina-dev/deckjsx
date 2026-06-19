@@ -1,6 +1,6 @@
 import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
-import { watch, type OutputChunk, type Plugin, type WatchOptions } from "rolldown";
+import { rolldown, watch, type OutputChunk, type Plugin, type WatchOptions } from "rolldown";
 import { isDeckjsxRuntimeExternalId } from "./dev-executor";
 import {
   createDiagnosticSourceSnapshot,
@@ -58,6 +58,7 @@ export type RolldownWatchAdapterOptions = {
   readonly cwd: string;
   readonly entry: string;
   readonly watchFactory?: (options: WatchOptions) => RolldownWatcherLike;
+  readonly buildFactory?: (options: WatchOptions) => Promise<RolldownWatchResult>;
 };
 
 type PendingSourceSnapshot = {
@@ -73,10 +74,11 @@ export function createRolldownWatchAdapter(
   const entry = path.resolve(cwd, options.entry);
   const outputDirectory = createWatchOutputDirectory(cwd);
   const changedSourceIds: string[] = [];
-  const moduleIds: string[] = [];
+  const watchModuleIds: string[] = [];
   const queuedSourceSnapshots: RolldownWatchSourceSnapshot[] = [];
   const pendingSourceSnapshots: PendingSourceSnapshot[] = [];
   let watcher: RolldownWatcherLike | undefined;
+  let initialSourceSnapshot: Promise<RolldownWatchSourceSnapshot> | undefined;
   let started = false;
 
   const emitSourceSnapshot = (result: RolldownWatchSourceSnapshot) => {
@@ -95,7 +97,7 @@ export function createRolldownWatchAdapter(
             result: event.result,
             outputFiles: event.output,
             changedSourceIds: consumeChangedSourceIds(),
-            moduleIds: consumeModuleIds(),
+            moduleIds: consumeWatchModuleIds(),
           }),
         );
         return;
@@ -119,25 +121,38 @@ export function createRolldownWatchAdapter(
         return;
       }
       started = true;
-      watcher = (options.watchFactory ?? watch)(
-        createRolldownWatchOptions({
+      const watchOptions = createRolldownWatchOptions({
+        cwd,
+        entry,
+        outputDirectory,
+        onWatchChange(id) {
+          changedSourceIds.push(path.resolve(cwd, id));
+        },
+        onBuildStart() {
+          watchModuleIds.length = 0;
+        },
+        onModuleId(id) {
+          watchModuleIds.push(path.resolve(cwd, id));
+        },
+      });
+      watcher = (options.watchFactory ?? watch)(watchOptions);
+      watcher.on("event", (event) => onEvent(event as RolldownWatchEvent));
+
+      if (!options.watchFactory || options.buildFactory) {
+        initialSourceSnapshot = initialBuildSnapshot({
           cwd,
           entry,
           outputDirectory,
-          onWatchChange(id) {
-            changedSourceIds.push(path.resolve(cwd, id));
-          },
-          onBuildStart() {
-            moduleIds.length = 0;
-          },
-          onModuleId(id) {
-            moduleIds.push(path.resolve(cwd, id));
-          },
-        }),
-      );
-      watcher.on("event", (event) => onEvent(event as RolldownWatchEvent));
+          buildFactory: options.buildFactory ?? rolldown,
+        });
+      }
     },
     nextSourceSnapshot() {
+      if (initialSourceSnapshot) {
+        const snapshot = initialSourceSnapshot;
+        initialSourceSnapshot = undefined;
+        return snapshot;
+      }
       const queued = queuedSourceSnapshots.shift();
       if (queued) {
         return Promise.resolve(queued);
@@ -156,8 +171,41 @@ export function createRolldownWatchAdapter(
     return ids;
   }
 
-  function consumeModuleIds(): readonly string[] {
-    return [...new Set(moduleIds)].sort();
+  function consumeWatchModuleIds(): readonly string[] {
+    return [...new Set(watchModuleIds)].sort();
+  }
+}
+
+async function initialBuildSnapshot(input: {
+  readonly cwd: string;
+  readonly entry: string;
+  readonly outputDirectory: string;
+  readonly buildFactory: (options: WatchOptions) => Promise<RolldownWatchResult>;
+}): Promise<RolldownWatchSourceSnapshot> {
+  const moduleIds: string[] = [];
+  try {
+    const result = await input.buildFactory(
+      createRolldownWatchOptions({
+        cwd: input.cwd,
+        entry: input.entry,
+        outputDirectory: input.outputDirectory,
+        onWatchChange() {},
+        onBuildStart() {
+          moduleIds.length = 0;
+        },
+        onModuleId(id) {
+          moduleIds.push(path.resolve(input.cwd, id));
+        },
+      }),
+    );
+    return await sourceSnapshotFromBundleEnd({
+      result,
+      outputFiles: [input.outputDirectory],
+      changedSourceIds: [],
+      moduleIds,
+    });
+  } catch (error) {
+    return createDiagnosticSourceSnapshot([diagnosticFromRolldownError(error, input.entry)]);
   }
 }
 
@@ -233,7 +281,7 @@ async function sourceSnapshotFromBundleEnd(input: {
       if (output) {
         return createExecutableSourceSnapshot({
           cwd: path.dirname(input.outputFiles[0] ?? process.cwd()),
-          code: output.code,
+          code: awaitableGeneratedEntryCode(output.code),
           moduleIds: input.moduleIds,
           watchFiles: input.moduleIds,
           changedSourceIds: input.changedSourceIds,
@@ -270,7 +318,7 @@ async function sourceSnapshotFromBundleEnd(input: {
     }
     const watchFiles = result.watchFiles ? await result.watchFiles : [];
     return createExecutableSourceSnapshot({
-      code: chunk.code,
+      code: awaitableGeneratedEntryCode(chunk.code),
       moduleIds: [
         ...new Set([...input.moduleIds, ...chunks.flatMap((item) => item.moduleIds)]),
       ].sort(),
@@ -280,6 +328,28 @@ async function sourceSnapshotFromBundleEnd(input: {
   } finally {
     await result.close?.();
   }
+}
+
+function awaitableGeneratedEntryCode(code: string): string {
+  const commonJsMinHelper =
+    "var __commonJSMin = (cb, mod) => () => (mod || (cb((mod = { exports: {} }).exports, mod), cb = null), mod.exports);";
+  if (!code.includes(commonJsMinHelper)) {
+    return code;
+  }
+  return `${code.replace(
+    commonJsMinHelper,
+    [
+      "var __deckjsxCommonJSPending = [];",
+      "var __commonJSMin = (cb, mod) => () => {",
+      "\tif (!mod) {",
+      "\t\tconst result = cb((mod = { exports: {} }).exports, mod);",
+      '\t\tif (result && typeof result.then === "function") __deckjsxCommonJSPending.push(result);',
+      "\t\tcb = null;",
+      "\t}",
+      "\treturn mod.exports;",
+      "};",
+    ].join("\n"),
+  )}\nawait Promise.all(__deckjsxCommonJSPending);\n`;
 }
 
 function deckjsxWatchChangePlugin(input: {

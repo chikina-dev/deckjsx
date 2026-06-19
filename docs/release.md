@@ -36,8 +36,8 @@ Trusted Publishing uses GitHub Actions OIDC, so no `NPM_TOKEN` secret is needed.
    - for `@deckjsx/node`: `(cd plugins/node && npm pack)`
 3. Push the change to `main`.
 4. Run the `Release` workflow from GitHub Actions with the package selector and matching package version:
-   - `deckjsx`: `v0.9.1`
-   - `@deckjsx/node`: `v0.1.1`
+   - `deckjsx`: `v0.9.2`
+   - `@deckjsx/node`: `v0.1.2`
 
 The workflow validates that the selected package version matches the requested version, derives the
 GitHub release tag for the selected package, checks and packs

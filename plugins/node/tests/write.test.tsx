@@ -737,6 +737,13 @@ describe("@deckjsx/node write", () => {
     expect(slideXml).toContain("after");
     expect(slideXml).not.toContain("before");
     expect(manifestXml).toContain(slidePart?.fingerprint);
+    await expect(inspectPatchablePptx(outputPath)).resolves.toEqual(
+      expect.objectContaining({
+        ok: true,
+        patchable: true,
+        diagnostics: [],
+      }),
+    );
   });
 
   test("keeps patchability state inside the PPTX without sidecar cache files", async () => {
