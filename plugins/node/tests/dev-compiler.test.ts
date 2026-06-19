@@ -22,6 +22,7 @@ import {
 } from "../src/dev-module-graph.ts";
 import { createDevChangeScheduler } from "../src/dev-change-scheduler.ts";
 import { createEntryExecutionHost } from "../src/entry-execution-host.ts";
+import { bundleFailedDiagnosticFromError } from "../src/dev-diagnostics.ts";
 import {
   createRolldownWatchAdapter,
   createRolldownWatchOptions,
@@ -496,6 +497,39 @@ describe("@deckjsx/node entry execution host", () => {
   });
 });
 
+describe("@deckjsx/node dev diagnostics", () => {
+  test("normalizes OXC parse frames embedded in Rolldown error messages", () => {
+    expect(
+      bundleFailedDiagnosticFromError(
+        [
+          "[PARSE_ERROR] Unexpected token",
+          "   ╭─[ main.tsx:9:24 ]",
+          "   │",
+          " 9 │   <p style={{ x: 1, y: }}>",
+          "   │                        ┬",
+          "   │                        ╰──",
+          "───╯",
+        ].join("\n"),
+        "/project/src/main.tsx",
+      ),
+    ).toEqual({
+      severity: "error",
+      code: "deckjsx.node.dev.bundleFailed",
+      title: "Bundle failed.",
+      message: "[PARSE_ERROR] Unexpected token",
+      primary: {
+        file: "/project/src/main.tsx",
+        line: 9,
+        column: 24,
+        sourceLine: "  <p style={{ x: 1, y: }}>",
+        spanLength: 1,
+      },
+      labels: [{ message: "while bundling this source" }],
+      help: ["Fix the bundling error and save again."],
+    });
+  });
+});
+
 describe("@deckjsx/node rolldown watch adapter", () => {
   test("satisfies the DevSourceProvider lifecycle and queued snapshot contract", async () => {
     const listeners = new Map<string, (...args: unknown[]) => void>();
@@ -563,6 +597,37 @@ describe("@deckjsx/node rolldown watch adapter", () => {
     });
   });
 
+  test("does not override a deckjsx jsxImportSource already declared in tsconfig", async () => {
+    const cwd = await mkdtemp(path.join(tmpdir(), "deckjsx-watch-options-"));
+    await writeFile(
+      path.join(cwd, "tsconfig.json"),
+      JSON.stringify({ compilerOptions: { jsxImportSource: "deckjsx" } }),
+    );
+
+    const options = createRolldownWatchOptions({
+      cwd,
+      entry: "main.tsx",
+      onBuildStart() {},
+      onModuleId() {},
+      onWatchChange() {},
+    }) as { readonly transform?: { readonly jsx?: { readonly importSource?: string } } };
+
+    expect(options.transform?.jsx?.importSource).toBeUndefined();
+    await rm(cwd, { force: true, recursive: true });
+  });
+
+  test("defaults TSX JSX imports to deckjsx when tsconfig does not declare an import source", () => {
+    const options = createRolldownWatchOptions({
+      cwd: "/project",
+      entry: "main.tsx",
+      onBuildStart() {},
+      onModuleId() {},
+      onWatchChange() {},
+    }) as { readonly transform?: { readonly jsx?: { readonly importSource?: string } } };
+
+    expect(options.transform?.jsx?.importSource).toBe("deckjsx");
+  });
+
   test("isolates real watch adapter output directories per compiler instance", async () => {
     const outputDirectories: string[] = [];
     const adapters = [
@@ -592,6 +657,60 @@ describe("@deckjsx/node rolldown watch adapter", () => {
     for (const outputDirectory of outputDirectories) {
       expect(outputDirectory).toMatch(/^\/project\/\.deckjsx\/dev\/watch-/);
     }
+  });
+
+  test("rebuilds through Rolldown when a watched source file changes", async () => {
+    const watchedFiles = new Map<string, () => void>();
+    let buildCount = 0;
+    const adapter = createRolldownWatchAdapter({
+      cwd: "/project",
+      entry: "src/main.tsx",
+      async buildFactory() {
+        buildCount += 1;
+        const code = `generated ${buildCount}`;
+        return {
+          watchFiles: ["/project/src/main.tsx"],
+          output: [
+            {
+              type: "chunk",
+              code,
+              moduleIds: ["/project/src/main.tsx"],
+              isEntry: true,
+            },
+          ],
+          close: async () => undefined,
+        };
+      },
+      fileWatcherFactory(filePath, onChange) {
+        watchedFiles.set(filePath, onChange);
+        return {
+          close() {
+            watchedFiles.delete(filePath);
+          },
+        };
+      },
+    });
+
+    adapter.start();
+    await expect(adapter.nextSourceSnapshot()).resolves.toEqual({
+      status: "executable",
+      code: "generated 1",
+      moduleIds: ["/project/src/main.tsx"],
+      watchFiles: ["/project/src/main.tsx"],
+      changedSourceIds: [],
+    });
+
+    const nextSnapshot = adapter.nextSourceSnapshot();
+    watchedFiles.get("/project/src/main.tsx")?.();
+
+    await expect(nextSnapshot).resolves.toEqual({
+      status: "executable",
+      code: "generated 2",
+      moduleIds: ["/project/src/main.tsx"],
+      watchFiles: ["/project/src/main.tsx"],
+      changedSourceIds: ["/project/src/main.tsx"],
+    });
+    await adapter.close();
   });
 
   test("generates one executable bundle from BUNDLE_END and closes the watch result", async () => {

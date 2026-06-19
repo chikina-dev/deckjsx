@@ -1,3 +1,4 @@
+import { readFileSync, watch as watchFileSystem, type FSWatcher } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { rolldown, watch, type OutputChunk, type Plugin, type WatchOptions } from "rolldown";
@@ -59,6 +60,10 @@ export type RolldownWatchAdapterOptions = {
   readonly entry: string;
   readonly watchFactory?: (options: WatchOptions) => RolldownWatcherLike;
   readonly buildFactory?: (options: WatchOptions) => Promise<RolldownWatchResult>;
+  readonly fileWatcherFactory?: (
+    filePath: string,
+    onChange: () => void,
+  ) => { readonly close: () => void };
 };
 
 type PendingSourceSnapshot = {
@@ -68,6 +73,158 @@ type PendingSourceSnapshot = {
 let watchOutputSerial = 0;
 
 export function createRolldownWatchAdapter(
+  options: RolldownWatchAdapterOptions,
+): RolldownWatchAdapter {
+  if (!options.watchFactory) {
+    return createRolldownRebuildAdapter(options);
+  }
+
+  return createRolldownEventWatchAdapter(options);
+}
+
+function createRolldownRebuildAdapter(options: RolldownWatchAdapterOptions): RolldownWatchAdapter {
+  const cwd = path.resolve(options.cwd);
+  const entry = path.resolve(cwd, options.entry);
+  const outputDirectory = createWatchOutputDirectory(cwd);
+  const buildFactory = options.buildFactory ?? rolldown;
+  const createFileWatcher = options.fileWatcherFactory ?? createNodeFileWatcher;
+  const changedSourceIds = new Set<string>();
+  const queuedSourceSnapshots: RolldownWatchSourceSnapshot[] = [];
+  const pendingSourceSnapshots: PendingSourceSnapshot[] = [];
+  const sourceWatchers = new Map<string, { readonly close: () => void }>();
+  let started = false;
+  let closed = false;
+  let rebuildRunning = false;
+  let rebuildQueued = false;
+  let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+  return {
+    start() {
+      if (started) {
+        return;
+      }
+      started = true;
+      void rebuild([]);
+    },
+    nextSourceSnapshot() {
+      const queued = queuedSourceSnapshots.shift();
+      if (queued) {
+        return Promise.resolve(queued);
+      }
+      return new Promise((resolve) => pendingSourceSnapshots.push({ resolve }));
+    },
+    async close() {
+      closed = true;
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+      closeSourceWatchers();
+      await rm(outputDirectory, { force: true, recursive: true });
+    },
+  };
+
+  async function rebuild(sourceIds: readonly string[]): Promise<void> {
+    if (closed) {
+      return;
+    }
+    rebuildRunning = true;
+    try {
+      const snapshot = await buildSourceSnapshot({
+        cwd,
+        entry,
+        outputDirectory,
+        buildFactory,
+        changedSourceIds: sourceIds,
+      });
+      if (snapshot.status === "executable") {
+        updateSourceWatchers(snapshot.watchFiles.length ? snapshot.watchFiles : snapshot.moduleIds);
+      }
+      emitSourceSnapshot(snapshot);
+    } finally {
+      rebuildRunning = false;
+      if (rebuildQueued) {
+        rebuildQueued = false;
+        scheduleRebuild();
+      }
+    }
+  }
+
+  function scheduleSourceChange(filePath: string): void {
+    changedSourceIds.add(path.resolve(cwd, filePath));
+    if (rebuildRunning) {
+      rebuildQueued = true;
+      return;
+    }
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+    debounceTimer = setTimeout(() => {
+      debounceTimer = undefined;
+      scheduleRebuild();
+    }, 50);
+  }
+
+  function scheduleRebuild(): void {
+    const sourceIds = [...changedSourceIds].sort();
+    changedSourceIds.clear();
+    void rebuild(sourceIds);
+  }
+
+  function emitSourceSnapshot(result: RolldownWatchSourceSnapshot): void {
+    const pending = pendingSourceSnapshots.shift();
+    if (pending) {
+      pending.resolve(result);
+      return;
+    }
+    queuedSourceSnapshots.push(result);
+  }
+
+  function updateSourceWatchers(filePaths: readonly string[]): void {
+    const nextFiles = new Set(
+      filePaths.map((filePath) => path.resolve(cwd, filePath)).filter(isWatchableSourceFile),
+    );
+    for (const [filePath, watcher] of sourceWatchers) {
+      if (!nextFiles.has(filePath)) {
+        watcher.close();
+        sourceWatchers.delete(filePath);
+      }
+    }
+    for (const filePath of nextFiles) {
+      if (sourceWatchers.has(filePath)) {
+        continue;
+      }
+      try {
+        sourceWatchers.set(
+          filePath,
+          createFileWatcher(filePath, () => scheduleSourceChange(filePath)),
+        );
+      } catch {
+        // Rolldown may report virtual or transient files. A later rebuild can refresh the watch set.
+      }
+    }
+  }
+
+  function closeSourceWatchers(): void {
+    for (const watcher of sourceWatchers.values()) {
+      watcher.close();
+    }
+    sourceWatchers.clear();
+  }
+
+  function isWatchableSourceFile(filePath: string): boolean {
+    const resolved = path.resolve(cwd, filePath);
+    const relative = path.relative(cwd, resolved);
+    return (
+      relative !== "" &&
+      !relative.startsWith("..") &&
+      !path.isAbsolute(relative) &&
+      !relative.split(path.sep).includes("node_modules") &&
+      !relative.startsWith(`.deckjsx${path.sep}`)
+    );
+  }
+}
+
+function createRolldownEventWatchAdapter(
   options: RolldownWatchAdapterOptions,
 ): RolldownWatchAdapter {
   const cwd = path.resolve(options.cwd);
@@ -176,11 +333,24 @@ export function createRolldownWatchAdapter(
   }
 }
 
-async function initialBuildSnapshot(input: {
+function createNodeFileWatcher(
+  filePath: string,
+  onChange: () => void,
+): { readonly close: () => void } {
+  const watcher: FSWatcher = watchFileSystem(filePath, { persistent: true }, onChange);
+  return {
+    close() {
+      watcher.close();
+    },
+  };
+}
+
+async function buildSourceSnapshot(input: {
   readonly cwd: string;
   readonly entry: string;
   readonly outputDirectory: string;
   readonly buildFactory: (options: WatchOptions) => Promise<RolldownWatchResult>;
+  readonly changedSourceIds: readonly string[];
 }): Promise<RolldownWatchSourceSnapshot> {
   const moduleIds: string[] = [];
   try {
@@ -201,12 +371,24 @@ async function initialBuildSnapshot(input: {
     return await sourceSnapshotFromBundleEnd({
       result,
       outputFiles: [input.outputDirectory],
-      changedSourceIds: [],
+      changedSourceIds: input.changedSourceIds,
       moduleIds,
     });
   } catch (error) {
     return createDiagnosticSourceSnapshot([diagnosticFromRolldownError(error, input.entry)]);
   }
+}
+
+async function initialBuildSnapshot(input: {
+  readonly cwd: string;
+  readonly entry: string;
+  readonly outputDirectory: string;
+  readonly buildFactory: (options: WatchOptions) => Promise<RolldownWatchResult>;
+}): Promise<RolldownWatchSourceSnapshot> {
+  return buildSourceSnapshot({
+    ...input,
+    changedSourceIds: [],
+  });
 }
 
 export function createRolldownWatchOptions(input: {
@@ -243,10 +425,20 @@ export function createRolldownWatchOptions(input: {
     transform: {
       jsx: {
         runtime: "automatic",
-        importSource: "deckjsx",
+        ...(tsconfigUsesDeckjsxJsxImportSource(input.cwd) ? {} : { importSource: "deckjsx" }),
       },
     },
   };
+}
+
+function tsconfigUsesDeckjsxJsxImportSource(cwd: string): boolean {
+  try {
+    return /"jsxImportSource"\s*:\s*"deckjsx"/.test(
+      readFileSync(path.join(cwd, "tsconfig.json"), "utf8"),
+    );
+  } catch {
+    return false;
+  }
 }
 
 function createWatchOutputDirectory(cwd: string): string {

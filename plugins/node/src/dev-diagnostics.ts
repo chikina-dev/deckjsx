@@ -117,29 +117,34 @@ export function bundleFailedDiagnosticFromError(
   error: unknown,
   fallbackFile: string,
 ): DeckjsxDevDiagnostic {
+  const rawMessage = errorMessage(error);
+  const parsedMessage = parseBundleErrorMessageLocation(rawMessage, fallbackFile);
   const location = isObject(error) && isObject(error.loc) ? error.loc : undefined;
   const frame = isObject(error) && typeof error.frame === "string" ? error.frame : undefined;
-  const line = numberProperty(location, "line");
-  const column = numberProperty(location, "column");
+  const line = numberProperty(location, "line") ?? parsedMessage?.line;
+  const column = numberProperty(location, "column") ?? parsedMessage?.column;
   const file =
     isObject(error) && typeof error.id === "string"
       ? error.id
       : location && typeof location.file === "string"
         ? location.file
-        : fallbackFile;
+        : parsedMessage
+          ? parsedMessage.file
+          : fallbackFile;
+  const sourceFrame = frame ?? rawMessage;
   const primary = {
     file,
     ...(line !== undefined ? { line } : {}),
     ...(column !== undefined ? { column } : {}),
-    ...(line !== undefined && frame ? { sourceLine: sourceLineFromFrame(frame, line) } : {}),
-    ...(line !== undefined && frame ? { spanLength: spanLengthFromFrame(frame, line) } : {}),
+    ...(line !== undefined ? { sourceLine: sourceLineFromFrame(sourceFrame, line) } : {}),
+    ...(line !== undefined ? { spanLength: spanLengthFromFrame(sourceFrame, line) } : {}),
   } satisfies DeckjsxDevDiagnosticSpan;
 
   return {
     severity: "error",
     code: "deckjsx.node.dev.bundleFailed",
     title: "Bundle failed.",
-    message: errorMessage(error),
+    message: cleanBundleErrorMessage(rawMessage),
     primary,
     labels: [
       {
@@ -149,6 +154,43 @@ export function bundleFailedDiagnosticFromError(
     ],
     help: ["Fix the bundling error and save again."],
   };
+}
+
+function cleanBundleErrorMessage(message: string): string {
+  return (
+    stripAnsi(message)
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(Boolean) ?? message
+  );
+}
+
+function parseBundleErrorMessageLocation(
+  message: string,
+  fallbackFile: string,
+): { readonly file: string; readonly line: number; readonly column: number } | undefined {
+  const cleanMessage = stripAnsi(message);
+  const match = /\[\s*([^\]\n]+?):(\d+):(\d+)\s*\]/.exec(cleanMessage);
+  if (!match?.[1] || !match[2] || !match[3]) {
+    return undefined;
+  }
+  const file = pathLikeToAbsolute(match[1].trim(), fallbackFile);
+  return {
+    file,
+    line: Number(match[2]),
+    column: Number(match[3]),
+  };
+}
+
+function pathLikeToAbsolute(filePath: string, fallbackFile: string): string {
+  if (filePath.startsWith("/") || /^[A-Za-z]:[\\/]/.test(filePath)) {
+    return filePath;
+  }
+  const slashIndex = fallbackFile.lastIndexOf("/");
+  if (slashIndex < 0) {
+    return filePath;
+  }
+  return `${fallbackFile.slice(0, slashIndex + 1)}${filePath}`;
 }
 
 function errorMessage(error: unknown): string {
@@ -162,8 +204,8 @@ function errorMessage(error: unknown): string {
 }
 
 function sourceLineFromFrame(frame: string, line: number): string | undefined {
-  const prefix = new RegExp(`^\\s*${line}\\s*\\|\\s?(.*)$`);
-  for (const frameLine of frame.split(/\r?\n/)) {
+  const prefix = new RegExp(`^\\s*${line}\\s*[|│]\\s?(.*)$`);
+  for (const frameLine of stripAnsi(frame).split(/\r?\n/)) {
     const match = prefix.exec(frameLine);
     if (match?.[1] !== undefined) {
       return match[1];
@@ -173,13 +215,17 @@ function sourceLineFromFrame(frame: string, line: number): string | undefined {
 }
 
 function spanLengthFromFrame(frame: string, line: number): number | undefined {
-  const lines = frame.split(/\r?\n/);
+  const lines = stripAnsi(frame).split(/\r?\n/);
   const sourceLineIndex = lines.findIndex((frameLine) =>
-    new RegExp(`^\\s*${line}\\s*\\|`).test(frameLine),
+    new RegExp(`^\\s*${line}\\s*[|│]`).test(frameLine),
   );
   const caretLine = sourceLineIndex >= 0 ? lines[sourceLineIndex + 1] : undefined;
-  const caretMatch = caretLine ? /\|(\s*)(\^+)/.exec(caretLine) : undefined;
+  const caretMatch = caretLine ? /[|│](\s*)([\^┬]+)/.exec(caretLine) : undefined;
   return caretMatch?.[2]?.length;
+}
+
+function stripAnsi(value: string): string {
+  return value.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g"), "");
 }
 
 function numberProperty(value: unknown, key: string): number | undefined {
