@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "vite-plus/test";
 
 type PackageJson = {
+  bin?: Record<string, string>;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
   files?: readonly string[];
@@ -165,20 +166,20 @@ describe("public surface", () => {
   test("package manifests use independent release lines", async () => {
     const rootPackage = await readPackageJson();
     const pluginPackages = await Promise.all(
-      ["plugins/node/package.json", "plugins/vite/package.json"].map(
+      ["plugins/node/package.json"].map(
         async (path) => [path, await readRepoPackageJson(path)] as const,
       ),
     );
 
-    expect(rootPackage.version).toBe("0.9.0");
+    expect(rootPackage.version).toBe("0.9.1");
     for (const [path, pkg] of pluginPackages) {
-      expect(pkg.version, `${path} version should start at its own initial release`).toBe("0.1.0");
+      expect(pkg.version, `${path} version should follow its own release line`).toBe("0.1.1");
     }
   });
 
   test("plugin package manifests use peer dependencies instead of repo file dependencies", async () => {
     const pluginPackages = await Promise.all(
-      ["plugins/node/package.json", "plugins/vite/package.json"].map(
+      ["plugins/node/package.json"].map(
         async (path) => [path, await readRepoPackageJson(path)] as const,
       ),
     );
@@ -189,6 +190,10 @@ describe("public surface", () => {
         types: "./dist/index.d.mts",
         import: "./dist/index.mjs",
       });
+      expectTypedExportTarget(pkg, "./dev", {
+        types: "./dist/dev.d.mts",
+        import: "./dist/dev.mjs",
+      });
       expect(pkg.exports?.["./package.json"], `${path} exposes package metadata`).toBe(
         "./package.json",
       );
@@ -198,7 +203,8 @@ describe("public surface", () => {
       expect(pkg.scripts?.prepublishOnly, `${path} builds before direct npm publish`).toBe(
         "vp run build",
       );
-      expect(pkg.peerDependencies?.deckjsx, `${path} declares deckjsx as a peer`).toBe("^0.9.0");
+      expect(pkg.peerDependencies?.deckjsx, `${path} declares deckjsx as a peer`).toBe("^0.9.1");
+      expect(pkg.bin?.deckjsx, `${path} exposes the deckjsx CLI`).toBe("./dist/cli.mjs");
       expect(pkg.dependencies?.deckjsx, `${path} must not publish a runtime file dependency`).toBe(
         undefined,
       );
@@ -211,7 +217,7 @@ describe("public surface", () => {
 
   test("plugin typecheck paths use root public declarations instead of root source", async () => {
     const pluginTsconfigs = await Promise.all(
-      ["plugins/node/tsconfig.json", "plugins/vite/tsconfig.json"].map(
+      ["plugins/node/tsconfig.json"].map(
         async (path) =>
           [
             path,
@@ -242,10 +248,9 @@ describe("public surface", () => {
 
     expect(review).toContain("deckjsx/integration");
     expect(review).toContain("@deckjsx/node");
-    expect(review).toContain("@deckjsx/vite");
     expect(review).toContain("Integration Interface");
     expect(review).toContain("Runtime Integration Package");
-    expect(review).toContain("Project Integration Package");
+    expect(review).toContain("Incremental Artifact");
     expect(review).toContain("not root Authoring Interface");
     expect(review).toContain("no `file:../..`");
   });
@@ -296,8 +301,6 @@ describe("public surface", () => {
     const requiredCommands = [
       "run: bun run check",
       "run: bun run build",
-      "run: npm ci --prefix sample",
-      "run: npm run --prefix sample smoke",
       "run: bun run test",
       "run: bash .github/scripts/benchmark-pptx-with-diagnostics.sh",
       "run: bun run verify:render -- --skip-raster",
@@ -321,7 +324,7 @@ describe("public surface", () => {
     expect(workflow).toContain("version:");
     expect(workflow).toContain('input_version="${{ inputs.version }}"');
     expect(workflow).toContain('tag="deckjsx-node-v$version"');
-    expect(workflow).toContain('tag="deckjsx-vite-v$version"');
+    expect(workflow).not.toContain('tag="deckjsx-vite-v$version"');
     expect(workflow).toContain("package_dir=");
     expect(workflow).toContain("working-directory: ${{ steps.release.outputs.package_dir }}");
     expect(workflow).not.toContain("package_paths=(");
@@ -341,29 +344,45 @@ describe("public surface", () => {
 
   test("ci workflow checks and packs integration packages", async () => {
     const workflow = await readRepoText(".github/workflows/ci.yml");
-    const requiredCommands = [
+    const coreCommands = [
       "run: bun run check",
       "run: bun run build",
-      "run: ../../node_modules/.bin/vp check",
-      "run: ../../node_modules/.bin/vp pack",
-      "run: npm ci --prefix sample",
-      "run: npm run --prefix sample smoke",
       "run: bun run test",
       "run: bash .github/scripts/benchmark-pptx-with-diagnostics.sh",
     ];
 
     let previousIndex = -1;
-    for (const command of requiredCommands) {
+    for (const command of coreCommands) {
       const index = workflow.indexOf(command);
       expect(index, `CI workflow includes ${command}`).toBeGreaterThanOrEqual(0);
-      expect(index, `CI workflow runs ${command} in release-relevant order`).toBeGreaterThan(
+      expect(index, `core CI runs ${command} in release-relevant order`).toBeGreaterThan(
+        previousIndex,
+      );
+      previousIndex = index;
+    }
+
+    const nodeJobIndex = workflow.indexOf("node:");
+    expect(nodeJobIndex, "CI has a separate @deckjsx/node job").toBeGreaterThanOrEqual(0);
+    const nodeCommands = [
+      "run: bun install --frozen-lockfile",
+      "run: bun run build",
+      "run: bun install",
+      "run: ../../node_modules/.bin/vp check",
+      "run: ../../node_modules/.bin/vp pack",
+      "run: ../../node_modules/.bin/vp test",
+    ];
+    previousIndex = nodeJobIndex;
+    for (const command of nodeCommands) {
+      const index = workflow.indexOf(command, previousIndex);
+      expect(index, `@deckjsx/node CI includes ${command}`).toBeGreaterThanOrEqual(0);
+      expect(index, `@deckjsx/node CI runs ${command} in package order`).toBeGreaterThan(
         previousIndex,
       );
       previousIndex = index;
     }
 
     expect(workflow).toContain("working-directory: plugins/node");
-    expect(workflow).toContain("working-directory: plugins/vite");
+    expect(workflow).not.toContain("working-directory: plugins/vite");
   });
 
   test("required generation regression workflows stay isolated from root dependencies", async () => {

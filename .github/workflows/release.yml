@@ -10,7 +10,6 @@ on:
         options:
           - deckjsx
           - "@deckjsx/node"
-          - "@deckjsx/vite"
       version:
         description: Package version to release, for example v0.9.0 or v0.1.0
         required: true
@@ -69,12 +68,6 @@ jobs:
                 package_json="plugins/node/package.json"
                 tag="deckjsx-node-v$version"
                 ;;
-              @deckjsx/vite)
-                package_name="@deckjsx/vite"
-                package_dir="plugins/vite"
-                package_json="plugins/vite/package.json"
-                tag="deckjsx-vite-v$version"
-                ;;
               *)
                 echo "Unknown package: $1" >&2
                 exit 1
@@ -103,12 +96,8 @@ jobs:
                 version="${tag#deckjsx-node-v}"
                 resolve_package "@deckjsx/node"
                 ;;
-              deckjsx-vite-v*)
-                version="${tag#deckjsx-vite-v}"
-                resolve_package "@deckjsx/vite"
-                ;;
               *)
-                echo "Release tag must look like v0.9.0, deckjsx-node-v0.1.0, or deckjsx-vite-v0.1.0." >&2
+                echo "Release tag must look like v0.9.0 or deckjsx-node-v0.1.0." >&2
                 exit 1
                 ;;
             esac
@@ -174,6 +163,10 @@ jobs:
       - name: Build
         run: bun run build
 
+      - name: Install @deckjsx/node dependencies
+        working-directory: plugins/node
+        run: bun install
+
       - name: Check @deckjsx/node
         working-directory: plugins/node
         run: ../../node_modules/.bin/vp check
@@ -182,19 +175,9 @@ jobs:
         working-directory: plugins/node
         run: ../../node_modules/.bin/vp pack
 
-      - name: Check @deckjsx/vite
-        working-directory: plugins/vite
-        run: ../../node_modules/.bin/vp check
-
-      - name: Pack @deckjsx/vite
-        working-directory: plugins/vite
-        run: ../../node_modules/.bin/vp pack
-
-      - name: Install sample dependencies
-        run: npm ci --prefix sample
-
-      - name: Run sample smoke
-        run: npm run --prefix sample smoke
+      - name: Test @deckjsx/node
+        working-directory: plugins/node
+        run: ../../node_modules/.bin/vp test
 
       - name: Test
         run: bun run test

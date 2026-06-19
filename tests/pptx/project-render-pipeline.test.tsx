@@ -10243,7 +10243,7 @@ describe("project/render pipeline", () => {
     expect(artifacts.projection?.partsById.size).toBe(project.projection?.parts.length);
   });
 
-  test("HMR invalidation exposes a single projection reuse snapshot until the next projection materializes", async () => {
+  test("Source invalidation exposes a single projection reuse snapshot until the next projection materializes", async () => {
     let title = "before";
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     const artifacts = new PipelineArtifactCollection();
@@ -10262,11 +10262,10 @@ describe("project/render pipeline", () => {
     const firstProjection = artifacts.projection;
 
     title = "after";
-    const invalidated = artifacts.invalidateForHmr({
-      importer: "/project/src/deck.tsx",
-      changedModuleIds: ["/project/src/deck.tsx"],
+    const invalidated = artifacts.invalidateForSourceChange({
+      changedSourceIds: ["/project/src/deck.tsx"],
     });
-    const snapshot = artifacts.hmrProjectionReuseSnapshot;
+    const snapshot = artifacts.incrementalProjectionReuseSnapshot;
 
     expect(first.ok).toBe(true);
     expect(invalidated).toBe(true);
@@ -10287,7 +10286,7 @@ describe("project/render pipeline", () => {
     });
 
     expect(second.ok).toBe(true);
-    expect(artifacts.hmrProjectionReuseSnapshot).toBeUndefined();
+    expect(artifacts.incrementalProjectionReuseSnapshot).toBeUndefined();
   });
 
   test("byte asset cache keys distinguish equal-length byte sources by content", () => {
@@ -10367,7 +10366,7 @@ describe("project/render pipeline", () => {
     expect(firstEditedFingerprint?.fingerprint).not.toBe(secondEditedFingerprint?.fingerprint);
   });
 
-  test("HMR projection reuses unchanged slide package parts from the stale projection", async () => {
+  test("Incremental projection reuses unchanged slide package parts from the stale projection", async () => {
     let editedText = "before";
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     const artifacts = new PipelineArtifactCollection();
@@ -10400,9 +10399,8 @@ describe("project/render pipeline", () => {
     );
 
     editedText = "after";
-    artifacts.invalidateForHmr({
-      importer: "/project/src/deck.tsx",
-      changedModuleIds: ["/project/src/deck.tsx"],
+    artifacts.invalidateForSourceChange({
+      changedSourceIds: ["/project/src/deck.tsx"],
     });
     const second = await projectSource({
       source: deck,
@@ -10433,7 +10431,7 @@ describe("project/render pipeline", () => {
     expect(secondStableSlideRelationships).toBe(firstStableSlideRelationships);
   });
 
-  test("HMR projection does not reuse a slide when deck layout changes", async () => {
+  test("Incremental projection does not reuse a slide when deck layout changes", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     const artifacts = new PipelineArtifactCollection();
 
@@ -10449,9 +10447,8 @@ describe("project/render pipeline", () => {
     });
     const firstSlide = first.projection?.slides[0];
 
-    artifacts.invalidateForHmr({
-      importer: "/project/src/deck.tsx",
-      changedModuleIds: ["/project/src/deck.tsx"],
+    artifacts.invalidateForSourceChange({
+      changedSourceIds: ["/project/src/deck.tsx"],
     });
     const second = await projectSource({
       source: deck,
@@ -10468,12 +10465,12 @@ describe("project/render pipeline", () => {
     expect(secondSlide).not.toBe(firstSlide);
   });
 
-  test("HMR projection does not reuse a slide when asset probe metadata changes", async () => {
+  test("Incremental projection does not reuse a slide when asset probe metadata changes", async () => {
     let imageWidth = 2;
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     const artifacts = new PipelineArtifactCollection();
     const loader = testAssetLoader({
-      resolverIdentity: "test:hmr-probe-sensitive-assets",
+      resolverIdentity: "test:incremental-probe-sensitive-assets",
       async probe({ source }) {
         return source.kind === "path"
           ? {
@@ -10503,9 +10500,8 @@ describe("project/render pipeline", () => {
     const firstSlide = first.projection?.slides[0];
 
     imageWidth = 3;
-    artifacts.invalidateForHmr({
-      importer: "/project/src/deck.tsx",
-      changedModuleIds: ["/project/src/deck.tsx"],
+    artifacts.invalidateForSourceChange({
+      changedSourceIds: ["/project/src/deck.tsx"],
     });
     const second = await projectSource({
       source: deck,
@@ -10524,7 +10520,7 @@ describe("project/render pipeline", () => {
     expect(secondSlide).not.toBe(firstSlide);
   });
 
-  test("HMR projection reuses unchanged slide media package parts from the stale projection", async () => {
+  test("Incremental projection reuses unchanged slide media package parts from the stale projection", async () => {
     let editedText = "before";
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     const artifacts = new PipelineArtifactCollection();
@@ -10545,9 +10541,8 @@ describe("project/render pipeline", () => {
     const firstStableMedia = first.projection?.parts.find((part) => part.kind === "media");
 
     editedText = "after";
-    artifacts.invalidateForHmr({
-      importer: "/project/src/deck.tsx",
-      changedModuleIds: ["/project/src/deck.tsx"],
+    artifacts.invalidateForSourceChange({
+      changedSourceIds: ["/project/src/deck.tsx"],
     });
     const second = await projectSource({
       source: deck,
@@ -10565,7 +10560,7 @@ describe("project/render pipeline", () => {
     expect(secondStableMedia).toBe(firstStableMedia);
   });
 
-  test("HMR projection keeps media reuse scoped to unchanged slide units", async () => {
+  test("Incremental projection keeps media reuse scoped to unchanged slide units", async () => {
     let editedText = "before";
     const stableImage =
       "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2210%22%20height%3D%2210%22%3E%3Crect%20width%3D%2210%22%20height%3D%2210%22%20fill%3D%22%2300ff00%22%2F%3E%3C%2Fsvg%3E";
@@ -10596,9 +10591,8 @@ describe("project/render pipeline", () => {
     );
 
     editedText = "after";
-    artifacts.invalidateForHmr({
-      importer: "/project/src/deck.tsx",
-      changedModuleIds: ["/project/src/deck.tsx"],
+    artifacts.invalidateForSourceChange({
+      changedSourceIds: ["/project/src/deck.tsx"],
     });
     const second = await projectSource({
       source: deck,
@@ -10621,7 +10615,7 @@ describe("project/render pipeline", () => {
     expect(secondStableMedia).toBe(firstStableMedia);
   });
 
-  test("HMR render reports reused patch plan parts for unchanged slide projection units", async () => {
+  test("Incremental render reports reused patch plan parts for unchanged slide projection units", async () => {
     let editedText = "before";
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     const artifacts = new PipelineArtifactCollection();
@@ -10659,9 +10653,8 @@ describe("project/render pipeline", () => {
     );
 
     editedText = "after";
-    artifacts.invalidateForHmr({
-      importer: "/project/src/deck.tsx",
-      changedModuleIds: ["/project/src/deck.tsx"],
+    artifacts.invalidateForSourceChange({
+      changedSourceIds: ["/project/src/deck.tsx"],
     });
     const secondProject = await projectSource({
       source: deck,

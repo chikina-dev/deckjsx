@@ -248,7 +248,7 @@ inherited values are visible in resolved-style inspection; Project avoids duplic
 run styles when the parent text box already carries the concrete PPTX text body style.
 
 Style cascade is source-local. A mounted child deck resolves its own theme and stylesheets against
-its own slides, which keeps sandboxed and HMR-style composition predictable.
+its own slides, which keeps sandboxed and source-incremental composition predictable.
 
 ## Slide Templates
 

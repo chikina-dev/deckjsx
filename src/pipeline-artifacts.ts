@@ -4,7 +4,7 @@ import type { ComposedAuthorRoot } from "./composition/types";
 import type { DeckOptions } from "./authoring/index";
 import type { AssetLoadResult, AssetProbeResult, AssetSource } from "./assets";
 import type { MediaSourceOrigin } from "./media-source-origin";
-import type { HmrInvalidation } from "./plugin";
+import type { SourceInvalidation } from "./plugin";
 import { createDiagnostics, type Diagnostics } from "./diagnostics";
 import type {
   AssetEntityId,
@@ -81,7 +81,7 @@ export type AssetArtifact = {
   readonly diagnostics: Diagnostics;
 };
 
-export type HmrProjectionReuseSnapshot = {
+export type IncrementalProjectionReuseSnapshot = {
   readonly graph: DefinedGraphArtifact;
   readonly projection: DefinedProjectionArtifact;
   readonly options: DeckOptions;
@@ -171,15 +171,15 @@ function sourceKeyFor(source: SourceOrigin | undefined): string {
   return !source || source.kind === "root" ? ROOT_SOURCE_ARTIFACT_KEY : source.sourceIdentity;
 }
 
-function normalizedHmrModuleId(id: string): string {
-  return hmrPathNormalize(id.replace(/[?#].*$/, ""));
+function normalizedSourceId(id: string): string {
+  return sourcePathNormalize(id.replace(/[?#].*$/, ""));
 }
 
-function isCodeLikeHmrModuleId(id: string): boolean {
-  return /\.[cm]?[jt]sx?$/.test(normalizedHmrModuleId(id));
+function isCodeLikeSourceId(id: string): boolean {
+  return /\.[cm]?[jt]sx?$/.test(normalizedSourceId(id));
 }
 
-function hmrPathNormalize(value: string): string {
+function sourcePathNormalize(value: string): string {
   const normalized = value.replace(/\\/g, "/");
   const leadingSlash = normalized.startsWith("/");
   const segments: string[] = [];
@@ -197,8 +197,8 @@ function hmrPathNormalize(value: string): string {
   return `${leadingSlash ? "/" : ""}${segments.join("/")}`;
 }
 
-function hmrPathDirname(value: string): string {
-  const normalized = hmrPathNormalize(value);
+function sourcePathDirname(value: string): string {
+  const normalized = sourcePathNormalize(value);
   const index = normalized.lastIndexOf("/");
   if (index <= 0) {
     return normalized.startsWith("/") ? "/" : "";
@@ -207,19 +207,19 @@ function hmrPathDirname(value: string): string {
   return normalized.slice(0, index);
 }
 
-function hmrPathResolve(importer: string, source: string): string {
-  const normalizedSource = normalizedHmrModuleId(source);
+function sourcePathResolve(importer: string, source: string): string {
+  const normalizedSource = normalizedSourceId(source);
   if (normalizedSource.startsWith("/")) {
     return normalizedSource;
   }
 
-  return hmrPathNormalize(`${hmrPathDirname(importer)}/${normalizedSource}`);
+  return sourcePathNormalize(`${sourcePathDirname(importer)}/${normalizedSource}`);
 }
 
-function hmrOriginMatchesChangedModule(
+function originMatchesChangedSource(
   source: AssetSource,
   origin: MediaSourceOrigin | undefined,
-  changedModuleIds: ReadonlySet<string>,
+  changedSourceIds: ReadonlySet<string>,
 ): boolean {
   if (!origin) {
     return false;
@@ -227,7 +227,7 @@ function hmrOriginMatchesChangedModule(
 
   const directMatches = [origin.importer, origin.source]
     .filter((value): value is string => value !== undefined)
-    .some((value) => changedModuleIds.has(normalizedHmrModuleId(value)));
+    .some((value) => changedSourceIds.has(normalizedSourceId(value)));
   if (directMatches) {
     return true;
   }
@@ -236,7 +236,7 @@ function hmrOriginMatchesChangedModule(
     return false;
   }
 
-  return changedModuleIds.has(hmrPathResolve(origin.importer, origin.source ?? source.path));
+  return changedSourceIds.has(sourcePathResolve(origin.importer, origin.source ?? source.path));
 }
 
 export class PipelineArtifactCollection {
@@ -261,7 +261,7 @@ export class PipelineArtifactCollection {
     return this.#projection;
   }
 
-  get hmrProjectionReuseSnapshot(): HmrProjectionReuseSnapshot | undefined {
+  get incrementalProjectionReuseSnapshot(): IncrementalProjectionReuseSnapshot | undefined {
     if (
       !this.#staleGraphForReuse ||
       !this.#staleProjectionForReuse ||
@@ -300,6 +300,25 @@ export class PipelineArtifactCollection {
     return this.#pptxBuildArtifactsByPartId;
   }
 
+  clone(): PipelineArtifactCollection {
+    const clone = new PipelineArtifactCollection();
+    clone.#sourcesByKey = new Map(this.#sourcesByKey);
+    clone.#graphsBySourceKey = new Map(this.#graphsBySourceKey);
+    clone.#assetsById = new Map(this.#assetsById);
+    clone.#assetsBySourceCacheKey = new Map(this.#assetsBySourceCacheKey);
+    clone.#pptxBuildArtifactsByPartId = new Map(this.#pptxBuildArtifactsByPartId);
+    clone.#projection = this.#projection;
+    clone.#projectionOptions = this.#projectionOptions;
+    clone.#staleProjectionForReuse = this.#staleProjectionForReuse;
+    clone.#staleGraphForReuse = this.#staleGraphForReuse;
+    clone.#staleProjectionOptionsForReuse = this.#staleProjectionOptionsForReuse;
+    clone.#staleAssetsByIdForReuse = this.#staleAssetsByIdForReuse
+      ? new Map(this.#staleAssetsByIdForReuse)
+      : undefined;
+    clone.#staleAssetEntityIdsForReuse = new Set(this.#staleAssetEntityIdsForReuse);
+    return clone;
+  }
+
   invalidateFromSource(): void {
     this.#sourcesByKey.clear();
     this.#graphsBySourceKey.clear();
@@ -308,7 +327,7 @@ export class PipelineArtifactCollection {
     this.#pptxBuildArtifactsByPartId.clear();
     this.#projection = undefined;
     this.#projectionOptions = undefined;
-    this.clearHmrProjectionReuseSnapshot();
+    this.clearIncrementalProjectionReuseSnapshot();
   }
 
   invalidateFromGraph(): void {
@@ -318,14 +337,14 @@ export class PipelineArtifactCollection {
     this.#pptxBuildArtifactsByPartId.clear();
     this.#projection = undefined;
     this.#projectionOptions = undefined;
-    this.clearHmrProjectionReuseSnapshot();
+    this.clearIncrementalProjectionReuseSnapshot();
   }
 
   invalidateFromProjection(): void {
     this.#pptxBuildArtifactsByPartId.clear();
     this.#projection = undefined;
     this.#projectionOptions = undefined;
-    this.clearHmrProjectionReuseSnapshot();
+    this.clearIncrementalProjectionReuseSnapshot();
   }
 
   invalidateAssets(): void {
@@ -334,23 +353,20 @@ export class PipelineArtifactCollection {
     this.#pptxBuildArtifactsByPartId.clear();
     this.#projection = undefined;
     this.#projectionOptions = undefined;
-    this.clearHmrProjectionReuseSnapshot();
+    this.clearIncrementalProjectionReuseSnapshot();
   }
 
-  invalidateForHmr(invalidation: HmrInvalidation): boolean {
-    const changedModuleIds = new Set(
-      invalidation.changedModuleIds.map((id) => normalizedHmrModuleId(id)),
+  invalidateForSourceChange(invalidation: SourceInvalidation): boolean {
+    const changedSourceIds = new Set(
+      invalidation.changedSourceIds.map((id) => normalizedSourceId(id)),
     );
-    if (changedModuleIds.size === 0) {
+    if (changedSourceIds.size === 0) {
       return false;
     }
 
-    const importerChanged =
-      invalidation.importer !== undefined &&
-      changedModuleIds.has(normalizedHmrModuleId(invalidation.importer));
-    const codeChanged = [...changedModuleIds].some((id) => isCodeLikeHmrModuleId(id));
-    if (importerChanged || codeChanged) {
-      this.preserveProjectionForHmrReuse();
+    const codeChanged = [...changedSourceIds].some((id) => isCodeLikeSourceId(id));
+    if (codeChanged) {
+      this.preserveProjectionForIncrementalReuse();
       this.#sourcesByKey.clear();
       this.#graphsBySourceKey.clear();
       this.#assetsById.clear();
@@ -363,7 +379,7 @@ export class PipelineArtifactCollection {
 
     const staleAssetIds = new Set<AssetEntityId>();
     this.#assetsById.forEach((asset) => {
-      if (hmrOriginMatchesChangedModule(asset.source, asset.origin, changedModuleIds)) {
+      if (originMatchesChangedSource(asset.source, asset.origin, changedSourceIds)) {
         staleAssetIds.add(asset.assetEntityId);
       }
     });
@@ -371,7 +387,7 @@ export class PipelineArtifactCollection {
       return false;
     }
 
-    this.preserveProjectionForHmrReuse();
+    this.preserveProjectionForIncrementalReuse();
     this.#staleAssetEntityIdsForReuse = staleAssetIds;
     staleAssetIds.forEach((id) => {
       this.#assetsById.delete(id);
@@ -388,7 +404,7 @@ export class PipelineArtifactCollection {
     return true;
   }
 
-  private preserveProjectionForHmrReuse(): void {
+  private preserveProjectionForIncrementalReuse(): void {
     if (this.#projection) {
       this.#staleProjectionForReuse = this.#projection;
     }
@@ -401,7 +417,7 @@ export class PipelineArtifactCollection {
     this.#staleAssetsByIdForReuse = new Map(this.#assetsById);
   }
 
-  private clearHmrProjectionReuseSnapshot(): void {
+  private clearIncrementalProjectionReuseSnapshot(): void {
     this.#staleProjectionForReuse = undefined;
     this.#staleGraphForReuse = undefined;
     this.#staleProjectionOptionsForReuse = undefined;
@@ -580,7 +596,7 @@ export class PipelineArtifactCollection {
   ): void {
     this.#projection = pptxProjectionArtifact(projection, diagnostics);
     this.#projectionOptions = options;
-    this.clearHmrProjectionReuseSnapshot();
+    this.clearIncrementalProjectionReuseSnapshot();
   }
 
   materializeAsset(input: AssetArtifact): void {
@@ -631,7 +647,7 @@ export class PipelineArtifactCollection {
     });
     this.#projection = undefined;
     this.#projectionOptions = undefined;
-    this.clearHmrProjectionReuseSnapshot();
+    this.clearIncrementalProjectionReuseSnapshot();
   }
 
   replaceProjectionArtifact(projection: PptxPackageModelCandidate): void {
@@ -639,7 +655,7 @@ export class PipelineArtifactCollection {
     this.#graphsBySourceKey.clear();
     this.#projection = pptxProjectionArtifact(projection, projectionShapeDiagnostics(projection));
     this.#projectionOptions = undefined;
-    this.clearHmrProjectionReuseSnapshot();
+    this.clearIncrementalProjectionReuseSnapshot();
   }
 }
 

@@ -3,10 +3,17 @@ import { pptx, type WriterAdapter, type WriterRenderContext } from "../../src/ad
 import { createDiagnostics } from "../../src/diagnostics/index.ts";
 import { Deck } from "../../src/index.ts";
 import type { PptxPackageModel } from "../../src/inspect.ts";
+import { claimIncrementalArtifactRenderSlot } from "../../src/incremental-artifact-session.ts";
+import { ROOT_SOURCE_ARTIFACT_KEY } from "../../src/pipeline-artifacts.ts";
 import {
   integrationContextId,
   mediaSourceOrigins,
+  createIncrementalArtifactSession,
+  getArtifactWriteToken,
+  recordArtifactWrite,
+  runIncrementalArtifactCycle,
   withRenderExecutionContext,
+  type ArtifactWriteToken,
   type AssetLoader,
   type DeckPlugin,
 } from "../../src/integration.ts";
@@ -319,9 +326,8 @@ describe("deckjsx/integration", () => {
     );
     const render = await deck.render(
       withRenderExecutionContext(pptx(), {
-        hmrInvalidation: {
-          importer: "/project/src/deck.tsx",
-          changedModuleIds: ["/project/src/deck.tsx"],
+        sourceInvalidation: {
+          changedSourceIds: ["/project/src/deck.tsx"],
         },
       }),
     );
@@ -330,9 +336,8 @@ describe("deckjsx/integration", () => {
     expect(render.ok).toBe(true);
     expect(seenSources).toContain("src:./asset.png");
     expect(seenOrigins).toEqual(["probe:/project/src/deck.tsx", "load:/project/src/deck.tsx"]);
-    expect(render.patchPlan?.hmrInvalidation).toEqual({
-      importer: "/project/src/deck.tsx",
-      changedModuleIds: ["/project/src/deck.tsx"],
+    expect(render.patchPlan?.sourceInvalidation).toEqual({
+      changedSourceIds: ["/project/src/deck.tsx"],
     });
     expect(Array.from(zip["ppt/media/media1.png"] ?? [])).toEqual(Array.from(pngBytes));
   });
@@ -438,11 +443,13 @@ describe("deckjsx/integration", () => {
     );
   });
 
-  test("hmr invalidation refreshes cached graph and projection during ordinary render", async () => {
+  test("source invalidation refreshes cached graph and projection during ordinary render", async () => {
     let title = "before";
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
-    deck.slide({ name: "HMR" }, () => <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{title}</p>);
+    deck.slide({ name: "Incremental" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{title}</p>
+    ));
     deck.slide({ name: "Stable" }, () => (
       <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>stable</p>
     ));
@@ -452,15 +459,14 @@ describe("deckjsx/integration", () => {
     const stale = await deck.render(pptx());
     deck.plugin(
       assetExtension({
-        name: "test:hmr-code-extension",
+        name: "test:incremental-code-extension",
         importer: "/project/src/deck.tsx",
       }),
     );
     const refreshed = await deck.render(
       withRenderExecutionContext(pptx({ inspection: "summary" }), {
-        hmrInvalidation: {
-          importer: "/project/src/deck.tsx",
-          changedModuleIds: ["/project/src/deck.tsx"],
+        sourceInvalidation: {
+          changedSourceIds: ["/project/src/deck.tsx"],
         },
       }),
     );
@@ -484,17 +490,16 @@ describe("deckjsx/integration", () => {
     expect(staleSlideXml).toContain("before");
     expect(refreshedSlideXml).toContain("after");
     expect(refreshedStableSlideXml).toContain("stable");
-    expect(refreshed.patchPlan?.hmrInvalidation).toEqual({
-      importer: "/project/src/deck.tsx",
-      changedModuleIds: ["/project/src/deck.tsx"],
+    expect(refreshed.patchPlan?.sourceInvalidation).toEqual({
+      changedSourceIds: ["/project/src/deck.tsx"],
     });
   });
 
-  test("hmr invalidation refreshes importer-relative media assets when asset files change", async () => {
+  test("source invalidation refreshes importer-relative media assets when asset files change", async () => {
     let currentBytes = new Uint8Array([137, 80, 78, 71, 1]);
     let loadCount = 0;
     const loader = {
-      resolverIdentity: "test:hmr-media-loader",
+      resolverIdentity: "test:incremental-media-loader",
       async probe(context) {
         return context.source.kind === "path"
           ? {
@@ -531,7 +536,7 @@ describe("deckjsx/integration", () => {
     } satisfies AssetLoader;
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
-    deck.slide({ name: "HMR media" }, () => (
+    deck.slide({ name: "Incremental media" }, () => (
       <img
         {...mediaSourceOrigins({
           src: { importer: "/project/src/deck.tsx", source: "./asset.png" },
@@ -543,7 +548,7 @@ describe("deckjsx/integration", () => {
 
     deck.plugin(
       assetExtension({
-        name: "test:hmr-media-extension",
+        name: "test:incremental-media-extension",
         loader,
       }),
     );
@@ -551,15 +556,14 @@ describe("deckjsx/integration", () => {
     currentBytes = new Uint8Array([137, 80, 78, 71, 2]);
     deck.plugin(
       assetExtension({
-        name: "test:hmr-media-extension",
+        name: "test:incremental-media-extension",
         loader,
       }),
     );
     const refreshed = await deck.render(
       withRenderExecutionContext(pptx(), {
-        hmrInvalidation: {
-          importer: "/project/src/deck.tsx",
-          changedModuleIds: ["/project/src/asset.png"],
+        sourceInvalidation: {
+          changedSourceIds: ["/project/src/asset.png"],
         },
       }),
     );
@@ -577,7 +581,7 @@ describe("deckjsx/integration", () => {
     expect(Array.from(refreshedMediaBytes ?? [])).toEqual([137, 80, 78, 71, 2]);
   });
 
-  test("render execution HMR state is consumed without durable plugin configuration", async () => {
+  test("render execution source invalidation is consumed without durable plugin configuration", async () => {
     let title = "first";
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
@@ -586,7 +590,7 @@ describe("deckjsx/integration", () => {
       id: "test:stable-plugin",
       name: "test:stable-plugin",
     });
-    deck.slide({ name: "Execution HMR" }, () => (
+    deck.slide({ name: "Execution invalidation" }, () => (
       <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{title}</p>
     ));
 
@@ -595,9 +599,8 @@ describe("deckjsx/integration", () => {
     const stale = await deck.render(pptx());
     const refreshed = await deck.render(
       withRenderExecutionContext(pptx(), {
-        hmrInvalidation: {
-          importer: "/project/src/deck.tsx",
-          changedModuleIds: ["/project/src/deck.tsx"],
+        sourceInvalidation: {
+          changedSourceIds: ["/project/src/deck.tsx"],
         },
       }),
     );
@@ -616,11 +619,256 @@ describe("deckjsx/integration", () => {
     expect(staleXml).toContain("first");
     expect(refreshedXml).toContain("second");
     expect(laterXml).toContain("second");
-    expect(refreshed.patchPlan?.hmrInvalidation).toEqual({
-      importer: "/project/src/deck.tsx",
-      changedModuleIds: ["/project/src/deck.tsx"],
+    expect(refreshed.patchPlan?.sourceInvalidation).toEqual({
+      changedSourceIds: ["/project/src/deck.tsx"],
     });
-    expect(later.patchPlan?.hmrInvalidation).toBeUndefined();
+    expect(later.patchPlan?.sourceInvalidation).toBeUndefined();
+  });
+
+  test("incremental artifact session attaches opaque write tokens to render results", async () => {
+    const outsideDeck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    outsideDeck.slide({ name: "Outside" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>outside</p>
+    ));
+    const outsideRender = await outsideDeck.render(pptx());
+
+    const session = createIncrementalArtifactSession();
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Inside" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>inside</p>
+    ));
+
+    let render = await deck.render(pptx());
+    let token = getArtifactWriteToken(render);
+    let record: ReturnType<typeof recordArtifactWrite> | undefined;
+    await runIncrementalArtifactCycle(session, {}, async () => {
+      render = await deck.render(pptx());
+      token = getArtifactWriteToken(render);
+      record = recordArtifactWrite(token, {
+        path: "/project/output.pptx",
+        result: { status: "created" },
+      });
+    });
+
+    expect(getArtifactWriteToken(outsideRender)).toBeUndefined();
+    expect(Object.keys(render)).not.toContain("artifactWriteToken");
+    expect(token).toBeDefined();
+    expect(record).toEqual({
+      cycle: 1,
+      slot: 0,
+      path: "/project/output.pptx",
+      result: { status: "created" },
+    });
+    expect(session.snapshot().writes).toEqual([record]);
+  });
+
+  test("incremental artifact cycle complete rejects active and repeated completion", async () => {
+    const session = createIncrementalArtifactSession();
+    const cycle = session.beginCycle();
+    let completeWhileRunningError: unknown;
+
+    await cycle.run(async () => {
+      try {
+        cycle.complete();
+      } catch (error) {
+        completeWhileRunningError = error;
+      }
+    });
+
+    expect(completeWhileRunningError).toBeInstanceOf(Error);
+    expect((completeWhileRunningError as Error).message).toBe(
+      "Incremental artifact cycle 1 cannot complete while it is still running.",
+    );
+    expect(cycle.complete()).toEqual({
+      cycle: 1,
+      renderCount: 0,
+      writes: [],
+    });
+    expect(() => cycle.complete()).toThrow("Incremental artifact cycle 1 has already completed.");
+  });
+
+  test("incremental artifact session rejects writes after a cycle completes", async () => {
+    const session = createIncrementalArtifactSession();
+    const cycle = session.beginCycle();
+    let token = getArtifactWriteToken(
+      await new Deck({ layout: { width: 10, height: 5.625, unit: "in" } }).render(pptx()),
+    );
+
+    await cycle.run(async () => {
+      const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+      deck.slide({ name: "Late write" }, () => (
+        <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>late</p>
+      ));
+      token = getArtifactWriteToken(await deck.render(pptx()));
+    });
+    cycle.complete();
+
+    expect(() =>
+      recordArtifactWrite(token, {
+        path: "/project/output.pptx",
+        result: { status: "created" },
+      }),
+    ).toThrow("Incremental artifact cycle 1 has already completed.");
+  });
+
+  test("incremental artifact session rejects writes when another cycle is active", async () => {
+    const session = createIncrementalArtifactSession();
+    const outer = session.beginCycle();
+    const inner = session.beginCycle();
+    let outerToken: ArtifactWriteToken | undefined;
+    let writeError: unknown;
+
+    await outer.run(async () => {
+      const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+      deck.slide({ name: "Outer" }, () => (
+        <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>outer</p>
+      ));
+      outerToken = getArtifactWriteToken(await deck.render(pptx()));
+      await inner.run(async () => {
+        try {
+          recordArtifactWrite(outerToken, {
+            path: "/project/output.pptx",
+            result: { status: "created" },
+          });
+        } catch (error) {
+          writeError = error;
+        }
+      });
+    });
+
+    expect(writeError).toBeInstanceOf(Error);
+    expect((writeError as Error).message).toBe(
+      "Incremental artifact cycle 1 is not the active artifact write cycle.",
+    );
+    expect(outer.complete().writes).toEqual([]);
+    expect(inner.complete().writes).toEqual([]);
+  });
+
+  test("runIncrementalArtifactCycle completes the cycle before resolving", async () => {
+    const session = createIncrementalArtifactSession();
+    let token = getArtifactWriteToken(
+      await new Deck({ layout: { width: 10, height: 5.625, unit: "in" } }).render(pptx()),
+    );
+
+    await runIncrementalArtifactCycle(session, {}, async () => {
+      const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+      deck.slide({ name: "Helper cycle" }, () => (
+        <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>helper</p>
+      ));
+      token = getArtifactWriteToken(await deck.render(pptx()));
+    });
+
+    expect(() =>
+      recordArtifactWrite(token, {
+        path: "/project/output.pptx",
+        result: { status: "created" },
+      }),
+    ).toThrow("Incremental artifact cycle 1 has already completed.");
+  });
+
+  test("runIncrementalArtifactCycle completes the cycle before rejecting", async () => {
+    const session = createIncrementalArtifactSession();
+    let token = getArtifactWriteToken(
+      await new Deck({ layout: { width: 10, height: 5.625, unit: "in" } }).render(pptx()),
+    );
+
+    await expect(
+      runIncrementalArtifactCycle(session, {}, async () => {
+        const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+        deck.slide({ name: "Rejected helper cycle" }, () => (
+          <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>helper reject</p>
+        ));
+        token = getArtifactWriteToken(await deck.render(pptx()));
+        throw new Error("helper cycle failed");
+      }),
+    ).rejects.toThrow("helper cycle failed");
+
+    expect(() =>
+      recordArtifactWrite(token, {
+        path: "/project/output.pptx",
+        result: { status: "created" },
+      }),
+    ).toThrow("Incremental artifact cycle 1 has already completed.");
+  });
+
+  test("failed incremental artifact cycles do not commit draft render slot artifacts", async () => {
+    const session = createIncrementalArtifactSession();
+
+    await runIncrementalArtifactCycle(session, {}, async () => {
+      const slot = claimIncrementalArtifactRenderSlot();
+      slot?.artifacts.materializeSource({
+        sourceKey: ROOT_SOURCE_ARTIFACT_KEY,
+        source: { kind: "root" },
+        rootCount: 1,
+        rootPaths: ["success"],
+        diagnostics: createDiagnostics(),
+      });
+    });
+    session.retainArtifactSlots([0]);
+
+    await expect(
+      runIncrementalArtifactCycle(session, {}, async () => {
+        const slot = claimIncrementalArtifactRenderSlot();
+        slot?.artifacts.materializeSource({
+          sourceKey: ROOT_SOURCE_ARTIFACT_KEY,
+          source: { kind: "root" },
+          rootCount: 99,
+          rootPaths: ["failed"],
+          diagnostics: createDiagnostics(),
+        });
+        throw new Error("cycle failed after mutating draft artifacts");
+      }),
+    ).rejects.toThrow("cycle failed after mutating draft artifacts");
+
+    await runIncrementalArtifactCycle(session, {}, async () => {
+      const slot = claimIncrementalArtifactRenderSlot();
+      expect(slot?.artifacts.sourcesByKey.get(ROOT_SOURCE_ARTIFACT_KEY)?.rootCount).toBe(1);
+      expect(slot?.artifacts.sourcesByKey.get(ROOT_SOURCE_ARTIFACT_KEY)?.rootPaths).toEqual([
+        "success",
+      ]);
+    });
+  });
+
+  test("incremental artifact session reuses render slot artifacts across fresh Deck instances", async () => {
+    const session = createIncrementalArtifactSession();
+    async function renderCycle(title: string, changedSourceIds: readonly string[] = []) {
+      let render = await new Deck({ layout: { width: 10, height: 5.625, unit: "in" } }).render(
+        pptx(),
+      );
+      await runIncrementalArtifactCycle(
+        session,
+        changedSourceIds.length > 0 ? { sourceInvalidation: { changedSourceIds } } : {},
+        async () => {
+          const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+          deck.slide({ name: "Edited" }, () => (
+            <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{title}</p>
+          ));
+          deck.slide({ name: "Stable" }, () => (
+            <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>stable</p>
+          ));
+          render = await deck.render(pptx({ inspection: "none" }));
+        },
+      );
+      return render;
+    }
+
+    const first = await renderCycle("before");
+    const second = await renderCycle("after", ["/project/src/deck.tsx"]);
+    const firstXml = textDecoder.decode(
+      unzipSync(first.artifact?.bytes ?? new Uint8Array())["ppt/slides/slide1.xml"],
+    );
+    const secondXml = textDecoder.decode(
+      unzipSync(second.artifact?.bytes ?? new Uint8Array())["ppt/slides/slide1.xml"],
+    );
+
+    expect(firstXml).toContain("before");
+    expect(secondXml).toContain("after");
+    expect(second.patchPlan?.sourceInvalidation).toEqual({
+      changedSourceIds: ["/project/src/deck.tsx"],
+    });
+    expect(second.patchPlan?.parts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ buildStatus: "reused" })]),
+    );
   });
 
   test("render execution integration loaders participate in project asset probing", async () => {

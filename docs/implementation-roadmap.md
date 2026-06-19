@@ -34,7 +34,7 @@ should land as a separate minor version:
   stable while deepening internal writer Modules
 - `0.8.x`: deckjsx-owned layout solver hardening for CSS-like layout correctness, with external
   engines used only as optional verification oracles
-- `0.9`: HMR-oriented compilation/runtime
+- `0.9`: Incremental Artifact Runtime and Node dev loop
 
 Patch releases should be reserved for bug fixes, compatibility fixes, and documentation updates
 within the latest minor line.
@@ -6723,21 +6723,22 @@ PowerPoint compatibility fixes into intentional package-model behavior.
 - Do not treat the v0.8.3 minimal `tableStyles.xml` as a stable public contract. It is an internal
   compatibility support part until table authoring gives it richer semantics.
 
-## 0.9 Hot Module Replacement
+## 0.9 Incremental Artifact Runtime
 
 ### Goal
 
-Support a fast authoring loop where saving a source file quickly updates the generated PPTX output
-while preserving deckjsx-owned presentation identity. The main objective is HMR-oriented compilation
-and package patching: affected sources, slides, projected package parts, and existing Patchable PPTX
-files should update incrementally instead of hiding a whole-deck rebuild behind a watch loop.
+Support a fast authoring loop where saving a source file quickly updates the generated artifact
+while preserving deckjsx-owned presentation identity. The main objective is incremental artifact
+compilation and package patching: affected sources, slides, projected package parts, and existing
+Patchable PPTX files should update incrementally instead of hiding a whole-deck rebuild behind a
+watch loop.
 
 ### Preconditions
 
-HMR should come after the Semantic Author Graph, Graph Composition, and the direct PPTX
+Incremental artifact work should come after the Semantic Author Graph, Graph Composition, and the direct PPTX
 projection/writer path can preserve source, graph, package-part, and build-artifact identity.
 
-For the first implementation, "HMR" does not need to include a browser preview UI or presentation
+For the first implementation, the dev runtime does not need to include a browser preview UI or presentation
 renderer control. It does need slide-level incremental projection and Patchable PPTX filesystem
 updates for deckjsx-generated packages.
 
@@ -6745,7 +6746,7 @@ updates for deckjsx-generated packages.
 
 - Make normal `deck.render(pptx())` produce a Patchable PPTX artifact with XML package-part reserve
   capacity, patch metadata, and stable package-part/build-artifact identity.
-- Add Slide Projection Fingerprints so unchanged slides can reuse layout/projection work across HMR
+- Add Slide Projection Fingerprints so unchanged slides can reuse layout/projection work across source
   updates while affected slides are reprojected.
 - Preserve Graph Identity where Source Identity, JSX position, and Graph Identity Hints allow it,
   and keep slide Package Part Identity stable across ordinary content edits.
@@ -6759,23 +6760,30 @@ updates for deckjsx-generated packages.
 - Add a plugin-facing `deckjsx/integration` subpath for Integration Context, Media Source Origin,
   AssetLoader, and patch plan contracts without moving those concepts into the root Authoring
   Interface.
-- Add `@deckjsx/node` for runtime file operations, including `write(await deck.render(pptx()),
-"out.pptx")`, Patchable PPTX inspection, In-place Package Patch writes, file locking, and
-  whole-archive rewrite fallback.
-- Add `@deckjsx/vite` as a Vite Project Integration Package that attaches module-local Integration
-  Context and Media Source Origin metadata, supplies Vite-aware asset loading, and feeds HMR
-  invalidation metadata into ordinary `deck.render(pptx())` execution without owning Deck entry
-  discovery or rewriting user render calls.
-- Let the initial Vite transform default to JSX/TSX-like modules while excluding dependency
+- Add `@deckjsx/node` for runtime file operations and dev execution, including `deckjsx dev
+main.tsx --out out.pptx`, `write(await deck.render(pptx()), "out.pptx")`, Patchable PPTX
+  inspection, In-place Package Patch writes, file locking, and whole-archive rewrite fallback.
+- Add a Node-owned Rolldown transform that attaches module-local Media Source Origin metadata while
+  keeping `deckjsx`, `deckjsx/*`, `@deckjsx/node`, `@deckjsx/node/*`, and `node:*` external.
+- Let the initial media-origin transform default to JSX/TSX-like modules while excluding dependency
   directories. The transform should be cheap and no-op when a module has no deckjsx media-origin or
-  source-context work. It should cover `img.src`, `video.src`, `video.poster`, component prop
-  forwarding through the hidden metadata carrier, and module-local Integration Context attachment;
+  source-context work. It should cover `img.src`, `video.src`, `video.poster`, and component prop
+  forwarding through the hidden metadata carrier;
   inline `data`/`posterData` and style-owned assets are outside the initial origin transform scope.
-- Implement `@deckjsx/vite` and `@deckjsx/node` as independent Vite+ projects under `plugins/vite`
-  and `plugins/node`. During scaffolding they may use a temporary `deckjsx: file:../..`
-  development dependency, but release manifests should depend on the core package through
-  `peerDependencies` and repo-local workspace/link configuration rather than publishing a file
-  dependency.
+- Implement `@deckjsx/node` as an independent Vite+ project under `plugins/node`. During scaffolding
+  it may use repo-local workspace/link configuration, but the release manifest should depend on the
+  core package through `peerDependencies` rather than publishing a file dependency.
+- Remove the `@deckjsx/vite` package and the HMR-oriented integration vocabulary from the active dev
+  path. The dev loop updates generated artifacts such as PPTX files; it does not notify a browser
+  viewer or own a preview runtime.
+
+### Node Dev Compiler Architecture
+
+ADR 0012 records the Node Incremental Artifact Runtime decision. The active `@deckjsx/node` dev loop
+is a compiler-style resident runtime, not a thin Rolldown wrapper: the compiler owns scheduling and
+events, each compilation owns one source-snapshot-to-artifact attempt, the source provider seam hides
+Rolldown watch details, Artifact Plans decide retained Render Slots, and Dev Diagnostics are
+structured before they reach CLI rendering.
 
 ### Proposed API
 
@@ -6786,11 +6794,12 @@ import { pptx } from "deckjsx/adapter";
 await write(await deck.render(pptx()), "out.pptx");
 ```
 
-Vite projects install `@deckjsx/vite` in `vite.config.ts` so the normal render call receives
-project-local module origin, asset loading, and HMR invalidation event metadata. `@deckjsx/node` remains
-the runtime file-writing package rather than a Vite plugin option or a core Render option.
-For non-Vite Node rendering, `@deckjsx/node` may provide a local file AssetLoader that users pass
-through `deck.plugin(nodeAssets(...))` before the normal `deck.render(pptx())` call.
+Dev projects run `deckjsx dev main.tsx --out out.pptx` so the normal render call receives
+module-local origin metadata, source invalidation, render-slot artifact reuse, and tracked-output
+filtering. `@deckjsx/node` remains the runtime file-writing package rather than a core Render option.
+For ordinary Node rendering outside the dev loop, `@deckjsx/node` may provide a local file
+AssetLoader that users pass through `deck.plugin(nodeAssets(...))` before the normal
+`deck.render(pptx())` call.
 
 ### Validation
 
@@ -6801,9 +6810,10 @@ through `deck.plugin(nodeAssets(...))` before the normal `deck.render(pptx())` c
   updates, and whole-archive rewrite fallback.
 - `@deckjsx/node` tests for `write(RenderResult, path)` over a new file, existing Patchable PPTX,
   lock/write failure diagnostics, fallback behavior, and local file AssetLoader diagnostics.
-- `@deckjsx/vite` tests for module-origin media resolution, component-authored literal media,
-  prop-authored media forwarding, Vite public-root paths, and HMR invalidation event metadata.
-- Integration tests for HMR invalidation refreshing cached graph/projection artifacts while
+- `@deckjsx/node` dev executor tests for module-origin media annotation, Rolldown externalization,
+  tracked-output filtering, diagnostics, source invalidation event metadata, provider contracts,
+  named compilation result statuses, and Artifact Plan application.
+- Integration tests for source invalidation refreshing cached graph/projection artifacts while
   retaining package build artifacts for fingerprint-based reuse.
 
 ### Completion Criteria
@@ -6818,17 +6828,21 @@ through `deck.plugin(nodeAssets(...))` before the normal `deck.render(pptx())` c
   let unchanged slide XML and related build artifacts be reused across ordinary content edits that
   keep the slide's Graph Identity stable.
 - The plugin-facing `deckjsx/integration` subpath exposes the contracts required by
-  `@deckjsx/vite` and `@deckjsx/node` without moving those concepts into the root Authoring
+  `@deckjsx/node` without moving those concepts into the root Authoring
   Interface.
 - `plugins/node` provides `write(await deck.render(pptx()), "out.pptx")` with create, in-place
-  patch, whole-archive rewrite fallback, result-first diagnostics, and a Node local file AssetLoader.
-- `plugins/vite` attaches module-local Media Source Origin, Vite-aware asset loading, render-execution
-  Integration Context, and HMR invalidation event metadata to ordinary `deck.render(pptx())`
-  execution.
-- HMR invalidation refreshes stale process-memory graph/projection/asset artifacts without deleting
+  patch, whole-archive rewrite fallback, result-first diagnostics, a Node local file AssetLoader,
+  and `deckjsx dev` for Rolldown-backed source invalidation cycles.
+- The active dev compiler implementation is hosted by `@deckjsx/node`; the old `@deckjsx/vite`
+  package and Vite/HMR runtime vocabulary are removed from manifests, workflows, samples, tests, and
+  active user-facing documentation.
+- `deckjsx dev` requires `--out`, allows extra output paths as ordinary side effects, retains only
+  the tracked `--out` Render Slot, stays resident after expected dev failures, and prints detailed
+  diagnostics by default or diagnostic code arrays with `--short` / `-s`.
+- Source invalidation refreshes stale process-memory graph/projection/asset artifacts without deleting
   reusable package build artifacts needed for unchanged package-part reuse.
 - v0.9.0 creates no sidecar cache files; persistent patch state lives inside the PPTX package and
-  hot HMR state may live only in process memory.
+  incremental session state may live only in process memory.
 - Renderer preview UI, PowerPoint automation, and presentation renderer control remain outside the
   v0.9.0 scope.
 
@@ -6848,8 +6862,8 @@ through `deck.plugin(nodeAssets(...))` before the normal `deck.render(pptx())` c
    patch plan contracts.
 4. `plugins/node`: `write(RenderResult, path)`, Patchable PPTX inspection, in-place patch writes,
    result-first diagnostics, locking, and whole-archive rewrite fallback.
-5. `plugins/vite`: Vite transforms for module-local origin metadata, Vite-aware asset loading,
-   Integration Context attachment, and HMR invalidation event metadata.
+5. `plugins/node`: Rolldown-backed dev execution, module-local origin metadata, source invalidation,
+   tracked-output filtering, and diagnostics.
 
 ## Suggested Release Order
 

@@ -7,16 +7,20 @@ import type {
   WriteResult,
   WriteStrategy,
 } from "@deckjsx/node";
-import { createNodeFileAssetLoader, inspectPatchablePptx, nodeAssets, write } from "@deckjsx/node";
 import type {
-  DeckjsxVitePlugin,
-  ViteAssetLoaderOptions,
-  ViteRenderIntegrationOptions,
-} from "@deckjsx/vite";
-import deckjsx, { createViteAssetLoader, withViteRenderIntegration } from "@deckjsx/vite";
+  DeckjsxDevCompiler,
+  DeckjsxDevCompilationResult,
+  DeckjsxDevCompilationStatus,
+  DeckjsxDevCompilerEvent,
+  DeckjsxDevCompilerOptions,
+  DeckjsxDevArtifactPlan,
+  DeckjsxDevSourceSnapshot,
+  DevSourceProvider,
+} from "@deckjsx/node/dev";
+import { createNodeFileAssetLoader, inspectPatchablePptx, nodeAssets, write } from "@deckjsx/node";
+import { createDeckjsxDevCompiler } from "@deckjsx/node/dev";
 import { Deck } from "deckjsx";
 import type { RenderResult } from "deckjsx";
-import { pptx } from "deckjsx/adapter";
 import type { AssetLoader, DeckPlugin, RenderPatchPlanPart } from "deckjsx/integration";
 
 type Assert<T extends true> = T;
@@ -60,6 +64,55 @@ declare const renderResult: RenderResult;
 const writePromise = write(renderResult, "/project/out.pptx");
 void (writePromise satisfies Promise<WriteResult>);
 
+const compilerOptions = {
+  entry: "main.tsx",
+  cwd: "/project",
+  out: "output.pptx",
+  outputs: ["output.pptx", "components.pptx"],
+} satisfies DeckjsxDevCompilerOptions;
+
+const devSourceProvider = {
+  start() {},
+  async nextSourceSnapshot() {
+    return {
+      status: "executable",
+      code: "compiled entry",
+      moduleIds: ["/project/main.tsx"],
+      watchFiles: ["/project/main.tsx"],
+      changedSourceIds: ["/project/main.tsx"],
+    } satisfies DeckjsxDevSourceSnapshot;
+  },
+  async close() {},
+} satisfies DevSourceProvider;
+
+const compilerOptionsWithSourceProvider = {
+  entry: "main.tsx",
+  cwd: "/project",
+  out: "output.pptx",
+  sourceProvider: devSourceProvider,
+} satisfies DeckjsxDevCompilerOptions;
+void compilerOptionsWithSourceProvider;
+
+const compiler = createDeckjsxDevCompiler(compilerOptions);
+compiler satisfies DeckjsxDevCompiler;
+compiler.on((event) => {
+  event satisfies DeckjsxDevCompilerEvent;
+});
+
+declare const devCompilationResult: DeckjsxDevCompilationResult;
+devCompilationResult.status satisfies DeckjsxDevCompilationStatus;
+devCompilationResult.sourceSnapshot satisfies DeckjsxDevSourceSnapshot;
+if (devCompilationResult.status === "outputBlocked") {
+  devCompilationResult.artifactPlan satisfies DeckjsxDevArtifactPlan;
+  devCompilationResult.graph.files satisfies readonly string[];
+  devCompilationResult.writes satisfies readonly object[];
+  devCompilationResult.retainedSlots satisfies readonly number[];
+}
+if (devCompilationResult.status === "artifactUpdated") {
+  devCompilationResult.sourceSnapshot.status satisfies "executable";
+  devCompilationResult.artifactPlan.status satisfies "ready";
+}
+
 const inspectionStatus = "verified" satisfies PatchablePptxPartInspectionStatus;
 void inspectionStatus;
 
@@ -90,25 +143,6 @@ void inspection;
 
 const inspectionPromise = inspectPatchablePptx("/project/out.pptx");
 void (inspectionPromise satisfies Promise<PatchablePptxInspectionResult>);
-
-const viteOptions = {
-  root: "/project",
-  publicDir: "/project/public",
-} satisfies ViteAssetLoaderOptions;
-
-const viteLoader = createViteAssetLoader(viteOptions);
-viteLoader satisfies AssetLoader;
-
-const viteRenderIntegrationOptions = {
-  ...viteOptions,
-  importer: "/project/src/deck.tsx",
-  changedModuleIds: ["/project/src/slide.tsx"],
-} satisfies ViteRenderIntegrationOptions;
-const viteRenderInput = withViteRenderIntegration(pptx(), viteRenderIntegrationOptions);
-void viteRenderInput;
-
-const vitePlugin = deckjsx();
-vitePlugin satisfies DeckjsxVitePlugin;
 
 type PluginAssertions = {
   readonly nodeInspectionKeepsPatchPlanPartShape: Assert<

@@ -1,3 +1,4 @@
+import type { RenderResult } from "deckjsx";
 import type {
   AssetLoadResult,
   AssetLoader,
@@ -14,20 +15,30 @@ import type {
   DeckPluginHooks,
   DeckPlugin,
   PluginHookResult,
-  HmrInvalidation,
   IntegrationContextId,
   MediaSourceOrigin,
   RenderExecutionContext,
   RenderPatchPlan,
   RenderPatchPlanPart,
+  SourceInvalidation,
+  ArtifactWriteRecord,
+  ArtifactWriteToken,
+  IncrementalArtifactCycleResult,
+  IncrementalArtifactSession,
+  IncrementalArtifactSessionSnapshot,
+  IncrementalArtifactWriteRecord,
 } from "deckjsx/integration";
 import {
+  createIncrementalArtifactSession,
   integrationContextId,
   mediaSourceOrigins,
   PATCH_MANIFEST_KIND,
   PATCH_MANIFEST_PATH,
   PATCH_MANIFEST_VERSION,
   RENDER_PATCH_PLAN_KIND,
+  getArtifactWriteToken,
+  recordArtifactWrite,
+  runIncrementalArtifactCycle,
   withRenderExecutionContext,
 } from "deckjsx/integration";
 import { pptx } from "deckjsx/adapter";
@@ -100,7 +111,7 @@ const outcome = {
 void outcome;
 
 const loader = {
-  resolverIdentity: "vite:test",
+  resolverIdentity: "test-loader",
   async probe(context) {
     context satisfies AssetLoaderContext;
     return { ok: true, value: probe };
@@ -124,11 +135,17 @@ const extension = {
 } satisfies DeckPlugin;
 void extension;
 
-const hmrInvalidation = {
+const sourceInvalidation = {
+  changedSourceIds: ["/project/src/deck.tsx"],
+} satisfies SourceInvalidation;
+void sourceInvalidation;
+
+const invalidSourceInvalidation = {
+  // @ts-expect-error source invalidation no longer carries importer.
   importer: "/project/src/deck.tsx",
-  changedModuleIds: ["/project/src/deck.tsx"],
-} satisfies HmrInvalidation;
-void hmrInvalidation;
+  changedSourceIds: ["/project/src/deck.tsx"],
+} satisfies SourceInvalidation;
+void invalidSourceInvalidation;
 
 const integrationContext = {
   id: integrationContextId("test-context"),
@@ -150,11 +167,36 @@ void lifecycleHooks;
 
 const renderExecutionContext = {
   integration: integrationContext,
-  hmrInvalidation,
+  sourceInvalidation,
 } satisfies RenderExecutionContext;
 void renderExecutionContext;
 const renderInput = withRenderExecutionContext(pptx(), renderExecutionContext);
 void renderInput;
+
+const incrementalSession = createIncrementalArtifactSession();
+incrementalSession satisfies IncrementalArtifactSession;
+// @ts-expect-error Incremental Artifact Session must not expose private Pipeline Artifacts.
+incrementalSession.slotArtifacts(0);
+const incrementalSnapshot = incrementalSession.snapshot();
+incrementalSnapshot satisfies IncrementalArtifactSessionSnapshot;
+const cyclePromise = runIncrementalArtifactCycle(incrementalSession, { sourceInvalidation }, () => {
+  const token = undefined satisfies ArtifactWriteToken | undefined;
+  const writeRecord = {
+    path: "/project/output.pptx",
+    result: { status: "created" },
+  } satisfies ArtifactWriteRecord<{ readonly status: "created" }>;
+  const recorded = recordArtifactWrite(token, writeRecord);
+  recorded satisfies IncrementalArtifactWriteRecord<{ readonly status: "created" }> | undefined;
+  return recorded;
+});
+void (cyclePromise satisfies Promise<
+  IncrementalArtifactWriteRecord<{ readonly status: "created" }> | undefined
+>);
+declare const renderResult: RenderResult;
+const artifactWriteToken = getArtifactWriteToken(renderResult);
+artifactWriteToken satisfies ArtifactWriteToken | undefined;
+declare const cycleResult: IncrementalArtifactCycleResult;
+cycleResult.renderCount satisfies number;
 
 const mediaOriginProps = mediaSourceOrigins({ src: mediaOrigin, poster: mediaOrigin });
 mediaOriginProps satisfies object;
@@ -175,7 +217,7 @@ const patchPlan = {
   kind: RENDER_PATCH_PLAN_KIND,
   version: PATCH_MANIFEST_VERSION,
   manifestPath: PATCH_MANIFEST_PATH,
-  hmrInvalidation,
+  sourceInvalidation,
   parts: [patchPart],
 } satisfies RenderPatchPlan;
 void patchPlan;
@@ -184,8 +226,8 @@ const patchManifestKind = PATCH_MANIFEST_KIND satisfies "deckjsx.patchManifest";
 void patchManifestKind;
 
 type IntegrationAssertions = {
-  readonly renderExecutionCarriesHmrInvalidation: Assert<
-    IsAssignable<HmrInvalidation, NonNullable<RenderExecutionContext["hmrInvalidation"]>>
+  readonly renderExecutionCarriesSourceInvalidation: Assert<
+    IsAssignable<SourceInvalidation, NonNullable<RenderExecutionContext["sourceInvalidation"]>>
   >;
   readonly extensionCarriesIntegrationContext: Assert<
     IsAssignable<DeckIntegrationContext, NonNullable<DeckPlugin["integration"]>>

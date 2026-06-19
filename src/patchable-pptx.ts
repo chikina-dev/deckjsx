@@ -21,9 +21,8 @@ export type RenderPatchPlan = {
   readonly kind: typeof RENDER_PATCH_PLAN_KIND;
   readonly version: typeof PATCH_MANIFEST_VERSION;
   readonly manifestPath: typeof PATCH_MANIFEST_PATH;
-  readonly hmrInvalidation?: {
-    readonly importer?: string;
-    readonly changedModuleIds: readonly string[];
+  readonly sourceInvalidation?: {
+    readonly changedSourceIds: readonly string[];
   };
   readonly parts: readonly RenderPatchPlanPart[];
 };

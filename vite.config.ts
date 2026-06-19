@@ -38,6 +38,9 @@ export default defineConfig({
   staged: {
     "*": "vp check --fix",
   },
+  test: {
+    include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
+  },
   pack: {
     entry: [
       "src/index.ts",
@@ -53,13 +56,13 @@ export default defineConfig({
     exports: false,
   },
   lint: {
-    ignorePatterns: ["plugins/**"],
+    ignorePatterns: [".deckjsx/**", "plugins/**", "sample/**"],
     options: {
       typeAware: true,
       typeCheck: true,
     },
   },
   fmt: {
-    ignorePatterns: ["plugins/**"],
+    ignorePatterns: [".deckjsx/**", "plugins/**", "sample/**"],
   },
 });
