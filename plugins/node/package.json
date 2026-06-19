@@ -8,7 +8,7 @@
     "url": "git+https://github.com/chikina-dev/deckjsx.git"
   },
   "bin": {
-    "deckjsx": "./dist/cli.mjs"
+    "deckjsx": "dist/cli.mjs"
   },
   "files": [
     "dist"
