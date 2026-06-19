@@ -6,6 +6,10 @@
   "bin": {
     "deckjsx": "./dist/cli.mjs"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chikina-dev/deckjsx.git"
+  },
   "files": [
     "dist"
   ],
