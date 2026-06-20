@@ -51,36 +51,50 @@ async function runInteractiveDevBenchmarkOnce() {
   try {
     await runtime.runDeckjsxDevCompilerHost({
       compiler,
-      detail: "summary",
       interactive: true,
       artifactSession,
       interactiveLines: interactiveLines(),
       interactiveWriteLine(line) {
-        output.push(JSON.parse(line));
+        output.push(line);
       },
       maxCompilations: 1,
     });
     await access(outputPath);
     const outputStats = await stat(outputPath);
-    const projection = output.find(
-      (item) => item?.ok === true && item.result?.format === "pptx",
-    )?.result;
-    const timings = output.find(
-      (item) => item?.ok === true && item.result?.lastCommandLatencyMs !== undefined,
-    )?.result;
+    const projectionSlideCount = numberFieldAfterSection(output, "ok projection.inspect", "slides");
+    const projectionCommandMs = numberFieldAfterSection(output, "ok session.timings", "latency");
 
     return {
       ok: true,
       coldInteractiveDevMs: performance.now() - startedAt,
-      ...(typeof timings?.lastCommandLatencyMs === "number"
-        ? { projectionCommandMs: timings.lastCommandLatencyMs }
-        : {}),
+      ...(projectionCommandMs !== undefined ? { projectionCommandMs } : {}),
       outputBytes: outputStats.size,
-      projectionSlideCount: Array.isArray(projection?.slides) ? projection.slides.length : 0,
+      projectionSlideCount: projectionSlideCount ?? 0,
     };
   } finally {
     await rm(cwd, { force: true, recursive: true });
   }
+}
+
+function numberFieldAfterSection(lines, sectionHeader, field) {
+  const start = lines.lastIndexOf(sectionHeader);
+  if (start < 0) {
+    return undefined;
+  }
+  for (const line of lines.slice(start + 1)) {
+    if (/^(ok|error) /.test(line)) {
+      return undefined;
+    }
+    const match = new RegExp(`^\\s*${escapeRegExp(field)}\\s+(\\d+)`).exec(line);
+    if (match) {
+      return Number(match[1]);
+    }
+  }
+  return undefined;
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 async function loadBenchmarkRuntime() {

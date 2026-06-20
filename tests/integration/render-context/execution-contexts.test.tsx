@@ -2,6 +2,31 @@ import { describe, expect, test } from "vite-plus/test";
 import * as H from "./helpers.tsx";
 
 describe("deckjsx integration execution contexts", () => {
+  test("render execution plugins participate in lifecycle hooks", async () => {
+    const events: string[] = [];
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Render plugin context" }, () => <p>plugin context</p>);
+
+    const render = await deck.render(
+      H.withRenderExecutionContext(H.pptx(), {
+        plugins: [
+          {
+            kind: "deckjsx.plugin",
+            id: "test:render-execution-plugin",
+            hooks: {
+              afterGraph() {
+                events.push("afterGraph");
+              },
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(render.ok).toBe(true);
+    expect(events).toEqual(["afterGraph"]);
+  });
+
   test("render execution integration loaders participate in project asset probing", async () => {
     const events: string[] = [];
     const loader = {

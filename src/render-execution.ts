@@ -1,4 +1,10 @@
 import type { RenderOptions, WriterAdapter } from "./adapter";
+import {
+  AUTHORING_RUNTIME_OBSERVERS,
+  authoringRuntimeObserversFrom,
+  type AuthoringRuntimeObserver,
+  type AuthoringRuntimeObserverCarrier,
+} from "./authoring-runtime-observer";
 import type { AssetLoader } from "./assets";
 import type { DeckIntegrationContext } from "./integration-context";
 import { integrationContextFromPlugins, mergeIntegrationContexts } from "./integration-context";
@@ -9,6 +15,7 @@ import type { PptxPackageModel } from "./projection/pptx/model";
 const RENDER_EXECUTION_CONTEXT = Symbol.for("deckjsx.renderExecutionContext");
 
 export type RenderExecutionContext = {
+  readonly plugins?: readonly DeckPlugin[];
   readonly integration?: DeckIntegrationContext;
   readonly sourceInvalidation?: SourceInvalidation;
 };
@@ -20,6 +27,7 @@ type RenderExecutionContextCarrier = {
 };
 
 export type RenderExecution = {
+  readonly authoringRuntimeObservers?: readonly AuthoringRuntimeObserver[];
   readonly plugins: readonly DeckPlugin[];
   readonly integrationContext?: DeckIntegrationContext;
   readonly assetLoaders?: readonly AssetLoader[];
@@ -58,8 +66,9 @@ export function createRenderExecution(input: {
   readonly assetLoaders?: readonly AssetLoader[];
   readonly mediaSourceOrigin?: MediaSourceOrigin;
 }): RenderExecution {
-  const plugins = input.plugins ?? [];
   const renderExecutionContext = renderExecutionContextFrom(input.renderInput);
+  const authoringRuntimeObservers = authoringRuntimeObserversFrom(renderExecutionContext);
+  const plugins = [...(input.plugins ?? []), ...(renderExecutionContext?.plugins ?? [])];
   const integrationContext = mergeIntegrationContexts(
     [integrationContextFromPlugins(plugins), renderExecutionContext?.integration].filter(
       (context): context is DeckIntegrationContext => context !== undefined,
@@ -69,6 +78,9 @@ export function createRenderExecution(input: {
   const mediaSourceOrigin = integrationContext?.mediaSourceOrigin ?? input.mediaSourceOrigin;
 
   return {
+    ...(authoringRuntimeObservers && authoringRuntimeObservers.length > 0
+      ? { authoringRuntimeObservers }
+      : {}),
     plugins,
     ...(integrationContext ? { integrationContext } : {}),
     ...(assetLoaders ? { assetLoaders } : {}),
@@ -83,6 +95,10 @@ function mergeRenderExecutionContext(
   current: RenderExecutionContext | undefined,
   next: RenderExecutionContext,
 ): RenderExecutionContext {
+  const authoringRuntimeObservers = [
+    ...(authoringRuntimeObserversFrom(current) ?? []),
+    ...(authoringRuntimeObserversFrom(next) ?? []),
+  ];
   const sourceInvalidation =
     current?.sourceInvalidation && next.sourceInvalidation
       ? {
@@ -94,7 +110,8 @@ function mergeRenderExecutionContext(
           ],
         }
       : (next.sourceInvalidation ?? current?.sourceInvalidation);
-  return {
+  const output: RenderExecutionContext & AuthoringRuntimeObserverCarrier = {
+    plugins: [...(current?.plugins ?? []), ...(next.plugins ?? [])],
     integration: mergeIntegrationContexts(
       [current?.integration, next.integration].filter(
         (context): context is DeckIntegrationContext => context !== undefined,
@@ -102,4 +119,13 @@ function mergeRenderExecutionContext(
     ),
     ...(sourceInvalidation ? { sourceInvalidation } : {}),
   };
+  if (authoringRuntimeObservers.length > 0) {
+    Object.defineProperty(output, AUTHORING_RUNTIME_OBSERVERS, {
+      configurable: true,
+      enumerable: false,
+      value: authoringRuntimeObservers,
+      writable: false,
+    });
+  }
+  return output;
 }

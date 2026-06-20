@@ -1,8 +1,15 @@
 import path from "node:path";
 import type { IncrementalArtifactSession } from "deckjsx/integration";
+import type { RenderExecutionContext } from "deckjsx/integration";
 import { createDevModuleGraphSnapshot, type DevModuleGraphSnapshot } from "./dev-module-graph";
 import { withDeckjsxDevAssetObserver } from "./dev-asset-observer";
 import { createDevArtifactPlanApplier } from "./dev-artifact-plan-applier";
+import {
+  createNodeDevInspectionAuthoringObserver,
+  createNodeDevInspectionPlugin,
+  type NodeDevAuthoringRuntimeObserver,
+} from "./dev-inspection-plugin";
+import type { NodeDevInspectionBoundary, NodeDevInspectionStore } from "./dev-inspection-store";
 import type { EntryExecutionHost } from "./entry-execution-host";
 import {
   devOutputIgnoreFiles,
@@ -20,6 +27,12 @@ import {
   type DeckjsxDevExecutableSourceSnapshot,
   type DeckjsxDevSourceSnapshot,
 } from "./dev-source-snapshot";
+
+const AUTHORING_RUNTIME_OBSERVERS = Symbol.for("deckjsx.authoringRuntimeObservers");
+
+type RenderExecutionContextWithNodeDevObservers = RenderExecutionContext & {
+  readonly [AUTHORING_RUNTIME_OBSERVERS]?: readonly NodeDevAuthoringRuntimeObserver[];
+};
 
 export type DeckjsxDevCompilationStatus =
   | "artifactUpdated"
@@ -75,16 +88,19 @@ export type RunDeckjsxDevCompilationInput = {
   readonly changedSourceIds: readonly string[];
   readonly entryHost: EntryExecutionHost;
   readonly session: IncrementalArtifactSession;
+  readonly inspectionStore?: NodeDevInspectionStore;
 };
 
 export async function runDeckjsxDevCompilation(
   input: RunDeckjsxDevCompilationInput,
 ): Promise<DeckjsxDevCompilationResult> {
+  input.inspectionStore?.beginAttempt({ compilation: input.compilation });
   if (!isExecutableSourceSnapshot(input.sourceSnapshot)) {
     const diagnostics = annotateDevDiagnostics(input.sourceSnapshot.diagnostics, {
       phase: "bundle",
       compilation: input.compilation,
     });
+    input.inspectionStore?.finishAttempt({ devStatus: "bundleFailed", boundary: "bundle" });
     return {
       ok: false,
       status: "bundleFailed",
@@ -103,9 +119,10 @@ export async function runDeckjsxDevCompilation(
   } satisfies DeckjsxDevExecutableSourceSnapshot;
   const observedAssetFiles = new Set<string>();
   const cycle = input.session.beginCycle(
-    input.changedSourceIds.length > 0
-      ? { sourceInvalidation: { changedSourceIds: input.changedSourceIds } }
-      : {},
+    cycleOptionsForCompilation({
+      changedSourceIds: input.changedSourceIds,
+      inspectionStore: input.inspectionStore,
+    }),
   );
   try {
     await cycle.run(async () => {
@@ -131,6 +148,7 @@ export async function runDeckjsxDevCompilation(
         compilation: input.compilation,
       },
     );
+    input.inspectionStore?.finishAttempt({ devStatus: "entryFailed", boundary: "entry" });
     return {
       ok: false,
       status: "entryFailed",
@@ -180,6 +198,10 @@ export async function runDeckjsxDevCompilation(
       ...annotatedArtifactPlan,
       status: "ready" as const,
     };
+    input.inspectionStore?.finishAttempt({
+      devStatus: "artifactUpdated",
+      boundary: boundaryForCompilationStatus("artifactUpdated"),
+    });
     return {
       ok: true,
       status: "artifactUpdated",
@@ -191,10 +213,48 @@ export async function runDeckjsxDevCompilation(
     ...annotatedArtifactPlan,
     status: "blocked" as const,
   };
+  input.inspectionStore?.finishAttempt({
+    devStatus: "outputBlocked",
+    boundary: boundaryForCompilationStatus("outputBlocked"),
+  });
   return {
     ok: false,
     status: "outputBlocked",
     ...resultBase,
     artifactPlan: blockedArtifactPlan,
   };
+}
+
+function cycleOptionsForCompilation(input: {
+  readonly changedSourceIds: readonly string[];
+  readonly inspectionStore?: NodeDevInspectionStore;
+}): {
+  readonly sourceInvalidation?: { readonly changedSourceIds: readonly string[] };
+  readonly renderExecutionContext?: RenderExecutionContext;
+} {
+  return {
+    ...(input.changedSourceIds.length > 0
+      ? { sourceInvalidation: { changedSourceIds: input.changedSourceIds } }
+      : {}),
+    ...(input.inspectionStore
+      ? { renderExecutionContext: renderExecutionContextForInspection(input.inspectionStore) }
+      : {}),
+  };
+}
+
+function renderExecutionContextForInspection(
+  inspectionStore: NodeDevInspectionStore,
+): RenderExecutionContextWithNodeDevObservers {
+  return {
+    [AUTHORING_RUNTIME_OBSERVERS]: [
+      createNodeDevInspectionAuthoringObserver({ store: inspectionStore }),
+    ],
+    plugins: [createNodeDevInspectionPlugin({ store: inspectionStore })],
+  };
+}
+
+function boundaryForCompilationStatus(
+  status: DeckjsxDevCompilationStatus,
+): NodeDevInspectionBoundary {
+  return status === "artifactUpdated" ? "projection" : "output";
 }

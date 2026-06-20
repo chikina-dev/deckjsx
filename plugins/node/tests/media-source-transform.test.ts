@@ -67,4 +67,17 @@ describe("@deckjsx/node media source transform", () => {
 
     expect(transformed).toBeUndefined();
   });
+
+  test("does not rewrite TypeScript generic syntax in non-JSX modules", () => {
+    const source = [
+      "export function identity<T>(value: T): T {",
+      "  return value;",
+      "}",
+      "type Box<T> = { value: T };",
+    ].join("\n");
+
+    const transformed = transformDeckjsxMediaSourceOrigins(source, "/project/src/helpers.ts");
+
+    expect(transformed).toBeUndefined();
+  });
 });

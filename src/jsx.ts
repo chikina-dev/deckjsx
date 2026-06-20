@@ -18,6 +18,7 @@ import {
   type ComponentFrame,
   type ComponentProvenance,
 } from "./authoring-metadata";
+import { observeAuthoringComponentInvocation } from "./authoring-runtime-observer";
 import { MEDIA_SOURCE_ORIGINS, type MediaSourceOriginByField } from "./media-source-origin";
 import {
   isAuthoredTag,
@@ -417,8 +418,24 @@ export function createElementWithMetadata(
     ...propsObject,
     children: rawChildren,
   };
+  const injectedComponentProvenance = propsObject[AUTHORING_METADATA]?.componentProvenance;
+  const componentFrame = componentFrameFor(type, key, sourceSpan);
+  const observerStack = componentStackForInvocation({
+    type,
+    key,
+    sourceSpan,
+    injectedComponentProvenance,
+  });
+  const observerFrame = observerStack.at(-1)!;
+  observeAuthoringComponentInvocation({
+    name: observerFrame.name,
+    ...(observerFrame.key !== undefined ? { key: observerFrame.key } : {}),
+    ...(observerFrame.sourceSpan ? { sourceSpan: observerFrame.sourceSpan } : {}),
+    stack: observerStack,
+    props: nextProps,
+  });
   const previousStack = activeComponentStack;
-  activeComponentStack = [...activeComponentStack, componentFrameFor(type, key, sourceSpan)];
+  activeComponentStack = [...activeComponentStack, componentFrame];
   let result: AuthorTreeNode;
   try {
     result = type(nextProps);
@@ -430,7 +447,6 @@ export function createElementWithMetadata(
     throw new Error("Function components must return a deckjsx author tree node.");
   }
 
-  const injectedComponentProvenance = propsObject[AUTHORING_METADATA]?.componentProvenance;
   if (key === undefined && !injectedComponentProvenance) {
     return result;
   }
@@ -448,6 +464,21 @@ export function createElementWithMetadata(
   }
 
   return result;
+}
+
+function componentStackForInvocation(input: {
+  readonly type: Function;
+  readonly key: JsxKey | undefined;
+  readonly sourceSpan: SourceSpan | undefined;
+  readonly injectedComponentProvenance: ComponentProvenance | undefined;
+}): readonly ComponentFrame[] {
+  const injectedStack = input.injectedComponentProvenance?.stack;
+  return [
+    ...activeComponentStack,
+    ...(injectedStack && injectedStack.length > 0
+      ? injectedStack
+      : [componentFrameFor(input.type, input.key, input.sourceSpan)]),
+  ];
 }
 
 export function Fragment(props: { children?: JsxNode }): DeckJsxElement {

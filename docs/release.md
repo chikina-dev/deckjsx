@@ -39,7 +39,7 @@ Trusted Publishing uses GitHub Actions OIDC, so no `NPM_TOKEN` secret is needed.
 3. Push the change to `main`.
 4. Run the `Release` workflow from GitHub Actions with the package selector and matching package version:
    - `deckjsx`: `v0.9.3`
-   - `@deckjsx/node`: `v0.1.3`
+   - `@deckjsx/node`: `v0.1.4`
 
 The workflow validates that the selected package version matches the requested version, derives the
 GitHub release tag for the selected package, checks and packs
@@ -59,7 +59,8 @@ For v0.9.0 and later, the published root package should use deckjsx's direct PPT
 normal `deck.render(pptx())` path and must not publish `pptxgenjs` as a runtime dependency. The
 isolated `.github/compat/pptxgenjs/` package is allowed only as generation-regression tooling.
 The public sample package and its lockfile should also stay free of `pptxgenjs`. It is a minimal
-Node dev project for checking the published `deckjsx` and `@deckjsx/node` packages together.
+Node dev project for checking the current workspace `deckjsx` and `@deckjsx/node` packages together.
+Published tarballs are checked separately by the pre-publish temporary install smoke below.
 
 ## Pre-publish temporary install smoke
 
@@ -108,7 +109,7 @@ Create `deep-cli-smoke.mjs` in the temporary project:
 ```bash
 cat > "$SMOKE_DIR/deep-cli-smoke.mjs" <<'JS'
 import { spawn, spawnSync } from "node:child_process";
-import { access, stat, unlink, writeFile } from "node:fs/promises";
+import { stat, unlink, writeFile } from "node:fs/promises";
 import { inspectPatchablePptx } from "@deckjsx/node";
 
 const runId = Date.now();
@@ -186,9 +187,9 @@ async function waitFor(label, read, timeoutMs = 20_000) {
   throw new Error(`timed out waiting for ${label}; last value:\n${lastValue}`);
 }
 
-function startDev(args) {
+function startDev(args, options = {}) {
   const child = spawn(process.execPath, ["./node_modules/.bin/deckjsx", ...args], {
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: [options.stdin ? "pipe" : "ignore", "pipe", "pipe"],
   });
   const logs = { stdout: "", stderr: "" };
   child.stdout.on("data", (chunk) => {
@@ -259,26 +260,40 @@ async function scenarioLiveUpdateErrorRecovery() {
   }
 }
 
-async function scenarioShortDiagnostics() {
-  const entry = "short-broken.tsx";
-  const output = "short-output.pptx";
+function scenarioRemovedShortMode() {
+  const result = spawnSync("deckjsx", ["dev", "main.tsx", "--out", "short-output.pptx", "--short"], {
+    encoding: "utf8",
+  });
+  const stderr = result.stderr.trim();
+  if (result.status === 0) {
+    throw new Error("--short unexpectedly started deckjsx dev successfully");
+  }
+  if (!stderr.includes("error deckjsx.node.cli.unknownOption") || !stderr.includes("--short")) {
+    throw new Error(`--short should be rejected as an unknown option: ${stderr}`);
+  }
+  return stderr.split("\n").filter(Boolean);
+}
+
+async function scenarioInteractiveInspector() {
+  const entry = "interactive.tsx";
+  const output = "interactive-output.pptx";
+  const label = `INTERACTIVE_${runId}`;
   await unlinkIfExists(output);
-  await writeFile(entry, invalidSource(output));
-  const { child, logs } = startDev(["dev", entry, "--out", output, "--short"]);
+  await writeFile(entry, validSource({ label, outputPath: output }));
+
+  const { child, logs } = startDev(["dev", entry, "--out", output, "--interactive"], {
+    stdin: true,
+  });
   try {
-    await waitFor("[\"deckjsx.node.dev.bundleFailed\"]", () => logs.stderr);
-    let exists = true;
-    await access(output).catch(() => {
-      exists = false;
-    });
-    if (exists) {
-      throw new Error("invalid initial build unexpectedly created short-output.pptx");
+    await waitFor(label, () => slideXml(output));
+    child.stdin.end("status\nprojection\nexit\n");
+    await waitFor("ok session.status", () => logs.stderr);
+    await waitFor("ok projection.inspect", () => logs.stderr);
+    if (logs.stdout.trim()) {
+      throw new Error(`interactive dev should not write human UI to stdout: ${logs.stdout}`);
     }
-    const stderr = logs.stderr.trim().split("\n").filter(Boolean);
-    if (stderr.length !== 1) {
-      throw new Error(`short diagnostics should emit only diagnostic codes: ${JSON.stringify(stderr)}`);
-    }
-    return stderr;
+    await assertPatchable(output);
+    return logs.stderr.trim().split("\n").filter(Boolean).slice(-12);
   } finally {
     await stopDev(child);
   }
@@ -350,7 +365,8 @@ const results = {
     node: (await import("@deckjsx/node/package.json", { with: { type: "json" } })).default.version,
   },
   liveUpdateErrorRecovery: await scenarioLiveUpdateErrorRecovery(),
-  shortDiagnostics: await scenarioShortDiagnostics(),
+  removedShortMode: scenarioRemovedShortMode(),
+  interactiveInspector: await scenarioInteractiveInspector(),
   multipleOutputs: await scenarioMultipleOutputs(),
 };
 
@@ -385,7 +401,9 @@ This smoke must prove all of the following before publishing:
   compilation number, and help.
 - A failed build does not corrupt or replace the previous good PPTX.
 - Fixing the TSX source after a failed build updates the PPTX without restarting the CLI.
-- `--short`/`-s` emits only the diagnostic code summary.
+- `--short`/`-s` is rejected as a removed dev option instead of starting a compact log mode.
+- `deckjsx dev --interactive` answers `status`, `projection`, and `exit` with human-readable
+  inspector output on stderr, without writing human UI to stdout.
 - `deckjsx dev <entry> --out primary-output.pptx components-output.pptx` creates and updates all
   declared output files while retaining the primary output as the tracked artifact.
 - The generated PPTX files pass `unzip -t`; PDF conversion is a strong additional compatibility

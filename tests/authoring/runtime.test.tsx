@@ -1,9 +1,11 @@
 import { describe, expect, test } from "vite-plus/test";
 import { Deck } from "../../src/index.ts";
 import { isAuthorTreeNode } from "../../src/authoring/tree.ts";
+import { withAuthoringRuntimeObservers } from "../../src/authoring-runtime-observer.ts";
 import { authoringMetadata } from "../../src/integration.ts";
 import { jsxDEV } from "../../src/jsx-dev-runtime.ts";
 import { Fragment, jsx } from "../../src/jsx-runtime.ts";
+import { createElementWithMetadata } from "../../src/jsx.ts";
 
 describe("authoring and JSX runtime", () => {
   test("JSX primitives produce nested Author Tree nodes", async () => {
@@ -83,6 +85,72 @@ describe("authoring and JSX runtime", () => {
 
     expect(node.componentProvenance).toEqual(componentProvenance);
     expect(node.props).toEqual({});
+  });
+
+  test("internal authoring runtime observers see function component props", async () => {
+    const invocations: unknown[] = [];
+    function MetricCard(props: { readonly title: string }) {
+      return <p>{props.title}</p>;
+    }
+
+    const node = withAuthoringRuntimeObservers(
+      [
+        {
+          componentInvoked(invocation) {
+            invocations.push(invocation);
+          },
+        },
+      ],
+      () => <MetricCard title="Revenue" />,
+    );
+
+    expect(isAuthorTreeNode(node)).toBe(true);
+    expect(invocations).toEqual([
+      expect.objectContaining({
+        name: "MetricCard",
+        props: expect.objectContaining({ title: "Revenue" }),
+      }),
+    ]);
+  });
+
+  test("empty injected component provenance falls back to the runtime component frame", async () => {
+    const invocations: unknown[] = [];
+    function MetricCard(props: { readonly title: string }) {
+      return <p>{props.title}</p>;
+    }
+
+    const node = withAuthoringRuntimeObservers(
+      [
+        {
+          componentInvoked(invocation) {
+            invocations.push(invocation);
+          },
+        },
+      ],
+      () =>
+        createElementWithMetadata(
+          MetricCard,
+          {
+            ...authoringMetadata({ componentProvenance: { stack: [] } }),
+            title: "Revenue",
+          } as { readonly title: string },
+          undefined,
+          { file: "/project/src/slides.tsx", line: 12, column: 5 },
+        ),
+    );
+
+    expect(isAuthorTreeNode(node)).toBe(true);
+    expect(invocations).toEqual([
+      expect.objectContaining({
+        name: "MetricCard",
+        stack: [
+          expect.objectContaining({
+            name: "MetricCard",
+            sourceSpan: { file: "/project/src/slides.tsx", line: 12, column: 5 },
+          }),
+        ],
+      }),
+    ]);
   });
 
   test("function components add component provenance without replacing intrinsic source span", async () => {

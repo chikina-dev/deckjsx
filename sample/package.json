@@ -10,11 +10,12 @@
   "scripts": {
     "check": "tsc --noEmit",
     "dev": "deckjsx dev main.tsx --out output-tsx.pptx",
-    "dev:interactive": "deckjsx dev main.tsx --out output-tsx.pptx --interactive"
+    "dev:interactive": "deckjsx dev main.tsx --out output-tsx.pptx --interactive",
+    "smoke": "node smoke-dev.mjs"
   },
   "dependencies": {
-    "@deckjsx/node": "^0.1.3",
-    "deckjsx": "^0.9.3"
+    "@deckjsx/node": "file:../plugins/node",
+    "deckjsx": "file:.."
   },
   "devDependencies": {
     "@types/node": "^25.9.3",

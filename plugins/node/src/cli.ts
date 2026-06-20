@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
 import path from "node:path";
-import { createInterface } from "node:readline";
+import { createInterface, emitKeypressEvents } from "node:readline";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   createIncrementalArtifactSession,
@@ -11,8 +11,28 @@ import {
 import type { DeckjsxDevCompiler } from "./dev-compiler";
 import { createDevModuleGraphSnapshot } from "./dev-module-graph";
 import { cliUsageDiagnostic } from "./dev-diagnostics";
+import { createDevConsoleCoordinator } from "./dev-console/coordinator";
+import {
+  formatDeckjsxDevConsoleEvent,
+  formatDeckjsxDevHelp,
+  formatDeckjsxInteractiveHelp,
+  formatDeckjsxNodeDiagnostics,
+  renderInteractiveResponse,
+} from "./dev-console/render";
+import { normalizeDevConsoleEvent } from "./dev-console/events";
+import { createNodeDevInspectionStore, type NodeDevInspectionStore } from "./dev-inspection-store";
 import { createInteractiveDevSession, type InteractiveDevSession } from "./interactive/session";
-import { runInteractiveDevCommandLoop } from "./interactive/repl";
+import {
+  createInteractiveDiagnosticSnapshot,
+  type InteractiveDiagnosticSnapshot,
+} from "./interactive/diagnostic-snapshot";
+import {
+  completeInteractiveInputLine,
+  interactivePromptLinesFromKeys,
+  runInteractiveDevCommandLoop,
+  type InteractiveCompletionContext,
+  type InteractivePromptKey,
+} from "./interactive/repl";
 import {
   classifyDevWrites,
   devOutputIgnoreFiles,
@@ -21,7 +41,12 @@ import {
 
 export type DeckjsxNodeCliDiagnostic = DeckjsxDevDiagnostic;
 
-export type DeckjsxNodeCliDetail = "details" | "summary";
+export {
+  formatDeckjsxDevHelp,
+  formatDeckjsxInteractiveHelp,
+  formatDeckjsxNodeDiagnostics,
+  renderInteractiveResponse,
+};
 
 export type DeckjsxNodeCliParseResult =
   | {
@@ -30,12 +55,14 @@ export type DeckjsxNodeCliParseResult =
       readonly entry: string;
       readonly out: string;
       readonly outputs: readonly string[];
-      readonly detail: DeckjsxNodeCliDetail;
       readonly interactive: boolean;
     }
   | {
+      readonly ok: true;
+      readonly command: "dev.help" | "dev.interactiveHelp";
+    }
+  | {
       readonly ok: false;
-      readonly detail: DeckjsxNodeCliDetail;
       readonly diagnostics: readonly DeckjsxNodeCliDiagnostic[];
     };
 
@@ -61,21 +88,14 @@ export type DeckjsxDevOptions = {
   readonly cwd?: string;
   readonly out: string;
   readonly outputs?: readonly string[];
-  readonly detail: DeckjsxNodeCliDetail;
   readonly interactive?: boolean;
 };
 
 export function parseDeckjsxNodeCliArgs(args: readonly string[]): DeckjsxNodeCliParseResult {
-  const detail: DeckjsxNodeCliDetail =
-    args.includes("--short") || args.includes("-s") ? "summary" : "details";
-  const interactive = args.includes("--interactive");
-  const [command, entry, ...rest] = args.filter(
-    (arg) => arg !== "--short" && arg !== "-s" && arg !== "--interactive",
-  );
+  const [command, ...commandArgs] = args;
   if (command !== "dev") {
     return {
       ok: false,
-      detail,
       diagnostics: [
         cliUsageDiagnostic({
           code: "deckjsx.node.cli.unknownCommand",
@@ -84,10 +104,28 @@ export function parseDeckjsxNodeCliArgs(args: readonly string[]): DeckjsxNodeCli
       ],
     };
   }
+
+  const unknownOption = commandArgs.find((arg) => arg.startsWith("-") && !isKnownDevOption(arg));
+  if (unknownOption) {
+    return {
+      ok: false,
+      diagnostics: [unknownDevOptionDiagnostic(unknownOption)],
+    };
+  }
+
+  if (commandArgs.includes("--help")) {
+    return { ok: true, command: "dev.help" };
+  }
+  if (commandArgs.includes("--interactive-help")) {
+    return { ok: true, command: "dev.interactiveHelp" };
+  }
+
+  const interactive = commandArgs.includes("--interactive");
+  const rest = commandArgs.filter((arg) => arg !== "--interactive");
+  const [entry] = rest;
   if (!entry) {
     return {
       ok: false,
-      detail,
       diagnostics: [
         cliUsageDiagnostic({
           code: "deckjsx.node.cli.missingEntry",
@@ -97,12 +135,12 @@ export function parseDeckjsxNodeCliArgs(args: readonly string[]): DeckjsxNodeCli
     };
   }
 
-  const outIndex = rest.indexOf("--out");
-  const out = outIndex >= 0 ? rest[outIndex + 1] : undefined;
+  const optionTokens = rest.slice(1);
+  const outIndex = optionTokens.indexOf("--out");
+  const out = outIndex >= 0 ? optionTokens[outIndex + 1] : undefined;
   if (!out) {
     return {
       ok: false,
-      detail,
       diagnostics: [
         cliUsageDiagnostic({
           code: "deckjsx.node.cli.missingOut",
@@ -112,8 +150,8 @@ export function parseDeckjsxNodeCliArgs(args: readonly string[]): DeckjsxNodeCli
     };
   }
 
-  const beforeOut = rest.slice(0, outIndex);
-  const afterOut = rest.slice(outIndex + 2);
+  const beforeOut = optionTokens.slice(0, outIndex);
+  const afterOut = optionTokens.slice(outIndex + 2);
   const outputs = [...new Set([out, ...beforeOut, ...afterOut])];
   return {
     ok: true,
@@ -121,9 +159,60 @@ export function parseDeckjsxNodeCliArgs(args: readonly string[]): DeckjsxNodeCli
     entry,
     out,
     outputs,
-    detail,
     interactive,
   };
+}
+
+function isKnownDevOption(arg: string): boolean {
+  return (
+    arg === "--out" || arg === "--interactive" || arg === "--help" || arg === "--interactive-help"
+  );
+}
+
+function unknownDevOptionDiagnostic(option: string): DeckjsxNodeCliDiagnostic {
+  const suggestion = closestDevOptionSuggestion(option);
+  return {
+    severity: "error",
+    code: "deckjsx.node.cli.unknownOption",
+    title: "Unknown deckjsx dev option.",
+    message: option,
+    ...(suggestion ? { help: [`Did you mean ${suggestion}?`] } : {}),
+  };
+}
+
+const KNOWN_DEV_OPTIONS = ["--out", "--interactive", "--help", "--interactive-help"] as const;
+
+function closestDevOptionSuggestion(option: string): string | undefined {
+  const candidates = KNOWN_DEV_OPTIONS.map((candidate) => ({
+    candidate,
+    distance: editDistance(option, candidate),
+  })).sort(
+    (left, right) =>
+      left.distance - right.distance || left.candidate.localeCompare(right.candidate),
+  );
+  const best = candidates[0];
+  return best && best.distance <= Math.max(2, Math.floor(option.length / 3))
+    ? best.candidate
+    : undefined;
+}
+
+function editDistance(left: string, right: string): number {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    let diagonal = previous[0]!;
+    previous[0] = leftIndex;
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const above = previous[rightIndex]!;
+      const cost = left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1;
+      previous[rightIndex] = Math.min(
+        previous[rightIndex] + 1,
+        previous[rightIndex - 1]! + 1,
+        diagonal + cost,
+      );
+      diagonal = above;
+    }
+  }
+  return previous[right.length]!;
 }
 
 export function devWriteRecords(input: {
@@ -134,10 +223,11 @@ export function devWriteRecords(input: {
   return classifyDevWrites(input).records;
 }
 
-export async function runDeckjsxDev(input: DeckjsxDevOptions): Promise<never> {
+export async function runDeckjsxDev(input: DeckjsxDevOptions): Promise<void> {
   const cwd = input.cwd ? path.resolve(input.cwd) : process.cwd();
   const { createDeckjsxDevCompiler } = await import("./dev-compiler");
   const artifactSession = createIncrementalArtifactSession();
+  const inspectionStore = createNodeDevInspectionStore();
   await runDeckjsxDevCompilerHost({
     compiler: createDeckjsxDevCompiler({
       entry: input.entry,
@@ -145,62 +235,114 @@ export async function runDeckjsxDev(input: DeckjsxDevOptions): Promise<never> {
       out: input.out,
       outputs: input.outputs,
       session: artifactSession,
+      inspectionStore,
     }),
-    detail: input.detail,
     interactive: input.interactive,
+    entry: input.entry,
     artifactSession,
-  });
-  return new Promise<never>(() => {
-    // Resident dev process. The compiler wakes through Rolldown watch events.
+    inspectionStore,
   });
 }
 
 export async function runDeckjsxDevCompilerHost(input: {
   readonly compiler: DeckjsxDevCompiler;
-  readonly detail: DeckjsxNodeCliDetail;
+  readonly entry?: string;
   readonly interactive?: boolean;
   readonly maxCompilations?: number;
   readonly writeLine?: (line: string) => void;
   readonly createInteractiveSession?: (input: {
     readonly compiler: DeckjsxDevCompiler;
     readonly artifactSession?: IncrementalArtifactSession;
+    readonly inspectionStore?: NodeDevInspectionStore;
+    readonly diagnostics?: InteractiveDiagnosticSnapshot;
   }) => InteractiveDevSession;
   readonly artifactSession?: IncrementalArtifactSession;
+  readonly inspectionStore?: NodeDevInspectionStore;
   readonly interactiveLines?: AsyncIterable<string>;
   readonly interactiveWriteLine?: (line: string) => void;
 }): Promise<void> {
-  const writeLine = input.writeLine ?? ((line: string) => console.error(line));
+  const outputLine = input.writeLine ?? ((line: string) => console.error(line));
+  const consoleCoordinator = createDevConsoleCoordinator({ writeLine: outputLine });
+  const writeConsoleLines = (lines: readonly string[]) => {
+    consoleCoordinator.writeConsole(lines);
+  };
+  const customInteractiveWriteLine = input.interactiveWriteLine;
+  const writeInspectorLine =
+    customInteractiveWriteLine ?? ((line: string) => consoleCoordinator.writeInspector([line]));
+  const inspectionStore = input.inspectionStore ?? createNodeDevInspectionStore();
+  const diagnostics = createInteractiveDiagnosticSnapshot();
   const unsubscribe = input.compiler.on((event) => {
+    diagnostics.applyCompilerEvent(event);
     if (event.type === "diagnostic") {
-      formatDeckjsxNodeDiagnostics([event.diagnostic], input.detail).forEach(writeLine);
+      const consoleEvent = normalizeDevConsoleEvent(event);
+      if (consoleEvent) {
+        writeConsoleLines(formatDeckjsxDevConsoleEvent(consoleEvent));
+      }
     }
   });
   const interactiveSession = input.interactive
     ? (input.createInteractiveSession ?? createInteractiveDevSession)({
         compiler: input.compiler,
         artifactSession: input.artifactSession,
+        inspectionStore,
+        diagnostics,
       })
     : undefined;
-  const stdinLines = interactiveSession && !input.interactiveLines ? createStdinLines() : undefined;
+  const stdinLines =
+    interactiveSession && !input.interactiveLines
+      ? createStdinLines(
+          () =>
+            completionContextFromInspectionState(
+              inspectionStore,
+              input.artifactSession,
+              diagnostics.current().diagnostics,
+            ),
+          {
+            writeLine: writeInspectorLine,
+            writeRender: customInteractiveWriteLine
+              ? (lines) => lines.forEach(customInteractiveWriteLine)
+              : (lines) => consoleCoordinator.writePromptRender(lines),
+            onCommandLine: customInteractiveWriteLine
+              ? undefined
+              : () => consoleCoordinator.clearPrompt(),
+          },
+        )
+      : undefined;
   const startInteractiveLoop = () =>
     interactiveSession
       ? runInteractiveDevCommandLoop({
           session: interactiveSession,
           lines: input.interactiveLines ?? stdinLines?.lines ?? emptyInteractiveLines(),
-          writeLine: input.interactiveWriteLine ?? ((line) => console.log(line)),
+          writeLine: writeInspectorLine,
         })
       : undefined;
   input.compiler.start();
+  const startedEvent = normalizeDevConsoleEvent({ type: "devStarted", entry: input.entry });
+  if (startedEvent) {
+    writeConsoleLines(formatDeckjsxDevConsoleEvent(startedEvent));
+  }
   let completed = 0;
+  let shuttingDown = false;
   try {
     const compilationLoop = async () => {
       while (input.maxCompilations === undefined || completed < input.maxCompilations) {
-        await input.compiler.runNextCompilation();
+        const result = await input.compiler.runNextCompilation();
+        diagnostics.applyCompilerEvent({ type: "compilationFinished", result });
+        const consoleEvent = normalizeDevConsoleEvent({ type: "compilationFinished", result });
+        if (consoleEvent) {
+          writeConsoleLines(formatDeckjsxDevConsoleEvent(consoleEvent));
+        }
         completed += 1;
       }
     };
     if (interactiveSession && input.maxCompilations === undefined) {
-      await Promise.race([compilationLoop(), startInteractiveLoop()]);
+      const compilationTask = compilationLoop().catch((error: unknown) => {
+        if (shuttingDown) {
+          return;
+        }
+        throw error;
+      });
+      await Promise.race([compilationTask, startInteractiveLoop()]);
     } else {
       await compilationLoop();
       if (input.interactiveLines) {
@@ -208,6 +350,7 @@ export async function runDeckjsxDevCompilerHost(input: {
       }
     }
   } finally {
+    shuttingDown = true;
     unsubscribe();
     interactiveSession?.close();
     stdinLines?.close();
@@ -215,13 +358,26 @@ export async function runDeckjsxDevCompilerHost(input: {
   }
 }
 
-function createStdinLines(): {
+function createStdinLines(
+  completionContext: () => InteractiveCompletionContext,
+  writer: {
+    readonly writeLine: (line: string) => void;
+    readonly writeRender?: (lines: readonly string[]) => void;
+    readonly onCommandLine?: (line: string) => void;
+  },
+): {
   readonly lines: AsyncIterable<string>;
   close(): void;
 } {
+  if (process.stdin.isTTY) {
+    return createTtyStdinLines(completionContext, writer);
+  }
   const terminal = createInterface({
     input: process.stdin,
-    terminal: false,
+    terminal: process.stdin.isTTY,
+    completer(line: string) {
+      return [completeInteractiveInputLine(line, completionContext()), line];
+    },
   });
   return {
     lines: terminal,
@@ -229,6 +385,254 @@ function createStdinLines(): {
       terminal.close();
     },
   };
+}
+
+function createTtyStdinLines(
+  completionContext: () => InteractiveCompletionContext,
+  writer: {
+    readonly writeLine: (line: string) => void;
+    readonly writeRender?: (lines: readonly string[]) => void;
+    readonly onCommandLine?: (line: string) => void;
+  },
+): {
+  readonly lines: AsyncIterable<string>;
+  close(): void;
+} {
+  const keySource = createTtyPromptKeySource(process.stdin);
+  return {
+    lines: interactivePromptLinesFromKeys({
+      keys: keySource.keys,
+      writeLine: writer.writeLine,
+      writeRender: writer.writeRender,
+      onCommandLine: writer.onCommandLine,
+      completionContext,
+    }),
+    close() {
+      keySource.close();
+    },
+  };
+}
+
+function createTtyPromptKeySource(input: NodeJS.ReadStream): {
+  readonly keys: AsyncIterable<InteractivePromptKey>;
+  close(): void;
+} {
+  const pending: InteractivePromptKey[] = [];
+  let closed = false;
+  let notify: (() => void) | undefined;
+  const wake = () => {
+    notify?.();
+    notify = undefined;
+  };
+  const push = (key: InteractivePromptKey) => {
+    pending.push(key);
+    wake();
+  };
+  const close = () => {
+    closed = true;
+    input.off("keypress", handleKeypress);
+    input.setRawMode(false);
+    wake();
+  };
+  const handleKeypress = (sequence: string, key: Readonly<TtyKeypress>) => {
+    if (key.ctrl && (key.name === "c" || key.name === "d")) {
+      close();
+      return;
+    }
+    const promptKey = interactivePromptKeyFromTtyKey(sequence, key);
+    if (promptKey) {
+      push(promptKey);
+    }
+  };
+  emitKeypressEvents(input);
+  input.on("keypress", handleKeypress);
+  input.setRawMode(true);
+  input.resume();
+
+  return {
+    keys: (async function* () {
+      while (!closed || pending.length > 0) {
+        const key = pending.shift();
+        if (key) {
+          yield key;
+          continue;
+        }
+        await new Promise<void>((resolve) => {
+          notify = resolve;
+        });
+      }
+    })(),
+    close,
+  };
+}
+
+type TtyKeypress = {
+  readonly name?: string;
+  readonly ctrl?: boolean;
+  readonly meta?: boolean;
+};
+
+function interactivePromptKeyFromTtyKey(
+  sequence: string,
+  key: Readonly<TtyKeypress>,
+): InteractivePromptKey | undefined {
+  switch (key.name) {
+    case "return":
+    case "enter":
+      return { type: "enter" };
+    case "tab":
+      return { type: "tab" };
+    case "backspace":
+      return { type: "backspace" };
+    case "left":
+      return { type: "left" };
+    case "right":
+      return { type: "right" };
+    case "up":
+      return { type: "up" };
+    case "down":
+      return { type: "down" };
+  }
+  if (!key.ctrl && !key.meta && sequence && sequence >= " " && sequence !== "\u007f") {
+    return { type: "insert", text: sequence };
+  }
+  return undefined;
+}
+
+export function completionContextFromInspectionState(
+  inspectionStore: NodeDevInspectionStore | undefined,
+  artifactSession: IncrementalArtifactSession | undefined,
+  diagnostics: readonly DeckjsxNodeCliDiagnostic[] = [],
+): InteractiveCompletionContext {
+  const componentItems = inspectionStore?.componentTree().items ?? [];
+  return {
+    componentTargets: componentItems.flatMap((component) => [
+      {
+        label: component.name,
+        detail: component.id,
+        propsKeys: Object.keys(component.propsSummary),
+      },
+      { label: component.id, propsKeys: Object.keys(component.propsSummary) },
+    ]),
+    styleTargets: componentItems.flatMap((component) => {
+      const firstGraphNodeId = component.graphNodeIds[0];
+      return [
+        ...(firstGraphNodeId
+          ? [
+              {
+                label: component.name,
+                detail: firstGraphNodeId,
+                propertyKeys: stylePropertyKeysForGraphNode(artifactSession, firstGraphNodeId),
+              },
+            ]
+          : []),
+        ...component.graphNodeIds.map((graphNodeId) => ({
+          label: graphNodeId,
+          detail: component.name,
+          propertyKeys: stylePropertyKeysForGraphNode(artifactSession, graphNodeId),
+        })),
+      ];
+    }),
+    projectionTargets: projectionCompletionTargets(artifactSession),
+    diagnosticTargets: diagnostics.map((diagnostic, index) => ({
+      index,
+      code: diagnostic.code,
+      title: diagnostic.title,
+    })),
+  };
+}
+
+function stylePropertyKeysForGraphNode(
+  artifactSession: IncrementalArtifactSession | undefined,
+  graphNodeId: string,
+): readonly string[] {
+  const resolvedStyle = artifactSession?.inspectArtifacts().graphNode(graphNodeId)?.resolvedStyle;
+  if (typeof resolvedStyle !== "object" || resolvedStyle === null) {
+    return [];
+  }
+  const propertyTraces = (resolvedStyle as { readonly propertyTraces?: unknown }).propertyTraces;
+  return typeof propertyTraces === "object" && propertyTraces !== null
+    ? Object.keys(propertyTraces)
+    : [];
+}
+
+function projectionCompletionTargets(
+  artifactSession: IncrementalArtifactSession | undefined,
+): InteractiveCompletionContext["projectionTargets"] {
+  const inspection = artifactSession?.inspectArtifacts();
+  if (!inspection) {
+    return [];
+  }
+  const targets: { insert: string; description: string }[] = [];
+  for (const slot of inspection.retainedSlots()) {
+    const projection = inspection.projectionForSlot(slot);
+    targets.push({ insert: `@${slot}`, description: `Projection slot ${slot}` });
+    const slides = projectionSlides(projection);
+    slides.forEach((slide, slideIndex) => {
+      const slideName = projectionSlideName(slide);
+      targets.push({
+        insert: `@${slot} ${slideIndex}`,
+        description: slideName ? `Slide ${slideIndex}: ${slideName}` : `Slide ${slideIndex}`,
+      });
+      projectionSlideElements(slide).forEach((element, elementIndex) => {
+        targets.push({
+          insert: `@${slot} ${slideIndex} ${elementIndex}`,
+          description: projectionElementDescription(element, elementIndex),
+        });
+      });
+    });
+  }
+  return targets.slice(0, 200);
+}
+
+function projectionSlides(projection: unknown): readonly unknown[] {
+  if (typeof projection !== "object" || projection === null) {
+    return [];
+  }
+  const format = propertyValue(projection, "format");
+  const slides = propertyValue(projection, "slides");
+  return format === "pptx" && Array.isArray(slides) ? slides : [];
+}
+
+function projectionSlideElements(slide: unknown): readonly unknown[] {
+  const payload = propertyObject(slide, "payload");
+  const drawing = payload ? propertyObject(payload, "drawing") : undefined;
+  const children = drawing ? propertyValue(drawing, "children") : undefined;
+  return Array.isArray(children) ? children : [];
+}
+
+function projectionSlideName(slide: unknown): string | undefined {
+  const payload = propertyObject(slide, "payload");
+  const name = payload ? propertyValue(payload, "name") : undefined;
+  return typeof name === "string" ? name : undefined;
+}
+
+function projectionElementDescription(element: unknown, index: number): string {
+  const kind = propertyValue(element, "kind");
+  const id = propertyValue(element, "id");
+  return [
+    `Element ${index}:`,
+    typeof kind === "string" ? kind : "unknown",
+    typeof id === "string" ? id : undefined,
+  ]
+    .filter((part): part is string => part !== undefined)
+    .join(" ");
+}
+
+function propertyObject(
+  value: unknown,
+  key: string,
+): Readonly<Record<string, unknown>> | undefined {
+  const property = propertyValue(value, key);
+  return typeof property === "object" && property !== null
+    ? (property as Readonly<Record<string, unknown>>)
+    : undefined;
+}
+
+function propertyValue(value: unknown, key: string): unknown {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)[key]
+    : undefined;
 }
 
 async function* emptyInteractiveLines(): AsyncIterable<string> {}
@@ -252,95 +656,30 @@ export function devWatchFiles(input: {
   }).files;
 }
 
-export function formatDeckjsxNodeDiagnostics(
-  diagnostics: readonly DeckjsxNodeCliDiagnostic[],
-  detail: DeckjsxNodeCliDetail,
-): readonly string[] {
-  if (diagnostics.length === 0) {
-    return [];
-  }
-  if (detail === "summary") {
-    return [JSON.stringify(diagnostics.map((item) => item.code))];
-  }
-
-  return diagnostics.flatMap((diagnostic) => {
-    const lines = [`${diagnostic.severity}[${diagnostic.code}]: ${diagnostic.title}`];
-    if (diagnostic.message) {
-      lines.push(`  ${diagnostic.message}`);
-    }
-    if (diagnostic.primary) {
-      lines.push(
-        `  --> ${diagnostic.primary.file}:${diagnostic.primary.line ?? 1}:${diagnostic.primary.column ?? 1}`,
-      );
-    }
-    const sourceSnippet = formatDiagnosticSourceSnippet(diagnostic);
-    if (sourceSnippet) {
-      lines.push(...sourceSnippet.lines);
-    }
-    if (diagnostic.phase) {
-      lines.push(`   = phase: ${diagnostic.phase}`);
-    }
-    if (diagnostic.compilation !== undefined) {
-      lines.push(`   = compilation: ${diagnostic.compilation}`);
-    }
-    const labels = sourceSnippet?.consumedLabel
-      ? (diagnostic.labels ?? []).slice(1)
-      : (diagnostic.labels ?? []);
-    for (const label of labels) {
-      if (label.span) {
-        lines.push(`  --> ${label.span.file}:${label.span.line ?? 1}:${label.span.column ?? 1}`);
-      }
-      lines.push(`   = label: ${label.message}`);
-    }
-    for (const note of diagnostic.notes ?? []) {
-      lines.push(`   = note: ${note}`);
-    }
-    for (const help of diagnostic.help ?? []) {
-      lines.push(`   = help: ${help}`);
-    }
-    return lines;
-  });
-}
-
-function formatDiagnosticSourceSnippet(diagnostic: DeckjsxNodeCliDiagnostic):
-  | {
-      readonly lines: readonly string[];
-      readonly consumedLabel: boolean;
-    }
-  | undefined {
-  if (!diagnostic.primary?.sourceLine) {
-    return undefined;
-  }
-
-  const line = diagnostic.primary.line ?? 1;
-  const column = Math.max(1, diagnostic.primary.column ?? 1);
-  const spanLength = Math.max(1, diagnostic.primary.spanLength ?? 1);
-  const label = diagnostic.labels?.[0]?.message;
-  const lineNumber = String(line);
-  const gutter = " ".repeat(lineNumber.length);
-  const caret = `${" ".repeat(column - 1)}${"^".repeat(spanLength)}${label ? ` ${label}` : ""}`;
-  return {
-    lines: [`${lineNumber} | ${diagnostic.primary.sourceLine}`, `${gutter} | ${caret}`],
-    consumedLabel: label !== undefined,
-  };
-}
-
 async function main(): Promise<void> {
   const parsed = parseDeckjsxNodeCliArgs(process.argv.slice(2));
   if (!parsed.ok) {
-    printDiagnostics(parsed.diagnostics, parsed.detail);
+    printDiagnostics(parsed.diagnostics);
     process.exitCode = 1;
+    return;
+  }
+  if (parsed.command === "dev.help") {
+    formatDeckjsxDevHelp().forEach((line) => console.error(line));
+    return;
+  }
+  if (parsed.command === "dev.interactiveHelp") {
+    formatDeckjsxInteractiveHelp().forEach((line) => console.error(line));
+    return;
+  }
+  if (parsed.command !== "dev") {
     return;
   }
 
   await runDeckjsxDev(parsed);
 }
 
-function printDiagnostics(
-  diagnostics: readonly DeckjsxNodeCliDiagnostic[],
-  detail: DeckjsxNodeCliDetail,
-): void {
-  formatDeckjsxNodeDiagnostics(diagnostics, detail).forEach((line) => console.error(line));
+function printDiagnostics(diagnostics: readonly DeckjsxNodeCliDiagnostic[]): void {
+  formatDeckjsxNodeDiagnostics(diagnostics).forEach((line) => console.error(line));
 }
 
 function isDeckjsxNodeCliEntrypoint(): boolean {
