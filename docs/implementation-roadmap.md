@@ -6838,7 +6838,8 @@ AssetLoader that users pass through `deck.plugin(nodeAssets(...))` before the no
   active user-facing documentation.
 - `deckjsx dev` requires `--out`, allows extra output paths as ordinary side effects, retains only
   the tracked `--out` Render Slot, stays resident after expected dev failures, and prints detailed
-  diagnostics by default or diagnostic code arrays with `--short` / `-s`.
+  diagnostics by default. The earlier `--short` / `-s` compact code-array mode is superseded by the
+  v0.1.4 human-first dev console decision.
 - Source invalidation refreshes stale process-memory graph/projection/asset artifacts without deleting
   reusable package build artifacts needed for unchanged package-part reuse.
 - v0.9.0 creates no sidecar cache files; persistent patch state lives inside the PPTX package and

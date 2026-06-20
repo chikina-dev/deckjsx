@@ -168,8 +168,15 @@ const lifecycleHooks = {
   },
 } satisfies DeckPluginHooks;
 void lifecycleHooks;
+const lifecyclePlugin = {
+  kind: "deckjsx.plugin",
+  id: "test:render-execution-plugin",
+  hooks: lifecycleHooks,
+} satisfies DeckPlugin;
+void lifecyclePlugin;
 
 const renderExecutionContext = {
+  plugins: [lifecyclePlugin],
   integration: integrationContext,
   sourceInvalidation,
 } satisfies RenderExecutionContext;
@@ -190,16 +197,20 @@ incrementalInspection satisfies IncrementalArtifactInspection;
 incrementalInspection.retainedSlots() satisfies readonly number[];
 incrementalInspection.graphNode("node-id");
 incrementalInspection.firstProjection();
-const cyclePromise = runIncrementalArtifactCycle(incrementalSession, { sourceInvalidation }, () => {
-  const token = undefined satisfies ArtifactWriteToken | undefined;
-  const writeRecord = {
-    path: "/project/output.pptx",
-    result: { status: "created" },
-  } satisfies ArtifactWriteRecord<{ readonly status: "created" }>;
-  const recorded = recordArtifactWrite(token, writeRecord);
-  recorded satisfies IncrementalArtifactWriteRecord<{ readonly status: "created" }> | undefined;
-  return recorded;
-});
+const cyclePromise = runIncrementalArtifactCycle(
+  incrementalSession,
+  { sourceInvalidation, renderExecutionContext },
+  () => {
+    const token = undefined satisfies ArtifactWriteToken | undefined;
+    const writeRecord = {
+      path: "/project/output.pptx",
+      result: { status: "created" },
+    } satisfies ArtifactWriteRecord<{ readonly status: "created" }>;
+    const recorded = recordArtifactWrite(token, writeRecord);
+    recorded satisfies IncrementalArtifactWriteRecord<{ readonly status: "created" }> | undefined;
+    return recorded;
+  },
+);
 void (cyclePromise satisfies Promise<
   IncrementalArtifactWriteRecord<{ readonly status: "created" }> | undefined
 >);

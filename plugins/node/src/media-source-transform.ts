@@ -2,7 +2,7 @@ const DECKJSX_AUTHORING_METADATA_IMPORT =
   'import { authoringMetadata as __deckjsxAuthoringMetadata } from "deckjsx/integration";';
 
 export function isDeckjsxTransformableModule(id: string): boolean {
-  return /\.[cm]?[jt]sx?(?:\?.*)?$/.test(id) && !/(?:^|\/)node_modules\//.test(id);
+  return /\.[cm]?[jt]sx(?:\?.*)?$/.test(id) && !/(?:^|\/)node_modules\//.test(id);
 }
 
 export function transformDeckjsxMediaSourceOrigins(code: string, id: string): string | undefined {

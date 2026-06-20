@@ -28,7 +28,11 @@ import {
   type SourceContextValue,
 } from "./composition/types";
 import { resolveComposition } from "./composition/resolve";
-import { applyPluginHooks } from "./plugin";
+import {
+  withAuthoringRuntimeObservers,
+  type AuthoringRuntimeObserver,
+} from "./authoring-runtime-observer";
+import { applyPluginHooks, type DeckPlugin } from "./plugin";
 import {
   createRenderExecution,
   withRenderExecutionContext,
@@ -1299,14 +1303,17 @@ export function compileSource<
 >(
   source: CompositionSource<TSourceContext, TTemplates>,
   artifacts?: PipelineArtifactCollection,
+  plugins: readonly DeckPlugin[] = directPluginsForSource(source),
+  authoringRuntimeObservers?: readonly AuthoringRuntimeObserver[],
 ): CompileResult {
-  const plugins = directPluginsForSource(source);
   const beforeTree = applyPluginHooks(plugins, "beforeTree", {
     stage: "tree" as const,
     phase: "before" as const,
   });
   const beforeTreeDiagnostics = createDiagnostics(beforeTree.diagnostics);
-  const composition = resolveComposition(source);
+  const composition = withAuthoringRuntimeObservers(authoringRuntimeObservers, () =>
+    resolveComposition(source),
+  );
   const afterTree = applyPluginHooks(plugins, "afterTree", {
     stage: "tree" as const,
     phase: "after" as const,
@@ -1468,7 +1475,12 @@ export async function projectSource<
         graph: input.definedGraph.graph,
         resolvedStyles: input.definedGraph.resolvedStyles,
       }
-    : compileSource(input.source, artifacts);
+    : compileSource(
+        input.source,
+        artifacts,
+        input.execution?.plugins,
+        input.execution?.authoringRuntimeObservers,
+      );
 
   if (
     compileResult.diagnostics.hasErrors ||

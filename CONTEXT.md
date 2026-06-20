@@ -160,13 +160,49 @@ An inspection-only view computed from a Projected Document Model, diagnostics, a
 Derived Projection Inspection Views may be materialized lazily or by detail level so ordinary Project and Render calls do not pay for every sandbox explanation. They must not be writer input and must not duplicate ownership from the Pptx Package Model or Pptx Package Assembly Plan.
 _Avoid_: Projected Document Model, writer input, eager debug payload, root authoring export
 
+**Human-First Dev Console**:
+The terminal-facing development surface for `deckjsx dev`, covering both ordinary resident dev logs and optional inline inspection. It presents runtime events, diagnostics, artifact updates, and inspector results as human-readable development UI rather than machine logs or a public protocol.
+_Avoid_: Interactive Dev Session, JSON protocol, CI log format, fullscreen TUI
+
+**Dev Console Event**:
+A normalized presentation event consumed by the Human-First Dev Console after resident dev runtime events and artifact results have been interpreted for display. It is distinct from compiler lifecycle events because a single compilation outcome may produce ready, blocked, diagnostic, artifact write, and summary display events.
+_Avoid_: raw compiler event, public protocol message, persisted log record
+
+**Console Coordinator**:
+The single terminal-writing owner for the Human-First Dev Console. It sequences dev events, diagnostics, inspector results, prompts, highlighting, completions, and input redraw so independent runtime and inspector paths do not write directly to the terminal.
+_Avoid_: direct console.log branch, independent prompt writer, renderer-owned TTY mutation
+
 **Interactive Dev Session**:
 A resident `@deckjsx/node` development session that lets tooling inspect, explain, and compare the current artifact-producing compiler state through internal commands and events. It is an interactive layer over the Node Incremental Artifact Runtime, not a browser automation protocol or a public authoring API.
 _Avoid_: WebDriver BiDi compatibility, public protocol, browser HMR session, Deck Plugin
 
+**Inline Inspector**:
+The prompt-and-command experience exposed inside the Human-First Dev Console when interactive inspection is enabled. It uses the Interactive Dev Session to inspect component ownership, props, styles, diagnostics, projection effects, and history without becoming a separate mode or fullscreen interface.
+_Avoid_: separate TUI mode, browser devtools panel, stable external protocol
+
 **Component Provenance**:
 The component owner context that explains which function components produced an authored node and its downstream graph, projection, and artifact effects. It is distinct from Source Span, which identifies a direct source location, and may be carried as internal dev metadata without exposing component props through the Authoring Interface.
 _Avoid_: Source Span, Media Source Origin, public component node, props inspection payload
+
+**Component Inspection Snapshot**:
+An inspector-only component view that combines stable inspector identity, Component Provenance, sanitized props, child component relationships, and related authoring, graph, layout, projection, diagnostic, and artifact effects. It is separate from Component Provenance so ownership metadata stays narrow while the Inline Inspector can provide React DevTools-like component debugging.
+_Avoid_: Component Provenance, public component node, Authoring Interface props, raw runtime props
+
+**Component Props Snapshot**:
+The sanitized inspector view of props passed into a function component invocation. It is distinct from Authored Element Props because it describes component input before the component returns authoring structure.
+_Avoid_: raw runtime props, Authored Element Props, Authoring Interface contract
+
+**Authored Element Props Snapshot**:
+The sanitized inspector view of props retained on an intrinsic authored element after component execution. It is distinct from Component Props because it describes the authored structure consumed by graph, style, layout, and projection stages.
+_Avoid_: Component Props, raw JSX props object, output projection payload
+
+**Dev Instrumentation Runtime**:
+A private development-only runtime boundary owned by `@deckjsx/node` that observes authoring execution to capture inspector data such as evaluated props snapshots while delegating actual Author Tree creation to the core JSX runtime. It may be implemented through a private JSX helper, generated authoring metadata, render-execution observers, or a combination of those mechanisms as long as inspector storage, redaction, indexing, and diff support stay out of the core Authoring Interface and out of stable public integration contracts.
+_Avoid_: core JSX runtime responsibility, public authoring API, Integration Interface hook, production render path
+
+**Node Dev Inspection Store**:
+A private `@deckjsx/node` dev store for inspector-only snapshots, indexes, selections, and diffs produced by the Dev Instrumentation Runtime and related artifact inspection. It is separate from the Incremental Artifact Session, which retains core graph, projection, package, and render-slot artifacts.
+_Avoid_: Incremental Artifact Session, core artifact retention, public inspection export
 
 **Authoring Metadata Carrier**:
 An internal transport for integration-supplied metadata that travels beside authored JSX without changing author-facing prop values. Its fields are a core-owned closed vocabulary, such as Media Source Origin and Component Provenance, rather than an open plugin-defined metadata bag.

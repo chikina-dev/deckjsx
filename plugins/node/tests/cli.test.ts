@@ -3,10 +3,14 @@ import type { DeckjsxNodeCliDiagnostic } from "../src/cli.ts";
 import type { DeckjsxDevCompilationResult } from "../src/dev-compilation.ts";
 import type { IncrementalArtifactSession } from "deckjsx/integration";
 import {
+  completionContextFromInspectionState,
   devWatchFiles,
   devWriteRecords,
+  formatDeckjsxDevHelp,
+  formatDeckjsxInteractiveHelp,
   formatDeckjsxNodeDiagnostics,
   parseDeckjsxNodeCliArgs,
+  renderInteractiveResponse,
   runDeckjsxDevCompilerHost,
 } from "../src/cli.ts";
 
@@ -14,33 +18,119 @@ function asCompilationResult(value: unknown): DeckjsxDevCompilationResult {
   return value as DeckjsxDevCompilationResult;
 }
 
-describe("@deckjsx/node cli", () => {
-  test("parses dev entry, required out, extra output paths, and short diagnostics", () => {
-    const parsed = parseDeckjsxNodeCliArgs([
-      "dev",
-      "main.tsx",
-      "--out",
-      "output.pptx",
-      "components.pptx",
-      "--short",
-      "--interactive",
-    ]);
+function pendingInteractiveLines(): AsyncIterable<string> {
+  return {
+    [Symbol.asyncIterator]() {
+      return {
+        next() {
+          return new Promise<IteratorResult<string>>(() => undefined);
+        },
+      };
+    },
+  };
+}
 
-    expect(parsed).toEqual({
+describe("@deckjsx/node cli", () => {
+  test("parses dev entry, required out, extra output paths, and interactive mode", () => {
+    expect(
+      parseDeckjsxNodeCliArgs([
+        "dev",
+        "main.tsx",
+        "--out",
+        "output.pptx",
+        "components.pptx",
+        "--interactive",
+      ]),
+    ).toEqual({
       ok: true,
       command: "dev",
       entry: "main.tsx",
       out: "output.pptx",
       outputs: ["output.pptx", "components.pptx"],
-      detail: "summary",
       interactive: true,
+    });
+  });
+
+  test("parses dev help modes without entry or out", () => {
+    expect(parseDeckjsxNodeCliArgs(["dev", "--help"])).toEqual({
+      ok: true,
+      command: "dev.help",
+    });
+    expect(parseDeckjsxNodeCliArgs(["dev", "--interactive-help"])).toEqual({
+      ok: true,
+      command: "dev.interactiveHelp",
+    });
+  });
+
+  test("rejects removed short mode and unknown dev options", () => {
+    expect(parseDeckjsxNodeCliArgs(["dev", "main.tsx", "--out", "out.pptx", "--short"])).toEqual({
+      ok: false,
+      diagnostics: [
+        expect.objectContaining({
+          code: "deckjsx.node.cli.unknownOption",
+          title: "Unknown deckjsx dev option.",
+          message: "--short",
+        }),
+      ],
+    });
+    expect(
+      parseDeckjsxNodeCliArgs(["dev", "main.tsx", "--out", "out.pptx", "--interacitve"]),
+    ).toEqual({
+      ok: false,
+      diagnostics: [
+        expect.objectContaining({
+          code: "deckjsx.node.cli.unknownOption",
+          message: "--interacitve",
+          help: ["Did you mean --interactive?"],
+        }),
+      ],
+    });
+    expect(
+      parseDeckjsxNodeCliArgs(["dev", "main.tsx", "--out", "out.pptx", "--interactve"]),
+    ).toEqual({
+      ok: false,
+      diagnostics: [
+        expect.objectContaining({
+          code: "deckjsx.node.cli.unknownOption",
+          message: "--interactve",
+          help: ["Did you mean --interactive?"],
+        }),
+      ],
+    });
+    expect(parseDeckjsxNodeCliArgs(["dev", "main.tsx", "--interactive-hepl"])).toEqual({
+      ok: false,
+      diagnostics: [
+        expect.objectContaining({
+          code: "deckjsx.node.cli.unknownOption",
+          message: "--interactive-hepl",
+          help: ["Did you mean --interactive-help?"],
+        }),
+      ],
+    });
+    expect(parseDeckjsxNodeCliArgs(["dev", "main.tsx", "--out", "out.pptx", "-s"])).toEqual({
+      ok: false,
+      diagnostics: [
+        expect.objectContaining({
+          code: "deckjsx.node.cli.unknownOption",
+          title: "Unknown deckjsx dev option.",
+          message: "-s",
+        }),
+      ],
+    });
+    expect(parseDeckjsxNodeCliArgs(["dev", "--help", "--badflag"])).toEqual({
+      ok: false,
+      diagnostics: [
+        expect.objectContaining({
+          code: "deckjsx.node.cli.unknownOption",
+          message: "--badflag",
+        }),
+      ],
     });
   });
 
   test("requires --out for dev", () => {
     expect(parseDeckjsxNodeCliArgs(["dev", "main.tsx"])).toEqual({
       ok: false,
-      detail: "details",
       diagnostics: [
         {
           severity: "error",
@@ -51,7 +141,7 @@ describe("@deckjsx/node cli", () => {
     });
   });
 
-  test("formats detailed and short diagnostics", () => {
+  test("formats human diagnostics and help output", () => {
     const diagnostics = [
       {
         severity: "error" as const,
@@ -73,19 +163,620 @@ describe("@deckjsx/node cli", () => {
       },
     ] satisfies readonly DeckjsxNodeCliDiagnostic[];
 
-    expect(formatDeckjsxNodeDiagnostics(diagnostics, "summary")).toEqual([
-      '["deckjsx.node.dev.failed"]',
-    ]);
-    expect(formatDeckjsxNodeDiagnostics(diagnostics, "details")).toEqual([
-      "error[deckjsx.node.dev.failed]: Render failed.",
+    expect(formatDeckjsxNodeDiagnostics(diagnostics)).toEqual([
+      "error deckjsx.node.dev.failed",
+      "  Render failed.",
       "  The generated entry could not be imported.",
       "  --> /project/src/main.tsx:12:7",
       "12 | const result = renderDeck();",
       "   |       ^^^^^^ while importing the generated entry module",
-      "   = phase: entry",
-      "   = compilation: 2",
-      "   = note: The previous successful artifact state is still retained.",
-      "   = help: Fix the entry module and save again.",
+      "  phase       entry",
+      "  compilation 2",
+      "  note        The previous successful artifact state is still retained.",
+      "  help        Fix the entry module and save again.",
+    ]);
+    expect(formatDeckjsxDevHelp()).toEqual(
+      expect.arrayContaining([
+        "Usage",
+        "  deckjsx dev <entry> --out <path> [extra output paths...]",
+      ]),
+    );
+    expect(formatDeckjsxInteractiveHelp()).toEqual(
+      expect.arrayContaining([
+        "  component inspect <target>",
+        "  props inspect <target> [path]",
+        "  projection [@slot] [slideIndex] [elementIndex]",
+      ]),
+    );
+  });
+
+  test("renders interactive inspector payloads as readable command output", () => {
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          status: "partial",
+          compilation: 2,
+          items: [
+            {
+              id: "component:Deck:1",
+              name: "Deck",
+              childIds: ["component:Header:1"],
+              propsSummary: {},
+            },
+            {
+              id: "component:Header:1",
+              name: "Header",
+              parentId: "component:Deck:1",
+              childIds: [],
+              propsSummary: { title: "Q5" },
+            },
+          ],
+        },
+      }),
+    ).toEqual([
+      "ok component.tree",
+      "  status      partial",
+      "  compilation 2",
+      "  Deck component:Deck:1",
+      "    Header component:Header:1",
+    ]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          status: "unavailable",
+          items: [],
+        },
+      }),
+    ).toEqual(["ok component.tree", "  status      unavailable", "  components  0"]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          kind: "diagnostics.explain",
+          index: 0,
+          diagnostic: {
+            severity: "error",
+            code: "E_HEADER",
+            title: "Header failed",
+            message: "bad header",
+            primary: { file: "/project/src/slides.tsx", line: 12, column: 4 },
+          },
+          relatedComponents: [
+            {
+              id: "component:Header:1",
+              name: "Header",
+              impact: { status: "available", elementCount: 1 },
+            },
+          ],
+          hints: ["component inspect component:Header:1", "component impact component:Header:1"],
+        },
+      }),
+    ).toEqual([
+      "ok diagnostics.explain",
+      "  index       0",
+      "error E_HEADER",
+      "  Header failed",
+      "  bad header",
+      "  --> /project/src/slides.tsx:12:4",
+      "  component   Header component:Header:1",
+      "  impact      available, 1 element",
+      "  see         component inspect component:Header:1",
+      "  see         component impact component:Header:1",
+    ]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          kind: "component.filter",
+          items: [
+            {
+              id: "component:Header:1",
+              name: "Header",
+              childIds: [],
+              propsSummary: { title: "Q5" },
+            },
+          ],
+        },
+      }),
+    ).toEqual(["ok component.filter", "  Header component:Header:1"]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          kind: "component.filter",
+          items: [],
+        },
+      }),
+    ).toEqual(["ok component.filter", "  results     0"]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          kind: "diagnostics.list",
+          compilation: 7,
+          items: [
+            {
+              index: 0,
+              severity: "error",
+              code: "deckjsx.node.dev.entryFailed",
+              title: "Entry failed.",
+              phase: "entry",
+            },
+            {
+              index: 1,
+              severity: "warning",
+              code: "deckjsx.node.dev.layoutFallback",
+              title: "Layout fallback.",
+            },
+          ],
+        },
+      }),
+    ).toEqual([
+      "ok diagnostics.list",
+      "  compilation 7",
+      "  [0] error   deckjsx.node.dev.entryFailed Entry failed. (entry)",
+      "  [1] warning deckjsx.node.dev.layoutFallback Layout fallback.",
+    ]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          kind: "diagnostics.list",
+          compilation: 8,
+          items: [],
+        },
+      }),
+    ).toEqual(["ok diagnostics.list", "  compilation 8", "  diagnostics 0"]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          compilerStarted: true,
+          compilerClosed: false,
+          lastCompilation: 4,
+          lastSuccessfulCompilation: 3,
+          skippedFailedAttempts: 1,
+        },
+      }),
+    ).toEqual([
+      "ok session.status",
+      "  compiler    running",
+      "  last        compilation 4",
+      "  success     compilation 3",
+      "  skipped     1 failed attempt",
+    ]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          compilerUptimeMs: 1250,
+          lastCompilationDurationMs: 84,
+          commandCount: 3,
+          lastCommandLatencyMs: 7,
+        },
+      }),
+    ).toEqual([
+      "ok session.timings",
+      "  uptime      1250ms",
+      "  compile     84ms",
+      "  commands    3",
+      "  latency     7ms",
+    ]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          kind: "diagnostics.explain",
+          index: 0,
+          diagnostic: {
+            severity: "error",
+            code: "E_ENTRY",
+            title: "Entry failed",
+            message: "render exploded",
+          },
+          relatedComponents: [],
+          inspection: {
+            status: "partial",
+            compilation: 7,
+            devStatus: "entryFailed",
+            boundary: "entry",
+            componentCount: 0,
+            reason: "No component inspection snapshots were recorded before the entry boundary.",
+          },
+          hints: [],
+        },
+      }),
+    ).toEqual([
+      "ok diagnostics.explain",
+      "  index       0",
+      "error E_ENTRY",
+      "  Entry failed",
+      "  render exploded",
+      "  context     inspection partial at entry (entryFailed, compilation 7)",
+      "  reason      No component inspection snapshots were recorded before the entry boundary.",
+    ]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          kind: "component.inspect",
+          id: "component:Header:1",
+          name: "Header",
+          source: { file: "/project/src/slides.tsx", line: 12, column: 4 },
+          propsSummary: { title: "Q5", items: { kind: "array", length: 3 } },
+          childIds: ["component:Metric:1"],
+          graphNodeIds: ["header-node"],
+          diagnostics: [{ index: 0, code: "E_HEADER", title: "Header failed" }],
+          impact: { status: "available", elementCount: 1 },
+          hints: ["props inspect component:Header:1", "component impact component:Header:1"],
+        },
+      }),
+    ).toEqual([
+      "ok component.inspect",
+      "  id          component:Header:1",
+      "  name        Header",
+      "  source      /project/src/slides.tsx:12:4",
+      '  props       title=Q5, items={"kind":"array","length":3}',
+      "  children    component:Metric:1",
+      "  graph nodes header-node",
+      "  diagnostic  [0] E_HEADER Header failed",
+      "  impact      available, 1 element",
+      "  see         props inspect component:Header:1",
+      "  see         component impact component:Header:1",
+    ]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          kind: "component.diff",
+          target: "component:Header:1",
+          changes: [{ path: "props.title", before: "Q4", after: "Q5" }],
+        },
+      }),
+    ).toEqual([
+      "ok component.diff",
+      "  target component:Header:1",
+      "  props.title",
+      "    before Q4",
+      "    after  Q5",
+    ]);
+
+    const circularValue: Record<string, unknown> = { name: "hero" };
+    circularValue.self = circularValue;
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          target: "component:Header:1",
+          path: "theme",
+          value: circularValue,
+        },
+      }),
+    ).toEqual([
+      "ok props.inspect",
+      "  target component:Header:1",
+      "  path   theme",
+      '  value  {"name":"hero","self":"[Circular]"}',
+    ]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          kind: "component.diff",
+          target: "component:Header:1",
+          changes: [],
+        },
+      }),
+    ).toEqual(["ok component.diff", "  target component:Header:1", "  changes     0"]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          target: "projection:@0:0:0",
+          status: "available",
+          diagnostic: { index: 0, code: "E_HEADER", title: "Header failed" },
+          graphNodeIds: ["header-node"],
+          components: [{ id: "component:Header:1", name: "Header" }],
+          elements: [
+            {
+              slot: 0,
+              slideIndex: 0,
+              elementIndex: 0,
+              element: { id: "header-el", kind: "text" },
+            },
+          ],
+        },
+      }),
+    ).toEqual([
+      "ok component.impact",
+      "  target      projection:@0:0:0",
+      "  status      available",
+      "  diagnostic  [0] E_HEADER Header failed",
+      "  summary     1 graph node, 1 slide, 1 projection element",
+      "  graph       header-node",
+      "  component   Header component:Header:1",
+      "  chain       projection:@0:0:0 -> header-node -> @0 slide 0 element 0",
+      '  output      @0 slide 0 element 0 {"id":"header-el","kind":"text"}',
+    ]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          target: "component:Deck:1",
+          status: "available",
+          graphNodeIds: ["header-node", "footer-node"],
+          elements: [
+            {
+              slot: 0,
+              slideIndex: 0,
+              elementIndex: 0,
+              element: { id: "header-el", origin: { graphNodeIds: ["header-node"] } },
+            },
+            {
+              slot: 0,
+              slideIndex: 0,
+              elementIndex: 1,
+              element: { id: "footer-el", origin: { graphNodeIds: ["footer-node"] } },
+            },
+          ],
+        },
+      }),
+    ).toEqual([
+      "ok component.impact",
+      "  target      component:Deck:1",
+      "  status      available",
+      "  summary     2 graph nodes, 1 slide, 2 projection elements",
+      "  graph       header-node, footer-node",
+      "  chain       component:Deck:1 -> header-node -> @0 slide 0 element 0",
+      "  chain       component:Deck:1 -> footer-node -> @0 slide 0 element 1",
+      '  output      @0 slide 0 element 0 {"id":"header-el","origin":{"graphNodeIds":["header-node"]}}',
+      '  output      @0 slide 0 element 1 {"id":"footer-el","origin":{"graphNodeIds":["footer-node"]}}',
+    ]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          target: "component:Header:1",
+          path: "title",
+          changes: [{ path: "title", before: "Q4", after: "Q5" }],
+        },
+      }),
+    ).toEqual([
+      "ok props.diff",
+      "  target component:Header:1",
+      "  title",
+      "    before Q4",
+      "    after  Q5",
+    ]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          target: "component:Header:1",
+          changes: [],
+        },
+      }),
+    ).toEqual(["ok props.diff", "  target component:Header:1", "  changes     0"]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          kind: "style.explain",
+          nodeId: "node-1",
+          sourceKey: "deck:root",
+          slot: 0,
+          property: "color",
+          trace: {
+            property: "color",
+            candidates: [
+              { value: "red", source: { layer: "class", className: "muted" }, applied: false },
+              { value: "blue", source: { layer: "style" }, applied: true },
+            ],
+          },
+        },
+      }),
+    ).toEqual([
+      "ok style.explain",
+      "  node        node-1",
+      "  source      deck:root",
+      "  slot        0",
+      "  color",
+      "    x red   class .muted",
+      "    * blue  style",
+    ]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          kind: "style.explain",
+          nodeId: "node-1",
+          sourceKey: "deck:root",
+          slot: 0,
+          style: { color: "blue", fontSize: 18 },
+          properties: ["color", "fontSize"],
+          hints: ["style node-1 color", "style node-1 fontSize"],
+        },
+      }),
+    ).toEqual([
+      "ok style.explain",
+      "  node        node-1",
+      "  source      deck:root",
+      "  slot        0",
+      "  style       color=blue, fontSize=18",
+      "  properties  color, fontSize",
+      "  see         style node-1 color",
+      "  see         style node-1 fontSize",
+    ]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          slot: 0,
+          format: "pptx",
+          slides: [
+            {
+              slideIndex: 0,
+              partId: "ppt/slide-1",
+              path: "ppt/slides/slide1.xml",
+              slideId: "256",
+              name: "Overview",
+              origin: { graphNodeIds: ["slide-node"] },
+              elementCount: 1,
+            },
+          ],
+        },
+      }),
+    ).toEqual([
+      "ok projection.inspect",
+      "  slot        0",
+      "  format      pptx",
+      "  slides      1",
+      "  [0] Overview ppt/slides/slide1.xml 1 element",
+    ]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          slot: 0,
+          slideIndex: 0,
+          slide: {
+            slideIndex: 0,
+            partId: "ppt/slide-1",
+            path: "ppt/slides/slide1.xml",
+            slideId: "256",
+            name: "Overview",
+            origin: { graphNodeIds: ["slide-node"] },
+            elementCount: 2,
+          },
+        },
+      }),
+    ).toEqual([
+      "ok projection.inspect",
+      "  slot        0",
+      "  slide       0",
+      "  name        Overview",
+      "  path        ppt/slides/slide1.xml",
+      "  elements    2",
+    ]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          slot: 0,
+          slideIndex: 1,
+          elementIndex: 2,
+          element: {
+            id: "title-el",
+            kind: "text",
+            origin: { graphNodeIds: ["title-node"] },
+            textPreview: "Roadmap",
+          },
+        },
+      }),
+    ).toEqual([
+      "ok projection.inspect",
+      "  slot        0",
+      "  slide       1",
+      "  element     2",
+      '  value       {"id":"title-el","kind":"text","origin":{"graphNodeIds":["title-node"]},"textPreview":"Roadmap"}',
+    ]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          kind: "selection.list",
+          items: [
+            {
+              handle: "$0",
+              available: true,
+              value: { kind: "component.inspect", id: "component:Header:1", name: "Header" },
+            },
+            {
+              handle: "$$",
+              available: true,
+              value: [
+                { id: "component:Header:1", name: "Header" },
+                { id: "component:Footer:1", name: "Footer" },
+              ],
+            },
+          ],
+        },
+      }),
+    ).toEqual([
+      "ok selection.list",
+      "  $0          component.inspect Header component:Header:1",
+      "  $$          2 items",
+    ]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          kind: "selection.list",
+          items: [],
+        },
+      }),
+    ).toEqual(["ok selection.list", "  handles     0"]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          handle: "$0",
+          value: {
+            kind: "component.inspect",
+            id: "component:Header:1",
+            name: "Header",
+          },
+        },
+      }),
+    ).toEqual([
+      "ok selection.resolve",
+      "  handle      $0",
+      "  value       component.inspect Header component:Header:1",
+    ]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          fromCompilation: 2,
+          toCompilation: 4,
+          skippedFailedAttempts: 1,
+          changedSourceIds: ["/project/src/components/MetricCard.tsx", "/project/src/theme.ts"],
+        },
+      }),
+    ).toEqual([
+      "ok history.changes",
+      "  from        compilation 2",
+      "  to          compilation 4",
+      "  skipped     1 failed attempt",
+      "  changed     /project/src/components/MetricCard.tsx",
+      "  changed     /project/src/theme.ts",
     ]);
   });
 
@@ -120,7 +811,7 @@ describe("@deckjsx/node cli", () => {
     ]);
   });
 
-  test("hosts the dev compiler and prints short diagnostics from compiler events", async () => {
+  test("hosts the dev compiler and prints human diagnostics from compiler events", async () => {
     const lines: string[] = [];
     const calls: string[] = [];
     let listener:
@@ -131,7 +822,7 @@ describe("@deckjsx/node cli", () => {
       | undefined;
 
     await runDeckjsxDevCompilerHost({
-      detail: "summary",
+      entry: "src/main.tsx",
       maxCompilations: 1,
       writeLine(line) {
         lines.push(line);
@@ -187,21 +878,73 @@ describe("@deckjsx/node cli", () => {
     });
 
     expect(calls).toEqual(["start", "close"]);
-    expect(lines).toEqual(['["deckjsx.node.dev.bundleFailed"]']);
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        "error deckjsx.node.dev.bundleFailed",
+        "  Bundle failed.",
+        "  bundle exploded",
+      ]),
+    );
+    expect(lines.some((line) => line.includes("[deckjsx] dev started"))).toBe(true);
+    expect(lines.some((line) => line.includes("[deckjsx] error"))).toBe(true);
+  });
+
+  test("hosts the dev compiler and prints concise lifecycle output", async () => {
+    const lines: string[] = [];
+
+    await runDeckjsxDevCompilerHost({
+      entry: "src/main.tsx",
+      maxCompilations: 1,
+      writeLine(line) {
+        lines.push(line);
+      },
+      compiler: {
+        on() {
+          return () => undefined;
+        },
+        start() {},
+        invalidate() {},
+        async runNextCompilation() {
+          return asCompilationResult({
+            ok: true,
+            status: "artifactUpdated",
+            compilation: 1,
+            diagnostics: [],
+            sourceSnapshot: {
+              status: "executable",
+              code: "",
+              watchFiles: [],
+              changedSourceIds: ["src/main.tsx"],
+            },
+            writes: [
+              { path: "/project/output.pptx", tracked: true, result: { status: "patched" } },
+            ],
+            retainedSlots: [0],
+          });
+        },
+        async close() {},
+      },
+    });
+
+    expect(lines.some((line) => line.includes("[deckjsx] dev started"))).toBe(true);
+    expect(lines.some((line) => line.includes("[deckjsx] dev started    src/main.tsx"))).toBe(true);
+    expect(lines.some((line) => line.includes("[deckjsx] ready"))).toBe(true);
+    expect(lines.some((line) => line.includes("[deckjsx] ready          1 output"))).toBe(true);
+    expect(lines.some((line) => line.includes("changed     src/main.tsx"))).toBe(true);
+    expect(lines.some((line) => line.includes("output.pptx"))).toBe(true);
   });
 
   test("hosts an interactive session alongside the dev compiler", async () => {
     const calls: string[] = [];
 
     await runDeckjsxDevCompilerHost({
-      detail: "summary",
       interactive: true,
       maxCompilations: 1,
       createInteractiveSession() {
         calls.push("interactive:start");
         return {
           async dispatch() {
-            return { ok: true, result: undefined };
+            return { ok: true, result: {} };
           },
           close() {
             calls.push("interactive:close");
@@ -243,7 +986,6 @@ describe("@deckjsx/node cli", () => {
     const commands: unknown[] = [];
 
     await runDeckjsxDevCompilerHost({
-      detail: "summary",
       interactive: true,
       interactiveLines: (async function* () {
         yield "status";
@@ -281,9 +1023,130 @@ describe("@deckjsx/node cli", () => {
     });
 
     expect(commands).toEqual([{ method: "session.status" }]);
-    expect(output.map((line) => JSON.parse(line))).toEqual([
-      { ok: true, result: { method: "session.status" } },
+    expect(output).toEqual(["ok session.status"]);
+  });
+
+  test("routes interactive output through the dev console writer by default", async () => {
+    const lines: string[] = [];
+
+    await runDeckjsxDevCompilerHost({
+      interactive: true,
+      interactiveLines: (async function* () {
+        yield "status";
+        yield "exit";
+      })(),
+      writeLine(line) {
+        lines.push(line);
+      },
+      createInteractiveSession() {
+        return {
+          async dispatch(command) {
+            return { ok: true, result: { method: command.method } };
+          },
+          close() {},
+        };
+      },
+      maxCompilations: 1,
+      compiler: {
+        on() {
+          return () => undefined;
+        },
+        start() {},
+        invalidate() {},
+        async runNextCompilation() {
+          return asCompilationResult({
+            ok: true,
+            status: "artifactUpdated",
+            compilation: 1,
+            diagnostics: [],
+          });
+        },
+        async close() {},
+      },
+    });
+
+    expect(lines.some((line) => line.includes("[deckjsx] dev started"))).toBe(true);
+    expect(lines.some((line) => line.includes("[deckjsx] ready"))).toBe(true);
+    expect(lines).toContain("ok session.status");
+  });
+
+  test("interactive host exits cleanly when closing interrupts a pending compilation", async () => {
+    const calls: string[] = [];
+    let rejectCompilation: ((error: Error) => void) | undefined;
+
+    await runDeckjsxDevCompilerHost({
+      interactive: true,
+      interactiveLines: (async function* () {
+        yield "exit";
+      })(),
+      createInteractiveSession() {
+        return {
+          async dispatch() {
+            return { ok: true, result: {} };
+          },
+          close() {
+            calls.push("interactive:close");
+          },
+        };
+      },
+      compiler: {
+        on() {
+          return () => undefined;
+        },
+        start() {
+          calls.push("compiler:start");
+        },
+        invalidate() {},
+        runNextCompilation() {
+          calls.push("compiler:runNextCompilation");
+          return new Promise<DeckjsxDevCompilationResult>((_resolve, reject) => {
+            rejectCompilation = reject;
+          });
+        },
+        async close() {
+          calls.push("compiler:close");
+          rejectCompilation?.(new Error("compiler closed"));
+          await Promise.resolve();
+        },
+      },
+    });
+
+    expect(calls).toEqual([
+      "compiler:start",
+      "compiler:runNextCompilation",
+      "interactive:close",
+      "compiler:close",
     ]);
+  });
+
+  test("interactive host still propagates compilation failures before shutdown", async () => {
+    const error = new Error("compilation exploded");
+
+    await expect(
+      runDeckjsxDevCompilerHost({
+        interactive: true,
+        interactiveLines: pendingInteractiveLines(),
+        createInteractiveSession() {
+          return {
+            async dispatch() {
+              return { ok: true, result: {} };
+            },
+            close() {},
+          };
+        },
+        compiler: {
+          on() {
+            return () => undefined;
+          },
+          start() {},
+          invalidate() {},
+          async runNextCompilation() {
+            throw error;
+          },
+          async close() {},
+        },
+      }),
+    ).rejects.toThrow(error);
   });
 
   test("passes artifact session to the default interactive session factory boundary", async () => {
@@ -314,17 +1177,20 @@ describe("@deckjsx/node cli", () => {
       },
     } as unknown as IncrementalArtifactSession;
     let receivedArtifactSession: IncrementalArtifactSession | undefined;
+    let receivedInspectionStore: unknown;
+    let receivedDiagnostics: unknown;
 
     await runDeckjsxDevCompilerHost({
-      detail: "summary",
       interactive: true,
       artifactSession,
       maxCompilations: 1,
       createInteractiveSession(input) {
         receivedArtifactSession = input.artifactSession;
+        receivedInspectionStore = input.inspectionStore;
+        receivedDiagnostics = input.diagnostics;
         return {
           async dispatch() {
-            return { ok: true, result: undefined };
+            return { ok: true, result: {} };
           },
           close() {},
         };
@@ -348,5 +1214,23 @@ describe("@deckjsx/node cli", () => {
     });
 
     expect(receivedArtifactSession).toBe(artifactSession);
+    expect(receivedInspectionStore).toEqual(expect.any(Object));
+    expect(receivedDiagnostics).toEqual(
+      expect.objectContaining({
+        current: expect.any(Function),
+      }),
+    );
+  });
+
+  test("builds interactive completion context with latest diagnostics", () => {
+    const context = completionContextFromInspectionState(undefined, undefined, [
+      { severity: "error", code: "E_HEADER", title: "Header failed" },
+      { severity: "warning", code: "W_LAYOUT", title: "Layout fallback" },
+    ]);
+
+    expect(context.diagnosticTargets).toEqual([
+      { index: 0, code: "E_HEADER", title: "Header failed" },
+      { index: 1, code: "W_LAYOUT", title: "Layout fallback" },
+    ]);
   });
 });

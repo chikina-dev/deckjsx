@@ -5,6 +5,7 @@ import type {
   IntrinsicImgProps,
   IntrinsicPProps,
   IntrinsicShapeProps,
+  IntrinsicSpanProps,
   IntrinsicTextTag,
   IntrinsicVideoProps,
   IntrinsicViewTag,
@@ -64,7 +65,7 @@ export function jsxDEV(
 ): DeckJsxElement;
 export function jsxDEV(
   type: "span",
-  props: JsxProps<IntrinsicPProps> | null,
+  props: JsxProps<IntrinsicSpanProps> | null,
   key?: JsxKey,
   _isStaticChildren?: boolean,
   source?: JsxDevSource,
@@ -119,6 +120,6 @@ export namespace JSX {
   }
 
   export interface IntrinsicElements extends DeckJsxIntrinsicElements {
-    span: IntrinsicPProps;
+    span: IntrinsicSpanProps;
   }
 }

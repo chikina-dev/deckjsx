@@ -9,6 +9,7 @@ import { createEntryExecutionHost, type EntryExecutionHost } from "./entry-execu
 import { createRolldownWatchAdapter } from "./rolldown-watch-adapter";
 import type { DevSourceProvider } from "./dev-source-provider";
 import type { DeckjsxDevDiagnostic } from "./dev-diagnostics";
+import type { NodeDevInspectionStore } from "./dev-inspection-store";
 import { runDeckjsxDevCompilation, type DeckjsxDevCompilationResult } from "./dev-compilation";
 
 export type DeckjsxDevCompilerOptions = {
@@ -20,6 +21,7 @@ export type DeckjsxDevCompilerOptions = {
   readonly entryHost?: EntryExecutionHost;
   readonly createAssetFileWatcher?: (onChange: (filePath: string) => void) => DevAssetFileWatcher;
   readonly session?: IncrementalArtifactSession;
+  readonly inspectionStore?: NodeDevInspectionStore;
 };
 
 export type DeckjsxDevCompilerEvent =
@@ -134,6 +136,7 @@ export function createDeckjsxDevCompiler(options: DeckjsxDevCompilerOptions): De
       changedSourceIds,
       entryHost,
       session,
+      inspectionStore: options.inspectionStore,
     });
     result.diagnostics.forEach((diagnostic) => emit({ type: "diagnostic", diagnostic }));
     emit({ type: "compilationFinished", result });

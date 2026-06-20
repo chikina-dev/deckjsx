@@ -64,6 +64,7 @@ export type IncrementalArtifactInspection = {
 
 export type IncrementalArtifactCycleOptions = {
   readonly sourceInvalidation?: SourceInvalidation;
+  readonly renderExecutionContext?: RenderExecutionContext;
 };
 
 export type IncrementalArtifactCycleResult = {
@@ -134,9 +135,7 @@ class IncrementalArtifactSessionImpl {
     return new IncrementalArtifactCycleImpl({
       session: this,
       cycle: this.#cycle,
-      renderExecutionContext: options.sourceInvalidation
-        ? { sourceInvalidation: options.sourceInvalidation }
-        : {},
+      renderExecutionContext: renderExecutionContextForCycle(options),
     });
   }
 
@@ -222,6 +221,26 @@ class IncrementalArtifactSessionImpl {
     this.#completedCycleSlots.set(cycle, new Map(slotArtifacts));
     this.#latestCompletedCycle = cycle;
   }
+}
+
+function renderExecutionContextForCycle(
+  options: IncrementalArtifactCycleOptions,
+): RenderExecutionContext {
+  const sourceInvalidation =
+    options.sourceInvalidation && options.renderExecutionContext?.sourceInvalidation
+      ? {
+          changedSourceIds: [
+            ...new Set([
+              ...options.renderExecutionContext.sourceInvalidation.changedSourceIds,
+              ...options.sourceInvalidation.changedSourceIds,
+            ]),
+          ],
+        }
+      : (options.sourceInvalidation ?? options.renderExecutionContext?.sourceInvalidation);
+  return {
+    ...options.renderExecutionContext,
+    ...(sourceInvalidation ? { sourceInvalidation } : {}),
+  };
 }
 
 class IncrementalArtifactInspectionImpl implements IncrementalArtifactInspection {

@@ -75,6 +75,12 @@ void regressionTypeAssertions;
 const runtime = jsx("p", { children: "Runtime text" });
 runtime satisfies import("deckjsx").DeckJsxElement;
 
+const runtimeSpan = jsx("span", { style: { color: "red" }, children: "Run" });
+runtimeSpan satisfies import("deckjsx").DeckJsxElement;
+
+// @ts-expect-error Runtime span uses TextRunStyle and rejects box positioning.
+jsx("span", { style: { x: 1 }, children: "Run" });
+
 const runtimeKey = 1n satisfies JsxKey;
 const runtimeKeyed = jsx("p", { children: runtime }, runtimeKey);
 runtimeKeyed satisfies import("deckjsx").DeckJsxElement;
