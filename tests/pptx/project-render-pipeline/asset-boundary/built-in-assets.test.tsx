@@ -27,9 +27,8 @@ describe("project/render built-in asset boundary", () => {
     });
   });
 
-  test("built-in asset boundary probes and fetches absolute http media URLs", async () => {
+  test("built-in asset boundary does not fetch absolute http media URLs", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const pngBytes = H.pngHeaderBytes(24, 13);
     const originalFetch = globalThis.fetch;
     const fetchedUrls: string[] = [];
 
@@ -37,7 +36,10 @@ describe("project/render built-in asset boundary", () => {
       fetchedUrls.push(
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
       );
-      return new Response(pngBytes, { status: 200, headers: { "content-type": "image/png" } });
+      return new Response(H.pngHeaderBytes(24, 13), {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
     }) as typeof fetch;
 
     try {
@@ -52,39 +54,43 @@ describe("project/render built-in asset boundary", () => {
 
       const project = await deck.project();
       const mediaPart = project.projection?.parts.find((part) => part.kind === "media");
-      const render = await deck.render();
-      const zip = H.unzipSync(render.artifact?.bytes ?? new Uint8Array());
+      const diagnostic = project.diagnostics.items.find(
+        (item) => item.code === "W_PROJECT_REMOTE_ASSET_FETCH_DISABLED",
+      );
 
-      expect(project.ok).toBe(true);
+      expect(project.ok).toBe(false);
       expect(mediaPart?.path).toBe("ppt/media/media1.png");
       expect(mediaPart?.payload).toMatchObject({
         source: { kind: "url", url: "https://cdn.example.test/chart.png" },
         metadata: {
-          mediaType: "image/png",
           extension: "png",
-          widthPx: 24,
-          heightPx: 13,
-          byteLength: pngBytes.byteLength,
         },
       });
-      expect(render.ok).toBe(true);
-      expect(fetchedUrls).toEqual(["https://cdn.example.test/chart.png"]);
-      expect(Array.from(zip["ppt/media/media1.png"] ?? [])).toEqual(Array.from(pngBytes));
+      expect(diagnostic).toMatchObject({
+        severity: "warning",
+        title: "built-in remote asset fetch is disabled",
+        labels: [expect.objectContaining({ message: "https://cdn.example.test/chart.png" })],
+      });
+      expect(fetchedUrls).toEqual([]);
     } finally {
       globalThis.fetch = originalFetch;
     }
   });
 
-  test("project inspection exposes built-in fetch asset provenance and byte hash", async () => {
+  test("project inspection exposes remote asset fetch disabled diagnostics", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    const pngBytes = H.pngHeaderBytes(8, 5);
     const originalFetch = globalThis.fetch;
+    const fetchedUrls: string[] = [];
 
-    globalThis.fetch = (async () =>
-      new Response(pngBytes, {
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+      fetchedUrls.push(
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+      );
+      return new Response(H.pngHeaderBytes(8, 5), {
         status: 200,
         headers: { "content-type": "image/png; charset=utf-8" },
-      })) as typeof fetch;
+      });
+    }) as typeof fetch;
 
     try {
       deck.slide({ name: "Inspect URL asset" }, () => (
@@ -100,18 +106,16 @@ describe("project/render built-in asset boundary", () => {
         projectOptions: { inspection: "summary" },
       });
 
-      expect(project.ok).toBe(true);
+      expect(project.ok).toBe(false);
       expect(project.summary?.assetResolutions).toEqual([
         expect.objectContaining({
           sourceKind: "url",
           sourceField: "src",
           resolverIdentity: "deckjsx:builtin",
-          provenanceKind: "fetch",
-          resolvedId: expect.stringMatching(/^fnv1a32:/),
-          hashSource: "bytes",
-          diagnosticCodes: [],
+          diagnosticCodes: ["W_PROJECT_REMOTE_ASSET_FETCH_DISABLED"],
         }),
       ]);
+      expect(fetchedUrls).toEqual([]);
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -159,10 +163,16 @@ describe("project/render built-in asset boundary", () => {
     expect(resolution).not.toHaveProperty("source", "./child.png");
   });
 
-  test("project reports an asset boundary diagnostic when URL fetch is unavailable", async () => {
+  test("project reports an asset boundary diagnostic when remote URL fetch is disabled", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = undefined as never;
+    const fetchedUrls: string[] = [];
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+      fetchedUrls.push(
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+      );
+      return new Response(H.pngHeaderBytes(2, 2));
+    }) as typeof fetch;
 
     try {
       deck.slide({ name: "Missing fetch URL asset" }, () => (
@@ -177,12 +187,13 @@ describe("project/render built-in asset boundary", () => {
         options: deck.options,
       });
       const diagnostic = project.diagnostics.items.find(
-        (item) => item.code === "E_PROJECT_ASSET_FETCH_UNAVAILABLE",
+        (item) => item.code === "W_PROJECT_REMOTE_ASSET_FETCH_DISABLED",
       );
 
       expect(project.ok).toBe(false);
       expect(diagnostic).toMatchObject({
-        title: "asset URL fetch is unavailable",
+        severity: "warning",
+        title: "built-in remote asset fetch is disabled",
         labels: [
           expect.objectContaining({ message: "https://cdn.example.test/missing-fetch.png" }),
         ],
@@ -192,6 +203,7 @@ describe("project/render built-in asset boundary", () => {
           "sourceKind=url",
         ]),
       });
+      expect(fetchedUrls).toEqual([]);
     } finally {
       globalThis.fetch = originalFetch;
     }

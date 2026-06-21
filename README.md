@@ -287,11 +287,13 @@ how to serialize the corresponding PPTX slide layout structure.
 ## Assets
 
 Image sources are resolved through the asset loading boundary. The core package includes
-multi-runtime handling for data/bytes and absolute URL-like sources, while filesystem paths,
-framework-public assets, authenticated URLs, and app media stores should be provided by integration
-packages through `deckjsx/integration`.
-For built-in data, bytes, and absolute URL-like image sources, Project probes PNG, GIF, JPEG, and
-SVG dimensions into media metadata without putting media bytes into the Pptx Package Model.
+multi-runtime handling for data/bytes and URL metadata inference, while remote fetching,
+filesystem paths, framework-public assets, authenticated URLs, and app media stores should be
+provided by integration packages through `deckjsx/integration`.
+For built-in data and byte image sources, Project probes PNG, GIF, JPEG, and SVG dimensions into
+media metadata without putting media bytes into the Pptx Package Model. Built-in absolute URL
+sources preserve extension/media-type hints but do not fetch remote bytes; provide an explicit
+AssetLoader for trusted remote media.
 
 ```tsx
 import { pptx } from "deckjsx/adapter";
@@ -330,7 +332,7 @@ await deck.render(pptx());
 ```
 
 Integration Context loaders belong to the root Deck Plugin stack for the current compile/project/render
-execution, then built-in runtime-neutral handling may resolve inline data and fetchable absolute URLs.
+execution, then built-in runtime-neutral handling may resolve inline data and URL metadata hints.
 Project uses `probe()` for metadata needed by the Pptx Package Model, and Render uses the same winning
 resolver identity for `load()` so media metadata and bytes come from the same runtime assumptions.
 If a loader claims an image source but cannot provide dimensions, treat that as an asset data

@@ -2101,10 +2101,10 @@ Current implementation progress:
   create a byte sink for the direct PPTX writer, while the older write-after-artifact path remains as
   a fallback for non-direct adapters.
 - The built-in Asset Loading Boundary now handles `data:` sources, byte sources, and absolute
-  `http:`/`https:` media URLs. Absolute URL images are preserved as URL sources in graph/projection,
-  Project can infer extension/media type without a custom loader, and Render fetches bytes through
-  `fetch` when the runtime provides it. Filesystem-like and app-public relative paths still remain
-  outside core behind `deck.useAssets(loader)`.
+  `http:`/`https:` media URL metadata hints. Absolute URL images are preserved as URL sources in
+  graph/projection, Project can infer extension/media type without a custom loader, and Render
+  requires a registered AssetLoader for trusted remote bytes. Filesystem-like and app-public
+  relative paths still remain outside core behind `deck.useAssets(loader)`.
 - Asset Artifacts are now keyed by Asset Entity identity and indexed by normalized media source plus
   resolver scope. Project and Render can reuse probe/load results for repeated authored media
   sources, such as multiple images pointing at the same loader-resolved public path, without making
@@ -2819,10 +2819,9 @@ v0.8.0 implementation backlog from the current design checkpoint:
     Invalid probe/load result fields are reported as `E_PROJECT_ASSET_PROBE_INVALID` or
     `E_RENDER_ASSET_LOAD_INVALID` at the asset boundary.
   - Resolved: the built-in multi-runtime asset boundary now probes PNG, GIF, JPEG, and SVG
-    dimensions for data sources, byte sources, and absolute URL-like sources during Project. URL
-    probing may fetch the resource to compute metadata, but only metadata is copied into
-    PptxPackageModel. When built-in probing already obtained bytes, those bytes are cached only in
-    Asset Artifacts so Render can emit media without fetching the same source again.
+    dimensions for data sources and byte sources during Project. Absolute URL-like sources preserve
+    extension/media-type hints without network access. Remote byte retrieval belongs to registered
+    AssetLoaders so Project and Render do not fetch arbitrary URLs by default.
   - Resolved: media part allocation uses a projected Media Allocation Key. Loader-provided content
     hashes share a media part across authored sources with the same bytes; sources without hashes
     share a media part by resolver scope plus Authored Media Source. Package paths remain
@@ -2830,9 +2829,9 @@ v0.8.0 implementation backlog from the current design checkpoint:
   - Resolved: loader composition order is registered loaders first, in `deck.useAssets()` call order,
     followed by the built-in boundary. The first successful Project probe owns the resolver scope,
     and Render loads from that same resolver scope.
-  - Keep filesystem paths, app-public relative URLs, authenticated URLs, and framework-specific
-    resolution outside core behind loaders. Core built-ins remain data/bytes and absolute
-    `http:`/`https:` URL handling when runtime `fetch` exists.
+  - Keep filesystem paths, app-public relative URLs, authenticated URLs, remote fetching, and
+    framework-specific resolution outside core behind loaders. Core built-ins remain data/bytes and
+    absolute `http:`/`https:` URL metadata hints.
   - Implemented: benchmarks and tests cover repeated-source probe/load cache hits, failed
     probe/load diagnostics, resolver-scope reuse, media-byte fingerprint invalidation, and hashed
     media Build Artifact reuse that skips warm-path byte loading when projected metadata already
@@ -3356,10 +3355,10 @@ Semantic Author Graph
   `probe(source)` to obtain media type, extension, dimensions, byte length, or hash when available;
   Render should use `load(source)` to obtain bytes for Media Parts. Implementations may share caches
   internally, but the contract should not require Project to load every media byte.
-- The built-in multi-runtime probe path is allowed to fetch absolute URL-like image sources during
-  Project to derive PNG/GIF/JPEG/SVG dimensions and byte length. Those bytes are not stored in
-  PptxPackageModel; they may be materialized as Asset Artifact `load` data so Render can reuse the
-  Project probe result instead of repeating the fetch.
+- The built-in multi-runtime probe path is allowed to infer extension/media-type hints for absolute
+  URL-like image sources during Project, but it does not fetch remote bytes by default. Registered
+  AssetLoaders own trusted remote fetching and may materialize loaded bytes as Asset Artifact `load`
+  data so Render can reuse the Project probe result instead of repeating the fetch.
 - Treat missing image probe dimensions as an asset data retrieval failure reported during Project,
   even when the immediate writer path could stretch the image without intrinsic sizing. Render should
   not repair or reinterpret missing media metadata later.
@@ -3383,9 +3382,10 @@ Semantic Author Graph
   invalidate affected build artifacts intentionally.
 - Make `Deck#project()` and `BoundSource#project()` async in `0.8.0`; `compile()` can remain
   synchronous, while `render()` materializes the async project stage internally.
-- Keep the built-in asset loading behavior multi-runtime safe: decode data or byte sources and fetch
-  absolute `http:`/`https:` URLs when `fetch` is available. Filesystem-like paths, app-public relative
-  URLs, authenticated URLs, and framework-specific asset rules require a registered asset loader.
+- Keep the built-in asset loading behavior multi-runtime safe: decode data or byte sources and
+  preserve absolute `http:`/`https:` URL metadata hints without default remote fetches.
+  Filesystem-like paths, app-public relative URLs, authenticated URLs, remote URLs that need bytes,
+  and framework-specific asset rules require a registered asset loader.
 - Keep Graph Identity distinct from PPTX relationship ids, object ids, part paths, and other Output
   Identity.
 - In v0.8.0, avoid depending on mutating arbitrary existing `.pptx` ZIP files in place. The v0.9
@@ -3448,7 +3448,7 @@ Asset pipeline:
   order. The Project-winning resolver scope is preserved on Asset Artifacts and reused by Render
   when loading bytes for that media source.
 - Implemented: built-in multi-runtime-safe handling for data/byte sources and absolute
-  `http:`/`https:` URLs when `fetch` exists.
+  `http:`/`https:` URL metadata hints without default remote fetches.
 - Keep filesystem-like paths, app-public relative URLs, authenticated URLs, and framework-specific
   rules outside core behind registered loaders.
 - Materialize Asset Artifacts with resolved metadata and optional loaded source bytes.
@@ -6565,8 +6565,8 @@ render verification. This should not be treated as a background-image variant or
   the slide width, is not scattered through layout code and can later be connected to Theme or
   Template defaults if a real authoring need appears.
 - Keep the first supported runtime sources aligned with the asset loader boundary: `data:`,
-  `bytes`, absolute URL-like sources when fetch is available, and loader-resolved paths/app assets.
-  Filesystem and authenticated media remain outside core behind `deck.useAssets(loader)`.
+  `bytes`, absolute URL-like metadata hints, and loader-resolved remote/path/app assets. Filesystem
+  and authenticated media remain outside core behind `deck.useAssets(loader)`.
 - Do not add built-in core URL fetching for video bytes in v0.8.3. URL-like, filesystem-like, and
   authenticated media sources are embeddable only when `deck.useAssets(loader)` supplies the required
   `probe` and `load` behavior; otherwise Project/Render should report that the Playable Video Embed
