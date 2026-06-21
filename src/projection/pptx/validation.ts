@@ -639,11 +639,23 @@ function visitTableChildElements(
   }
 
   element.sections.forEach((section, sectionIndex) => {
+    if (!isRecord(section) || !Array.isArray(section.rows)) {
+      return;
+    }
+
     section.rows.forEach((row, rowIndex) => {
+      if (!isRecord(row) || !Array.isArray(row.cells)) {
+        return;
+      }
+
       row.cells.forEach((cell, cellIndex) => {
+        if (!isRecord(cell) || !Array.isArray(cell.children)) {
+          return;
+        }
+
         cell.children.forEach((child, childIndex) => {
           visit(
-            child,
+            child as PptxElement,
             `${path}.sections.${sectionIndex}.rows.${rowIndex}.cells.${cellIndex}.children.${childIndex}`,
           );
         });
@@ -5417,19 +5429,17 @@ function validateSlideHyperlinkRelationships(input: {
   }
 
   if (element.kind === "table") {
-    return element.sections.flatMap((section, sectionIndex) =>
-      section.rows.flatMap((row, rowIndex) =>
-        row.cells.flatMap((cell, cellIndex) =>
-          cell.children.flatMap((child, childIndex) =>
-            validateSlideHyperlinkRelationships({
-              element: child,
-              path: `${input.path}.sections.${sectionIndex}.rows.${rowIndex}.cells.${cellIndex}.children.${childIndex}`,
-              slidePart: input.slidePart,
-            }),
-          ),
-        ),
-      ),
-    );
+    const issues: Diagnostic[] = [];
+    visitTableChildElements(element, input.path, (child, childPath) => {
+      issues.push(
+        ...validateSlideHyperlinkRelationships({
+          element: child,
+          path: childPath,
+          slidePart: input.slidePart,
+        }),
+      );
+    });
+    return issues;
   }
 
   if (!("hyperlink" in element) || !isRecord(element.hyperlink)) {
@@ -5769,21 +5779,19 @@ function validateSlideImageRelationships(input: {
   }
 
   if (element.kind === "table") {
-    return element.sections.flatMap((section, sectionIndex) =>
-      section.rows.flatMap((row, rowIndex) =>
-        row.cells.flatMap((cell, cellIndex) =>
-          cell.children.flatMap((child, childIndex) =>
-            validateSlideImageRelationships({
-              element: child,
-              path: `${input.path}.sections.${sectionIndex}.rows.${rowIndex}.cells.${cellIndex}.children.${childIndex}`,
-              slidePart: input.slidePart,
-              partsById: input.partsById,
-              mediaPartsBySource: input.mediaPartsBySource,
-            }),
-          ),
-        ),
-      ),
-    );
+    const issues: Diagnostic[] = [];
+    visitTableChildElements(element, input.path, (child, childPath) => {
+      issues.push(
+        ...validateSlideImageRelationships({
+          element: child,
+          path: childPath,
+          slidePart: input.slidePart,
+          partsById: input.partsById,
+          mediaPartsBySource: input.mediaPartsBySource,
+        }),
+      );
+    });
+    return issues;
   }
 
   if (element.kind === "video") {
