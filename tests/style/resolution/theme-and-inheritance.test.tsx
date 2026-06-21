@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
+import { resolveStyles } from "../../../src/style/resolve.ts";
 import * as H from "./helpers.tsx";
 
 describe("style resolution theme and inheritance", () => {
@@ -98,6 +99,36 @@ describe("style resolution theme and inheritance", () => {
       parentId: text?.id,
     });
     expect(spanStyle?.properties.fontWeight?.source).toEqual({ layer: "style" });
+  });
+
+  test("cyclic graph style inheritance is diagnosed instead of overflowing the stack", async () => {
+    const nodeId = "cycle" as never;
+    const cyclicGraph = {
+      documentId: nodeId,
+      nodes: new Map([
+        [
+          nodeId,
+          {
+            id: nodeId,
+            kind: "container",
+            origin: { kind: "authored", path: "graph.nodes.cycle" },
+            children: [nodeId],
+          },
+        ],
+      ]),
+      styles: new Map(),
+      assets: new Map(),
+      templates: new Map(),
+    } as never;
+    const targetDeck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    expect(() => targetDeck.defineGraph(cyclicGraph)).not.toThrow();
+
+    const result = resolveStyles(cyclicGraph, []);
+    expect(result.diagnostics.items.map((item) => item.code)).toContain(
+      "E_STYLE_INHERITANCE_CYCLE",
+    );
+    expect(result.resolvedStyles.get(nodeId)).toBeDefined();
   });
 
   test("theme composition flows through mounted sources without changing source-local styles", async () => {
