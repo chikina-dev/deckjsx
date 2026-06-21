@@ -1,5 +1,4 @@
 import { readFileSync, watch as watchFileSystem, type FSWatcher } from "node:fs";
-import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { rolldown, watch, type OutputChunk, type Plugin, type WatchOptions } from "rolldown";
 import { isDeckjsxRuntimeExternalId } from "./dev-executor";
@@ -70,8 +69,6 @@ type PendingSourceSnapshot = {
   resolve(result: RolldownWatchSourceSnapshot): void;
 };
 
-let watchOutputSerial = 0;
-
 export function createRolldownWatchAdapter(
   options: RolldownWatchAdapterOptions,
 ): RolldownWatchAdapter {
@@ -85,7 +82,6 @@ export function createRolldownWatchAdapter(
 function createRolldownRebuildAdapter(options: RolldownWatchAdapterOptions): RolldownWatchAdapter {
   const cwd = path.resolve(options.cwd);
   const entry = path.resolve(cwd, options.entry);
-  const outputDirectory = createWatchOutputDirectory(cwd);
   const buildFactory = options.buildFactory ?? rolldown;
   const createFileWatcher = options.fileWatcherFactory ?? createNodeFileWatcher;
   const changedSourceIds = new Set<string>();
@@ -107,6 +103,9 @@ function createRolldownRebuildAdapter(options: RolldownWatchAdapterOptions): Rol
       void rebuild([]);
     },
     nextSourceSnapshot() {
+      if (closed) {
+        return Promise.resolve(closedSourceSnapshot());
+      }
       const queued = queuedSourceSnapshots.shift();
       if (queued) {
         return Promise.resolve(queued);
@@ -114,12 +113,15 @@ function createRolldownRebuildAdapter(options: RolldownWatchAdapterOptions): Rol
       return new Promise((resolve) => pendingSourceSnapshots.push({ resolve }));
     },
     async close() {
+      if (closed) {
+        return;
+      }
       closed = true;
       if (debounceTimer) {
         clearTimeout(debounceTimer);
       }
+      resolvePendingSourceSnapshots(pendingSourceSnapshots, closedSourceSnapshot());
       closeSourceWatchers();
-      await rm(outputDirectory, { force: true, recursive: true });
     },
   };
 
@@ -132,10 +134,12 @@ function createRolldownRebuildAdapter(options: RolldownWatchAdapterOptions): Rol
       const snapshot = await buildSourceSnapshot({
         cwd,
         entry,
-        outputDirectory,
         buildFactory,
         changedSourceIds: sourceIds,
       });
+      if (closed) {
+        return;
+      }
       if (snapshot.status === "executable") {
         updateSourceWatchers(snapshot.watchFiles.length ? snapshot.watchFiles : snapshot.moduleIds);
       }
@@ -229,7 +233,6 @@ function createRolldownEventWatchAdapter(
 ): RolldownWatchAdapter {
   const cwd = path.resolve(options.cwd);
   const entry = path.resolve(cwd, options.entry);
-  const outputDirectory = createWatchOutputDirectory(cwd);
   const changedSourceIds: string[] = [];
   const watchModuleIds: string[] = [];
   const queuedSourceSnapshots: RolldownWatchSourceSnapshot[] = [];
@@ -237,8 +240,13 @@ function createRolldownEventWatchAdapter(
   let watcher: RolldownWatcherLike | undefined;
   let initialSourceSnapshot: Promise<RolldownWatchSourceSnapshot> | undefined;
   let started = false;
+  let closed = false;
+  let skipInitialWatchBundleEnd = false;
 
   const emitSourceSnapshot = (result: RolldownWatchSourceSnapshot) => {
+    if (closed) {
+      return;
+    }
     const pending = pendingSourceSnapshots.shift();
     if (pending) {
       pending.resolve(result);
@@ -247,14 +255,24 @@ function createRolldownEventWatchAdapter(
     queuedSourceSnapshots.push(result);
   };
   const onEvent = async (event: RolldownWatchEvent) => {
+    if (closed) {
+      return;
+    }
     try {
       if (event.code === "BUNDLE_END") {
+        const changedSourceIds = consumeChangedSourceIds();
+        const moduleIds = consumeWatchModuleIds();
+        if (skipInitialWatchBundleEnd && changedSourceIds.length === 0) {
+          skipInitialWatchBundleEnd = false;
+          await event.result.close?.();
+          return;
+        }
+        skipInitialWatchBundleEnd = false;
         emitSourceSnapshot(
           await sourceSnapshotFromBundleEnd({
             result: event.result,
-            outputFiles: event.output,
-            changedSourceIds: consumeChangedSourceIds(),
-            moduleIds: consumeWatchModuleIds(),
+            changedSourceIds,
+            moduleIds,
           }),
         );
         return;
@@ -281,7 +299,6 @@ function createRolldownEventWatchAdapter(
       const watchOptions = createRolldownWatchOptions({
         cwd,
         entry,
-        outputDirectory,
         onWatchChange(id) {
           changedSourceIds.push(path.resolve(cwd, id));
         },
@@ -293,18 +310,40 @@ function createRolldownEventWatchAdapter(
         },
       });
       watcher = (options.watchFactory ?? watch)(watchOptions);
-      watcher.on("event", (event) => onEvent(event as RolldownWatchEvent));
+      watcher.on("change", (id) => {
+        if (typeof id === "string") {
+          changedSourceIds.push(path.resolve(cwd, id));
+        }
+      });
+      watcher.on("event", (event) => {
+        const watchEvent = rolldownWatchEventFromUnknown(event);
+        if (!watchEvent) {
+          emitSourceSnapshot(
+            createDiagnosticSourceSnapshot([
+              diagnosticFromRolldownError(
+                new Error("Rolldown emitted a malformed watch event."),
+                entry,
+              ),
+            ]),
+          );
+          return;
+        }
+        void onEvent(watchEvent);
+      });
 
-      if (!options.watchFactory || options.buildFactory) {
+      if (!options.watchFactory) {
+        skipInitialWatchBundleEnd = true;
         initialSourceSnapshot = initialBuildSnapshot({
           cwd,
           entry,
-          outputDirectory,
           buildFactory: options.buildFactory ?? rolldown,
         });
       }
     },
     nextSourceSnapshot() {
+      if (closed) {
+        return Promise.resolve(closedSourceSnapshot());
+      }
       if (initialSourceSnapshot) {
         const snapshot = initialSourceSnapshot;
         initialSourceSnapshot = undefined;
@@ -317,8 +356,12 @@ function createRolldownEventWatchAdapter(
       return new Promise((resolve) => pendingSourceSnapshots.push({ resolve }));
     },
     async close() {
+      if (closed) {
+        return;
+      }
+      closed = true;
+      resolvePendingSourceSnapshots(pendingSourceSnapshots, closedSourceSnapshot());
       await watcher?.close();
-      await rm(outputDirectory, { force: true, recursive: true });
     },
   };
 
@@ -331,6 +374,25 @@ function createRolldownEventWatchAdapter(
   function consumeWatchModuleIds(): readonly string[] {
     return [...new Set(watchModuleIds)].sort();
   }
+}
+
+function resolvePendingSourceSnapshots(
+  pendingSourceSnapshots: PendingSourceSnapshot[],
+  snapshot: RolldownWatchSourceSnapshot,
+): void {
+  for (const pending of pendingSourceSnapshots.splice(0)) {
+    pending.resolve(snapshot);
+  }
+}
+
+function closedSourceSnapshot(): RolldownWatchSourceSnapshot {
+  return createDiagnosticSourceSnapshot([
+    {
+      severity: "error",
+      code: "deckjsx.node.dev.closed",
+      title: "Dev source provider closed.",
+    },
+  ]);
 }
 
 function createNodeFileWatcher(
@@ -348,7 +410,6 @@ function createNodeFileWatcher(
 async function buildSourceSnapshot(input: {
   readonly cwd: string;
   readonly entry: string;
-  readonly outputDirectory: string;
   readonly buildFactory: (options: WatchOptions) => Promise<RolldownWatchResult>;
   readonly changedSourceIds: readonly string[];
 }): Promise<RolldownWatchSourceSnapshot> {
@@ -358,7 +419,6 @@ async function buildSourceSnapshot(input: {
       createRolldownWatchOptions({
         cwd: input.cwd,
         entry: input.entry,
-        outputDirectory: input.outputDirectory,
         onWatchChange() {},
         onBuildStart() {
           moduleIds.length = 0;
@@ -370,7 +430,6 @@ async function buildSourceSnapshot(input: {
     );
     return await sourceSnapshotFromBundleEnd({
       result,
-      outputFiles: [input.outputDirectory],
       changedSourceIds: input.changedSourceIds,
       moduleIds,
     });
@@ -382,7 +441,6 @@ async function buildSourceSnapshot(input: {
 async function initialBuildSnapshot(input: {
   readonly cwd: string;
   readonly entry: string;
-  readonly outputDirectory: string;
   readonly buildFactory: (options: WatchOptions) => Promise<RolldownWatchResult>;
 }): Promise<RolldownWatchSourceSnapshot> {
   return buildSourceSnapshot({
@@ -394,26 +452,15 @@ async function initialBuildSnapshot(input: {
 export function createRolldownWatchOptions(input: {
   readonly cwd: string;
   readonly entry: string;
-  readonly outputDirectory?: string;
   readonly onWatchChange: (id: string) => void;
   readonly onBuildStart: () => void;
   readonly onModuleId: (id: string) => void;
 }): WatchOptions {
-  const outputDirectory = input.outputDirectory
-    ? path.resolve(input.cwd, input.outputDirectory)
-    : path.join(input.cwd, ".deckjsx", "dev");
   return {
     input: input.entry,
     cwd: input.cwd,
     platform: "node",
     external: isDeckjsxRuntimeExternalId,
-    output: {
-      dir: outputDirectory,
-      entryFileNames: "rolldown-watch-output.mjs",
-      format: "esm",
-      codeSplitting: false,
-      sourcemap: false,
-    },
     plugins: [
       deckjsxWatchChangePlugin({
         onBuildStart: input.onBuildStart,
@@ -441,19 +488,8 @@ function tsconfigUsesDeckjsxJsxImportSource(cwd: string): boolean {
   }
 }
 
-function createWatchOutputDirectory(cwd: string): string {
-  watchOutputSerial += 1;
-  return path.join(
-    cwd,
-    ".deckjsx",
-    "dev",
-    `watch-${process.pid}-${Date.now()}-${watchOutputSerial}`,
-  );
-}
-
 async function sourceSnapshotFromBundleEnd(input: {
   readonly result: RolldownWatchResult;
-  readonly outputFiles: readonly string[];
   readonly changedSourceIds: readonly string[];
   readonly moduleIds: readonly string[];
 }): Promise<RolldownWatchSourceSnapshot> {
@@ -469,26 +505,12 @@ async function sourceSnapshotFromBundleEnd(input: {
           })
         : undefined;
     if (!generated) {
-      const output = await readRolldownWatchOutput(input.outputFiles);
-      if (output) {
-        return createExecutableSourceSnapshot({
-          cwd: path.dirname(input.outputFiles[0] ?? process.cwd()),
-          code: awaitableGeneratedEntryCode(output.code),
-          moduleIds: input.moduleIds,
-          watchFiles: input.moduleIds,
-          changedSourceIds: input.changedSourceIds,
-        });
-      }
-    }
-    if (!generated) {
       return createDiagnosticSourceSnapshot([
         bundleMissingChunkDiagnostic({
-          message:
-            "Rolldown did not provide an executable chunk or output file for the deckjsx entry.",
+          message: "Rolldown did not provide an executable chunk for the deckjsx entry.",
           notes: [
             `resultKeys=${Object.keys(result).join(",")}`,
             `resultProtoKeys=${Object.getOwnPropertyNames(Object.getPrototypeOf(result) ?? {}).join(",")}`,
-            `outputFiles=${input.outputFiles.join(",")}`,
           ],
         }),
       ]);
@@ -503,7 +525,6 @@ async function sourceSnapshotFromBundleEnd(input: {
             `resultKeys=${Object.keys(result).join(",")}`,
             `resultProtoKeys=${Object.getOwnPropertyNames(Object.getPrototypeOf(result) ?? {}).join(",")}`,
             `outputTypes=${generated.output.map(outputDescription).join(",")}`,
-            `outputFiles=${input.outputFiles.join(",")}`,
           ],
         }),
       ]);
@@ -566,9 +587,14 @@ function deckjsxWatchChangePlugin(input: {
 function deckjsxMediaSourceOriginPlugin(): Plugin {
   return {
     name: "@deckjsx/node/media-source-origin",
-    transform(code, id) {
-      const transformed = transformDeckjsxMediaSourceOrigins(code, id);
-      return transformed ? { code: transformed, map: null } : undefined;
+    transform: {
+      filter: {
+        id: { include: /\.[cm]?[jt]sx(?:\?.*)?$/ },
+      },
+      handler(code, id) {
+        const transformed = transformDeckjsxMediaSourceOrigins(code, id);
+        return transformed ? { code: transformed, map: null } : undefined;
+      },
     },
   };
 }
@@ -582,8 +608,55 @@ function isOutputChunk(value: unknown): value is OutputChunk {
     "code" in value &&
     typeof value.code === "string" &&
     "moduleIds" in value &&
-    Array.isArray(value.moduleIds)
+    Array.isArray(value.moduleIds) &&
+    value.moduleIds.every((moduleId) => typeof moduleId === "string") &&
+    (!("isEntry" in value) || typeof value.isEntry === "boolean")
   );
+}
+
+function rolldownWatchEventFromUnknown(value: unknown): RolldownWatchEvent | undefined {
+  if (!isRecord(value) || typeof value.code !== "string") {
+    return undefined;
+  }
+  if (value.code === "BUNDLE_END") {
+    return Array.isArray(value.output) &&
+      value.output.every((output) => typeof output === "string") &&
+      isRolldownWatchResult(value.result)
+      ? {
+          code: value.code,
+          output: value.output,
+          result: value.result,
+        }
+      : undefined;
+  }
+  if (value.code === "ERROR") {
+    return isClosableRolldownResult(value.result)
+      ? { code: value.code, error: value.error, result: value.result }
+      : { code: value.code, error: value.error };
+  }
+  return value.code === "START" || value.code === "BUNDLE_START" || value.code === "END"
+    ? { code: value.code }
+    : undefined;
+}
+
+function isRolldownWatchResult(value: unknown): value is RolldownWatchResult {
+  return (
+    isRecord(value) &&
+    (!("output" in value) || Array.isArray(value.output)) &&
+    (!("watchFiles" in value) ||
+      Array.isArray(value.watchFiles) ||
+      (isRecord(value.watchFiles) && typeof value.watchFiles.then === "function")) &&
+    (!("generate" in value) || typeof value.generate === "function") &&
+    (!("close" in value) || typeof value.close === "function")
+  );
+}
+
+function isClosableRolldownResult(value: unknown): value is { close(): Promise<void> | void } {
+  return isRecord(value) && typeof value.close === "function";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function outputDescription(value: unknown): string {
@@ -592,24 +665,6 @@ function outputDescription(value: unknown): string {
   }
   const type = "type" in value ? String(value.type) : "missing-type";
   return `${type}:${Object.keys(value).join("|")}`;
-}
-
-async function readRolldownWatchOutput(
-  outputFiles: readonly string[],
-): Promise<{ readonly code: string } | undefined> {
-  const candidates = outputFiles.flatMap((file) =>
-    file.endsWith(".mjs") || file.endsWith(".js")
-      ? [file]
-      : [path.join(file, "rolldown-watch-output.mjs")],
-  );
-  for (const candidate of candidates) {
-    try {
-      return { code: await readFile(candidate, "utf8") };
-    } catch {
-      // Try the next output candidate; Rolldown may report either a file or directory.
-    }
-  }
-  return undefined;
 }
 
 function diagnosticFromRolldownError(error: unknown, fallbackFile: string): DeckjsxDevDiagnostic {

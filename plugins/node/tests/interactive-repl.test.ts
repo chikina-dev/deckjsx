@@ -144,13 +144,10 @@ describe("@deckjsx/node interactive repl", () => {
     );
   });
 
-  test("parses JSON command lines for internal command coverage", () => {
-    expect(
+  test("rejects JSON command lines from the human interactive prompt", () => {
+    expect(() =>
       parseInteractiveInputLine('{"method":"style.explain","params":{"nodeId":"n1"}}'),
-    ).toEqual({
-      method: "style.explain",
-      params: { nodeId: "n1" },
-    });
+    ).toThrow("JSON protocol commands are not accepted by the interactive prompt.");
   });
 
   test("highlights interactive input by command grammar", () => {
@@ -227,7 +224,7 @@ describe("@deckjsx/node interactive repl", () => {
       "  input diagnostic nope",
       "                   ^^^^",
       "error deckjsx.node.interactive.invalidInput",
-      "  Invalid JSON command.",
+      "  JSON protocol commands are not accepted by the interactive prompt.",
       '  input {"method":',
       "        ^^^^^^^^^^",
     ]);
@@ -602,6 +599,7 @@ describe("@deckjsx/node interactive repl", () => {
 
     expect(commandLines).toEqual(["component tree"]);
     expect(rendered).toEqual([
+      "deckjsx> ",
       "deckjsx> \u001b[36mcomponent\u001b[39m ",
       "completions",
       "  tree       Show component hierarchy.",
@@ -612,6 +610,7 @@ describe("@deckjsx/node interactive repl", () => {
       "  impact     Show projected output impact.",
       "deckjsx> \u001b[36mcomponent\u001b[39m ",
       "deckjsx> \u001b[36mcomponent\u001b[39m \u001b[36mtree\u001b[39m",
+      "deckjsx> ",
     ]);
   });
 
@@ -635,7 +634,11 @@ describe("@deckjsx/node interactive repl", () => {
       commandLines.push(line);
     }
 
-    expect(renders).toEqual([["deckjsx> \u001b[36mstatus\u001b[39m"]]);
+    expect(renders).toEqual([
+      ["deckjsx> "],
+      ["deckjsx> \u001b[36mstatus\u001b[39m"],
+      ["deckjsx> "],
+    ]);
     expect(submitted).toEqual(["status"]);
     expect(commandLines).toEqual(["status"]);
   });

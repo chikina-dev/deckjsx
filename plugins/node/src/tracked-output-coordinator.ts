@@ -128,8 +128,10 @@ export function devOutputIgnoreFiles(input: {
   readonly outputs?: readonly string[];
 }): readonly string[] {
   const normalized = normalizeDevOutputPaths(input);
+  const outputDirectories = uniqueSorted(normalized.outputs.map((output) => path.dirname(output)));
   return uniqueSorted([
     ...normalized.outputs,
+    ...outputDirectories.map((directory) => path.join(directory, ".deckjsx-lock")),
     ...normalized.outputs.map((output) =>
       path.join(path.dirname(output), `.${path.basename(output)}.deckjsx-lock`),
     ),

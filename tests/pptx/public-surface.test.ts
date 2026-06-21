@@ -95,7 +95,7 @@ describe("public surface", () => {
 
     expect(rootPackage.version).toBe("0.9.3");
     for (const [path, pkg] of pluginPackages) {
-      expect(pkg.version, `${path} version should follow its own release line`).toBe("0.1.4");
+      expect(pkg.version, `${path} version should follow its own release line`).toBe("0.1.5");
     }
   });
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
 import path from "node:path";
-import { createInterface, emitKeypressEvents } from "node:readline";
+import { createInterface } from "node:readline";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   createIncrementalArtifactSession,
@@ -31,8 +31,8 @@ import {
   interactivePromptLinesFromKeys,
   runInteractiveDevCommandLoop,
   type InteractiveCompletionContext,
-  type InteractivePromptKey,
 } from "./interactive/repl";
+import { createTtyPromptKeySource } from "./interactive/tty-key-source";
 import {
   classifyDevWrites,
   devOutputIgnoreFiles,
@@ -42,6 +42,7 @@ import {
 export type DeckjsxNodeCliDiagnostic = DeckjsxDevDiagnostic;
 
 export {
+  formatDeckjsxDevConsoleEvent,
   formatDeckjsxDevHelp,
   formatDeckjsxInteractiveHelp,
   formatDeckjsxNodeDiagnostics,
@@ -136,8 +137,34 @@ export function parseDeckjsxNodeCliArgs(args: readonly string[]): DeckjsxNodeCli
   }
 
   const optionTokens = rest.slice(1);
-  const outIndex = optionTokens.indexOf("--out");
-  const out = outIndex >= 0 ? optionTokens[outIndex + 1] : undefined;
+  let out: string | undefined;
+  const extraOutputs: string[] = [];
+  for (let index = 0; index < optionTokens.length; index += 1) {
+    const token = optionTokens[index]!;
+    if (token !== "--out") {
+      extraOutputs.push(token);
+      continue;
+    }
+    if (out !== undefined) {
+      return {
+        ok: false,
+        diagnostics: [
+          {
+            severity: "error",
+            code: "deckjsx.node.cli.duplicateOut",
+            title: "deckjsx dev accepts --out only once.",
+            message: "--out",
+          },
+        ],
+      };
+    }
+    const value = optionTokens[index + 1];
+    if (!value || value.startsWith("-")) {
+      break;
+    }
+    out = value;
+    index += 1;
+  }
   if (!out) {
     return {
       ok: false,
@@ -150,9 +177,7 @@ export function parseDeckjsxNodeCliArgs(args: readonly string[]): DeckjsxNodeCli
     };
   }
 
-  const beforeOut = optionTokens.slice(0, outIndex);
-  const afterOut = optionTokens.slice(outIndex + 2);
-  const outputs = [...new Set([out, ...beforeOut, ...afterOut])];
+  const outputs = [...new Set([out, ...extraOutputs])];
   return {
     ok: true,
     command: "dev",
@@ -239,6 +264,7 @@ export async function runDeckjsxDev(input: DeckjsxDevOptions): Promise<void> {
     }),
     interactive: input.interactive,
     entry: input.entry,
+    cwd,
     artifactSession,
     inspectionStore,
   });
@@ -246,6 +272,7 @@ export async function runDeckjsxDev(input: DeckjsxDevOptions): Promise<void> {
 
 export async function runDeckjsxDevCompilerHost(input: {
   readonly compiler: DeckjsxDevCompiler;
+  readonly cwd?: string;
   readonly entry?: string;
   readonly interactive?: boolean;
   readonly maxCompilations?: number;
@@ -261,8 +288,16 @@ export async function runDeckjsxDevCompilerHost(input: {
   readonly interactiveLines?: AsyncIterable<string>;
   readonly interactiveWriteLine?: (line: string) => void;
 }): Promise<void> {
-  const outputLine = input.writeLine ?? ((line: string) => console.error(line));
-  const consoleCoordinator = createDevConsoleCoordinator({ writeLine: outputLine });
+  const customOutputLine = input.writeLine;
+  const outputLine = customOutputLine ?? ((line: string) => console.error(line));
+  const colorDevConsole = customOutputLine ? false : Boolean(process.stderr.isTTY);
+  const formatOptions = { color: colorDevConsole, ...(input.cwd ? { cwd: input.cwd } : {}) };
+  const consoleCoordinator = createDevConsoleCoordinator({
+    writeLine: outputLine,
+    ...(customOutputLine || !process.stderr.isTTY
+      ? {}
+      : { writeRaw: (text: string) => process.stderr.write(text) }),
+  });
   const writeConsoleLines = (lines: readonly string[]) => {
     consoleCoordinator.writeConsole(lines);
   };
@@ -276,7 +311,7 @@ export async function runDeckjsxDevCompilerHost(input: {
     if (event.type === "diagnostic") {
       const consoleEvent = normalizeDevConsoleEvent(event);
       if (consoleEvent) {
-        writeConsoleLines(formatDeckjsxDevConsoleEvent(consoleEvent));
+        writeConsoleLines(formatDeckjsxDevConsoleEvent(consoleEvent, formatOptions));
       }
     }
   });
@@ -319,18 +354,24 @@ export async function runDeckjsxDevCompilerHost(input: {
   input.compiler.start();
   const startedEvent = normalizeDevConsoleEvent({ type: "devStarted", entry: input.entry });
   if (startedEvent) {
-    writeConsoleLines(formatDeckjsxDevConsoleEvent(startedEvent));
+    writeConsoleLines(formatDeckjsxDevConsoleEvent(startedEvent, formatOptions));
   }
   let completed = 0;
   let shuttingDown = false;
   try {
     const compilationLoop = async () => {
-      while (input.maxCompilations === undefined || completed < input.maxCompilations) {
+      while (
+        !shuttingDown &&
+        (input.maxCompilations === undefined || completed < input.maxCompilations)
+      ) {
         const result = await input.compiler.runNextCompilation();
+        if (shuttingDown) {
+          break;
+        }
         diagnostics.applyCompilerEvent({ type: "compilationFinished", result });
         const consoleEvent = normalizeDevConsoleEvent({ type: "compilationFinished", result });
         if (consoleEvent) {
-          writeConsoleLines(formatDeckjsxDevConsoleEvent(consoleEvent));
+          writeConsoleLines(formatDeckjsxDevConsoleEvent(consoleEvent, formatOptions));
         }
         completed += 1;
       }
@@ -411,92 +452,6 @@ function createTtyStdinLines(
       keySource.close();
     },
   };
-}
-
-function createTtyPromptKeySource(input: NodeJS.ReadStream): {
-  readonly keys: AsyncIterable<InteractivePromptKey>;
-  close(): void;
-} {
-  const pending: InteractivePromptKey[] = [];
-  let closed = false;
-  let notify: (() => void) | undefined;
-  const wake = () => {
-    notify?.();
-    notify = undefined;
-  };
-  const push = (key: InteractivePromptKey) => {
-    pending.push(key);
-    wake();
-  };
-  const close = () => {
-    closed = true;
-    input.off("keypress", handleKeypress);
-    input.setRawMode(false);
-    wake();
-  };
-  const handleKeypress = (sequence: string, key: Readonly<TtyKeypress>) => {
-    if (key.ctrl && (key.name === "c" || key.name === "d")) {
-      close();
-      return;
-    }
-    const promptKey = interactivePromptKeyFromTtyKey(sequence, key);
-    if (promptKey) {
-      push(promptKey);
-    }
-  };
-  emitKeypressEvents(input);
-  input.on("keypress", handleKeypress);
-  input.setRawMode(true);
-  input.resume();
-
-  return {
-    keys: (async function* () {
-      while (!closed || pending.length > 0) {
-        const key = pending.shift();
-        if (key) {
-          yield key;
-          continue;
-        }
-        await new Promise<void>((resolve) => {
-          notify = resolve;
-        });
-      }
-    })(),
-    close,
-  };
-}
-
-type TtyKeypress = {
-  readonly name?: string;
-  readonly ctrl?: boolean;
-  readonly meta?: boolean;
-};
-
-function interactivePromptKeyFromTtyKey(
-  sequence: string,
-  key: Readonly<TtyKeypress>,
-): InteractivePromptKey | undefined {
-  switch (key.name) {
-    case "return":
-    case "enter":
-      return { type: "enter" };
-    case "tab":
-      return { type: "tab" };
-    case "backspace":
-      return { type: "backspace" };
-    case "left":
-      return { type: "left" };
-    case "right":
-      return { type: "right" };
-    case "up":
-      return { type: "up" };
-    case "down":
-      return { type: "down" };
-  }
-  if (!key.ctrl && !key.meta && sequence && sequence >= " " && sequence !== "\u007f") {
-    return { type: "insert", text: sequence };
-  }
-  return undefined;
 }
 
 export function completionContextFromInspectionState(

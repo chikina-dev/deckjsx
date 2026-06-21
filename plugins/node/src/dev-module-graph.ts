@@ -56,13 +56,16 @@ function normalizeDevGraphFiles(input: {
       .map((file) => path.resolve(input.cwd, file))
       .filter((file) => !input.ignored.has(file))
       .filter((file) => !file.endsWith(".deckjsx-lock"))
-      .filter((file) => !file.endsWith(".deckjsx-tmp"))
       .filter((file) => !isDevTempFile(input.cwd, file)),
   );
 }
 
 function isDevTempFile(cwd: string, file: string): boolean {
-  const relative = path.relative(path.join(cwd, ".deckjsx", "dev"), file);
+  return isInsideDirectory(file, path.join(cwd, ".deckjsx", "dev"));
+}
+
+function isInsideDirectory(file: string, directory: string): boolean {
+  const relative = path.relative(directory, file);
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
