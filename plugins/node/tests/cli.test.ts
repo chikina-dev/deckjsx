@@ -1,4 +1,5 @@
-import { describe, expect, test } from "vite-plus/test";
+import { styleText } from "node:util";
+import { describe, expect, test, vi } from "vite-plus/test";
 import type { DeckjsxNodeCliDiagnostic } from "../src/cli.ts";
 import type { DeckjsxDevCompilationResult } from "../src/dev-compilation.ts";
 import type { IncrementalArtifactSession } from "deckjsx/integration";
@@ -6,6 +7,7 @@ import {
   completionContextFromInspectionState,
   devWatchFiles,
   devWriteRecords,
+  formatDeckjsxDevConsoleEvent,
   formatDeckjsxDevHelp,
   formatDeckjsxInteractiveHelp,
   formatDeckjsxNodeDiagnostics,
@@ -141,6 +143,28 @@ describe("@deckjsx/node cli", () => {
     });
   });
 
+  test("rejects duplicate --out and option tokens used as output paths", () => {
+    expect(
+      parseDeckjsxNodeCliArgs(["dev", "main.tsx", "--out", "first.pptx", "--out", "second.pptx"]),
+    ).toEqual({
+      ok: false,
+      diagnostics: [
+        expect.objectContaining({
+          code: "deckjsx.node.cli.duplicateOut",
+          message: "--out",
+        }),
+      ],
+    });
+    expect(parseDeckjsxNodeCliArgs(["dev", "main.tsx", "--out", "--interactive"])).toEqual({
+      ok: false,
+      diagnostics: [
+        expect.objectContaining({
+          code: "deckjsx.node.cli.missingOut",
+        }),
+      ],
+    });
+  });
+
   test("formats human diagnostics and help output", () => {
     const diagnostics = [
       {
@@ -190,11 +214,48 @@ describe("@deckjsx/node cli", () => {
     );
   });
 
+  test("formats dev console events with restrained ANSI colors when requested", () => {
+    const lines = formatDeckjsxDevConsoleEvent(
+      {
+        kind: "dev.ready",
+        compilation: 1,
+        changedSourceIds: ["/project/src/main.tsx"],
+        diagnostics: [],
+        writes: [{ path: "/project/output.pptx", tracked: true, result: { status: "patched" } }],
+      },
+      { color: true, cwd: "/project" },
+    );
+
+    expect(lines[0]).toContain(styleText("cyan", "[deckjsx]", { validateStream: false }));
+    expect(lines[0]).toContain(styleText("green", "ready", { validateStream: false }));
+    expect(lines[0]).toContain("1 output");
+    expect(lines[1]).toBe(
+      `  ${styleText("dim", "changed     ", { validateStream: false })}src/main.tsx`,
+    );
+    expect(lines[2]).toBe(
+      `  ${styleText("dim", "output", { validateStream: false })}  ${styleText("dim", "output.pptx", { validateStream: false })}    ${styleText("green", "patched", { validateStream: false })}`,
+    );
+  });
+
+  test("does not render structurally similar interactive payloads without a result kind", () => {
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
+          target: "component:Header:1",
+          status: "available",
+          changes: [{ path: "title", before: "A", after: "B" }],
+        },
+      }),
+    ).toEqual(["ok"]);
+  });
+
   test("renders interactive inspector payloads as readable command output", () => {
     expect(
       renderInteractiveResponse({
         ok: true,
         result: {
+          kind: "component.tree",
           status: "partial",
           compilation: 2,
           items: [
@@ -226,6 +287,7 @@ describe("@deckjsx/node cli", () => {
       renderInteractiveResponse({
         ok: true,
         result: {
+          kind: "component.tree",
           status: "unavailable",
           items: [],
         },
@@ -340,6 +402,7 @@ describe("@deckjsx/node cli", () => {
       renderInteractiveResponse({
         ok: true,
         result: {
+          kind: "session.status",
           compilerStarted: true,
           compilerClosed: false,
           lastCompilation: 4,
@@ -359,6 +422,7 @@ describe("@deckjsx/node cli", () => {
       renderInteractiveResponse({
         ok: true,
         result: {
+          kind: "session.timings",
           compilerUptimeMs: 1250,
           lastCompilationDurationMs: 84,
           commandCount: 3,
@@ -460,6 +524,7 @@ describe("@deckjsx/node cli", () => {
       renderInteractiveResponse({
         ok: true,
         result: {
+          kind: "props.inspect",
           target: "component:Header:1",
           path: "theme",
           value: circularValue,
@@ -487,6 +552,7 @@ describe("@deckjsx/node cli", () => {
       renderInteractiveResponse({
         ok: true,
         result: {
+          kind: "component.impact",
           target: "projection:@0:0:0",
           status: "available",
           diagnostic: { index: 0, code: "E_HEADER", title: "Header failed" },
@@ -518,6 +584,7 @@ describe("@deckjsx/node cli", () => {
       renderInteractiveResponse({
         ok: true,
         result: {
+          kind: "component.impact",
           target: "component:Deck:1",
           status: "available",
           graphNodeIds: ["header-node", "footer-node"],
@@ -553,6 +620,7 @@ describe("@deckjsx/node cli", () => {
       renderInteractiveResponse({
         ok: true,
         result: {
+          kind: "props.diff",
           target: "component:Header:1",
           path: "title",
           changes: [{ path: "title", before: "Q4", after: "Q5" }],
@@ -570,6 +638,7 @@ describe("@deckjsx/node cli", () => {
       renderInteractiveResponse({
         ok: true,
         result: {
+          kind: "props.diff",
           target: "component:Header:1",
           changes: [],
         },
@@ -632,6 +701,7 @@ describe("@deckjsx/node cli", () => {
       renderInteractiveResponse({
         ok: true,
         result: {
+          kind: "projection.inspect",
           slot: 0,
           format: "pptx",
           slides: [
@@ -659,6 +729,7 @@ describe("@deckjsx/node cli", () => {
       renderInteractiveResponse({
         ok: true,
         result: {
+          kind: "projection.inspect",
           slot: 0,
           slideIndex: 0,
           slide: {
@@ -685,6 +756,7 @@ describe("@deckjsx/node cli", () => {
       renderInteractiveResponse({
         ok: true,
         result: {
+          kind: "projection.inspect",
           slot: 0,
           slideIndex: 1,
           elementIndex: 2,
@@ -746,6 +818,7 @@ describe("@deckjsx/node cli", () => {
       renderInteractiveResponse({
         ok: true,
         result: {
+          kind: "selection.resolve",
           handle: "$0",
           value: {
             kind: "component.inspect",
@@ -764,6 +837,7 @@ describe("@deckjsx/node cli", () => {
       renderInteractiveResponse({
         ok: true,
         result: {
+          kind: "history.changes",
           fromCompilation: 2,
           toCompilation: 4,
           skippedFailedAttempts: 1,
@@ -780,15 +854,15 @@ describe("@deckjsx/node cli", () => {
     ]);
   });
 
-  test("filters generated outputs, lock files, and temp bundles from dev watch files", () => {
+  test("filters generated outputs and write coordination files from dev watch files", () => {
     expect(
       devWatchFiles({
         cwd: "/project",
         files: [
           "/project/src/main.tsx",
           "/project/output.pptx",
+          "/project/.deckjsx-lock",
           "/project/.output.pptx.deckjsx-lock",
-          "/project/.deckjsx/dev/bundle.mjs",
         ],
         outputs: ["output.pptx"],
       }),
@@ -887,6 +961,61 @@ describe("@deckjsx/node cli", () => {
     );
     expect(lines.some((line) => line.includes("[deckjsx] dev started"))).toBe(true);
     expect(lines.some((line) => line.includes("[deckjsx] error"))).toBe(true);
+  });
+
+  test("does not emit ANSI colors when dev console stderr is not a TTY", async () => {
+    const lines: string[] = [];
+    const consoleError = vi.spyOn(console, "error").mockImplementation((line) => {
+      lines.push(String(line));
+    });
+    const stderrDescriptor = Object.getOwnPropertyDescriptor(process.stderr, "isTTY");
+    Object.defineProperty(process.stderr, "isTTY", {
+      configurable: true,
+      value: false,
+    });
+
+    try {
+      await runDeckjsxDevCompilerHost({
+        entry: "src/main.tsx",
+        maxCompilations: 1,
+        compiler: {
+          on() {
+            return () => undefined;
+          },
+          start() {},
+          invalidate() {},
+          async runNextCompilation() {
+            return asCompilationResult({
+              ok: true,
+              status: "artifactUpdated",
+              compilation: 1,
+              diagnostics: [],
+              sourceSnapshot: {
+                status: "executable",
+                code: "",
+                watchFiles: [],
+                moduleIds: [],
+                changedSourceIds: [],
+              },
+              artifactPlan: { status: "ready", writes: [], retainedSlots: [], diagnostics: [] },
+              graph: { cwd: "/project", files: [], moduleIds: [], observedAssetFiles: [] },
+              writes: [],
+              retainedSlots: [],
+            });
+          },
+          async close() {},
+        },
+      });
+    } finally {
+      consoleError.mockRestore();
+      if (stderrDescriptor) {
+        Object.defineProperty(process.stderr, "isTTY", stderrDescriptor);
+      } else {
+        delete (process.stderr as { isTTY?: boolean }).isTTY;
+      }
+    }
+
+    expect(lines.join("\n")).not.toContain("\u001b[");
   });
 
   test("hosts the dev compiler and prints concise lifecycle output", async () => {
@@ -1117,6 +1246,73 @@ describe("@deckjsx/node cli", () => {
       "interactive:close",
       "compiler:close",
     ]);
+  });
+
+  test("interactive host does not render shutdown snapshots or spin after exit", async () => {
+    const lines: string[] = [];
+    let runCalls = 0;
+    let resolveCompilation: ((result: DeckjsxDevCompilationResult) => void) | undefined;
+
+    await runDeckjsxDevCompilerHost({
+      interactive: true,
+      interactiveLines: (async function* () {
+        yield "exit";
+      })(),
+      writeLine(line) {
+        lines.push(line);
+      },
+      createInteractiveSession() {
+        return {
+          async dispatch() {
+            return { ok: true, result: {} };
+          },
+          close() {},
+        };
+      },
+      compiler: {
+        on() {
+          return () => undefined;
+        },
+        start() {},
+        invalidate() {},
+        runNextCompilation() {
+          runCalls += 1;
+          return new Promise<DeckjsxDevCompilationResult>((resolve) => {
+            resolveCompilation = resolve;
+          });
+        },
+        async close() {
+          resolveCompilation?.(
+            asCompilationResult({
+              ok: false,
+              status: "bundleFailed",
+              compilation: 1,
+              sourceSnapshot: {
+                status: "diagnostic",
+                diagnostics: [
+                  {
+                    severity: "error",
+                    code: "deckjsx.node.dev.closed",
+                    title: "Dev source provider closed.",
+                  },
+                ],
+              },
+              diagnostics: [
+                {
+                  severity: "error",
+                  code: "deckjsx.node.dev.closed",
+                  title: "Dev source provider closed.",
+                },
+              ],
+            }),
+          );
+        },
+      },
+    });
+    await Promise.resolve();
+
+    expect(runCalls).toBe(1);
+    expect(lines.join("\n")).not.toContain("deckjsx.node.dev.closed");
   });
 
   test("interactive host still propagates compilation failures before shutdown", async () => {

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { unzipSync, zipSync } from "fflate";
 import { pptx, type WriterAdapter } from "deckjsx/adapter";
-import { describe, expect, test } from "vite-plus/test";
+import { describe, expect, test, vi } from "vite-plus/test";
 import { Deck } from "deckjsx";
 import {
   createIncrementalArtifactSession,
@@ -48,7 +48,15 @@ function createPptxZipBytesFromEntries(
 }
 
 function lockPathFor(outputPath: string): string {
+  return path.join(path.dirname(outputPath), ".deckjsx-lock");
+}
+
+function outputScopedLockPathFor(outputPath: string): string {
   return path.join(path.dirname(outputPath), `.${path.basename(outputPath)}.deckjsx-lock`);
+}
+
+function lockFileContentsFor(outputPath: string): string {
+  return `deckjsx-lock-v1\n${process.pid}\n${path.resolve(outputPath)}\n`;
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -449,7 +457,9 @@ describe("@deckjsx/node write", () => {
   test("writes a rendered pptx artifact to a new file", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-write-"));
     const outputPath = path.join(directory, "created.pptx");
+    const blockedOutputScopedLockPath = outputScopedLockPathFor(outputPath);
     const render = await renderDeck("created");
+    await mkdir(blockedOutputScopedLockPath);
 
     const result = await write(render, outputPath);
     const output = await readFile(outputPath);
@@ -466,6 +476,7 @@ describe("@deckjsx/node write", () => {
     expect(output.byteLength).toBe(render.artifact?.bytes.byteLength);
     expect(slideXml).toContain("created");
     expect(await fileExists(lockPathFor(outputPath))).toBe(false);
+    expect(await fileExists(blockedOutputScopedLockPath)).toBe(true);
   });
 
   test("records successful incremental artifact writes through the render token", async () => {
@@ -825,6 +836,40 @@ describe("@deckjsx/node write", () => {
     expect(slideXml).not.toContain("stalee");
   });
 
+  test("stages atomic replacements through the lock path instead of deckjsx-tmp files", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-write-"));
+    const outputPath = path.join(directory, "lock-staged.pptx");
+    const blockedLegacyTempPath = path.join(
+      directory,
+      `.lock-staged.pptx.${process.pid}.123.deckjsx-tmp`,
+    );
+    const first = await renderDeck("before staged");
+    const second = { ...(await renderDeck("after staged")), patchPlan: undefined };
+    await write(first, outputPath);
+    await mkdir(blockedLegacyTempPath);
+    const now = vi.spyOn(Date, "now").mockReturnValue(123);
+
+    try {
+      const result = await write(second, outputPath);
+      const output = await readFile(outputPath);
+      const zip = unzipSync(output);
+      const slideXml = textDecoder.decode(zip["ppt/slides/slide1.xml"]);
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          status: "replaced",
+          strategy: "atomic-replace",
+        }),
+      );
+      expect(slideXml).toContain("after staged");
+      expect(slideXml).not.toContain("before staged");
+      expect(await fileExists(lockPathFor(outputPath))).toBe(false);
+      expect(await fileExists(blockedLegacyTempPath)).toBe(true);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   test("replaces the whole archive with a diagnostic when changed XML exceeds reserved capacity", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-write-"));
     const outputPath = path.join(directory, "fallback.pptx");
@@ -919,7 +964,7 @@ describe("@deckjsx/node write", () => {
     const outputPath = path.join(directory, "locked.pptx");
     const lockPath = lockPathFor(outputPath);
     const render = await renderDeck("locked");
-    await writeFile(lockPath, "locked by test");
+    await writeFile(lockPath, lockFileContentsFor(outputPath));
 
     const result = await write(render, outputPath);
 
@@ -942,9 +987,37 @@ describe("@deckjsx/node write", () => {
     expect(await fileExists(lockPath)).toBe(true);
   });
 
+  test("falls back to an output-scoped lock when the default lock belongs to another output", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-write-"));
+    const firstOutputPath = path.join(directory, "first.pptx");
+    const secondOutputPath = path.join(directory, "second.pptx");
+    const defaultLockPath = lockPathFor(firstOutputPath);
+    const secondScopedLockPath = outputScopedLockPathFor(secondOutputPath);
+    const render = await renderDeck("second");
+    await writeFile(defaultLockPath, lockFileContentsFor(firstOutputPath));
+
+    const result = await write(render, secondOutputPath);
+    const output = await readFile(secondOutputPath);
+    const zip = unzipSync(output);
+    const slideXml = textDecoder.decode(zip["ppt/slides/slide1.xml"]);
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        path: secondOutputPath,
+        status: "created",
+        strategy: "write-file",
+      }),
+    );
+    expect(slideXml).toContain("second");
+    expect(await fileExists(defaultLockPath)).toBe(true);
+    expect(await fileExists(secondScopedLockPath)).toBe(false);
+  });
+
   test("returns result-first diagnostics when writing fails", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-write-"));
-    const render = await renderDeck("failure");
+    const parentDirectory = path.dirname(directory);
+    const tempPrefix = `.${path.basename(directory)}.`;
+    const render = { ...(await renderDeck("failure")), patchPlan: undefined };
 
     const result = await write(render, directory);
 
@@ -963,5 +1036,10 @@ describe("@deckjsx/node write", () => {
         ]),
       }),
     );
+    await expect(
+      readdir(parentDirectory).then((entries) =>
+        entries.filter((entry) => entry.startsWith(tempPrefix) && entry.endsWith(".deckjsx-tmp")),
+      ),
+    ).resolves.toEqual([]);
   });
 });

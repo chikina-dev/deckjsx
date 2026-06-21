@@ -1,4 +1,14 @@
-import { access, mkdir, mkdtemp, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vite-plus/test";
@@ -50,14 +60,6 @@ function createNoopWatcher() {
     clear(_event: string) {},
     async close() {},
   };
-}
-
-function outputDirectory(options: { readonly output?: unknown }): string {
-  const output = Array.isArray(options.output) ? options.output[0] : options.output;
-  if (typeof output === "object" && output !== null && "dir" in output) {
-    return String(output.dir);
-  }
-  throw new Error("expected watch output directory");
 }
 
 async function recordRenderedWrite(path: string, result: TestWriteResult) {
@@ -194,6 +196,7 @@ describe("@deckjsx/node dev compiler output coordinator", () => {
       }),
     ).toEqual([
       "/project/.components.pptx.deckjsx-lock",
+      "/project/.deckjsx-lock",
       "/project/.output.pptx.deckjsx-lock",
       "/project/components.pptx",
       "/project/output.pptx",
@@ -277,19 +280,22 @@ describe("@deckjsx/node dev artifact plan applier", () => {
 });
 
 describe("@deckjsx/node dev module graph", () => {
-  test("combines module ids, watch files, and observed assets while filtering dev outputs", () => {
+  test("combines module ids, watch files, and observed assets while filtering generated outputs", () => {
     const graph = createDevModuleGraphSnapshot({
       cwd: "/project",
       moduleIds: ["/project/src/main.tsx", "/project/src/component.tsx"],
       watchFiles: [
         "/project/src/main.tsx",
         "/project/output.pptx",
+        "/project/.deckjsx-lock",
         "/project/.output.pptx.deckjsx-lock",
-        "/project/.output.pptx.123.456.deckjsx-tmp",
-        "/project/.deckjsx/dev/bundle-1.mjs",
       ],
       observedAssetFiles: ["/project/assets/hero.png"],
-      ignoredFiles: ["/project/output.pptx", "/project/.output.pptx.deckjsx-lock"],
+      ignoredFiles: [
+        "/project/output.pptx",
+        "/project/.deckjsx-lock",
+        "/project/.output.pptx.deckjsx-lock",
+      ],
     });
 
     expect(graph.files).toEqual([
@@ -501,6 +507,51 @@ describe("@deckjsx/node entry execution host", () => {
     ).resolves.toBe("done");
   });
 
+  test("does not rewrite export tokens inside generated module literals", async () => {
+    const project = await mkdtemp(path.join(tmpdir(), "deckjsx-entry-host-export-literal-"));
+    const report = path.join(project, "literal.txt");
+    const host = createEntryExecutionHost({ cwd: project });
+
+    await host.execute({
+      code: [
+        'import { writeFile } from "node:fs/promises";',
+        `await writeFile(${JSON.stringify(report)}, "export default ");`,
+      ].join("\n"),
+    });
+
+    await expect(readFile(report, "utf8")).resolves.toBe("export default ");
+  });
+
+  test("executes generated modules with deckjsx external re-exports", async () => {
+    const project = await mkdtemp(path.join(tmpdir(), "deckjsx-entry-host-reexports-"));
+    const host = createEntryExecutionHost({ cwd: project });
+
+    await expect(
+      host.execute({
+        code: 'export * from "deckjsx";',
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  test("executes generated modules with deckjsx package imports without writing a bundle file", async () => {
+    const project = await mkdtemp(path.join(tmpdir(), "deckjsx-entry-host-imports-"));
+    const report = path.join(project, "imports.txt");
+    const host = createEntryExecutionHost({ cwd: project });
+
+    await host.execute({
+      code: [
+        'import { writeFile } from "node:fs/promises";',
+        'import { Deck } from "deckjsx";',
+        'import { jsx } from "deckjsx/jsx-runtime";',
+        `await writeFile(${JSON.stringify(report)}, [typeof Deck, typeof jsx].join(","));`,
+      ].join("\n"),
+    });
+
+    await expect(
+      import("node:fs/promises").then((fs) => fs.readFile(report, "utf8")),
+    ).resolves.toBe("function,function");
+  });
+
   test("restores cwd after generated module failures", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "deckjsx-entry-host-fail-"));
     const previousCwd = process.cwd();
@@ -511,7 +562,68 @@ describe("@deckjsx/node entry execution host", () => {
     );
     expect(process.cwd()).toBe(previousCwd);
   });
+
+  test("serializes generated module execution so cwd stays local to each host", async () => {
+    const firstProject = await mkdtemp(path.join(tmpdir(), "deckjsx-entry-host-first-"));
+    const secondProject = await mkdtemp(path.join(tmpdir(), "deckjsx-entry-host-second-"));
+    const firstReport = path.join(firstProject, "cwd.txt");
+    const secondReport = path.join(secondProject, "cwd.txt");
+    const firstRealProject = await realpath(firstProject);
+    const secondRealProject = await realpath(secondProject);
+    const gateKey = `__deckjsx_entry_host_gate_${process.pid}_${Date.now()}`;
+    const startedKey = `__deckjsx_entry_host_started_${process.pid}_${Date.now()}`;
+    let releaseGate!: () => void;
+    (globalThis as Record<string, unknown>)[gateKey] = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    (globalThis as Record<string, unknown>)[startedKey] = 0;
+    const firstHost = createEntryExecutionHost({ cwd: firstProject });
+    const secondHost = createEntryExecutionHost({ cwd: secondProject });
+
+    try {
+      const first = firstHost.execute({
+        code: gatedCwdReportModule({ report: firstReport, gateKey, startedKey }),
+      });
+      await waitForStartedCount(startedKey, 1);
+      const second = secondHost.execute({
+        code: gatedCwdReportModule({ report: secondReport, gateKey, startedKey }),
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      releaseGate();
+
+      await Promise.all([first, second]);
+
+      await expect(readFile(firstReport, "utf8")).resolves.toBe(firstRealProject);
+      await expect(readFile(secondReport, "utf8")).resolves.toBe(secondRealProject);
+    } finally {
+      delete (globalThis as Record<string, unknown>)[gateKey];
+      delete (globalThis as Record<string, unknown>)[startedKey];
+    }
+  });
 });
+
+function gatedCwdReportModule(input: {
+  readonly report: string;
+  readonly gateKey: string;
+  readonly startedKey: string;
+}): string {
+  return [
+    'import { writeFile } from "node:fs/promises";',
+    `globalThis[${JSON.stringify(input.startedKey)}] = (globalThis[${JSON.stringify(input.startedKey)}] ?? 0) + 1;`,
+    `await globalThis[${JSON.stringify(input.gateKey)}];`,
+    `await writeFile(${JSON.stringify(input.report)}, process.cwd());`,
+  ].join("\n");
+}
+
+async function waitForStartedCount(key: string, count: number): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (((globalThis as Record<string, unknown>)[key] as number) >= count) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+  throw new Error(`Timed out waiting for ${key} to reach ${count}.`);
+}
 
 describe("@deckjsx/node dev diagnostics", () => {
   test("normalizes OXC parse frames embedded in Rolldown error messages", () => {
@@ -598,7 +710,7 @@ describe("@deckjsx/node rolldown watch adapter", () => {
     expect(closeCalls).toBe(1);
   });
 
-  test("writes Rolldown watch output only under the ignored dev temp directory", () => {
+  test("does not configure filesystem output for Rolldown dev bundles", () => {
     const options = createRolldownWatchOptions({
       cwd: "/project",
       entry: "/project/src/main.tsx",
@@ -607,9 +719,34 @@ describe("@deckjsx/node rolldown watch adapter", () => {
       onWatchChange() {},
     });
 
-    expect(options.output).toMatchObject({
-      dir: "/project/.deckjsx/dev",
-      entryFileNames: "rolldown-watch-output.mjs",
+    expect("output" in options).toBe(false);
+  });
+
+  test("filters deckjsx media source transform hooks to JavaScript and TypeScript modules", () => {
+    const options = createRolldownWatchOptions({
+      cwd: "/project",
+      entry: "/project/src/main.tsx",
+      onBuildStart() {},
+      onModuleId() {},
+      onWatchChange() {},
+    });
+
+    const plugins = Array.isArray(options.plugins) ? options.plugins : [];
+    expect(
+      plugins.find(
+        (plugin) =>
+          typeof plugin === "object" &&
+          plugin !== null &&
+          "name" in plugin &&
+          plugin.name === "@deckjsx/node/media-source-origin",
+      ),
+    ).toMatchObject({
+      transform: {
+        filter: {
+          id: { include: expect.any(RegExp) },
+        },
+        handler: expect.any(Function),
+      },
     });
   });
 
@@ -644,14 +781,14 @@ describe("@deckjsx/node rolldown watch adapter", () => {
     expect(options.transform?.jsx?.importSource).toBe("deckjsx");
   });
 
-  test("isolates real watch adapter output directories per compiler instance", async () => {
-    const outputDirectories: string[] = [];
+  test("starts multiple watch adapters without per-compiler output directories", async () => {
+    const outputOptions: unknown[] = [];
     const adapters = [
       createRolldownWatchAdapter({
         cwd: "/project",
         entry: "src/main.tsx",
         watchFactory(options) {
-          outputDirectories.push(outputDirectory(options));
+          outputOptions.push((options as { readonly output?: unknown }).output);
           return createNoopWatcher();
         },
       }),
@@ -659,7 +796,7 @@ describe("@deckjsx/node rolldown watch adapter", () => {
         cwd: "/project",
         entry: "src/main.tsx",
         watchFactory(options) {
-          outputDirectories.push(outputDirectory(options));
+          outputOptions.push((options as { readonly output?: unknown }).output);
           return createNoopWatcher();
         },
       }),
@@ -668,11 +805,68 @@ describe("@deckjsx/node rolldown watch adapter", () => {
     adapters.forEach((adapter) => adapter.start());
     await Promise.all(adapters.map((adapter) => adapter.close()));
 
-    expect(outputDirectories).toHaveLength(2);
-    expect(outputDirectories[0]).not.toBe(outputDirectories[1]);
-    for (const outputDirectory of outputDirectories) {
-      expect(outputDirectory).toMatch(/^\/project\/\.deckjsx\/dev\/watch-/);
-    }
+    expect(outputOptions).toEqual([undefined, undefined]);
+  });
+
+  test("does not run an initial rebuild when a watch factory owns bundle events", async () => {
+    const listeners = new Map<string, (...args: unknown[]) => void>();
+    let buildFactoryCalls = 0;
+    const adapter = createRolldownWatchAdapter({
+      cwd: "/project",
+      entry: "src/main.tsx",
+      watchFactory() {
+        return {
+          on(event: string, listener: (...args: unknown[]) => void) {
+            listeners.set(event, listener);
+            return this;
+          },
+          off() {
+            return this;
+          },
+          clear() {},
+          async close() {},
+        };
+      },
+      async buildFactory() {
+        buildFactoryCalls += 1;
+        return {
+          output: [
+            {
+              type: "chunk",
+              code: "rebuild output",
+              moduleIds: ["/project/src/main.tsx"],
+              isEntry: true,
+            },
+          ],
+        };
+      },
+    });
+
+    adapter.start();
+    const buildPromise = adapter.nextSourceSnapshot();
+    await Promise.resolve();
+    expect(buildFactoryCalls).toBe(0);
+
+    listeners.get("event")?.({
+      code: "BUNDLE_END",
+      output: [],
+      result: {
+        output: [
+          {
+            type: "chunk",
+            code: "watch output",
+            moduleIds: ["/project/src/main.tsx"],
+            isEntry: true,
+          },
+        ],
+      },
+    });
+
+    await expect(buildPromise).resolves.toMatchObject({
+      status: "executable",
+      code: "watch output",
+    });
+    await adapter.close();
   });
 
   test("rebuilds through Rolldown when a watched source file changes", async () => {
@@ -729,6 +923,64 @@ describe("@deckjsx/node rolldown watch adapter", () => {
     await adapter.close();
   });
 
+  test("does not recreate source watchers when a rebuild finishes after close", async () => {
+    const watchedFiles = new Map<string, () => void>();
+    let finishBuild:
+      | ((
+          result: Awaited<
+            ReturnType<
+              NonNullable<Parameters<typeof createRolldownWatchAdapter>[0]["buildFactory"]>
+            >
+          >,
+        ) => void)
+      | undefined;
+    const adapter = createRolldownWatchAdapter({
+      cwd: "/project",
+      entry: "src/main.tsx",
+      buildFactory() {
+        return new Promise((resolve) => {
+          finishBuild = resolve;
+        });
+      },
+      fileWatcherFactory(filePath, onChange) {
+        watchedFiles.set(filePath, onChange);
+        return {
+          close() {
+            watchedFiles.delete(filePath);
+          },
+        };
+      },
+    });
+
+    adapter.start();
+    const firstSnapshot = adapter.nextSourceSnapshot();
+    await adapter.close();
+
+    await expect(firstSnapshot).resolves.toMatchObject({
+      status: "diagnostic",
+      diagnostics: [
+        {
+          code: "deckjsx.node.dev.closed",
+        },
+      ],
+    });
+    finishBuild?.({
+      watchFiles: ["/project/src/main.tsx"],
+      output: [
+        {
+          type: "chunk",
+          code: "generated after close",
+          moduleIds: ["/project/src/main.tsx"],
+          isEntry: true,
+        },
+      ],
+      close: async () => undefined,
+    });
+    await Promise.resolve();
+
+    expect(watchedFiles.size).toBe(0);
+  });
+
   test("generates one executable bundle from BUNDLE_END and closes the watch result", async () => {
     const listeners = new Map<string, (...args: unknown[]) => void>();
     const closed: string[] = [];
@@ -748,7 +1000,6 @@ describe("@deckjsx/node rolldown watch adapter", () => {
         closed.push("result");
       },
     };
-    let watchOptions: { plugins?: { watchChange?: (id: string) => void }[] } | undefined;
     const watcher = {
       on(event: string, listener: (...args: unknown[]) => void) {
         listeners.set(event, listener);
@@ -765,17 +1016,14 @@ describe("@deckjsx/node rolldown watch adapter", () => {
     const adapter = createRolldownWatchAdapter({
       cwd: "/project",
       entry: "src/main.tsx",
-      watchFactory(options) {
-        watchOptions = options as typeof watchOptions;
+      watchFactory() {
         return watcher;
       },
     });
 
     const buildPromise = adapter.nextSourceSnapshot();
     adapter.start();
-    watchOptions?.plugins
-      ?.find((plugin) => plugin.watchChange)
-      ?.watchChange?.("/project/src/component.tsx");
+    listeners.get("change")?.("/project/src/component.tsx", { event: "update" });
     listeners.get("event")?.({
       code: "BUNDLE_END",
       duration: 10,
@@ -849,6 +1097,54 @@ describe("@deckjsx/node rolldown watch adapter", () => {
       code: "entry chunk",
       moduleIds: ["/project/src/helper.ts", "/project/src/main.tsx"],
     });
+  });
+
+  test("rejects malformed Rolldown chunks at the source boundary", async () => {
+    const listeners = new Map<string, (...args: unknown[]) => void>();
+    const adapter = createRolldownWatchAdapter({
+      cwd: "/project",
+      entry: "src/main.tsx",
+      watchFactory() {
+        return {
+          on(event: string, listener: (...args: unknown[]) => void) {
+            listeners.set(event, listener);
+            return this;
+          },
+          off() {
+            return this;
+          },
+          clear() {},
+          async close() {},
+        };
+      },
+    });
+
+    const buildPromise = adapter.nextSourceSnapshot();
+    adapter.start();
+    listeners.get("event")?.({
+      code: "BUNDLE_END",
+      output: [],
+      result: {
+        output: [
+          {
+            type: "chunk",
+            code: "entry chunk",
+            moduleIds: ["/project/src/main.tsx", 42],
+            isEntry: true,
+          },
+        ],
+      },
+    });
+
+    await expect(buildPromise).resolves.toMatchObject({
+      status: "diagnostic",
+      diagnostics: [
+        {
+          code: "deckjsx.node.dev.bundleMissingChunk",
+        },
+      ],
+    });
+    await adapter.close();
   });
 
   test("prefers BUNDLE_END output over regenerating watch results", async () => {
@@ -1016,7 +1312,7 @@ describe("@deckjsx/node dev compiler", () => {
     const cwd = await mkdtemp(path.join(process.cwd(), ".deckjsx-dev-smoke-"));
     const outputPath = path.join(cwd, "output.pptx");
     await mkdir(path.join(cwd, "node_modules", "@deckjsx"), { recursive: true });
-    await symlink(path.resolve("."), path.join(cwd, "node_modules", "deckjsx"), "dir");
+    await symlink(path.resolve("../.."), path.join(cwd, "node_modules", "deckjsx"), "dir");
     await symlink(
       path.resolve("plugins/node"),
       path.join(cwd, "node_modules", "@deckjsx", "node"),

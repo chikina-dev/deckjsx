@@ -1,7 +1,14 @@
+import { styleText } from "node:util";
+import path from "node:path";
 import type { DeckjsxDevDiagnostic } from "../dev-diagnostics";
 import type { DeckjsxDevCompilationResult } from "../dev-compilation";
 import type { InteractiveResponse } from "../interactive/session";
 import { devConsoleEventFromCompilationResult, type DevConsoleEvent } from "./events";
+
+export type DeckjsxDevConsoleFormatOptions = {
+  readonly color?: boolean;
+  readonly cwd?: string;
+};
 
 export function formatDeckjsxDevHelp(): readonly string[] {
   return [
@@ -41,31 +48,44 @@ export function formatDeckjsxInteractiveHelp(): readonly string[] {
 
 export function formatDeckjsxDevStarted(
   input: { readonly entry?: string } = {},
+  options: DeckjsxDevConsoleFormatOptions = {},
 ): readonly string[] {
-  return [`${formatTime()} [deckjsx] dev started${input.entry ? `    ${input.entry}` : ""}`];
+  return [
+    `${formatTimestamp(options)} ${formatScope(options)} ${formatStatus("dev started", "info", options)}${input.entry ? `    ${formatPath(input.entry, options)}` : ""}`,
+  ];
 }
 
 export function formatDeckjsxDevCompilationResult(
   result: DeckjsxDevCompilationResult,
+  options: DeckjsxDevConsoleFormatOptions = {},
 ): readonly string[] {
-  return formatDeckjsxDevConsoleEvent(devConsoleEventFromCompilationResult(result));
+  return formatDeckjsxDevConsoleEvent(devConsoleEventFromCompilationResult(result), options);
 }
 
-export function formatDeckjsxDevConsoleEvent(event: DevConsoleEvent): readonly string[] {
+export function formatDeckjsxDevConsoleEvent(
+  event: DevConsoleEvent,
+  options: DeckjsxDevConsoleFormatOptions = {},
+): readonly string[] {
   if (event.kind === "dev.started") {
-    return formatDeckjsxDevStarted(event);
+    return formatDeckjsxDevStarted(event, options);
   }
   if (event.kind === "diagnostic") {
-    return formatDeckjsxNodeDiagnostics([event.diagnostic]);
+    return formatDeckjsxNodeDiagnostics([event.diagnostic], options);
   }
   const status =
     event.kind === "dev.ready" ? "ready" : event.kind === "dev.blocked" ? "blocked" : "error";
+  const statusTone =
+    event.kind === "dev.ready" ? "success" : event.kind === "dev.blocked" ? "warning" : "error";
   const summary = event.writes
     ? pluralCount(event.writes.length, "output")
     : `compilation ${event.compilation}`;
-  const lines = [`${formatTime()} [deckjsx] ${status}          ${summary}`];
+  const lines = [
+    `${formatTimestamp(options)} ${formatScope(options)} ${formatStatus(status, statusTone, options)}          ${summary}`,
+  ];
   if (event.changedSourceIds.length > 0) {
-    lines.push(formatField("changed", formatChangedSourceIds(event.changedSourceIds)));
+    lines.push(
+      formatField("changed", formatChangedSourceIds(event.changedSourceIds, options.cwd), options),
+    );
   }
   if (event.writes) {
     lines.push(
@@ -76,25 +96,29 @@ export function formatDeckjsxDevConsoleEvent(event: DevConsoleEvent): readonly s
             : write.tracked
               ? "tracked"
               : "untracked";
-        return `  output  ${write.path}    ${resultStatus}`;
+        return `  ${formatLabel("output", options)}  ${formatPath(write.path, options)}    ${formatWriteStatus(resultStatus, options)}`;
       }),
     );
   }
   return lines;
 }
 
-function formatChangedSourceIds(sourceIds: readonly string[]): string {
+function formatChangedSourceIds(sourceIds: readonly string[], cwd: string | undefined): string {
   const visible = sourceIds.slice(0, 3);
   const suffix =
     sourceIds.length > visible.length ? ` (+${sourceIds.length - visible.length})` : "";
-  return `${visible.join(", ")}${suffix}`;
+  return `${visible.map((sourceId) => visiblePath(sourceId, cwd)).join(", ")}${suffix}`;
 }
 
 export function formatDeckjsxNodeDiagnostics(
   diagnostics: readonly DeckjsxDevDiagnostic[],
+  options: DeckjsxDevConsoleFormatOptions = {},
 ): readonly string[] {
   return diagnostics.flatMap((diagnostic) => {
-    const lines = [`${diagnostic.severity} ${diagnostic.code}`, `  ${diagnostic.title}`];
+    const lines = [
+      `${formatDiagnosticSeverity(diagnostic.severity, options)} ${diagnostic.code}`,
+      `  ${diagnostic.title}`,
+    ];
     if (diagnostic.message) {
       lines.push(`  ${diagnostic.message}`);
     }
@@ -108,10 +132,10 @@ export function formatDeckjsxNodeDiagnostics(
       lines.push(...sourceSnippet.lines);
     }
     if (diagnostic.phase) {
-      lines.push(formatField("phase", diagnostic.phase));
+      lines.push(formatField("phase", diagnostic.phase, options));
     }
     if (diagnostic.compilation !== undefined) {
-      lines.push(formatField("compilation", String(diagnostic.compilation)));
+      lines.push(formatField("compilation", String(diagnostic.compilation), options));
     }
     const labels = sourceSnippet?.consumedLabel
       ? (diagnostic.labels ?? []).slice(1)
@@ -120,13 +144,13 @@ export function formatDeckjsxNodeDiagnostics(
       if (label.span) {
         lines.push(`  --> ${label.span.file}:${label.span.line ?? 1}:${label.span.column ?? 1}`);
       }
-      lines.push(formatField("label", label.message));
+      lines.push(formatField("label", label.message, options));
     }
     for (const note of diagnostic.notes ?? []) {
-      lines.push(formatField("note", note));
+      lines.push(formatField("note", note, options));
     }
     for (const help of diagnostic.help ?? []) {
-      lines.push(formatField("help", help));
+      lines.push(formatField("help", help, options));
     }
     return lines;
   });
@@ -679,16 +703,92 @@ function formatDiagnosticSourceSnippet(diagnostic: DeckjsxDevDiagnostic):
   };
 }
 
-function formatField(label: string, value: string): string {
-  return `  ${label.padEnd(12)}${value}`;
+function formatField(
+  label: string,
+  value: string,
+  options: DeckjsxDevConsoleFormatOptions = {},
+): string {
+  return `  ${formatLabel(label.padEnd(12), options)}${value}`;
+}
+
+function formatTimestamp(options: DeckjsxDevConsoleFormatOptions): string {
+  return color(formatTime(), "dim", options);
+}
+
+function formatScope(options: DeckjsxDevConsoleFormatOptions): string {
+  return color("[deckjsx]", "cyan", options);
+}
+
+function formatStatus(
+  status: string,
+  tone: "info" | "success" | "warning" | "error",
+  options: DeckjsxDevConsoleFormatOptions,
+): string {
+  const style =
+    tone === "success"
+      ? "green"
+      : tone === "warning"
+        ? "yellow"
+        : tone === "error"
+          ? "red"
+          : "cyan";
+  return color(status, style, options);
+}
+
+function formatDiagnosticSeverity(
+  severity: DeckjsxDevDiagnostic["severity"],
+  options: DeckjsxDevConsoleFormatOptions,
+): string {
+  return color(
+    severity,
+    severity === "error" ? "red" : severity === "warning" ? "yellow" : "cyan",
+    options,
+  );
+}
+
+function formatLabel(label: string, options: DeckjsxDevConsoleFormatOptions): string {
+  return color(label, "dim", options);
+}
+
+function formatPath(path: string, options: DeckjsxDevConsoleFormatOptions): string {
+  return color(visiblePath(path, options.cwd), "dim", options);
+}
+
+function visiblePath(filePath: string, cwd: string | undefined): string {
+  if (!cwd || !path.isAbsolute(filePath)) {
+    return filePath;
+  }
+  const relative = path.relative(cwd, filePath);
+  return relative && !relative.startsWith("..") && !path.isAbsolute(relative) ? relative : filePath;
+}
+
+function formatWriteStatus(status: string, options: DeckjsxDevConsoleFormatOptions): string {
+  const style = status === "created" || status === "patched" ? "green" : "yellow";
+  return color(status, style, options);
+}
+
+function color(
+  text: string,
+  style: "cyan" | "green" | "yellow" | "red" | "dim",
+  options: DeckjsxDevConsoleFormatOptions,
+): string {
+  if (!options.color) {
+    return text;
+  }
+  return styleText(style, text, { validateStream: false });
 }
 
 function methodFromResult(result: unknown): string | undefined {
-  if (typeof result !== "object" || result === null || !("method" in result)) {
-    return inferredMethodFromResult(result);
+  if (typeof result !== "object" || result === null) {
+    return undefined;
   }
-  const method = (result as { readonly method?: unknown }).method;
-  return typeof method === "string" ? method : undefined;
+  if ("method" in result && typeof result.method === "string") {
+    return result.method;
+  }
+  if ("kind" in result && typeof result.kind === "string") {
+    return result.kind;
+  }
+  return inferredMethodFromResult(result);
 }
 
 function inferredMethodFromResult(result: unknown): string | undefined {
@@ -819,12 +919,14 @@ type SessionTimingsResult = {
 };
 
 type ComponentTreeResult = {
+  readonly kind: "component.tree";
   readonly status?: string;
   readonly compilation?: number;
   readonly items: readonly ComponentListItem[];
 };
 
 type PropsDiffResult = {
+  readonly kind: "props.diff";
   readonly target: string;
   readonly path?: string;
   readonly changes: readonly {
@@ -845,12 +947,14 @@ type ComponentDiffResult = {
 };
 
 type PropsInspectResult = {
+  readonly kind: "props.inspect";
   readonly target: string;
   readonly path?: string;
   readonly value: unknown;
 };
 
 type ProjectionDetailResult = {
+  readonly kind: "projection.inspect";
   readonly slot: number;
   readonly slideIndex: number;
   readonly elementIndex: number;
@@ -858,12 +962,14 @@ type ProjectionDetailResult = {
 };
 
 type ProjectionSummaryResult = {
+  readonly kind: "projection.inspect";
   readonly slot: number;
   readonly format: string;
   readonly slides: readonly ProjectionSlideSummary[];
 };
 
 type ProjectionSlideDetailResult = {
+  readonly kind: "projection.inspect";
   readonly slot: number;
   readonly slideIndex: number;
   readonly slide: ProjectionSlideSummary;
@@ -889,11 +995,13 @@ type SelectionListResult = {
 };
 
 type SelectionResolveResult = {
+  readonly kind: "selection.resolve";
   readonly handle: "$0" | "$1" | "$2" | "$$";
   readonly value: unknown;
 };
 
 type HistoryChangesResult = {
+  readonly kind: "history.changes";
   readonly fromCompilation: number;
   readonly toCompilation: number;
   readonly skippedFailedAttempts: number;
@@ -901,6 +1009,7 @@ type HistoryChangesResult = {
 };
 
 type ComponentImpactResult = {
+  readonly kind: "component.impact";
   readonly target: string;
   readonly status: string;
   readonly reason?: string;
@@ -941,7 +1050,12 @@ type StyleExplainResult = {
 };
 
 function isComponentTreeResult(value: unknown): value is ComponentTreeResult {
-  if (!isRecord(value) || typeof value.status !== "string" || !Array.isArray(value.items)) {
+  if (
+    !isRecord(value) ||
+    value.kind !== "component.tree" ||
+    ("status" in value && typeof value.status !== "string") ||
+    !Array.isArray(value.items)
+  ) {
     return false;
   }
   return value.items.every(isComponentListItem);
@@ -1009,7 +1123,7 @@ function isDiagnosticExplainResult(value: unknown): value is DiagnosticExplainRe
 function isDiagnosticsListResult(value: unknown): value is DiagnosticsListResult {
   return (
     isRecord(value) &&
-    (!("kind" in value) || value.kind === "diagnostics.list") &&
+    value.kind === "diagnostics.list" &&
     !("status" in value) &&
     (!("compilation" in value) || typeof value.compilation === "number") &&
     Array.isArray(value.items) &&
@@ -1038,6 +1152,7 @@ function isSessionHelpResult(value: unknown): value is SessionHelpResult {
 function isSessionStatusResult(value: unknown): value is SessionStatusResult {
   return (
     isRecord(value) &&
+    value.kind === "session.status" &&
     typeof value.compilerStarted === "boolean" &&
     typeof value.compilerClosed === "boolean" &&
     typeof value.skippedFailedAttempts === "number" &&
@@ -1049,6 +1164,7 @@ function isSessionStatusResult(value: unknown): value is SessionStatusResult {
 function isSessionTimingsResult(value: unknown): value is SessionTimingsResult {
   return (
     isRecord(value) &&
+    value.kind === "session.timings" &&
     typeof value.commandCount === "number" &&
     (!("compilerUptimeMs" in value) || typeof value.compilerUptimeMs === "number") &&
     (!("lastCompilationDurationMs" in value) ||
@@ -1060,9 +1176,7 @@ function isSessionTimingsResult(value: unknown): value is SessionTimingsResult {
 function isComponentListResult(value: unknown): value is ComponentListResult {
   return (
     isRecord(value) &&
-    (!("kind" in value) ||
-      value.kind === "component.search" ||
-      value.kind === "component.filter") &&
+    (value.kind === "component.search" || value.kind === "component.filter") &&
     Array.isArray(value.items) &&
     value.items.every(isComponentListItem)
   );
@@ -1081,7 +1195,7 @@ function isComponentListItem(value: unknown): value is ComponentListItem {
 function isPropsDiffResult(value: unknown): value is PropsDiffResult {
   return (
     isRecord(value) &&
-    value.kind !== "component.diff" &&
+    value.kind === "props.diff" &&
     typeof value.target === "string" &&
     Array.isArray(value.changes) &&
     value.changes.every((change) => isRecord(change) && typeof change.path === "string")
@@ -1098,12 +1212,18 @@ function isComponentDiffResult(value: unknown): value is ComponentDiffResult {
 }
 
 function isPropsInspectResult(value: unknown): value is PropsInspectResult {
-  return isRecord(value) && typeof value.target === "string" && "value" in value;
+  return (
+    isRecord(value) &&
+    value.kind === "props.inspect" &&
+    typeof value.target === "string" &&
+    "value" in value
+  );
 }
 
 function isProjectionDetailResult(value: unknown): value is ProjectionDetailResult {
   return (
     isRecord(value) &&
+    value.kind === "projection.inspect" &&
     typeof value.slot === "number" &&
     typeof value.slideIndex === "number" &&
     typeof value.elementIndex === "number" &&
@@ -1114,6 +1234,7 @@ function isProjectionDetailResult(value: unknown): value is ProjectionDetailResu
 function isProjectionSummaryResult(value: unknown): value is ProjectionSummaryResult {
   return (
     isRecord(value) &&
+    value.kind === "projection.inspect" &&
     typeof value.slot === "number" &&
     typeof value.format === "string" &&
     Array.isArray(value.slides) &&
@@ -1124,6 +1245,7 @@ function isProjectionSummaryResult(value: unknown): value is ProjectionSummaryRe
 function isProjectionSlideDetailResult(value: unknown): value is ProjectionSlideDetailResult {
   return (
     isRecord(value) &&
+    value.kind === "projection.inspect" &&
     typeof value.slot === "number" &&
     typeof value.slideIndex === "number" &&
     isProjectionSlideSummary(value.slide)
@@ -1157,12 +1279,18 @@ function isSelectionListResult(value: unknown): value is SelectionListResult {
 }
 
 function isSelectionResolveResult(value: unknown): value is SelectionResolveResult {
-  return isRecord(value) && isSelectionHandleLabel(value.handle) && "value" in value;
+  return (
+    isRecord(value) &&
+    value.kind === "selection.resolve" &&
+    isSelectionHandleLabel(value.handle) &&
+    "value" in value
+  );
 }
 
 function isHistoryChangesResult(value: unknown): value is HistoryChangesResult {
   return (
     isRecord(value) &&
+    value.kind === "history.changes" &&
     typeof value.fromCompilation === "number" &&
     typeof value.toCompilation === "number" &&
     typeof value.skippedFailedAttempts === "number" &&
@@ -1178,6 +1306,7 @@ function isSelectionHandleLabel(value: unknown): value is "$0" | "$1" | "$2" | "
 function isComponentImpactResult(value: unknown): value is ComponentImpactResult {
   return (
     isRecord(value) &&
+    value.kind === "component.impact" &&
     typeof value.target === "string" &&
     typeof value.status === "string" &&
     (!("elements" in value) || Array.isArray(value.elements))

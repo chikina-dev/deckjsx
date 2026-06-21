@@ -447,24 +447,33 @@ async function dispatchInteractiveCommand(
     const target = targetFromParams(state, command.params);
     const diagnosticIndex = target ? diagnosticImpactTargetFromString(target) : undefined;
     if (diagnosticIndex !== undefined) {
-      const result = diagnosticImpactView(
-        diagnosticIndex,
-        latestDiagnostics[diagnosticIndex],
-        artifactSession,
-        inspectionStore,
+      const result = withInteractiveResultKind(
+        "component.impact",
+        diagnosticImpactView(
+          diagnosticIndex,
+          latestDiagnostics[diagnosticIndex],
+          artifactSession,
+          inspectionStore,
+        ),
       );
       rememberSelection(state, result);
       return { ok: true, result };
     }
     const projectionTarget = target ? projectionElementTargetFromString(target) : undefined;
     if (projectionTarget) {
-      const result = projectionImpactView(projectionTarget, artifactSession, inspectionStore);
+      const result = withInteractiveResultKind(
+        "component.impact",
+        projectionImpactView(projectionTarget, artifactSession, inspectionStore),
+      );
       rememberSelection(state, result);
       return { ok: true, result };
     }
     const component = target ? inspectionStore?.inspectComponent(target) : undefined;
     if (component) {
-      const result = componentImpactView(component, artifactSession);
+      const result = withInteractiveResultKind(
+        "component.impact",
+        componentImpactView(component, artifactSession),
+      );
       rememberSelection(state, result);
       return { ok: true, result };
     }
@@ -472,7 +481,10 @@ async function dispatchInteractiveCommand(
       ? graphImpactTargetFromString(target, artifactSession, inspectionStore)
       : undefined;
     if (graphNodeId) {
-      const result = graphImpactView(graphNodeId, artifactSession, inspectionStore);
+      const result = withInteractiveResultKind(
+        "component.impact",
+        graphImpactView(graphNodeId, artifactSession, inspectionStore),
+      );
       rememberSelection(state, result);
       return { ok: true, result };
     }

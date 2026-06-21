@@ -265,6 +265,7 @@ export async function* interactivePromptLinesFromKeys(
   input: InteractivePromptLineInput,
 ): AsyncIterable<string> {
   let state = createInteractivePromptState();
+  writePromptRender(input, formatInteractivePromptLines(state, { prompt: input.prompt }));
   for await (const key of input.keys) {
     const update = updateInteractivePromptState(state, key, {
       prompt: input.prompt,
@@ -273,17 +274,22 @@ export async function* interactivePromptLinesFromKeys(
     state = update.state;
     for (const output of update.outputs) {
       if (output.type === "render") {
-        if (input.writeRender) {
-          input.writeRender(output.lines);
-        } else {
-          output.lines.forEach(input.writeLine);
-        }
+        writePromptRender(input, output.lines);
       } else {
         input.onCommandLine?.(output.line);
         yield output.line;
+        writePromptRender(input, formatInteractivePromptLines(state, { prompt: input.prompt }));
       }
     }
   }
+}
+
+function writePromptRender(input: InteractivePromptLineInput, lines: readonly string[]): void {
+  if (input.writeRender) {
+    input.writeRender(lines);
+    return;
+  }
+  lines.forEach(input.writeLine);
 }
 
 export function highlightInteractiveInputLine(
@@ -718,18 +724,14 @@ export function parseInteractiveInputLine(line: string): InteractiveCommand | "e
     return { method: "selection.resolve", params: { handle: trimmed } };
   }
   if (trimmed.startsWith("{")) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(trimmed) as unknown;
-    } catch {
-      throw new InteractiveInputParseError(trimmed, "Invalid JSON command.", {
+    throw new InteractiveInputParseError(
+      trimmed,
+      "JSON protocol commands are not accepted by the interactive prompt.",
+      {
         start: 0,
         length: trimmed.length,
-      });
-    }
-    if (isInteractiveCommand(parsed)) {
-      return parsed;
-    }
+      },
+    );
   }
   return {
     method: trimmed,
@@ -1176,15 +1178,6 @@ export async function runInteractiveDevCommandLoop(
 
     renderResponse(await input.session.dispatch(command)).forEach(input.writeLine);
   }
-}
-
-function isInteractiveCommand(value: unknown): value is InteractiveCommand {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "method" in value &&
-    typeof value.method === "string"
-  );
 }
 
 function parseErrorResponse(error: unknown): InteractiveResponse {

@@ -83,6 +83,7 @@ type WriteLockResult =
       readonly diagnostics: readonly WriteDiagnostic[];
     };
 
+const WRITE_LOCK_HEADER = "deckjsx-lock-v1";
 const textEncoder = new TextEncoder();
 
 export function createNodeFileAssetLoader(options: NodeFileAssetLoaderOptions = {}): AssetLoader {
@@ -265,7 +266,7 @@ export async function write(render: RenderResult, outputPath: string): Promise<W
 
   try {
     if (!(await pathExists(outputPath))) {
-      await writeFile(outputPath, artifact.bytes);
+      await replaceWithLockFile(lock.lock, outputPath, artifact.bytes);
       return finishWrite({
         path: outputPath,
         status: "created",
@@ -294,7 +295,9 @@ export async function write(render: RenderResult, outputPath: string): Promise<W
       });
     }
 
-    await replaceFile(outputPath, artifact.bytes);
+    await replaceWithLockFile(lock.lock, outputPath, artifact.bytes, {
+      preserveLockMetadata: true,
+    });
     return finishWrite({
       path: outputPath,
       status: "replaced",
@@ -430,11 +433,33 @@ function inspectPatchablePptxBytes(
 }
 
 function lockPathFor(outputPath: string): string {
+  return path.join(path.dirname(outputPath), ".deckjsx-lock");
+}
+
+function outputScopedLockPathFor(outputPath: string): string {
   return path.join(path.dirname(outputPath), `.${path.basename(outputPath)}.deckjsx-lock`);
 }
 
 async function acquireWriteLock(outputPath: string): Promise<WriteLockResult> {
   const lockPath = lockPathFor(outputPath);
+  const lock = await tryAcquireWriteLock(lockPath, outputPath);
+  if (lock.ok) {
+    return lock;
+  }
+  const diagnostic = lock.diagnostics[0];
+  if (diagnostic?.code !== "deckjsx.node.write.lockUnavailable") {
+    return lock;
+  }
+
+  const lockedOutputPath = await readLockedOutputPath(lockPath);
+  if (!lockedOutputPath || path.resolve(lockedOutputPath) === path.resolve(outputPath)) {
+    return lock;
+  }
+
+  return tryAcquireWriteLock(outputScopedLockPathFor(outputPath), outputPath);
+}
+
+async function tryAcquireWriteLock(lockPath: string, outputPath: string): Promise<WriteLockResult> {
   let handle: FileHandle;
   try {
     handle = await open(lockPath, "wx");
@@ -461,7 +486,7 @@ async function acquireWriteLock(outputPath: string): Promise<WriteLockResult> {
   }
 
   try {
-    await handle.writeFile(`${process.pid}\n`);
+    await handle.writeFile(lockFileContentsFor(outputPath));
   } catch {
     await handle.close();
     await unlink(lockPath).catch(() => undefined);
@@ -480,6 +505,22 @@ async function acquireWriteLock(outputPath: string): Promise<WriteLockResult> {
   return { ok: true, lock: { path: lockPath, handle } };
 }
 
+function lockFileContentsFor(outputPath: string): string {
+  return `${WRITE_LOCK_HEADER}\n${process.pid}\n${path.resolve(outputPath)}\n`;
+}
+
+async function readLockedOutputPath(lockPath: string): Promise<string | undefined> {
+  try {
+    const [header, , outputPath] = (await readFile(lockPath, "utf8")).split("\n");
+    if (header !== WRITE_LOCK_HEADER || !outputPath) {
+      return undefined;
+    }
+    return outputPath;
+  } catch {
+    return undefined;
+  }
+}
+
 async function releaseWriteLock(lock: WriteLock): Promise<void> {
   await lock.handle.close().catch(() => undefined);
   await unlink(lock.path).catch(() => undefined);
@@ -494,13 +535,35 @@ async function pathExists(outputPath: string): Promise<boolean> {
   }
 }
 
-async function replaceFile(outputPath: string, bytes: Uint8Array): Promise<void> {
-  const temporaryPath = path.join(
-    path.dirname(outputPath),
-    `.${path.basename(outputPath)}.${process.pid}.${Date.now()}.deckjsx-tmp`,
-  );
-  await writeFile(temporaryPath, bytes);
-  await rename(temporaryPath, outputPath);
+async function replaceWithLockFile(
+  lock: WriteLock,
+  outputPath: string,
+  bytes: Uint8Array,
+  options: { readonly preserveLockMetadata?: boolean } = {},
+): Promise<void> {
+  const stagingPath = stagingPathForLockedWrite(lock.path, outputPath, options);
+  await lock.handle.close();
+  try {
+    if (stagingPath === lock.path) {
+      await writeFile(stagingPath, bytes);
+    } else {
+      await writeFile(stagingPath, bytes, { flag: "wx" });
+    }
+    await rename(stagingPath, outputPath);
+  } catch (error) {
+    await unlink(stagingPath).catch(() => undefined);
+    throw error;
+  }
+}
+
+function stagingPathForLockedWrite(
+  lockPath: string,
+  outputPath: string,
+  options: { readonly preserveLockMetadata?: boolean },
+): string {
+  return options.preserveLockMetadata && lockPath === lockPathFor(outputPath)
+    ? outputScopedLockPathFor(outputPath)
+    : lockPath;
 }
 
 function extensionFromPath(filePath: string): string | undefined {

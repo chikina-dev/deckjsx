@@ -14,8 +14,8 @@
     "smoke": "node smoke-dev.mjs"
   },
   "dependencies": {
-    "@deckjsx/node": "file:../plugins/node",
-    "deckjsx": "file:.."
+    "@deckjsx/node": "v0.1.5",
+    "deckjsx": "^0.9.3"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",
