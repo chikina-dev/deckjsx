@@ -41,17 +41,25 @@ jobs:
       - name: Resolve release package
         id: release
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+          INPUT_PACKAGE: ${{ inputs.package }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_PRERELEASE: ${{ inputs.prerelease }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          if [ "${{ github.event_name }}" = "release" ]; then
-            tag="${{ github.event.release.tag_name }}"
-            prerelease="${{ github.event.release.prerelease }}"
+          if [ "$EVENT_NAME" = "release" ]; then
+            tag="$RELEASE_TAG"
+            prerelease="$RELEASE_PRERELEASE"
             dry_run="false"
             selected_package=""
           else
-            input_version="${{ inputs.version }}"
-            prerelease="${{ inputs.prerelease }}"
-            dry_run="${{ inputs.dry_run }}"
-            selected_package="${{ inputs.package }}"
+            input_version="$INPUT_VERSION"
+            prerelease="$INPUT_PRERELEASE"
+            dry_run="$INPUT_DRY_RUN"
+            selected_package="$INPUT_PACKAGE"
           fi
 
           resolve_package() {
