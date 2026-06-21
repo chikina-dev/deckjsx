@@ -541,6 +541,23 @@ describe("@deckjsx/node cli", () => {
       renderInteractiveResponse({
         ok: true,
         result: {
+          kind: "props.inspect",
+          target: "component:Header:1\u001b[31m",
+          path: "title\u0007",
+          value: "BEGIN\u001b]52;c;ZGVja2pzeA==\u0007\u001b[31mRED\u001b[0mEND",
+        },
+      }),
+    ).toEqual([
+      "ok props.inspect",
+      "  target component:Header:1\\x1b[31m",
+      "  path   title\\x07",
+      "  value  BEGIN\\x1b]52;c;ZGVja2pzeA==\\x07\\x1b[31mRED\\x1b[0mEND",
+    ]);
+
+    expect(
+      renderInteractiveResponse({
+        ok: true,
+        result: {
           kind: "component.diff",
           target: "component:Header:1",
           changes: [],

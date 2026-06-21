@@ -3,6 +3,7 @@ import path from "node:path";
 import type { DeckjsxDevDiagnostic } from "../dev-diagnostics";
 import type { DeckjsxDevCompilationResult } from "../dev-compilation";
 import type { InteractiveResponse } from "../interactive/session";
+import { escapeTerminalControlSequences } from "../terminal-safety";
 import { devConsoleEventFromCompilationResult, type DevConsoleEvent } from "./events";
 
 export type DeckjsxDevConsoleFormatOptions = {
@@ -167,11 +168,11 @@ export function renderInteractiveResponse(response: InteractiveResponse): readon
       ...(response.error.suggestions && response.error.suggestions.length > 0
         ? [`  suggestions ${response.error.suggestions.join(", ")}`]
         : []),
-    ];
+    ].map(escapeTerminalControlSequences);
   }
   const detailed = renderInteractiveResult(response.result);
   if (detailed) {
-    return detailed;
+    return detailed.map(escapeTerminalControlSequences);
   }
   const method = methodFromResult(response.result);
   return [`ok${method ? ` ${method}` : ""}`];
@@ -1315,7 +1316,7 @@ function isComponentImpactResult(value: unknown): value is ComponentImpactResult
 
 function formatInteractiveValue(value: unknown): string {
   if (typeof value === "string") {
-    return value;
+    return escapeTerminalControlSequences(value);
   }
   if (value === undefined) {
     return "undefined";
