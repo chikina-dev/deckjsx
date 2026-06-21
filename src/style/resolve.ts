@@ -296,6 +296,8 @@ export function resolveStyles(
     classNamesByNodeId: classNamesByNodeIdFor(graph),
   };
   const resolvedStyles = new Map<GraphNodeId, ResolvedStyle>();
+  const resolvingStyles = new Set<GraphNodeId>();
+  const diagnosedStyleCycles = new Set<GraphNodeId>();
 
   stylesheets.forEach((sourceStylesheets, sourceKey) => {
     registries.set(sourceKey, registerStylesheets(sourceKey, sourceStylesheets, diagnostics));
@@ -315,6 +317,29 @@ export function resolveStyles(
       return existing;
     }
 
+    if (resolvingStyles.has(node.id)) {
+      if (!diagnosedStyleCycles.has(node.id)) {
+        diagnosedStyleCycles.add(node.id);
+        diagnostics.push({
+          severity: "error",
+          code: "E_STYLE_INHERITANCE_CYCLE",
+          title: "cyclic style inheritance",
+          message:
+            "Style inheritance follows graph parent relationships, but this node is already being resolved.",
+          labels: [
+            {
+              path: node.origin.path,
+              message: "This node participates in a cycle and cannot inherit parent styles.",
+              severity: "primary",
+              ...(node.origin.sourceSpan ? { sourceSpan: node.origin.sourceSpan } : {}),
+            },
+          ],
+          help: ["Remove the cyclic child relationship from the Semantic Author Graph."],
+        });
+      }
+      return undefined;
+    }
+
     const sourceKey = sourceKeyFor(node.origin.source);
     const entity = node.styleRef ? graph.styles.get(node.styleRef) : undefined;
     let registry = registries.get(sourceKey);
@@ -325,6 +350,7 @@ export function resolveStyles(
 
     const parentId = parentById.get(node.id);
     const parent = parentId ? graph.nodes.get(parentId) : undefined;
+    resolvingStyles.add(node.id);
     const inherited = parent ? resolveNode(parent) : undefined;
     const resolved = resolvedStyleFor(
       node,
@@ -335,6 +361,7 @@ export function resolveStyles(
       { parentId, style: inherited },
       diagnostics,
     );
+    resolvingStyles.delete(node.id);
     resolvedStyles.set(node.id, resolved);
     return resolved;
   };
