@@ -6,12 +6,17 @@ import type {
   DefinedProjectionArtifact,
 } from "../../pipeline-artifacts";
 import type { ResolvedStyleMap } from "../../style/resolve";
+import type { SlideProjectionFingerprintSnapshot } from "./artifact";
 import { fingerprintString, stableJson } from "./fingerprint";
 import { isPptxPackageModel, type PptxPackageModel } from "./model";
 
 export type PptxProjectionReusePlan = {
   readonly previousProjection: PptxPackageModel;
   readonly slideNodeIds: ReadonlySet<GraphNodeId>;
+  readonly slideProjectionFingerprints: ReadonlyMap<
+    GraphNodeId,
+    SlideProjectionFingerprintSnapshot
+  >;
 };
 
 export function incrementalProjectionReusePlan(input: {
@@ -45,6 +50,12 @@ export function incrementalProjectionReusePlan(input: {
     return undefined;
   }
 
+  const slideProjectionFingerprints = slideProjectionFingerprintSnapshots({
+    graph: input.graph,
+    resolvedStyles: input.resolvedStyles,
+    options: input.options,
+    assets: input.assets,
+  });
   const slideNodeIds = new Set<GraphNodeId>();
   document.children.forEach((slideNodeId, index) => {
     if (previousDocument.children[index] !== slideNodeId) {
@@ -55,36 +66,70 @@ export function incrementalProjectionReusePlan(input: {
     if (slide?.kind !== "slide" || previousSlide?.kind !== "slide") {
       return;
     }
-    const subtreeAssetEntityIds = graphSubtreeAssetEntityIds(input.graph, slideNodeId);
+    const currentSnapshot = slideProjectionFingerprints.get(slideNodeId);
+    if (!currentSnapshot) {
+      return;
+    }
     if (
       input.staleAssetEntityIds &&
-      subtreeAssetEntityIds.some((id) => input.staleAssetEntityIds?.has(id))
+      currentSnapshot.assetEntityIds.some((id) => input.staleAssetEntityIds?.has(id))
     ) {
       return;
     }
 
-    const currentFingerprint = slideProjectionFingerprint({
-      graph: input.graph,
-      resolvedStyles: input.resolvedStyles,
-      options: input.options,
-      assets: input.assets,
-      slideNodeId,
-      assetEntityIds: subtreeAssetEntityIds,
-    });
-    const previousFingerprint = slideProjectionFingerprint({
-      graph: previousGraph.graph,
-      resolvedStyles: previousGraph.resolvedStyles,
-      options: previousOptions,
-      assets: previousAssets,
-      slideNodeId,
-      assetEntityIds: subtreeAssetEntityIds,
-    });
-    if (currentFingerprint === previousFingerprint) {
+    const previousFingerprint =
+      input.previousProjection?.slideProjectionFingerprints.get(slideNodeId)?.fingerprint ??
+      slideProjectionFingerprint({
+        graph: previousGraph.graph,
+        resolvedStyles: previousGraph.resolvedStyles,
+        options: previousOptions,
+        assets: previousAssets,
+        slideNodeId,
+        assetEntityIds: currentSnapshot.assetEntityIds,
+      });
+    if (currentSnapshot.fingerprint === previousFingerprint) {
       slideNodeIds.add(slideNodeId);
     }
   });
 
-  return slideNodeIds.size > 0 ? { previousProjection, slideNodeIds } : undefined;
+  return { previousProjection, slideNodeIds, slideProjectionFingerprints };
+}
+
+export function slideProjectionFingerprintSnapshots(input: {
+  graph: SemanticAuthorGraph;
+  resolvedStyles: ResolvedStyleMap;
+  options: DeckOptions;
+  assets: ReadonlyMap<AssetEntityId, AssetArtifact>;
+}): ReadonlyMap<GraphNodeId, SlideProjectionFingerprintSnapshot> {
+  const document = input.graph.nodes.get(input.graph.documentId);
+  if (document?.kind !== "document") {
+    return new Map();
+  }
+
+  const snapshots = new Map<GraphNodeId, SlideProjectionFingerprintSnapshot>();
+  document.children.forEach((slideNodeId) => {
+    const slide = input.graph.nodes.get(slideNodeId);
+    if (slide?.kind !== "slide") {
+      return;
+    }
+    const graphNodeIds = graphSubtreeNodeIds(input.graph, slideNodeId);
+    const assetEntityIds = graphSubtreeAssetEntityIdsFromNodeIds(input.graph, graphNodeIds);
+    snapshots.set(slideNodeId, {
+      slideNodeId,
+      graphNodeIds,
+      assetEntityIds,
+      fingerprint: slideProjectionFingerprint({
+        graph: input.graph,
+        resolvedStyles: input.resolvedStyles,
+        options: input.options,
+        assets: input.assets,
+        slideNodeId,
+        graphNodeIds,
+        assetEntityIds,
+      }),
+    });
+  });
+  return snapshots;
 }
 
 function slideProjectionFingerprint(input: {
@@ -93,9 +138,10 @@ function slideProjectionFingerprint(input: {
   options: DeckOptions;
   assets: ReadonlyMap<AssetEntityId, AssetArtifact>;
   slideNodeId: GraphNodeId;
+  graphNodeIds?: readonly GraphNodeId[];
   assetEntityIds?: readonly AssetEntityId[];
 }): string {
-  const graphNodeIds = graphSubtreeNodeIds(input.graph, input.slideNodeId);
+  const graphNodeIds = input.graphNodeIds ?? graphSubtreeNodeIds(input.graph, input.slideNodeId);
   const styleEntityIds = new Set<StyleEntityId>();
   const assetEntityIds = new Set<AssetEntityId>(input.assetEntityIds);
   const nodes = graphNodeIds.flatMap((id) => {
@@ -182,12 +228,12 @@ function graphSubtreeNodeIds(
   return ids;
 }
 
-function graphSubtreeAssetEntityIds(
+function graphSubtreeAssetEntityIdsFromNodeIds(
   graph: SemanticAuthorGraph,
-  rootId: GraphNodeId,
+  graphNodeIds: readonly GraphNodeId[],
 ): readonly AssetEntityId[] {
   const assetEntityIds = new Set<AssetEntityId>();
-  graphSubtreeNodeIds(graph, rootId).forEach((nodeId) => {
+  graphNodeIds.forEach((nodeId) => {
     const node = graph.nodes.get(nodeId);
     if (node?.kind === "image" && node.assetRef) {
       assetEntityIds.add(node.assetRef);

@@ -29,6 +29,7 @@ import {
   type PackageDependencySnapshot,
   type ProjectionArtifact,
   type PptxProjectionArtifact,
+  type SlideProjectionFingerprintSnapshot,
 } from "./projection/pptx/artifact";
 import { resolveStyles, type ResolvedStyle, type ResolvedStyleMap } from "./style/resolve";
 import type { SlideTemplateSet } from "./templates";
@@ -593,8 +594,14 @@ export class PipelineArtifactCollection {
     projection: PptxPackageModel,
     diagnostics: Diagnostics,
     options: DeckOptions,
+    artifactOptions: {
+      readonly slideProjectionFingerprints?: ReadonlyMap<
+        GraphNodeId,
+        SlideProjectionFingerprintSnapshot
+      >;
+    } = {},
   ): void {
-    this.#projection = pptxProjectionArtifact(projection, diagnostics);
+    this.#projection = pptxProjectionArtifact(projection, diagnostics, artifactOptions);
     this.#projectionOptions = options;
     this.clearIncrementalProjectionReuseSnapshot();
   }
