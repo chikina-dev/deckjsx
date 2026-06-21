@@ -66,7 +66,6 @@ import {
 import {
   PipelineArtifactCollection,
   assetSourceCacheKey,
-  fingerprintBytes,
   type AssetArtifact,
   type DefinedGraphArtifact,
   type DefinedProjectionArtifact,
@@ -401,45 +400,13 @@ async function probeBuiltInAssetSource(
   if (source.kind === "url") {
     const extension = extensionFromPath(source.url);
     const mediaType = mediaTypeFromExtension(extension);
-    if (typeof fetch !== "function") {
-      return {
-        probe: {
-          ...(mediaType ? { mediaType } : {}),
-          ...(extension ? { extension } : {}),
-        },
-        diagnostics: builtInAssetFetchUnavailableDiagnostics(source),
-      };
-    }
-
-    const response = await fetch(source.url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch asset URL ${source.url}: ${response.status}`);
-    }
-
-    const contentType = response.headers.get("content-type") ?? mediaType;
-    const resolvedExtension = extension ?? extensionFromMediaType(contentType);
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    const dimensions = imageDimensionsFromBytes({
-      bytes,
-      mediaType: contentType,
-      extension: resolvedExtension,
-    });
-    const hash = fingerprintBytes(bytes);
-    const provenance = {
-      kind: "fetch",
-      resolvedId: hash,
-      hashSource: "bytes",
-    } as const;
-    const probe = {
-      ...(contentType ? { mediaType: contentType.split(";")[0] } : {}),
-      ...(resolvedExtension ? { extension: resolvedExtension } : {}),
-      ...(dimensions.width ? { width: dimensions.width } : {}),
-      ...(dimensions.height ? { height: dimensions.height } : {}),
-      byteLength: bytes.byteLength,
-      hash,
-      provenance,
+    return {
+      probe: {
+        ...(mediaType ? { mediaType } : {}),
+        ...(extension ? { extension } : {}),
+      },
+      diagnostics: builtInRemoteAssetFetchDisabledDiagnostics(source),
     };
-    return { probe, load: { ...probe, bytes } };
   }
 
   if (source.kind !== "data") {
@@ -469,14 +436,14 @@ async function probeBuiltInAssetSource(
   return { probe, load: { ...probe, bytes } };
 }
 
-function builtInAssetFetchUnavailableDiagnostics(source: AssetSource): Diagnostics {
+function builtInRemoteAssetFetchDisabledDiagnostics(source: AssetSource): Diagnostics {
   return createDiagnostics([
     diagnostic({
-      severity: "error",
-      code: "E_PROJECT_ASSET_FETCH_UNAVAILABLE",
-      title: "asset URL fetch is unavailable",
+      severity: "warning",
+      code: "W_PROJECT_REMOTE_ASSET_FETCH_DISABLED",
+      title: "built-in remote asset fetch is disabled",
       message:
-        "The built-in Asset Loading Boundary cannot fetch this URL because the current runtime does not provide fetch.",
+        "The built-in Asset Loading Boundary does not fetch HTTP(S) media URLs. Provide an explicit AssetLoader to load trusted remote media.",
       labels: [
         {
           path: "asset.probe",
@@ -532,34 +499,7 @@ async function loadBuiltInAssetSource(source: AssetSource): Promise<AssetLoadRes
   }
 
   if (source.kind === "url") {
-    if (typeof fetch !== "function") {
-      return undefined;
-    }
-
-    const response = await fetch(source.url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch asset URL ${source.url}: ${response.status}`);
-    }
-
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    const contentType = response.headers.get("content-type") ?? undefined;
-    const extension = extensionFromPath(source.url) ?? extensionFromMediaType(contentType);
-    const dimensions = imageDimensionsFromBytes({ bytes, mediaType: contentType, extension });
-    const hash = fingerprintBytes(bytes);
-    return {
-      bytes,
-      ...(contentType ? { mediaType: contentType.split(";")[0] } : {}),
-      ...(extension ? { extension } : {}),
-      ...(dimensions.width ? { width: dimensions.width } : {}),
-      ...(dimensions.height ? { height: dimensions.height } : {}),
-      byteLength: bytes.byteLength,
-      hash,
-      provenance: {
-        kind: "fetch",
-        resolvedId: hash,
-        hashSource: "bytes",
-      },
-    };
+    return undefined;
   }
 
   if (source.kind !== "data") {
