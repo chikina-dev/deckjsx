@@ -187,6 +187,55 @@ describe("project/render validation drawing core payloads", () => {
     );
   });
 
+  test("direct writer diagnoses malformed table sections without throwing", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Malformed table" }, () => (
+      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>table</p>
+    ));
+
+    const projection = (await deck.project()).projection!;
+    const slidePart = H.expectPptxPart(projection.parts, "slide");
+    const malformedSlide = {
+      ...slidePart,
+      payload: {
+        ...slidePart.payload,
+        drawing: {
+          ...slidePart.payload.drawing,
+          children: [
+            {
+              kind: "table",
+              sections: [{}],
+            },
+            ...slidePart.payload.drawing.children,
+          ],
+        },
+      },
+    } as H.PptxSlidePart;
+    const result = await H.renderPptxPackage({
+      ...projection,
+      slides: projection.slides.map((slide) =>
+        slide.id === slidePart.id ? malformedSlide : slide,
+      ),
+      parts: projection.parts.map((part) => (part.id === slidePart.id ? malformedSlide : part)),
+    });
+
+    expect(result.artifact).toBeUndefined();
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        code: "E_RENDER_PACKAGE_VALIDATION_FAILED",
+        notes: expect.arrayContaining([
+          expect.stringContaining("code=E_PPTX_PACKAGE_INVALID_DRAWING_PAYLOAD"),
+        ]),
+        labels: expect.arrayContaining([
+          expect.objectContaining({
+            path: expect.stringContaining(".drawing.children.0.sections.0"),
+            message: "invalid table section",
+          }),
+        ]),
+      }),
+    );
+  });
+
   test("render validation requires projected image objectPosition values", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Missing objectPosition" }, () => (
