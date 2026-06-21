@@ -1,3 +1,5 @@
+import { escapeTerminalControlSequences } from "./terminal-safety";
+
 export type NodeDevInspectionBoundary =
   | "source"
   | "bundle"
@@ -344,7 +346,8 @@ function sanitizeValue(value: unknown): SanitizedValue {
     return value;
   }
   if (typeof value === "string") {
-    return value.length > 120 ? `${value.slice(0, 117)}...` : value;
+    const truncated = value.length > 120 ? `${value.slice(0, 117)}...` : value;
+    return escapeTerminalControlSequences(truncated);
   }
   if (typeof value === "function") {
     return { kind: "function", ...(value.name ? { name: value.name } : {}) };
