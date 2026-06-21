@@ -5335,6 +5335,8 @@ function validateSlidePayload(input: {
     return issues;
   }
 
+  const mediaPartsBySource = mediaPartsBySourceKey(input.partsById);
+
   payload.drawing.children.forEach((element, index) => {
     const path = `projection.parts.${input.part.id}.payload.drawing.children.${index}`;
     issues.push(
@@ -5360,6 +5362,7 @@ function validateSlidePayload(input: {
         path,
         slidePart: input.part,
         partsById: input.partsById,
+        mediaPartsBySource,
       }),
       ...validateSlideHyperlinkRelationships({
         element,
@@ -5387,7 +5390,7 @@ function validateSlidePayload(input: {
     ...validateSlideBackgroundImageRelationships({
       part: input.part,
       payload,
-      partsById: input.partsById,
+      mediaPartsBySource,
     }),
   );
 
@@ -5707,10 +5710,9 @@ function validateElementBackgroundImageRelationships(input: {
 function validateSlideBackgroundImageRelationships(input: {
   part: PptxPackagePart;
   payload: Record<string, unknown>;
-  partsById: ReadonlyMap<string, PptxPackagePart>;
+  mediaPartsBySource: ReadonlyMap<string, readonly PptxPackagePart[]>;
 }): Diagnostics["items"] {
   const path = `projection.parts.${input.part.id}.payload`;
-  const mediaParts = mediaPartsBySourceKey(input.partsById);
   const issues: Diagnostic[] = [];
 
   if (Array.isArray(input.payload.backgroundLayers)) {
@@ -5720,7 +5722,7 @@ function validateSlideBackgroundImageRelationships(input: {
           layer,
           path: `${path}.backgroundLayers.${index}`,
           slidePart: input.part,
-          mediaPartsBySource: mediaParts,
+          mediaPartsBySource: input.mediaPartsBySource,
         }),
       );
     });
@@ -5734,7 +5736,7 @@ function validateSlideBackgroundImageRelationships(input: {
           element,
           path: `${path}.drawing.children.${index}`,
           slidePart: input.part,
-          mediaPartsBySource: mediaParts,
+          mediaPartsBySource: input.mediaPartsBySource,
         }),
       );
     });
@@ -5748,6 +5750,7 @@ function validateSlideImageRelationships(input: {
   path: string;
   slidePart: PptxPackagePart;
   partsById: ReadonlyMap<string, PptxPackagePart>;
+  mediaPartsBySource: ReadonlyMap<string, readonly PptxPackagePart[]>;
 }): Diagnostics["items"] {
   const element = input.element;
   if (element.kind === "group") {
@@ -5760,6 +5763,7 @@ function validateSlideImageRelationships(input: {
         path: `${input.path}.children.${index}`,
         slidePart: input.slidePart,
         partsById: input.partsById,
+        mediaPartsBySource: input.mediaPartsBySource,
       }),
     );
   }
@@ -5774,6 +5778,7 @@ function validateSlideImageRelationships(input: {
               path: `${input.path}.sections.${sectionIndex}.rows.${rowIndex}.cells.${cellIndex}.children.${childIndex}`,
               slidePart: input.slidePart,
               partsById: input.partsById,
+              mediaPartsBySource: input.mediaPartsBySource,
             }),
           ),
         ),
@@ -5967,7 +5972,7 @@ function validateSlideImageRelationships(input: {
 
     const posterSourceKey = imageSourceKeyForValidation(element.posterSource);
     const posterSourceParts = posterSourceKey
-      ? (mediaPartsBySourceKey(input.partsById).get(posterSourceKey) ?? [])
+      ? (input.mediaPartsBySource.get(posterSourceKey) ?? [])
       : [];
     if (!posterSourceParts.some((part) => part.id === element.posterMediaPartId)) {
       issues.push(
