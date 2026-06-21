@@ -51,9 +51,11 @@ export function cloneThemeValue<T>(value: T): T {
   }
 
   if (isPlainObject(value)) {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, child]) => [key, cloneThemeValue(child)]),
-    ) as T;
+    const clone = Object.create(null) as Record<string, ThemeObjectValue>;
+    Object.entries(value).forEach(([key, child]) => {
+      clone[key] = cloneThemeValue(child);
+    });
+    return clone as T;
   }
 
   return value;
@@ -67,11 +69,12 @@ export function mergeThemeValues<TBase, TExtension>(
     return cloneThemeValue(extension) as DeepMerge<TBase, TExtension>;
   }
 
-  const merged: Record<string, ThemeObjectValue> = { ...cloneThemeValue(base) };
+  const merged = cloneThemeValue(base) as Record<string, ThemeObjectValue>;
   Object.entries(extension).forEach(([key, value]) => {
+    const baseValue = merged[key];
     merged[key] =
-      key in merged && isPlainObject(merged[key]) && isPlainObject(value)
-        ? mergeThemeValues(merged[key], value)
+      Object.hasOwn(merged, key) && isPlainObject(baseValue) && isPlainObject(value)
+        ? mergeThemeValues(baseValue, value)
         : cloneThemeValue(value);
   });
 
