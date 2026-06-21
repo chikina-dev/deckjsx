@@ -111,6 +111,35 @@ describe("Semantic Author Graph", () => {
     });
   });
 
+  test("compile rejects remote video src URLs before asset loading", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Remote video" }, () => (
+      <>
+        <video
+          src="http://127.0.0.1:8080/secret.mp4"
+          poster="demo.png"
+          style={{ x: 1, y: 1, width: 4, height: 2.25 }}
+        />
+      </>
+    ));
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        severity: "error",
+        code: "E_COMPILE_VIDEO_SOURCE_INVALID",
+        title: "remote video src is not supported",
+        message: expect.stringContaining("must be a local path"),
+      }),
+    );
+    expect(values(result.graph?.assets ?? new Map()).some((asset) => asset.kind === "video")).toBe(
+      false,
+    );
+  });
+
   test("compile warns when a video poster is omitted", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
