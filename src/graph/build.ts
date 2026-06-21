@@ -697,6 +697,20 @@ function assetForVideoSource(input: {
     return undefined;
   }
 
+  if (typeof props.src === "string" && /^https?:\/\//i.test(props.src)) {
+    addDiagnostic(
+      state,
+      authoringPropDiagnostic({
+        code: "E_COMPILE_VIDEO_SOURCE_INVALID",
+        title: "remote video src is not supported",
+        path: `${path}.props.src`,
+        message:
+          "The video src prop must be a local path. Use video data for inline media or provide a custom asset loader for trusted remote media.",
+      }),
+    );
+    return undefined;
+  }
+
   let source: AssetEntity["source"];
   if (typeof props.src === "string") {
     source = mediaSourceFromString(props.src);
