@@ -1,4 +1,13 @@
-import { access, mkdir, mkdtemp, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { unzipSync, zipSync } from "fflate";
@@ -415,6 +424,64 @@ describe("@deckjsx/node write", () => {
           byteLength: pngHeaderBytes(4, 5, 0xcc).byteLength,
           hash: expect.stringMatching(/^fnv1a32:/),
         }),
+      }),
+    );
+  });
+
+  test("rejects node file assets that escape their allowed directory", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-assets-"));
+    const root = path.join(directory, "root");
+    const sourceDir = path.join(directory, "src");
+    const secretPath = path.join(directory, "secret.png");
+    await mkdir(root, { recursive: true });
+    await mkdir(sourceDir, { recursive: true });
+    await writeFile(secretPath, pngHeaderBytes(9, 9, 0xee));
+    await symlink(secretPath, path.join(root, "linked-secret.png"));
+
+    const rootedLoader = createNodeFileAssetLoader({ root });
+    const importerLoader = createNodeFileAssetLoader();
+    const rootedTraversal = await rootedLoader.load?.({
+      source: { kind: "path", path: "../secret.png" },
+      sourceField: "src",
+      resolverIdentity: rootedLoader.resolverIdentity,
+      assetEntityId: "asset:rooted-traversal",
+    });
+    const rootedAbsolute = await rootedLoader.probe?.({
+      source: { kind: "path", path: secretPath },
+      sourceField: "src",
+      resolverIdentity: rootedLoader.resolverIdentity,
+      assetEntityId: "asset:rooted-absolute",
+    });
+    const importerTraversal = await importerLoader.load?.({
+      source: { kind: "path", path: "../secret.png" },
+      sourceField: "src",
+      resolverIdentity: importerLoader.resolverIdentity,
+      assetEntityId: "asset:importer-traversal",
+      origin: { importer: path.join(sourceDir, "deck.tsx") },
+    });
+    const symlinkEscape = await rootedLoader.load?.({
+      source: { kind: "path", path: "linked-secret.png" },
+      sourceField: "src",
+      resolverIdentity: rootedLoader.resolverIdentity,
+      assetEntityId: "asset:symlink-escape",
+    });
+
+    for (const result of [rootedTraversal, rootedAbsolute, importerTraversal]) {
+      expect(result).toEqual(
+        expect.objectContaining({
+          ok: false,
+          diagnostics: expect.arrayContaining([
+            expect.objectContaining({ code: "E_NODE_FILE_ASSET_OUTSIDE_ROOT" }),
+          ]),
+        }),
+      );
+    }
+    expect(symlinkEscape).toEqual(
+      expect.objectContaining({
+        ok: false,
+        diagnostics: expect.arrayContaining([
+          expect.objectContaining({ code: "E_NODE_FILE_ASSET_READ_FAILED" }),
+        ]),
       }),
     );
   });
