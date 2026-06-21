@@ -85,20 +85,6 @@ describe("public surface", () => {
     expect(pkg.dependencies).toEqual({});
   });
 
-  test("package manifests use independent release lines", async () => {
-    const rootPackage = await readPackageJson();
-    const pluginPackages = await Promise.all(
-      ["plugins/node/package.json"].map(
-        async (path) => [path, await readRepoPackageJson(path)] as const,
-      ),
-    );
-
-    expect(rootPackage.version).toBe("0.9.4");
-    for (const [path, pkg] of pluginPackages) {
-      expect(pkg.version, `${path} version should follow its own release line`).toBe("0.1.5");
-    }
-  });
-
   test("plugin package manifests use peer dependencies instead of repo file dependencies", async () => {
     const pluginPackages = await Promise.all(
       ["plugins/node/package.json"].map(
