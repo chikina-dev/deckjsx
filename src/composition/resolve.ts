@@ -123,8 +123,16 @@ function sourceOriginFor(parent: SourceOrigin, sourceKey: string): SourceOrigin 
   };
 }
 
+function sourceIdentitySegment(value: string): string {
+  return [...new TextEncoder().encode(value)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 function sourceMaterialFor(source: SourceOrigin): readonly string[] {
-  return source.kind === "root" ? ["source", "root"] : ["source", source.sourceIdentity];
+  return source.kind === "root"
+    ? ["source", "root"]
+    : ["source", "mounted", sourceIdentitySegment(source.sourceIdentity)];
 }
 
 function validateSourceKey(sourceKey: string): string | undefined {

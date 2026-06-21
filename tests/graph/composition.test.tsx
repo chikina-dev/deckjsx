@@ -202,6 +202,40 @@ describe("composition", () => {
     expect(String(spanRun?.id)).toContain("slot:note");
   });
 
+  test("mounted source graph identities distinguish source keys with slug collisions", async () => {
+    const spaced = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    spaced.slide({ name: "Spaced" }, () => (
+      <>
+        <p>SPACED</p>
+      </>
+    ));
+
+    const underscored = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    underscored.slide({ name: "Underscored" }, () => (
+      <>
+        <p>UNDERSCORED</p>
+      </>
+    ));
+
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.mount("a b", spaced);
+    deck.mount("a_b", underscored);
+
+    const graph = deck.compile().graph!;
+    const document = graph.nodes.get(graph.documentId)!;
+    if (document.kind !== "document") {
+      throw new Error("Expected document node");
+    }
+    const documentChildren = document.children;
+    const runs = values(graph.nodes)
+      .filter((node) => node.kind === "textRun")
+      .map((node) => node.text);
+
+    expect(new Set(documentChildren).size).toBe(2);
+    expect(runs).toContain("SPACED");
+    expect(runs).toContain("UNDERSCORED");
+  });
+
   test("project and render support decks with mounted sources", async () => {
     const child = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     child.slide({ name: "Child" }, () => <></>);
