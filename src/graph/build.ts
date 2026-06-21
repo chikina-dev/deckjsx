@@ -247,7 +247,14 @@ function textOriginFor(node: AuthorTextLeaf, path: string, context: BuildContext
   };
 }
 
-function collectClassNames(value: AuthorElementPropValue, names: string[]): void {
+const MAX_CLASS_NAME_ARRAY_DEPTH = 1024;
+
+function collectClassNames(
+  value: AuthorElementPropValue,
+  names: string[],
+  visitedArrays: WeakSet<readonly unknown[]>,
+  depth = 0,
+): void {
   if (value === false || value === null || value === undefined) {
     return;
   }
@@ -258,14 +265,20 @@ function collectClassNames(value: AuthorElementPropValue, names: string[]): void
   }
 
   if (Array.isArray(value)) {
-    value.forEach((item) => collectClassNames(item, names));
+    if (visitedArrays.has(value) || depth >= MAX_CLASS_NAME_ARRAY_DEPTH) {
+      return;
+    }
+
+    visitedArrays.add(value);
+    value.forEach((item) => collectClassNames(item, names, visitedArrays, depth + 1));
+    visitedArrays.delete(value);
     return;
   }
 
   if (isRecord(value)) {
     Object.entries(value).forEach(([name, enabled]) => {
       if (enabled === true) {
-        collectClassNames(name, names);
+        collectClassNames(name, names, visitedArrays, depth);
       }
     });
   }
@@ -273,7 +286,7 @@ function collectClassNames(value: AuthorElementPropValue, names: string[]): void
 
 function classRefsFor(value: AuthorElementPropValue): readonly StyleClassRef[] | undefined {
   const names: string[] = [];
-  collectClassNames(value, names);
+  collectClassNames(value, names, new WeakSet());
   return names.length === 0 ? undefined : names.map((name, index) => ({ name, index }));
 }
 

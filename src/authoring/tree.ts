@@ -140,11 +140,17 @@ export type AuthorTreeChild =
   | undefined
   | readonly AuthorTreeChild[];
 
+const MAX_AUTHOR_ELEMENT_PROP_DEPTH = 1024;
+
 function isRecord(value: unknown): value is Record<PropertyKey, AuthorElementPropValue> {
   return typeof value === "object" && value !== null;
 }
 
-export function isAuthorElementPropValue(value: unknown): value is AuthorElementPropValue {
+function isAuthorElementPropValueWithSeen(
+  value: unknown,
+  seen: WeakSet<object>,
+  depth: number,
+): value is AuthorElementPropValue {
   if (
     value === null ||
     value === undefined ||
@@ -155,15 +161,28 @@ export function isAuthorElementPropValue(value: unknown): value is AuthorElement
     return true;
   }
 
-  if (Array.isArray(value)) {
-    return value.every(isAuthorElementPropValue);
-  }
-
-  if (typeof value !== "object" || isAuthorTreeNode(value)) {
+  if (
+    typeof value !== "object" ||
+    isAuthorTreeNode(value) ||
+    depth >= MAX_AUTHOR_ELEMENT_PROP_DEPTH
+  ) {
     return false;
   }
 
-  return Object.values(value).every(isAuthorElementPropValue);
+  if (seen.has(value)) {
+    return false;
+  }
+
+  seen.add(value);
+  const valid = Array.isArray(value)
+    ? value.every((item) => isAuthorElementPropValueWithSeen(item, seen, depth + 1))
+    : Object.values(value).every((item) => isAuthorElementPropValueWithSeen(item, seen, depth + 1));
+  seen.delete(value);
+  return valid;
+}
+
+export function isAuthorElementPropValue(value: unknown): value is AuthorElementPropValue {
+  return isAuthorElementPropValueWithSeen(value, new WeakSet(), 0);
 }
 
 export function authorElementPropsFromEntries<

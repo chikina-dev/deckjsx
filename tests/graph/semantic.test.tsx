@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 import { Deck } from "../../src/index.ts";
+import { buildSemanticAuthorGraph } from "../../src/graph/index.ts";
 import { jsxDEV } from "../../src/jsx-dev-runtime.ts";
 
 function values<T>(map: ReadonlyMap<PropertyKey, T>): T[] {
@@ -174,5 +175,49 @@ describe("Semantic Author Graph", () => {
     );
 
     expect(view && "children" in view ? view.children : []).toHaveLength(2);
+  });
+
+  test("semantic graph className collection tolerates cyclic and excessively deep arrays", async () => {
+    const cyclicClassNames: unknown[] = ["safe"];
+    cyclicClassNames.push(cyclicClassNames);
+
+    let deeplyNestedClassNames: unknown[] = ["too-deep"];
+    for (let index = 0; index < 1100; index += 1) {
+      deeplyNestedClassNames = [deeplyNestedClassNames];
+    }
+
+    const result = buildSemanticAuthorGraph([
+      {
+        $$typeof: "deckjsx.author-tree",
+        kind: "element",
+        source: { kind: "slide" },
+        props: {},
+        children: [
+          {
+            $$typeof: "deckjsx.author-tree",
+            kind: "element",
+            source: { kind: "tag", tag: "div" },
+            props: { className: cyclicClassNames as never },
+            children: [],
+          },
+          {
+            $$typeof: "deckjsx.author-tree",
+            kind: "element",
+            source: { kind: "tag", tag: "p" },
+            props: { className: deeplyNestedClassNames as never },
+            children: [],
+          },
+        ],
+      },
+    ]);
+
+    const nodes = values(result.graph!.nodes);
+    const view = nodes.find((node) => node.kind === "container" && node.authoredTag === "div");
+    const paragraph = nodes.find((node) => node.kind === "text" && node.authoredTag === "p");
+
+    expect(result.graph!.styles.get(view?.styleRef ?? ("" as never))?.authored.classRefs).toEqual([
+      { name: "safe", index: 0 },
+    ]);
+    expect(paragraph?.styleRef).toBeUndefined();
   });
 });
