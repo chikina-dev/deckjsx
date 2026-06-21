@@ -50,6 +50,7 @@
     "check": "vp check",
     "benchmark:interactive": "node scripts/benchmark-interactive-dev.mjs",
     "benchmark:pptx": "bun run scripts/benchmark-pptx-writer.tsx",
+    "perf:calc": "bun run scripts/performance-calculator.tsx",
     "verify:render": "bun run .github/render/verify-render.tsx",
     "prepublishOnly": "vp run build"
   },

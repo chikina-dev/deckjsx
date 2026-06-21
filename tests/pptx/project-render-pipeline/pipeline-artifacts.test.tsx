@@ -208,6 +208,94 @@ describe("project/render pipeline artifacts", () => {
     expect(firstEditedFingerprint?.fingerprint).not.toBe(secondEditedFingerprint?.fingerprint);
   });
 
+  test("incremental projection artifacts expose slide projection fingerprints for reuse", async () => {
+    let editedText = "before";
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const artifacts = new H.PipelineArtifactCollection();
+
+    deck.slide({ name: "Edited" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{editedText}</p>
+    ));
+    deck.slide({ name: "Stable" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>unchanged</p>
+    ));
+
+    const first = await H.projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    editedText = "after";
+    artifacts.invalidateForSourceChange({
+      changedSourceIds: ["/project/src/deck.tsx"],
+    });
+    const second = await H.projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+    });
+    const secondEditedSlide = second.projection?.slides.find(
+      (slide) => slide.payload.name === "Edited",
+    );
+    const secondStableSlide = second.projection?.slides.find(
+      (slide) => slide.payload.name === "Stable",
+    );
+    const secondEditedSlideNodeId = secondEditedSlide?.origin?.graphNodeIds?.[0];
+    const secondStableSlideNodeId = secondStableSlide?.origin?.graphNodeIds?.[0];
+
+    const editedFingerprint = artifacts.projection?.slideProjectionFingerprints.get(
+      secondEditedSlideNodeId!,
+    );
+    const stableFingerprint = artifacts.projection?.slideProjectionFingerprints.get(
+      secondStableSlideNodeId!,
+    );
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(editedFingerprint).toEqual(
+      expect.objectContaining({
+        fingerprint: expect.stringMatching(/^fnv1a32:/),
+        slideNodeId: secondEditedSlideNodeId,
+      }),
+    );
+    expect(stableFingerprint).toEqual(
+      expect.objectContaining({
+        fingerprint: expect.stringMatching(/^fnv1a32:/),
+        slideNodeId: secondStableSlideNodeId,
+      }),
+    );
+  });
+
+  test("project can retain slide projection fingerprints before the first invalidation", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const artifacts = new H.PipelineArtifactCollection();
+
+    deck.slide({ name: "Initial incremental" }, () => (
+      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>initial</p>
+    ));
+
+    const project = await H.projectSource({
+      source: deck,
+      options: deck.options,
+      projectOptions: { inspection: "none" },
+      artifacts,
+      retainSlideProjectionFingerprints: true,
+    });
+    const slide = project.projection?.slides[0];
+    const slideNodeId = slide?.origin?.graphNodeIds?.[0];
+    const fingerprint = artifacts.projection?.slideProjectionFingerprints.get(slideNodeId!);
+
+    expect(project.ok).toBe(true);
+    expect(fingerprint).toEqual(
+      expect.objectContaining({
+        fingerprint: expect.stringMatching(/^fnv1a32:/),
+        slideNodeId,
+      }),
+    );
+  });
+
   test("Incremental projection reuses unchanged slide package parts from the stale projection", async () => {
     let editedText = "before";
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });

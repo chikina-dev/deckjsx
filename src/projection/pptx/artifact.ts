@@ -1,5 +1,5 @@
 import { createDiagnostics, diagnostic, type Diagnostics } from "../../diagnostics";
-import type { GraphNodeId, SourceOrigin } from "../../graph";
+import type { AssetEntityId, GraphNodeId, SourceOrigin } from "../../graph";
 import type {
   PackagePartId,
   PptxPackageModel,
@@ -31,6 +31,10 @@ export type PptxProjectionArtifact<
   readonly partsById: ReadonlyMap<PackagePartId, PptxProjectionPart<TProjection>>;
   readonly partsBySourceKey: ReadonlyMap<string, readonly PackagePartId[]>;
   readonly partsByGraphNodeId: ReadonlyMap<GraphNodeId, readonly PackagePartId[]>;
+  readonly slideProjectionFingerprints: ReadonlyMap<
+    GraphNodeId,
+    SlideProjectionFingerprintSnapshot
+  >;
   readonly slidePackagePartFingerprints: ReadonlyMap<
     PackagePartId,
     SlidePackagePartFingerprintSnapshot
@@ -46,6 +50,13 @@ export type SlidePackagePartFingerprintSnapshot = {
   readonly name?: string;
   readonly fingerprint: string;
   readonly graphNodeIds: readonly GraphNodeId[];
+};
+
+export type SlideProjectionFingerprintSnapshot = {
+  readonly slideNodeId: GraphNodeId;
+  readonly fingerprint: string;
+  readonly graphNodeIds: readonly GraphNodeId[];
+  readonly assetEntityIds: readonly AssetEntityId[];
 };
 
 export type PackageDependencySnapshot = {
@@ -150,6 +161,12 @@ export function projectionShapeDiagnostics(projection: PptxPackageModelCandidate
 export function pptxProjectionArtifact(
   projection: PptxPackageModelCandidate,
   diagnostics: Diagnostics,
+  options: {
+    readonly slideProjectionFingerprints?: ReadonlyMap<
+      GraphNodeId,
+      SlideProjectionFingerprintSnapshot
+    >;
+  } = {},
 ): PptxProjectionArtifact<PptxPackageModelCandidate> {
   const parts = safeProjectionParts(projection);
 
@@ -159,6 +176,7 @@ export function pptxProjectionArtifact(
     partsById: new Map(parts.map((part) => [part.id, part])),
     partsBySourceKey: partsBySourceKey(parts),
     partsByGraphNodeId: partsByGraphNodeId(parts),
+    slideProjectionFingerprints: options.slideProjectionFingerprints ?? new Map(),
     slidePackagePartFingerprints: slidePackagePartFingerprints(parts),
     packageDependencies: packageDependencySnapshot(parts),
   };

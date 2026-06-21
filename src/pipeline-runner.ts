@@ -89,7 +89,10 @@ import {
   summarizeProjectedDocumentModel,
 } from "./projection/registry";
 import { validatePptxPackageModel } from "./projection/pptx/validation";
-import { incrementalProjectionReusePlan } from "./projection/pptx/reuse";
+import {
+  incrementalProjectionReusePlan,
+  slideProjectionFingerprintSnapshots,
+} from "./projection/pptx/reuse";
 import { resolveStyles, type ResolvedStyleMap } from "./style/resolve";
 import type { SlideTemplateSet } from "./templates";
 import { pptxMediaAssetLoadRequirements } from "./writers/pptx";
@@ -1348,6 +1351,7 @@ export async function projectSource<
   assetLoaders?: readonly AssetLoader[];
   mediaSourceOrigin?: MediaSourceOrigin;
   execution?: RenderExecution;
+  retainSlideProjectionFingerprints?: boolean;
 }): Promise<ProjectResult> {
   const artifacts = input.artifacts ?? new PipelineArtifactCollection();
   const projectionFormat = input.projectionFormat ?? projectionFormatFor(input.options);
@@ -1546,6 +1550,16 @@ export async function projectSource<
     });
     const unsupportedProjectionModelDiagnostics = projectionDiagnosticsForModel({ projection });
     const projectionDiagnostics = validatePptxPackageModel(projection);
+    const slideProjectionFingerprints =
+      projectionReuse?.slideProjectionFingerprints ??
+      (input.retainSlideProjectionFingerprints
+        ? slideProjectionFingerprintSnapshots({
+            graph: projectGraph,
+            resolvedStyles: projectResolvedStyles,
+            options: input.options,
+            assets: projectAssetsById,
+          })
+        : undefined);
     const diagnostics = combineDiagnostics(
       compileResult.diagnostics,
       assetDiagnostics,
@@ -1565,7 +1579,12 @@ export async function projectSource<
           resolvedStyles: projectResolvedStyles,
         })
       : undefined;
-    artifacts.materializeProjection(projection, diagnostics, input.options);
+    artifacts.materializeProjection(
+      projection,
+      diagnostics,
+      input.options,
+      slideProjectionFingerprints ? { slideProjectionFingerprints } : {},
+    );
 
     return {
       ok: resultOk(diagnostics),
@@ -1716,6 +1735,7 @@ export async function renderSource<
     mediaSourceOrigin: execution.mediaSourceOrigin,
     execution,
     projectOptions: { inspection: "none" },
+    retainSlideProjectionFingerprints: incrementalSlot !== undefined,
   });
   const formatDiagnostics = writerAdapterFormatDiagnostics({
     adapter,
