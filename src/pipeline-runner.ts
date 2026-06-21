@@ -1578,7 +1578,6 @@ export async function projectSource<
       resolvedStyles: projectResolvedStyles,
       options: input.options,
       assets: projectAssetsById,
-      ...(projectionReuse ? { reuse: projectionReuse } : {}),
     });
     const reusedProjection = projectionWithReusablePackageParts({
       projection: projected,
