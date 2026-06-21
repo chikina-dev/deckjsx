@@ -103,6 +103,86 @@ describe("project/render table output", () => {
     expect(slideXml).toContain("<a:t>Q3</a:t>");
   });
 
+  test("project rejects unsafe table grid ranges before render", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Unsafe table" }, () => (
+      <>
+        <table style={{ x: 1, y: 1, width: 4, height: 1, tableLayout: "fixed" }}>
+          <tbody>
+            <tr>
+              <td>Safe</td>
+            </tr>
+          </tbody>
+        </table>
+      </>
+    ));
+
+    const projection = (await deck.project()).projection!;
+    const slidePart = H.expectPptxPart(projection.parts, "slide");
+    const malformedSlide = {
+      ...slidePart,
+      payload: {
+        ...slidePart.payload,
+        drawing: {
+          ...slidePart.payload.drawing,
+          children: slidePart.payload.drawing.children.map((element) =>
+            element.kind === "table"
+              ? {
+                  ...element,
+                  sections: element.sections.map((section, sectionIndex) =>
+                    sectionIndex === 0
+                      ? {
+                          ...section,
+                          rows: section.rows.map((row, rowIndex) =>
+                            rowIndex === 0
+                              ? {
+                                  ...row,
+                                  cells: row.cells.map((cell, cellIndex) =>
+                                    cellIndex === 0
+                                      ? { ...cell, gridColumnIndex: Number.MAX_SAFE_INTEGER }
+                                      : cell,
+                                  ),
+                                }
+                              : row,
+                          ),
+                        }
+                      : section,
+                  ),
+                }
+              : element,
+          ),
+        },
+      },
+    } as H.PptxSlidePart;
+    const malformedProjection = H.withFreshPackageFingerprints({
+      ...projection,
+      slides: projection.slides.map((slide) =>
+        slide.id === slidePart.id ? malformedSlide : slide,
+      ),
+      parts: projection.parts.map((part) => (part.id === slidePart.id ? malformedSlide : part)),
+    });
+
+    deck.defineProjection(malformedProjection);
+
+    const project = await deck.project();
+    const render = await deck.render();
+
+    expect(project.ok).toBe(false);
+    expect(project.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        code: "E_PPTX_PACKAGE_INVALID_DRAWING_PAYLOAD",
+        labels: expect.arrayContaining([
+          expect.objectContaining({
+            path: expect.stringContaining(".sections.0.rows.0.cells.0"),
+            message: "invalid table cell",
+          }),
+        ]),
+      }),
+    );
+    expect(render.ok).toBe(false);
+    expect(render.artifact).toBeUndefined();
+  });
+
   test("project preserves table cells and warns when rich cell content falls back to text-centric native table output", async () => {
     const image =
       "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2210%22%20height%3D%2210%22%3E%3Crect%20width%3D%2210%22%20height%3D%2210%22%20fill%3D%22%23ff0000%22%2F%3E%3C%2Fsvg%3E";

@@ -202,6 +202,7 @@ const MAX_PRESENTATION_SLIDE_ID = 2147483647;
 const MIN_PRESENTATION_SLIDE_MASTER_ID = 2147483648;
 const MIN_SLIDE_MASTER_LAYOUT_ID = 2147483649;
 const MAX_OOXML_UNSIGNED_INT_ID = 4294967295;
+const MAX_PPTX_TABLE_COLUMNS = 1024;
 
 const PACKAGE_PART_KINDS = [
   "content-types",
@@ -4473,6 +4474,21 @@ function validateDrawingTextStyle(input: {
   return issues;
 }
 
+function isValidPptxTableGridRange(cell: PptxTableCell): boolean {
+  if (
+    !Number.isSafeInteger(cell.gridColumnIndex) ||
+    cell.gridColumnIndex < 0 ||
+    !Number.isSafeInteger(cell.colSpan) ||
+    cell.colSpan < 1 ||
+    !Number.isSafeInteger(cell.rowSpan) ||
+    cell.rowSpan < 1
+  ) {
+    return false;
+  }
+
+  return cell.gridColumnIndex + cell.colSpan <= MAX_PPTX_TABLE_COLUMNS;
+}
+
 function validateDrawingElementPayload(input: {
   element: PptxElement;
   path: string;
@@ -4686,12 +4702,7 @@ function validateDrawingElementPayload(input: {
           if (
             cell.kind !== "tableCell" ||
             (cell.cellKind !== "header" && cell.cellKind !== "data") ||
-            !Number.isInteger(cell.gridColumnIndex) ||
-            cell.gridColumnIndex < 0 ||
-            !Number.isInteger(cell.colSpan) ||
-            cell.colSpan < 1 ||
-            !Number.isInteger(cell.rowSpan) ||
-            cell.rowSpan < 1 ||
+            !isValidPptxTableGridRange(cell) ||
             typeof cell.text !== "string" ||
             !Array.isArray(cell.children)
           ) {
