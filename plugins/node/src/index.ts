@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { access, open, readFile, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { FileHandle } from "node:fs/promises";
 import type { RenderResult } from "deckjsx";
@@ -101,9 +101,10 @@ export function createNodeFileAssetLoader(options: NodeFileAssetLoaderOptions = 
         importer: context.origin?.importer,
       });
       if (!filePath.ok) {
-        return nodeFileAssetOriginMissing<AssetProbeResult>({
+        return nodeFileAssetPathFailure<AssetProbeResult>({
           phase: "probe",
           source: context.source,
+          reason: filePath.reason,
         });
       }
       if (!filePath.path) {
@@ -111,6 +112,7 @@ export function createNodeFileAssetLoader(options: NodeFileAssetLoaderOptions = 
       }
 
       try {
+        await verifyNodeFileAssetContainment(filePath);
         const value = await probeFileAsset(filePath.path);
         observeDeckjsxDevAssetFile(filePath.path);
         return { ok: true, value };
@@ -130,9 +132,10 @@ export function createNodeFileAssetLoader(options: NodeFileAssetLoaderOptions = 
         importer: context.origin?.importer,
       });
       if (!filePath.ok) {
-        return nodeFileAssetOriginMissing<AssetLoadResult>({
+        return nodeFileAssetPathFailure<AssetLoadResult>({
           phase: "load",
           source: context.source,
+          reason: filePath.reason,
         });
       }
       if (!filePath.path) {
@@ -140,6 +143,7 @@ export function createNodeFileAssetLoader(options: NodeFileAssetLoaderOptions = 
       }
 
       try {
+        await verifyNodeFileAssetContainment(filePath);
         const value = await loadFileAsset(filePath.path);
         observeDeckjsxDevAssetFile(filePath.path);
         return { ok: true, value };
@@ -617,8 +621,9 @@ type NodeFileAssetPathResult =
   | {
       readonly ok: true;
       readonly path?: string;
+      readonly allowedBase?: string;
     }
-  | { readonly ok: false };
+  | { readonly ok: false; readonly reason: "missing-origin" | "outside-root" };
 
 function resolveNodeFileAssetPath(input: {
   readonly options: NodeFileAssetLoaderOptions;
@@ -629,19 +634,52 @@ function resolveNodeFileAssetPath(input: {
     return { ok: true };
   }
 
+  if (input.options.root) {
+    const resolvedPath = path.isAbsolute(input.source.path)
+      ? path.resolve(input.source.path)
+      : path.resolve(input.options.root, input.source.path);
+    return pathIsWithin(resolvedPath, input.options.root)
+      ? { ok: true, path: resolvedPath, allowedBase: input.options.root }
+      : { ok: false, reason: "outside-root" };
+  }
+
   if (path.isAbsolute(input.source.path)) {
-    return { ok: true, path: input.source.path };
+    return { ok: true, path: path.resolve(input.source.path) };
   }
 
   if (input.importer) {
-    return { ok: true, path: path.resolve(path.dirname(input.importer), input.source.path) };
+    const importerDirectory = path.dirname(input.importer);
+    const resolvedPath = path.resolve(importerDirectory, input.source.path);
+    return pathIsWithin(resolvedPath, importerDirectory)
+      ? { ok: true, path: resolvedPath, allowedBase: importerDirectory }
+      : { ok: false, reason: "outside-root" };
   }
 
-  if (input.options.root) {
-    return { ok: true, path: path.resolve(input.options.root, input.source.path) };
+  return { ok: false, reason: "missing-origin" };
+}
+
+function pathIsWithin(filePath: string, basePath: string): boolean {
+  const relativePath = path.relative(basePath, filePath);
+  return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
+}
+
+async function verifyNodeFileAssetContainment(filePath: {
+  readonly path?: string;
+  readonly allowedBase?: string;
+}): Promise<void> {
+  if (!filePath.path || !filePath.allowedBase) {
+    return;
   }
 
-  return { ok: false };
+  const [realFilePath, realBasePath] = await Promise.all([
+    realpath(filePath.path),
+    realpath(filePath.allowedBase),
+  ]);
+  if (!pathIsWithin(realFilePath, realBasePath)) {
+    throw new Error(
+      `Resolved asset path escapes the configured asset root: ${filePath.path}`,
+    );
+  }
 }
 
 async function probeFileAsset(filePath: string): Promise<AssetProbeResult> {
@@ -712,6 +750,16 @@ function nodeFileAssetReadFailure<T>(input: {
   };
 }
 
+function nodeFileAssetPathFailure<T>(input: {
+  readonly phase: "load" | "probe";
+  readonly source: AssetSource;
+  readonly reason: "missing-origin" | "outside-root";
+}): AssetLoaderOutcome<T> {
+  return input.reason === "missing-origin"
+    ? nodeFileAssetOriginMissing(input)
+    : nodeFileAssetOutsideRoot(input);
+}
+
 function nodeFileAssetOriginMissing<T>(input: {
   readonly phase: "load" | "probe";
   readonly source: AssetSource;
@@ -737,6 +785,33 @@ function nodeFileAssetOriginMissing<T>(input: {
         help: [
           "Pass mediaSourceOrigins metadata from JSX transforms or configure createNodeFileAssetLoader({ root }).",
         ],
+      },
+    ],
+  };
+}
+
+function nodeFileAssetOutsideRoot<T>(input: {
+  readonly phase: "load" | "probe";
+  readonly source: AssetSource;
+}): AssetLoaderOutcome<T> {
+  const source = authoredAssetSource(input.source);
+  return {
+    ok: false,
+    diagnostics: [
+      {
+        severity: "error",
+        code: "E_NODE_FILE_ASSET_OUTSIDE_ROOT",
+        title: "node file asset path escapes its allowed root",
+        message:
+          "@deckjsx/node refused to load a media path that resolves outside the importing module directory or configured node asset root.",
+        labels: [
+          {
+            path: source,
+            message: "asset paths must stay within their importer directory or createNodeFileAssetLoader root",
+          },
+        ],
+        notes: [`phase=${input.phase}`, `source=${source}`],
+        help: ["Move the asset under the allowed directory or use a non-traversing media path."],
       },
     ],
   };
