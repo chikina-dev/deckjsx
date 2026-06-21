@@ -180,6 +180,38 @@ describe("style resolution theme and inheritance", () => {
     expect(mergedStyles.classes.title).toEqual({ color: "#0f172a", fontSize: 24 });
   });
 
+  test("theme extension proto keys are cloned as own defaults instead of prototypes", async () => {
+    const extension = JSON.parse(
+      '{"defaults":{"__proto__":{"p":{"evilStyle":1337,"color":"red"}}}}',
+    ) as { defaults: Record<string, unknown> };
+    const theme = new H.Theme({ defaults: {} }).extend(extension);
+    const defaults = theme.defaults as Record<string, unknown>;
+    const deck = new H.Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      theme,
+    });
+    deck.slide(() => (
+      <>
+        <p>Revenue</p>
+      </>
+    ));
+
+    const result = deck.compile();
+    const text = H.values(result.graph?.nodes ?? new Map()).find(
+      (node) => node.kind === "text" && node.authoredTag === "p",
+    );
+
+    expect(Object.hasOwn(defaults, "__proto__")).toBe(true);
+    expect(Object.getPrototypeOf(defaults)).toBe(null);
+    expect(defaults.p).toBeUndefined();
+    expect(result.diagnostics.items.map((item) => item.code)).toContain(
+      "E_THEME_INVALID_DEFAULT_KEY",
+    );
+    expect(result.resolvedStyles?.get(text?.id ?? ("" as never))?.style).not.toHaveProperty(
+      "evilStyle",
+    );
+  });
+
   test("invalid theme defaults are compile diagnostics", async () => {
     const invalidTheme = new H.Theme(
       { defaults: { Slide: { color: "red" }, span: { x: 1 } } },
