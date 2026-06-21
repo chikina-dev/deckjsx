@@ -357,6 +357,33 @@ describe("deckjsx integration incremental artifact session", () => {
     ).toThrow("Incremental artifact cycle 1 has already completed.");
   });
 
+  test("detached async work cannot claim render slots after a cycle stops running", async () => {
+    const session = H.createIncrementalArtifactSession();
+    let lateSlot: ReturnType<typeof H.claimIncrementalArtifactRenderSlot> | undefined;
+    let resolveLateWork!: () => void;
+    const lateWork = new Promise<void>((resolve) => {
+      resolveLateWork = resolve;
+    });
+
+    await H.runIncrementalArtifactCycle(session, {}, () => {
+      setTimeout(() => {
+        lateSlot = H.claimIncrementalArtifactRenderSlot();
+        lateSlot?.artifacts.materializeSource({
+          sourceKey: H.ROOT_SOURCE_ARTIFACT_KEY,
+          source: { kind: "root" },
+          rootCount: 99,
+          rootPaths: ["late"],
+          diagnostics: H.createDiagnostics(),
+        });
+        resolveLateWork();
+      }, 0);
+    });
+    await lateWork;
+
+    expect(lateSlot).toBeUndefined();
+    expect(session.inspectArtifacts().retainedSlots()).toEqual([]);
+  });
+
   test("failed incremental artifact cycles do not commit draft render slot artifacts", async () => {
     const session = H.createIncrementalArtifactSession();
 

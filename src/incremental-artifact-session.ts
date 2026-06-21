@@ -387,7 +387,7 @@ export async function runIncrementalArtifactCycle<T>(
 
 export function claimIncrementalArtifactRenderSlot(): IncrementalArtifactRenderSlot | undefined {
   const active = currentActiveCycle();
-  if (!active) {
+  if (!active || !active.running || active.completed) {
     return undefined;
   }
 
