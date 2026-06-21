@@ -542,17 +542,31 @@ async function replaceWithLockFile(
   options: { readonly preserveLockMetadata?: boolean } = {},
 ): Promise<void> {
   const stagingPath = stagingPathForLockedWrite(lock.path, outputPath, options);
-  await lock.handle.close();
   try {
     if (stagingPath === lock.path) {
-      await writeFile(stagingPath, bytes);
+      await writeBytesToLockFile(lock.handle, bytes);
+      await lock.handle.close();
     } else {
+      await lock.handle.close();
       await writeFile(stagingPath, bytes, { flag: "wx" });
     }
     await rename(stagingPath, outputPath);
   } catch (error) {
+    await lock.handle.close().catch(() => undefined);
     await unlink(stagingPath).catch(() => undefined);
     throw error;
+  }
+}
+
+async function writeBytesToLockFile(handle: FileHandle, bytes: Uint8Array): Promise<void> {
+  await handle.truncate(0);
+  let offset = 0;
+  while (offset < bytes.byteLength) {
+    const { bytesWritten } = await handle.write(bytes, offset, bytes.byteLength - offset, offset);
+    if (bytesWritten === 0) {
+      throw new Error("Deckjsx could not write artifact bytes to the output lock file.");
+    }
+    offset += bytesWritten;
   }
 }
 
