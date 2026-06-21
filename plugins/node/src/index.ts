@@ -1,5 +1,14 @@
 import { constants } from "node:fs";
-import { access, open, readFile, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
+import {
+  access,
+  open,
+  readFile,
+  realpath,
+  rename,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import type { FileHandle } from "node:fs/promises";
 import type { RenderResult } from "deckjsx";
@@ -676,9 +685,7 @@ async function verifyNodeFileAssetContainment(filePath: {
     realpath(filePath.allowedBase),
   ]);
   if (!pathIsWithin(realFilePath, realBasePath)) {
-    throw new Error(
-      `Resolved asset path escapes the configured asset root: ${filePath.path}`,
-    );
+    throw new Error(`Resolved asset path escapes the configured asset root: ${filePath.path}`);
   }
 }
 
@@ -807,7 +814,8 @@ function nodeFileAssetOutsideRoot<T>(input: {
         labels: [
           {
             path: source,
-            message: "asset paths must stay within their importer directory or createNodeFileAssetLoader root",
+            message:
+              "asset paths must stay within their importer directory or createNodeFileAssetLoader root",
           },
         ],
         notes: [`phase=${input.phase}`, `source=${source}`],
