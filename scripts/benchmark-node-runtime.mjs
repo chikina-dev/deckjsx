@@ -131,7 +131,7 @@ async function loadBenchmarkRuntime() {
     import(pathToFileURL(path.join(root, "dist/index.mjs")).href),
     import(pathToFileURL(path.join(root, "dist/adapter/index.mjs")).href),
     import(pathToFileURL(path.join(root, "dist/jsx-runtime.mjs")).href),
-    import(pathToFileURL(path.join(root, "plugins/node/dist/index.mjs")).href),
+    import(pathToFileURL(path.join(root, "sample/node_modules/@deckjsx/node/dist/index.mjs")).href),
   ]);
   return {
     Deck: deckjsx.Deck,

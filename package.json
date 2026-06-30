@@ -53,7 +53,7 @@
     "test": "vp test",
     "check": "vp check",
     "benchmark:interactive": "node scripts/benchmark-interactive-dev.mjs",
-    "benchmark:node": "node scripts/benchmark-node-runtime.mjs",
+    "benchmark:node": "node --preserve-symlinks --preserve-symlinks-main scripts/benchmark-node-runtime.mjs",
     "benchmark:pptx": "bun run scripts/benchmark-pptx-writer.tsx",
     "perf:calc": "bun run scripts/performance-calculator.tsx",
     "perf:types": "node scripts/type-performance.mjs",
