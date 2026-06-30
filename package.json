@@ -59,6 +59,7 @@
     "perf:types": "node scripts/type-performance.mjs",
     "smoke:tarball": "node scripts/tarball-smoke.mjs",
     "verify:render": "bun run .github/render/verify-render.tsx",
+    "verify:render-confidence": "bun run .github/render/verify-render.tsx",
     "prepublishOnly": "vp run build"
   },
   "dependencies": {},

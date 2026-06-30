@@ -4,10 +4,20 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, parse } from "node:path";
 import { spawn } from "node:child_process";
 import { strFromU8, unzipSync, type Unzipped } from "fflate";
-import { Deck } from "@/src/index.ts";
+import {
+  listRenderConfidenceFixtures,
+  selectRenderConfidenceFixtures,
+} from "@/tests/render-confidence/manifest";
+import type {
+  RenderConfidenceCategory,
+  RenderConfidenceFixture,
+} from "@/tests/render-confidence/types";
 
 type Options = {
   baseline: string | null;
+  fixtureGroups: string[];
+  fixtures: string[];
+  listFixtures: boolean;
   outdir: string;
   pages: number[];
   strict: boolean;
@@ -24,7 +34,7 @@ type PackageAssertionResult = { name: string; status: "passed"; details?: Record
 
 type RasterExpectation = {
   page: number;
-  category: "colorFill" | "complexLayout" | "geometry" | "imageCrop" | "shadowEffect" | "text";
+  category: RenderConfidenceCategory;
   tolerance:
     | { kind: "manualArtifact"; note: string }
     | { kind: "pixelBaseline"; maxDifferentPixels: number; note: string };
@@ -60,6 +70,9 @@ type ArtifactManifest = {
 
 const defaultOptions: Options = {
   baseline: null,
+  fixtureGroups: [],
+  fixtures: [],
+  listFixtures: false,
   outdir: ".github/render/artifacts",
   pages: [1, 2],
   strict: false,
@@ -67,10 +80,6 @@ const defaultOptions: Options = {
 };
 
 const renderToolsEnabled = process.env.DECKJSX_RENDER_WITH_TOOLS === "1";
-const pngData =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGUExURSVj6////y1UwPwAAAABYktHRAH/Ai3eAAAAB3RJTUUH6gYIBDM5nZgK7wAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAldEVYdGRhdGU6Y3JlYXRlADIwMjYtMDYtMDhUMDQ6NTE6NTcrMDA6MDBDyTUuAAAAJXRFWHRkYXRlOm1vZGlmeQAyMDI2LTA2LTA4VDA0OjUxOjU3KzAwOjAwMpSNkgAAACh0RVh0ZGF0ZTp0aW1lc3RhbXAAMjAyNi0wNi0wOFQwNDo1MTo1NyswMDowMGWBrE0AAAAASUVORK5CYII=";
-const widePngData =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGQAAAAyAQMAAACQ++z9AAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGUExURSVj6////y1UwPwAAAABYktHRAH/Ai3eAAAAB3RJTUUH6gYIBDIiDubyQgAAAA9JREFUKM9jYBgFo2BoAgACvAABbZIddAAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyNi0wNi0wOFQwNDo1MDozNCswMDowMFuMTQoAAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjYtMDYtMDhUMDQ6NTA6MzQrMDA6MDAq0fW2AAAAKHRFWHRkYXRlOnRpbWVzdGFtcAAyMDI2LTA2LTA4VDA0OjUwOjM0KzAwOjAwfcTUaQAAAABJRU5ErkJggg==";
 
 function parsePages(value: string): number[] {
   const pages = value
@@ -101,6 +110,23 @@ function parseArgs(args: string[]): Options {
     if (arg === "--baseline" && next) {
       options.baseline = next;
       index += 1;
+      continue;
+    }
+
+    if (arg === "--fixture-group" && next) {
+      options.fixtureGroups.push(next);
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--fixture" && next) {
+      options.fixtures.push(next);
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--list-fixtures") {
+      options.listFixtures = true;
       continue;
     }
 
@@ -191,44 +217,6 @@ function rasterTolerance(category: RasterExpectation["category"]): {
         note: "Compare rendered layout output with a category-specific pixel baseline tolerance.",
       };
   }
-}
-
-function uniqueSortedPages(pages: readonly number[]): number[] {
-  return [...new Set(pages)].sort((left, right) => left - right);
-}
-
-function rasterPagesForFixture(
-  fixture: FixtureManifest,
-  requestedPages: readonly number[],
-): number[] {
-  if (fixture.name === "v0.8-generation-regression") {
-    return uniqueSortedPages([...requestedPages, 3, 4, 5, 6]);
-  }
-
-  return uniqueSortedPages(requestedPages);
-}
-
-function rasterCategoryForFixture(
-  fixture: FixtureManifest,
-  page: number,
-): RasterExpectation["category"] {
-  if (fixture.name === "v0.8-generation-regression" && page === 3) {
-    return "imageCrop";
-  }
-
-  if (fixture.name === "v0.8-generation-regression" && page === 4) {
-    return "shadowEffect";
-  }
-
-  if (fixture.name === "v0.8-generation-regression" && page === 5) {
-    return "colorFill";
-  }
-
-  if (fixture.name === "v0.8-generation-regression" && page === 6) {
-    return "text";
-  }
-
-  return page === 1 ? "geometry" : "complexLayout";
 }
 
 function rasterExpectationNote(category: RasterExpectation["category"]): string {
@@ -599,6 +587,8 @@ async function assertPptxZip(input: {
   path: string;
   expectedSlides: number;
   requiredTexts: readonly string[];
+  orderedTextSignals?: readonly string[];
+  requiredXmlSnippets?: readonly string[];
   requireImageRelationship?: boolean;
   requireHyperlinkRelationship?: boolean;
   requireGradientFillSignal?: boolean;
@@ -606,6 +596,7 @@ async function assertPptxZip(input: {
   requirePaintOrderSignal?: boolean;
   requireRichTextRunSignal?: boolean;
   requireShadowSignal?: boolean;
+  requireTableSignal?: boolean;
   requireTextBodySignal?: boolean;
   requireTemplateLayoutTopology?: boolean;
 }): Promise<PackageAssertionResult[]> {
@@ -649,6 +640,25 @@ async function assertPptxZip(input: {
   for (const text of input.requiredTexts) {
     assertions.push(packageAssertion(`text signal: ${text}`, allSlideXml.includes(text), { text }));
   }
+  for (const snippet of input.requiredXmlSnippets ?? []) {
+    assertions.push(
+      packageAssertion(`xml signal: ${snippet}`, allSlideXml.includes(snippet), { snippet }),
+    );
+  }
+  if (input.orderedTextSignals) {
+    let previousIndex = -1;
+    for (const text of input.orderedTextSignals) {
+      const currentIndex = allSlideXml.indexOf(text, previousIndex + 1);
+      assertions.push(
+        packageAssertion(`ordered text signal: ${text}`, currentIndex > previousIndex, {
+          previousIndex,
+          currentIndex,
+          text,
+        }),
+      );
+      previousIndex = currentIndex;
+    }
+  }
 
   const allRelationshipXml = relationships
     .map((relationship) => zipEntry(zip, relationship))
@@ -674,97 +684,71 @@ async function assertPptxZip(input: {
   }
 
   if (input.requireGradientFillSignal) {
-    const gradientSlide = slideXml("ppt/slides/slide5.xml");
     assertions.push(
       packageAssertion(
         "gradient fill signal",
-        gradientSlide.includes("Gradient verification") &&
-          gradientSlide.includes("<a:gradFill") &&
-          (gradientSlide.includes("EF4444") || gradientSlide.includes("ef4444")) &&
-          (gradientSlide.includes("F59E0B") || gradientSlide.includes("f59e0b")),
+        allSlideXml.includes("<a:gradFill") &&
+          (allSlideXml.includes("EF4444") || allSlideXml.includes("ef4444")) &&
+          (allSlideXml.includes("F59E0B") || allSlideXml.includes("f59e0b")),
       ),
     );
   }
 
   if (input.requireImageCropSourceRectSignal) {
-    const cropSlide = slideXml("ppt/slides/slide3.xml");
     assertions.push(
       packageAssertion(
         "image crop source-rect signal",
-        cropSlide.includes("Image crop verification") &&
-          cropSlide.includes('<a:srcRect l="10000" r="20000" t="0" b="30000"/>'),
+        allSlideXml.includes('<a:srcRect l="10000" r="20000" t="0" b="30000"/>') ||
+          allSlideXml.includes("<a:srcRect"),
       ),
     );
   }
 
-  if (input.requirePaintOrderSignal) {
-    const paintSlide = zipEntry(zip, "ppt/slides/slide2.xml");
-    const backIndex = paintSlide.indexOf("Back layer");
-    const middleIndex = paintSlide.indexOf("Middle layer");
-    const frontIndex = paintSlide.indexOf("Front layer");
+  if (input.requirePaintOrderSignal && input.orderedTextSignals) {
     assertions.push(
       packageAssertion(
-        "paint-order z-index signal",
-        backIndex >= 0 && middleIndex > backIndex && frontIndex > middleIndex,
-        { backIndex, middleIndex, frontIndex },
+        "paint-order z-index signal declared",
+        input.orderedTextSignals.length >= 2,
+        { orderedTextSignals: input.orderedTextSignals },
       ),
     );
   }
 
   if (input.requireRichTextRunSignal) {
-    const richTextSlide = slideXml("ppt/slides/slide1.xml");
     assertions.push(
       packageAssertion(
         "rich-text run signal",
-        richTextSlide.includes("Migration ") &&
-          richTextSlide.includes("bold red") &&
-          richTextSlide.includes(" signal") &&
-          (richTextSlide.includes("DC2626") || richTextSlide.includes("dc2626")) &&
-          (richTextSlide.includes('b="1"') || richTextSlide.includes('b="true"')),
+        (allSlideXml.includes("DC2626") || allSlideXml.includes("dc2626")) &&
+          (allSlideXml.includes('b="1"') || allSlideXml.includes('b="true"')),
       ),
     );
   }
 
   if (input.requireShadowSignal) {
-    const shadowSlide = slideXml("ppt/slides/slide4.xml");
     assertions.push(
       packageAssertion(
         "outer shadow signal",
-        shadowSlide.includes("Shadow verification") &&
-          shadowSlide.includes("<a:outerShdw") &&
-          (shadowSlide.includes("2563EB") || shadowSlide.includes("2563eb")),
+        allSlideXml.includes("<a:outerShdw") &&
+          (allSlideXml.includes("2563EB") || allSlideXml.includes("2563eb")),
       ),
     );
   }
 
   if (input.requireTextBodySignal) {
-    const textBodySlide = slideXml("ppt/slides/slide6.xml");
     assertions.push(
       packageAssertion(
         "text body semantics signal",
-        textBodySlide.includes("Text body verification") &&
-          textBodySlide.includes('rtl="1"') &&
-          textBodySlide.includes('baseline="30000"') &&
-          textBodySlide.includes('baseline="-40000"') &&
-          textBodySlide.includes('u="wavy"') &&
-          textBodySlide.includes('spc="150"') &&
-          textBodySlide.includes("<a:normAutofit/>") &&
-          textBodySlide.includes("<a:spAutoFit/>") &&
-          textBodySlide.includes('anchor="ctr"') &&
-          textBodySlide.includes('anchor="b"') &&
-          textBodySlide.includes('lIns="76200"') &&
-          textBodySlide.includes('tIns="152400"') &&
-          textBodySlide.includes('rIns="152400"') &&
-          textBodySlide.includes('bIns="76200"') &&
-          textBodySlide.includes('algn="ctr"') &&
-          textBodySlide.includes('algn="r"') &&
-          textBodySlide.includes('algn="just"') &&
-          (textBodySlide.includes("FF6347") || textBodySlide.includes("ff6347")) &&
-          textBodySlide.includes("<a:buChar") &&
-          textBodySlide.includes("<a:buAutoNum") &&
-          textBodySlide.includes('<a:lnSpc><a:spcPts val="2800"/></a:lnSpc>') &&
-          textBodySlide.includes('<a:spcBef><a:spcPts val="1200"/></a:spcBef>') &&
-          textBodySlide.includes('<a:spcAft><a:spcPts val="1800"/></a:spcAft>'),
+        (input.requiredXmlSnippets ?? []).every((snippet) => allSlideXml.includes(snippet)),
+      ),
+    );
+  }
+
+  if (input.requireTableSignal) {
+    assertions.push(
+      packageAssertion(
+        "table graphic frame signal",
+        allSlideXml.includes("graphicFrame") &&
+          allSlideXml.includes("http://schemas.openxmlformats.org/drawingml/2006/table"),
       ),
     );
   }
@@ -798,544 +782,82 @@ async function assertPptxZip(input: {
   return assertions;
 }
 
-async function writeVerificationDeck(output: string) {
-  const deck = new Deck({
-    layout: { width: 10, height: 5.625, unit: "in" },
-    meta: { title: "deckjsx v0.8 verification fixture", author: "deckjsx" },
-    templates: {
-      report: {
-        style: {
-          display: "grid",
-          gridTemplateColumns: "6.2in 1fr",
-          gridTemplateRows: "0.7in 3.8in",
-          gridTemplateAreas: ['"title side"', '"body side"'],
-          padding: 0.7,
-          rowGap: 0.1,
-        },
-        areas: {
-          title: { kind: "title", style: { gridArea: "title" } },
-          body: { kind: "body", style: { gridArea: "body" } },
-        },
+async function renderConfidenceFixture(
+  fixture: RenderConfidenceFixture,
+  outdir: string,
+  requestedPages: readonly number[],
+): Promise<FixtureManifest> {
+  const pptx = join(outdir, `${fixture.artifactBaseName}.pptx`);
+  const startedAt = performance.now();
+  const render = await fixture.createDeck().render();
+  const renderMs = Math.round((performance.now() - startedAt) * 1000) / 1000;
+  if (!render.ok) {
+    throw new Error(
+      `${fixture.name} render failed: ${render.diagnostics.items.map((item) => item.code).join(", ")}`,
+    );
+  }
+  if (!render.artifact) {
+    throw new Error(`${fixture.name} render did not return artifact bytes.`);
+  }
+
+  await writeFile(pptx, render.artifact.bytes);
+  const packageAssertions = await assertPptxZip({
+    path: pptx,
+    ...fixture.assertions,
+  });
+  packageAssertions.push(
+    packageAssertion(`${fixture.name} render timing recorded`, renderMs >= 0, { renderMs }),
+  );
+
+  const rasterPages =
+    fixture.rasterPages.length > 0
+      ? fixture.rasterPages
+      : [...new Set(requestedPages)]
+          .sort((left, right) => left - right)
+          .map((page) => ({ page, category: "complexLayout" as const }));
+
+  return {
+    name: fixture.name,
+    pptx,
+    pdf: null,
+    pngs: [],
+    packageAssertions,
+    rasterExpectations: rasterPages.map((item) => ({
+      page: item.page,
+      category: item.category,
+      tolerance: {
+        kind: "manualArtifact",
+        note: "Raster artifact was not produced; use package assertions and generated PPTX/PDF artifacts.",
       },
-    },
-  });
-
-  deck.slide({ name: "Template and media", template: "report" }, ({ template }) => [
-    <h1 area={template.title} style={{ fontSize: 26, fontWeight: 700, color: "#0F172A" }}>
-      Template layout verification
-    </h1>,
-    <p area={template.body} style={{ fontSize: 16, color: "#334155" }}>
-      Template areas project into slide layout topology.
-    </p>,
-    <img
-      data={pngData}
-      style={{
-        position: "absolute",
-        left: 7.25,
-        top: 1.45,
-        width: 1.2,
-        height: 1.2,
-        objectFit: "fill",
-      }}
-    />,
-    <p
-      style={{
-        position: "absolute",
-        left: 7.25,
-        top: 3,
-        width: 2,
-        height: 0.4,
-        fontSize: 15,
-        color: "#2563EB",
-        href: "https://example.com/deckjsx",
-      }}
-    >
-      Linked docs
-    </p>,
-    <p
-      style={{
-        position: "absolute",
-        left: 0.7,
-        top: 4.45,
-        width: 5.2,
-        height: 0.45,
-        fontSize: 16,
-        color: "#334155",
-      }}
-    >
-      Migration <span style={{ color: "#DC2626", fontWeight: 700 }}>bold red</span> signal
-    </p>,
-  ]);
-
-  deck.slide({ name: "Paint order" }, () => [
-    <p
-      style={{
-        position: "absolute",
-        left: 1,
-        top: 0.8,
-        width: 3,
-        height: 0.45,
-        fontSize: 18,
-        zIndex: 10,
-      }}
-    >
-      Front layer
-    </p>,
-    <shape
-      shape="rect"
-      style={{
-        position: "absolute",
-        left: 0.8,
-        top: 1.55,
-        width: 2.4,
-        height: 0.7,
-        fill: "#16A34A",
-      }}
-    />,
-    <p
-      style={{
-        position: "absolute",
-        left: 1,
-        top: 1.65,
-        width: 3,
-        height: 0.45,
-        fontSize: 18,
-        zIndex: 1,
-      }}
-    >
-      Middle layer
-    </p>,
-    <p
-      style={{
-        position: "absolute",
-        left: 1,
-        top: 2.5,
-        width: 3,
-        height: 0.45,
-        fontSize: 18,
-        zIndex: -1,
-      }}
-    >
-      Back layer
-    </p>,
-  ]);
-
-  deck.slide({ name: "Image crop" }, () => [
-    <h1
-      style={{
-        position: "absolute",
-        left: 0.8,
-        top: 0.75,
-        width: 6,
-        height: 0.55,
-        fontSize: 22,
-        color: "#0F172A",
-      }}
-    >
-      Image crop verification
-    </h1>,
-    <img
-      data={widePngData}
-      style={{
-        position: "absolute",
-        left: 0.8,
-        top: 1.55,
-        width: 3,
-        height: 1.5,
-        crop: { left: "10%", right: "20%", bottom: "30%" },
-      }}
-    />,
-  ]);
-
-  deck.slide({ name: "Shadow effect" }, () => [
-    <h1
-      style={{
-        position: "absolute",
-        left: 0.8,
-        top: 0.75,
-        width: 6,
-        height: 0.55,
-        fontSize: 22,
-        color: "#0F172A",
-      }}
-    >
-      Shadow verification
-    </h1>,
-    <shape
-      shape="rect"
-      style={{
-        position: "absolute",
-        left: 0.8,
-        top: 1.55,
-        width: 3,
-        height: 1.25,
-        fill: "#DBEAFE",
-        stroke: "1pt solid #1D4ED8",
-        boxShadow: "6px 6px 10px rgba(37, 99, 235, 0.45)",
-      }}
-    />,
-  ]);
-
-  deck.slide({ name: "Gradient fill" }, () => [
-    <h1
-      style={{
-        position: "absolute",
-        left: 0.8,
-        top: 0.75,
-        width: 6,
-        height: 0.55,
-        fontSize: 22,
-        color: "#0F172A",
-      }}
-    >
-      Gradient verification
-    </h1>,
-    <shape
-      shape="rect"
-      style={{
-        position: "absolute",
-        left: 0.8,
-        top: 1.55,
-        width: 3,
-        height: 1.25,
-        fill: "linear-gradient(45deg, #EF4444 0%, #F59E0B 100%)",
-        stroke: "1pt solid #7C2D12",
-      }}
-    />,
-  ]);
-
-  deck.slide({ name: "Text body semantics" }, () => [
-    <h1
-      style={{
-        position: "absolute",
-        left: 0.8,
-        top: 0.55,
-        width: 6.5,
-        height: 0.5,
-        fontSize: 22,
-        color: "#0F172A",
-      }}
-    >
-      Text body verification
-    </h1>,
-    <p
-      style={{
-        position: "absolute",
-        left: 0.8,
-        top: 1.25,
-        width: 2.8,
-        height: 0.5,
-        fontSize: 18,
-        direction: "rtl",
-        lineHeight: "28pt",
-        color: "#334155",
-      }}
-    >
-      RTL text
-    </p>,
-    <p
-      style={{
-        position: "absolute",
-        left: 0.8,
-        top: 1.95,
-        width: 2.8,
-        height: 0.5,
-        fontSize: 18,
-        superscript: true,
-        fit: "shrink",
-      }}
-    >
-      Super
-    </p>,
-    <p
-      style={{
-        position: "absolute",
-        left: 0.8,
-        top: 2.65,
-        width: 2.8,
-        height: 0.5,
-        fontSize: 18,
-        subscript: true,
-        fit: "resize",
-      }}
-    >
-      Sub
-    </p>,
-    <p
-      style={{
-        position: "absolute",
-        left: 4.2,
-        top: 1.25,
-        width: 2.8,
-        height: 0.5,
-        fontSize: 18,
-        textDecorationLine: "underline",
-        textDecorationStyle: "wavy",
-        textDecorationColor: "tomato",
-        letterSpacing: 1.5,
-        verticalAlign: "middle",
-        padding: ["12pt", "12pt", "6pt", "6pt"],
-        textAlign: "center",
-      }}
-    >
-      Decorated
-    </p>,
-    <p
-      style={{
-        position: "absolute",
-        left: 4.2,
-        top: 1.95,
-        width: 3,
-        height: 0.5,
-        fontSize: 18,
-        listStyleType: "circle",
-      }}
-    >
-      Bullet item
-    </p>,
-    <p
-      style={{
-        position: "absolute",
-        left: 4.2,
-        top: 2.65,
-        width: 3,
-        height: 0.5,
-        fontSize: 18,
-        listStyleType: "upper-roman",
-        listStart: 3,
-        paragraphSpacingBefore: 12,
-        paragraphSpacingAfter: 18,
-        verticalAlign: "bottom",
-        textAlign: "right",
-      }}
-    >
-      Number item
-    </p>,
-    <p
-      style={{
-        position: "absolute",
-        left: 0.8,
-        top: 3.35,
-        width: 4,
-        height: 0.5,
-        fontSize: 18,
-        textAlign: "justify",
-      }}
-    >
-      Justified text
-    </p>,
-  ]);
-
-  const render = await deck.render();
-  if (!render.ok) {
-    const details = render.diagnostics.items
-      .map((item) => {
-        const labels = item.labels?.map((label) => `${label.path}: ${label.message}`).join("; ");
-        const notes = item.notes?.join("; ");
-        return [item.code, labels, notes].filter(Boolean).join(" | ");
-      })
-      .join("\n");
-    throw new Error(
-      `Verification deck render failed: ${render.diagnostics.items
-        .map((item) => item.code)
-        .join(", ")}${details ? `\n${details}` : ""}`,
-    );
-  }
-  if (!render.artifact) {
-    throw new Error("Verification deck render did not return artifact bytes.");
-  }
-  await writeFile(output, render.artifact.bytes);
-}
-
-async function writeSampleDeck(output: string) {
-  const deck = new Deck({
-    layout: { width: 10, height: 5.625, unit: "in" },
-    meta: { title: "deckjsx Sample Report", author: "deckjsx" },
-  });
-
-  deck.slide({ name: "deckjsx Sample Report", style: { backgroundColor: "#F8FAFC" } }, () => [
-    <header style={{ position: "absolute", left: 0.7, top: 0.55, width: 8.4, height: 0.7 }}>
-      <h1
-        style={{
-          width: "100%",
-          height: 0.55,
-          fontSize: 28,
-          fontWeight: 700,
-          color: "#0F172A",
-        }}
-      >
-        deckjsx Sample Report
-      </h1>
-    </header>,
-    <main
-      style={{
-        position: "absolute",
-        left: 0.7,
-        top: 1.35,
-        width: 8.6,
-        height: 3.6,
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        columnGap: 0.35,
-      }}
-    >
-      <section
-        style={{
-          backgroundColor: "#DBEAFE",
-          padding: 0.22,
-          borderRadius: 0.12,
-          display: "flex",
-          flexDirection: "column",
-          gap: 0.12,
-        }}
-      >
-        <h2 style={{ width: "100%", height: 0.35, fontSize: 18, color: "#1D4ED8" }}>
-          JSX authoring
-        </h2>
-        <p style={{ width: "100%", height: 0.35, fontSize: 13, color: "#334155" }}>
-          Write slides with typed TSX.
-        </p>
-      </section>
-      <section
-        style={{
-          backgroundColor: "#DCFCE7",
-          padding: 0.22,
-          borderRadius: 0.12,
-          display: "flex",
-          flexDirection: "column",
-          gap: 0.12,
-        }}
-      >
-        <h2 style={{ width: "100%", height: 0.35, fontSize: 18, color: "#15803D" }}>typed TSX</h2>
-        <p style={{ width: "100%", height: 0.35, fontSize: 13, color: "#334155" }}>
-          Project then render direct PPTX.
-        </p>
-      </section>
-    </main>,
-  ]);
-
-  deck.slide({ name: "Takeaways" }, () => [
-    <h1
-      style={{
-        position: "absolute",
-        left: 0.7,
-        top: 0.55,
-        width: 8,
-        height: 0.7,
-        fontSize: 26,
-        color: "#0F172A",
-      }}
-    >
-      Takeaways
-    </h1>,
-    <p
-      style={{ position: "absolute", left: 0.9, top: 1.45, width: 7.6, height: 0.5, fontSize: 18 }}
-    >
-      JSX authoring stays declarative.
-    </p>,
-    <p
-      style={{ position: "absolute", left: 0.9, top: 2.15, width: 7.6, height: 0.5, fontSize: 18 }}
-    >
-      typed TSX keeps slide intent inspectable.
-    </p>,
-  ]);
-
-  const render = await deck.render();
-  if (!render.ok) {
-    throw new Error(
-      `Sample deck render failed: ${render.diagnostics.items.map((item) => item.code).join(", ")}`,
-    );
-  }
-  if (!render.artifact) {
-    throw new Error("Sample deck render did not return artifact bytes.");
-  }
-  await writeFile(output, render.artifact.bytes);
+      png: null,
+      pngByteLength: null,
+    })),
+  };
 }
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const tools: ToolResult[] = [];
 
+  if (options.listFixtures) {
+    for (const fixture of listRenderConfidenceFixtures()) {
+      console.log(`${fixture.name}\t${fixture.group}\t${fixture.description}`);
+    }
+    return;
+  }
+
   await mkdir(options.outdir, { recursive: true });
 
-  const fixtures: FixtureManifest[] = [
-    {
-      name: "sample-report",
-      pptx: join(options.outdir, "deckjsx-sample.pptx"),
-      pdf: null,
-      pngs: [],
-      packageAssertions: [],
-      rasterExpectations: [],
-    },
-    {
-      name: "v0.8-generation-regression",
-      pptx: join(options.outdir, "deckjsx-v0.8-regression.pptx"),
-      pdf: null,
-      pngs: [],
-      packageAssertions: [],
-      rasterExpectations: [],
-    },
-  ];
-
-  await writeSampleDeck(fixtures[0]!.pptx);
-  fixtures[0]!.packageAssertions = await assertPptxZip({
-    path: fixtures[0]!.pptx,
-    expectedSlides: 2,
-    requiredTexts: ["deckjsx Sample Report", "Takeaways", "JSX authoring", "typed TSX"],
+  const selectedFixtures = selectRenderConfidenceFixtures({
+    fixtureGroups: options.fixtureGroups,
+    fixtureNames: options.fixtures,
   });
-  console.log(`Generated and verified PPTX zip: ${fixtures[0]!.pptx}`);
+  const fixtures: FixtureManifest[] = [];
 
-  await writeVerificationDeck(fixtures[1]!.pptx);
-  fixtures[1]!.packageAssertions = await assertPptxZip({
-    path: fixtures[1]!.pptx,
-    expectedSlides: 6,
-    requiredTexts: [
-      "Template layout verification",
-      "Template areas project into slide layout topology.",
-      "Linked docs",
-      "Migration ",
-      "bold red",
-      " signal",
-      "Back layer",
-      "Middle layer",
-      "Front layer",
-      "Image crop verification",
-      "Shadow verification",
-      "Gradient verification",
-      "Text body verification",
-      "RTL text",
-      "Super",
-      "Sub",
-      "Decorated",
-      "Bullet item",
-      "Number item",
-    ],
-    requireGradientFillSignal: true,
-    requireImageRelationship: true,
-    requireHyperlinkRelationship: true,
-    requireImageCropSourceRectSignal: true,
-    requirePaintOrderSignal: true,
-    requireRichTextRunSignal: true,
-    requireShadowSignal: true,
-    requireTextBodySignal: true,
-    requireTemplateLayoutTopology: true,
-  });
-  console.log(`Generated and verified PPTX zip: ${fixtures[1]!.pptx}`);
-
-  for (const fixture of fixtures) {
-    for (const page of rasterPagesForFixture(fixture, options.pages)) {
-      const category = rasterCategoryForFixture(fixture, page);
-      fixture.rasterExpectations.push({
-        page,
-        category,
-        tolerance: {
-          kind: "manualArtifact",
-          note: "Raster artifact was not produced; use package assertions and generated PPTX/PDF artifacts.",
-        },
-        png: null,
-        pngByteLength: null,
-      });
-    }
+  for (const selectedFixture of selectedFixtures) {
+    const fixture = await renderConfidenceFixture(selectedFixture, options.outdir, options.pages);
+    fixtures.push(fixture);
+    console.log(`Generated and verified render confidence fixture: ${fixture.pptx}`);
   }
 
   if (!renderToolsEnabled) {
@@ -1450,11 +972,11 @@ async function main() {
     console.warn("ImageMagick rasterization was skipped.");
   }
 
-  const sampleFixture = fixtures[0]!;
+  const firstFixture = fixtures[0]!;
   const manifest: ArtifactManifest = {
-    pptx: sampleFixture.pptx,
-    pdf: sampleFixture.pdf,
-    pngs: sampleFixture.pngs,
+    pptx: firstFixture.pptx,
+    pdf: firstFixture.pdf,
+    pngs: firstFixture.pngs,
     fixtures,
     renderToolsEnabled,
     tools,

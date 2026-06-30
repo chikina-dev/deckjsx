@@ -5,7 +5,14 @@ on:
     paths:
       - ".github/workflows/render-verification.yml"
       - ".github/render/**"
+      - "tests/render-confidence/**"
       - "src/**"
+      - "src/adapter/**"
+      - "src/graph/**"
+      - "src/layout/**"
+      - "src/projection/pptx/**"
+      - "src/style/**"
+      - "src/writers/pptx/**"
       - "package.json"
       - "bun.lock"
       - "tsconfig.json"
@@ -17,8 +24,22 @@ permissions:
 
 jobs:
   render:
-    name: Render sample deck
+    name: Render confidence (${{ matrix.group }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: feature-text-layout
+            artifact: render-confidence-feature-text-layout
+          - group: feature-media-table
+            artifact: render-confidence-feature-media-table
+          - group: scenario-business
+            artifact: render-confidence-scenario-business
+          - group: scenario-technical
+            artifact: render-confidence-scenario-technical
+          - group: scenario-heavy
+            artifact: render-confidence-scenario-heavy
 
     steps:
       - name: Checkout
@@ -31,11 +52,15 @@ jobs:
         continue-on-error: true
         run: docker build -f .github/render/Dockerfile -t deckjsx-render .
 
-      - name: Render sample deck
+      - name: Render confidence fixture group
         id: render
         if: steps.build.outcome == 'success'
         continue-on-error: true
-        run: docker run --name deckjsx-render-run deckjsx-render
+        run: >
+          docker run
+          --name deckjsx-render-run
+          -e DECKJSX_RENDER_FIXTURE_GROUP=${{ matrix.group }}
+          deckjsx-render
 
       - name: Copy render artifacts
         if: always()
@@ -61,7 +86,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: render-verification
+          name: ${{ matrix.artifact }}
           path: .github/render/artifacts
 
       - name: Fail on render verification error

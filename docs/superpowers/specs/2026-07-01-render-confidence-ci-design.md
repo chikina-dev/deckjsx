@@ -191,6 +191,13 @@ For CLI/dev-loop experience, keep dedicated `@deckjsx/node` checks:
 5. Expand scenario coverage until PR render confidence gives useful "this feels wrong" detection.
 6. Move broad all-fixture/all-page image comparison to release or nightly.
 
+## First Implementation Slice
+
+The first implementation slice establishes the fixture registry, fixture-group selection, and
+parallel PR matrix. It intentionally keeps committed PNG baseline policy as an open follow-up. The
+first gate still produces PPTX, PDF, PNG, and manifest artifacts; baseline enforcement becomes
+mandatory after representative baselines are reviewed and committed or otherwise pinned.
+
 ## Open Decisions
 
 - Exact PNG baseline storage: committed files, release artifact baseline, or a hybrid.
