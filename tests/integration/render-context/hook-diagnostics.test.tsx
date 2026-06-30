@@ -41,6 +41,25 @@ describe("deckjsx integration hook diagnostics", () => {
     ).toHaveLength(3);
   });
 
+  test("render preserves invalid root deck plugin diagnostics", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin(null as never);
+    deck.slide({ name: "Invalid root plugin" }, () => <p>invalid root plugin</p>);
+
+    const result = await deck.render(H.pptx());
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "E_PLUGIN_INVALID",
+          title: "deck plugin is not part of the public authoring API",
+          message: 'Deck plugin must be an object with kind "deckjsx.plugin" and a string id.',
+        }),
+      ]),
+    );
+  });
+
   test("invalid deck plugin hook values are rejected at the plugin contract", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.plugin({

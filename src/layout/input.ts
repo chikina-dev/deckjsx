@@ -194,7 +194,7 @@ function mergeTemplateStyle<TProps extends object>(
     ...(props as Record<string, StyleDeclarationValue>),
   };
   Object.entries(templateStyle).forEach(([key, value]) => {
-    if (resolved?.properties[key]?.source.layer !== "style" && next[key] === undefined) {
+    if (resolved?.properties[key]?.source.layer !== "style") {
       next[key] = value;
     }
   });

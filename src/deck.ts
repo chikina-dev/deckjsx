@@ -116,8 +116,7 @@ type PipelineRunnerModule = {
 };
 
 function loadPipelineRunner(): Promise<PipelineRunnerModule> {
-  const specifier: string = "./pipeline/runner";
-  return import(specifier) as Promise<PipelineRunnerModule>;
+  return import("./pipeline/runner") as Promise<PipelineRunnerModule>;
 }
 
 function projectedArtifactStatus(value: undefined, diagnostics: Diagnostics): "missing";
@@ -290,8 +289,8 @@ export class Deck<
       entries: this.#entries,
       stylesheets: this.#stylesheets,
       plugins: this.#plugins,
-      ...(Object.hasOwn(this.#options, "theme") ? { theme: this.#options.theme } : {}),
-      ...(Object.hasOwn(this.#options, "templates") ? { templates: this.#options.templates } : {}),
+      ...(this.#options.theme !== undefined ? { theme: this.#options.theme } : {}),
+      ...(this.#options.templates !== undefined ? { templates: this.#options.templates } : {}),
       cycleId: this,
       revision: this.#revision,
       boundContext: { present: false },

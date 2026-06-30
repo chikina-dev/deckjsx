@@ -884,6 +884,7 @@ function collectInlineText(
 type TableRowBuildInput = {
   node: AuthorTableRowElementNode;
   index: number;
+  context: BuildContext;
 };
 
 function tableSectionKindFor(node: AuthorTableSectionElementNode): TableSectionKind {
@@ -1180,10 +1181,10 @@ function buildImplicitTableBodySection(input: {
         state,
         row.node,
         {
-          ...context,
+          ...row.context,
           parentId: id,
           parentMaterial: material,
-          path,
+          path: `${row.context.path} > tbody[implicit:${index}]`,
           inline: false,
           directSlideChild: false,
         },
@@ -1309,7 +1310,7 @@ function buildTableNode(
       }
 
       if (isTableRowElement(child)) {
-        implicitRows.push({ node: child, index: implicitRows.length });
+        implicitRows.push({ node: child, index: implicitRows.length, context: childContext });
         return;
       }
 

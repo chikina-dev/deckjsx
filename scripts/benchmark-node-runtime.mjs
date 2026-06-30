@@ -67,6 +67,12 @@ async function runNodeRuntimeBenchmarkOnce(runtime, index) {
 
     const writeExisting = await timed(async () => runtime.write(changedRender.value, outputPath));
     assertWriteOk(writeExisting.value, "existing write");
+    if (writeExisting.value.status !== "patched") {
+      throw new Error(`existing write used ${writeExisting.value.status}; expected patched`);
+    }
+    if (writeExisting.value.patchedParts.length === 0) {
+      throw new Error("existing write patched no package parts");
+    }
 
     const inspectPatchable = await timed(async () => runtime.inspectPatchablePptx(outputPath));
     if (!inspectPatchable.value.ok) {

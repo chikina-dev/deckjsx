@@ -384,6 +384,41 @@ describe("style resolution theme and inheritance", () => {
     expect(numberThemeResult.ok).toBe(false);
   });
 
+  test("undefined deck theme options behave like omitted theme options", async () => {
+    const rootWithoutTheme = new H.Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      theme: undefined,
+    } as never);
+    const root = new H.Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      theme: new H.Theme({ defaults: { p: { color: "purple" } } }),
+    });
+    const child = new H.Deck<{ label: string }>({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      theme: undefined,
+    } as never);
+
+    rootWithoutTheme.slide(() => <p>Root</p>);
+    root.slide(() => <p>Root</p>);
+    child.slide(({ context }) => <p>{context.label}</p>);
+    root.mount("child", child, { label: "Child" });
+
+    const rootWithoutThemeResult = rootWithoutTheme.compile();
+    const result = root.compile();
+    const nodes = H.values(result.graph?.nodes ?? new Map());
+    const childText = nodes.find(
+      (node) => node.kind === "text" && node.origin.source.kind === "mounted",
+    );
+    const childTextStyle = result.resolvedStyles?.get(childText?.id ?? ("" as never));
+
+    expect(rootWithoutThemeResult.ok).toBe(true);
+    expect(rootWithoutThemeResult.diagnostics.items).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics.items.filter((item) => item.code === "E_THEME_INVALID")).toEqual([]);
+    expect(childTextStyle?.style).toMatchObject({ color: "purple" });
+    expect(childTextStyle?.properties.color?.source).toEqual({ layer: "theme", defaultKey: "p" });
+  });
+
   test("bound sources preserve invalid theme diagnostics", async () => {
     const deck = new H.Deck<{ label: string }>({
       layout: { width: 10, height: 5.625, unit: "in" },

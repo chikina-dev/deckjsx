@@ -108,6 +108,7 @@ export function createRenderExecution(input: {
     renderContextFieldsAreValid && renderContextPluginsDiagnostics.length === 0
       ? (renderExecutionContext?.plugins ?? [])
       : [];
+  const deckPluginDiagnostics = validateDeckPlugins(input.plugins ?? []);
   const plugins = validDeckPlugins([...(input.plugins ?? []), ...renderContextPlugins]);
   const renderContextIntegration = renderExecutionContext?.integration;
   const integrationDiagnostics = renderContextFieldsAreValid
@@ -119,6 +120,7 @@ export function createRenderExecution(input: {
   const diagnostics = [
     ...renderContextDiagnostics,
     ...renderContextPluginsDiagnostics,
+    ...deckPluginDiagnostics,
     ...validateDeckPlugins(renderContextPlugins),
     ...integrationDiagnostics,
     ...sourceInvalidationDiagnostics,

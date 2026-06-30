@@ -115,11 +115,13 @@ describe("Deck slide templates", () => {
         report: {
           style: {
             display: "grid",
-            gridTemplateAreas: ['"title"'],
+            gridTemplateAreas: ['"title aside"'],
+            gridTemplateColumns: "1fr 1fr",
             padding: 0.7,
           },
           areas: {
             title: { kind: "title", style: { gridArea: "title" } },
+            aside: { style: { gridArea: "aside" } },
           },
         },
       },
@@ -129,7 +131,7 @@ describe("Deck slide templates", () => {
         classes: {
           title: {
             target: "h1.title",
-            style: { color: "#111827" },
+            style: { color: "#111827", gridArea: "aside" },
           },
         },
       }),
@@ -146,7 +148,7 @@ describe("Deck slide templates", () => {
 
     expect(title?.frame.xEmu).toBeCloseTo(0.7 * EMU_PER_INCH);
     expect(title?.frame.yEmu).toBeCloseTo(0.7 * EMU_PER_INCH);
-    expect(title?.frame.widthEmu).toBeCloseTo(8.6 * EMU_PER_INCH);
+    expect(title?.frame.widthEmu).toBeCloseTo(4.3 * EMU_PER_INCH);
     expect(title?.layoutAnchor).toMatchObject({
       template: "report",
       area: "title",

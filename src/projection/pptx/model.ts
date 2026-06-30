@@ -1,12 +1,12 @@
-import type { DeckOptions } from "@/src/authoring/options";
+import type { ComponentProvenance } from "../../authoring-metadata";
+import type { DeckOptions } from "../../authoring/options";
 import type {
   AssetProbeResult,
   AssetResolutionHashSource,
   AssetResolutionProvenanceKind,
   AssetSource,
-} from "@/src/assets";
-import type { Diagnostics } from "@/src/diagnostics";
-import type { ComponentProvenance } from "@/src/authoring-metadata";
+} from "../../assets";
+import type { Diagnostics } from "../../diagnostics";
 import type {
   AssetEntity,
   Brand,
@@ -14,7 +14,7 @@ import type {
   SemanticNode,
   SourceOrigin,
   StyleEntityId,
-} from "@/src/graph";
+} from "../../graph";
 import type {
   BackgroundImageLayerIR,
   EdgeStrokeIR,
@@ -34,11 +34,11 @@ import type {
   TextRunIR,
   TextStyleIR,
   ProjectedLayoutTableSection,
-} from "@/src/layout/projected";
-import type { ProjectionFormat } from "@/src/pipeline/contract";
-import type { StyleDeclarationValue } from "@/src/style/declaration";
-import type { CssVisibility } from "@/src/style/types";
-import type { TemplateAreaKind } from "@/src/templates";
+} from "../../layout/projected";
+import type { ProjectionFormat } from "../../pipeline/contract";
+import type { StyleDeclarationValue } from "../../style/declaration";
+import type { CssVisibility } from "../../style/types";
+import type { TemplateAreaKind } from "../../templates";
 
 export type PackagePartId = Brand<string, "PackagePartId">;
 export type PptxElementId = Brand<string, "PptxElementId">;
