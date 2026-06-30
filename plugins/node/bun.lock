@@ -11,7 +11,7 @@
         "vite-plus": "^0.1.24",
       },
       "peerDependencies": {
-        "deckjsx": "^0.9.3",
+        "deckjsx": "^0.9.5",
       },
     },
   },

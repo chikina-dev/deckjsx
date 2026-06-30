@@ -295,7 +295,7 @@ Run:
 
 Expected: pass.
 
-- [ ] **Step 3: Commit foundation slice**
+- [x] **Step 3: Commit foundation slice**
 
 ```bash
 git add plugins/node/src plugins/node/tests docs/superpowers/plans/2026-06-20-node-0-1-4-dev-console-foundation.md
@@ -303,6 +303,9 @@ git commit -m "feat(node): add human-first dev console foundation"
 ```
 
 Expected: one implementation commit containing the first v0.1.4 foundation slice.
+
+Completed in the repository history as the v0.1.4 dev console foundation and later v0.1.5 dev
+runtime work.
 
 ---
 

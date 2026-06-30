@@ -1,6 +1,6 @@
 {
   "name": "@deckjsx/node",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Node.js runtime helpers for deckjsx render artifacts.",
   "license": "MIT",
   "repository": {
@@ -44,7 +44,7 @@
     "vite-plus": "^0.1.24"
   },
   "peerDependencies": {
-    "deckjsx": "^0.9.3"
+    "deckjsx": "^0.9.5"
   },
   "packageManager": "bun@1.3.14"
 }
