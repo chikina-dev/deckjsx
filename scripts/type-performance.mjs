@@ -28,6 +28,14 @@ const NODE_AUTHORING_CONSUMER_PATHS = {
   ...PUBLISHED_DECKJSX_PATHS,
 };
 
+const NODE_PLUGIN_PATHS = {
+  "@/scripts/*": ["scripts/*"],
+  "@/*": ["plugins/node/*"],
+  "@deckjsx/node": ["plugins/node/src/index.ts"],
+  "@deckjsx/node/dev": ["plugins/node/src/dev.ts"],
+  ...PUBLISHED_DECKJSX_PATHS,
+};
+
 const TYPE_PERFORMANCE_PROFILES = {
   "authoring-root-import": {
     checkTimeMs: 5000,
@@ -172,11 +180,10 @@ function typePerformanceProjectPathForProfile(profile, generatedRoot) {
   if (profile === "root") {
     return undefined;
   }
-  if (profile === "node-plugin") {
-    return "plugins/node/tsconfig.json";
-  }
   if (!(profile in TYPE_PERFORMANCE_PROFILE_REGIONS)) {
-    return undefined;
+    return profile === "node-plugin"
+      ? path.join(generatedRoot, "node-plugin-tsconfig.json")
+      : undefined;
   }
   return path.join(generatedRoot, "tsconfig.json");
 }
@@ -189,6 +196,10 @@ function typePerformanceFixturePathForProfile(profile, generatedRoot) {
 }
 
 function typePerformanceProjectConfigForProfile(profile, generatedRoot) {
+  if (profile === "node-plugin") {
+    return nodePluginTypePerformanceProjectConfig(generatedRoot);
+  }
+
   const fixture = typePerformanceFixturePathForProfile(profile, generatedRoot);
   if (!fixture) {
     return undefined;
@@ -210,6 +221,106 @@ function typePerformanceProjectConfigForProfile(profile, generatedRoot) {
     include: [path.relative(generatedRoot, fixture)],
     exclude: [],
   };
+}
+
+function nodePluginTypePerformanceProjectConfig(generatedRoot) {
+  return {
+    extends: path.join(REPO_ROOT, "plugins/node/tsconfig.json"),
+    compilerOptions: {
+      baseUrl: REPO_ROOT,
+      ignoreDeprecations: "6.0",
+      paths: {
+        ...NODE_PLUGIN_PATHS,
+        rolldown: [path.relative(REPO_ROOT, nodePluginRolldownShimPath(generatedRoot))],
+      },
+      typeRoots: [path.join(REPO_ROOT, "node_modules", "@types")],
+    },
+    include: [
+      path.join(REPO_ROOT, "plugins/node/src"),
+      path.join(REPO_ROOT, "plugins/node/tests"),
+      path.join(REPO_ROOT, "plugins/node/tests/types"),
+    ],
+    exclude: [path.join(REPO_ROOT, "plugins/node/dist")],
+  };
+}
+
+function nodePluginRolldownShimPath(generatedRoot) {
+  return path.join(generatedRoot, "rolldown-shim.d.ts");
+}
+
+function nodePluginRolldownShimSource() {
+  return `
+declare module "rolldown" {
+  export type OutputChunk = {
+    readonly type: "chunk";
+    readonly code: string;
+    readonly moduleIds: readonly string[];
+    readonly isEntry?: boolean;
+  };
+
+  export type OutputAsset = {
+    readonly type: "asset";
+    readonly fileName: string;
+    readonly source: unknown;
+  };
+
+  export type OutputItem = OutputAsset | OutputChunk;
+
+  export type Plugin = {
+    readonly name?: string;
+    buildStart?(): void;
+    moduleParsed?(info: { readonly id: string }): void;
+    watchChange?(id: string): void;
+    transform?:
+      | ((code: string, id: string) => TransformResult | Promise<TransformResult>)
+      | {
+          readonly filter?: unknown;
+          handler(code: string, id: string): TransformResult | Promise<TransformResult>;
+        };
+  };
+
+  export type TransformResult =
+    | undefined
+    | null
+    | string
+    | {
+        readonly code: string;
+        readonly map?: unknown;
+      };
+
+  export type WatchOptions = {
+    readonly input?: string;
+    readonly cwd?: string;
+    readonly platform?: "node" | "browser" | string;
+    readonly external?: (id: string) => boolean;
+    readonly plugins?: readonly Plugin[];
+    readonly transform?: unknown;
+    readonly [key: string]: unknown;
+  };
+
+  export type RolldownBuild = {
+    readonly watchFiles: Promise<readonly string[]> | readonly string[];
+    generate(options?: object): Promise<{ readonly output: readonly OutputItem[] }>;
+    close(): Promise<void> | void;
+  };
+
+  export type RolldownWatcher = {
+    on(
+      event: string,
+      listener: (...args: readonly unknown[]) => void | Promise<void>,
+    ): RolldownWatcher;
+    off?(
+      event: string,
+      listener: (...args: readonly unknown[]) => void | Promise<void>,
+    ): RolldownWatcher;
+    clear?(event: string): void;
+    close(): Promise<void> | void;
+  };
+
+  export function rolldown(options: WatchOptions): Promise<RolldownBuild>;
+  export function watch(options: WatchOptions): RolldownWatcher;
+}
+`.trimStart();
 }
 
 function extractTypePerformanceFixture(source, profile) {
@@ -240,6 +351,12 @@ async function materializeTypePerformanceProject(profile, generatedRoot) {
   }
 
   await mkdir(generatedRoot, { recursive: true });
+  if (profile === "node-plugin") {
+    await writeFile(nodePluginRolldownShimPath(generatedRoot), nodePluginRolldownShimSource());
+    await writeFile(project, `${JSON.stringify(config, null, 2)}\n`);
+    return project;
+  }
+
   const source = await readFile(path.join(REPO_ROOT, FIXTURE_SOURCE_FILE), "utf8");
   const fixture = extractTypePerformanceFixture(source, profile);
   if (!fixture) {
