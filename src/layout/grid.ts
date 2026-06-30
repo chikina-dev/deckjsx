@@ -2,19 +2,20 @@ import {
   type CssAlignSelf,
   type CssGridAutoFlow,
   type CssGridLine,
-  type CssGridShorthand,
+  type CssGridMinmaxTrack,
   type CssGridTrack,
+  type CssGridTrackSize,
+  type CssGridTemplateAreaRowAuthoringString,
   type CssGridTemplate,
   type CssGridTemplateAreas,
   type CssJustifySelf,
   type ViewStyle,
 } from "../style/types";
-import {
-  isDeckLengthString,
-  parseLengthToken,
-  type LengthResolutionContext,
-} from "../style/length";
+import { parseLengthToken, type LengthResolutionContext } from "../style/length";
 import { type Frame } from "./frame";
+
+type InternalGridTemplateShorthand = string;
+type InternalGridShorthand = string;
 
 export type GridPlacement = {
   start?: number;
@@ -57,7 +58,7 @@ export type GridTemplateResolution = {
   collapseTrailingAutoFitTracks: boolean;
 };
 
-function parseGridTemplate(value: CssGridTemplate | undefined): string[] {
+function parseGridTemplate(value: string | readonly CssGridTrack[] | undefined): string[] {
   if (value === undefined) {
     return [];
   }
@@ -562,7 +563,7 @@ export function parseGridAutoFlow(value: CssGridAutoFlow | undefined): {
 }
 
 export function parseGridTemplateAreas(
-  value: CssGridTemplateAreas | undefined,
+  value: CssGridTemplateAreas | string | undefined,
 ): Map<string, NamedGridArea> {
   if (value === undefined) {
     return new Map();
@@ -714,6 +715,18 @@ function tokenizeGridTemplateRows(value: string): string[] {
   return tokenizeCssShorthand(value);
 }
 
+function authoredGridTemplate(value: string | undefined): CssGridTemplate | undefined {
+  if (!value || value.length === 0) {
+    return undefined;
+  }
+
+  return value as unknown as CssGridTemplate;
+}
+
+function firstAuthoredGridTemplate(...values: readonly unknown[]): CssGridTemplate | undefined {
+  return values.find((value) => value !== undefined) as CssGridTemplate | undefined;
+}
+
 export function parseGridTemplateShorthand(value: string | undefined): {
   gridTemplateAreas?: CssGridTemplateAreas;
   gridTemplateRows?: CssGridTemplate;
@@ -724,17 +737,17 @@ export function parseGridTemplateShorthand(value: string | undefined): {
   }
 
   const [left, right] = splitGridTemplateShorthand(value);
-  const gridTemplateColumns = right && right.length > 0 ? right : undefined;
+  const gridTemplateColumns = authoredGridTemplate(right);
   const rowTokens = tokenizeGridTemplateRows(left);
 
   if (!rowTokens.some((token) => token.startsWith('"') || token.startsWith("'"))) {
     return {
-      gridTemplateRows: left || undefined,
+      gridTemplateRows: authoredGridTemplate(left),
       gridTemplateColumns,
     };
   }
 
-  const areas: string[] = [];
+  const areas: CssGridTemplateAreaRowAuthoringString[] = [];
   const rows: CssGridTrack[] = [];
 
   for (let index = 0; index < rowTokens.length; index += 1) {
@@ -749,7 +762,7 @@ export function parseGridTemplateShorthand(value: string | undefined): {
       );
     }
 
-    areas.push(token);
+    areas.push(token as CssGridTemplateAreaRowAuthoringString);
     const next = rowTokens[index + 1];
     if (next && !(next.startsWith('"') || next.startsWith("'"))) {
       rows.push(parseGridTrackValue(next) ?? "1fr");
@@ -805,12 +818,18 @@ function resolveGridAutoFlow(axis: "row" | "column", dense: boolean): CssGridAut
   return axis === "row" ? "row dense" : "column dense";
 }
 
-function isFractionalGridTrack(value: string): value is `${number}fr` {
-  return /^-?\d*\.?\d+fr$/i.test(value);
+function isFractionalGridTrack(value: string): value is Extract<CssGridTrackSize, `${string}fr`> {
+  return /^(?:\d+(?:\.\d+)?|\.\d+)fr$/i.test(value);
 }
 
-function isMinmaxGridTrack(value: string): value is `minmax(${string})` {
+function isMinmaxGridTrack(value: string): value is CssGridMinmaxTrack {
   return /^minmax\(.+\)$/i.test(value);
+}
+
+function isGridLengthTrack(value: string): value is Extract<CssGridTrackSize, `${string}`> {
+  return /^(?:\d+(?:\.\d+)?|\.\d+)(?:in|cm|mm|q|pt|pc|px|%|em|rem|vh|vw|vmin|vmax|ch)$/i.test(
+    value,
+  );
 }
 
 function parseGridTrackValue(value: string): CssGridTrack | undefined {
@@ -827,10 +846,10 @@ function parseGridTrackValue(value: string): CssGridTrack | undefined {
     return 0;
   }
 
-  return isDeckLengthString(trimmed) ? trimmed : undefined;
+  return isGridLengthTrack(trimmed) ? trimmed : undefined;
 }
 
-export function parseGridShorthand(value: CssGridShorthand | undefined): {
+export function parseGridShorthand(value: InternalGridShorthand | undefined): {
   display?: ViewStyle["display"];
   gridTemplateAreas?: CssGridTemplateAreas;
   gridTemplateRows?: CssGridTemplate;
@@ -863,14 +882,14 @@ export function parseGridShorthand(value: CssGridShorthand | undefined): {
       display: "grid",
       gridAutoFlow: rowAutoFlow.gridAutoFlow,
       gridAutoRows: rowAutoFlow.trackSize,
-      gridTemplateColumns: right,
+      gridTemplateColumns: right as CssGridTemplate,
     };
   }
 
   if (columnAutoFlow.gridAutoFlow) {
     return {
       display: "grid",
-      gridTemplateRows: left,
+      gridTemplateRows: left as CssGridTemplate,
       gridAutoFlow: columnAutoFlow.gridAutoFlow,
       gridAutoColumns: columnAutoFlow.trackSize,
     };
@@ -881,6 +900,11 @@ export function parseGridShorthand(value: CssGridShorthand | undefined): {
     ...parseGridTemplateShorthand(value),
   };
 }
+
+type InternalGridShorthandProps = ViewStyle & {
+  grid?: InternalGridShorthand;
+  gridTemplate?: InternalGridTemplateShorthand;
+};
 
 export function resolveGridContainerAuthoring(
   props: ViewStyle,
@@ -894,22 +918,25 @@ export function resolveGridContainerAuthoring(
   | "gridAutoRows"
   | "gridAutoFlow"
 > {
-  const gridShorthand = parseGridShorthand(props.grid);
-  const templateShorthand = parseGridTemplateShorthand(props.gridTemplate);
+  const internalProps = props as InternalGridShorthandProps;
+  const gridShorthand = parseGridShorthand(internalProps.grid);
+  const templateShorthand = parseGridTemplateShorthand(internalProps.gridTemplate);
   return {
     display: props.display ?? gridShorthand.display,
     gridTemplateAreas:
       props.gridTemplateAreas ??
       templateShorthand.gridTemplateAreas ??
       gridShorthand.gridTemplateAreas,
-    gridTemplateRows:
-      props.gridTemplateRows ??
-      templateShorthand.gridTemplateRows ??
+    gridTemplateRows: firstAuthoredGridTemplate(
+      props.gridTemplateRows,
+      templateShorthand.gridTemplateRows,
       gridShorthand.gridTemplateRows,
-    gridTemplateColumns:
-      props.gridTemplateColumns ??
-      templateShorthand.gridTemplateColumns ??
+    ),
+    gridTemplateColumns: firstAuthoredGridTemplate(
+      props.gridTemplateColumns,
+      templateShorthand.gridTemplateColumns,
       gridShorthand.gridTemplateColumns,
+    ),
     gridAutoColumns: props.gridAutoColumns ?? gridShorthand.gridAutoColumns,
     gridAutoRows: props.gridAutoRows ?? gridShorthand.gridAutoRows,
     gridAutoFlow: props.gridAutoFlow ?? gridShorthand.gridAutoFlow,

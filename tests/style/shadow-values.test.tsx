@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck } from "../../src/index.ts";
+import { Deck } from "../helpers.ts";
 
 describe("shadow-values", () => {
   test("render normalizes boxShadow and textShadow shorthands", async () => {
@@ -9,8 +9,9 @@ describe("shadow-values", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
             boxShadow: "inset 4px 8px 12px rgba(15, 23, 42, 0.3)",
@@ -18,8 +19,9 @@ describe("shadow-values", () => {
         />
         <p
           style={{
-            x: 1,
-            y: 2.25,
+            position: "absolute",
+            left: 1,
+            top: 2.25,
             width: 2,
             height: 0.5,
             textShadow: "6px 3px 9px rgba(37, 99, 235, 0.4)",
@@ -30,12 +32,13 @@ describe("shadow-values", () => {
         <shape
           shape="rect"
           style={{
-            x: 4,
-            y: 1,
+            position: "absolute",
+            left: 4,
+            top: 1,
             width: 2,
             height: 1,
             fill: "#F97316",
-            boxShadow: "3px 3px 6px rebeccapurple",
+            boxShadow: "3px 3px 6px #663399",
           }}
         />
       </>
@@ -68,41 +71,32 @@ describe("shadow-values", () => {
     expect(shape.shadow).toMatchObject({ type: "outer", color: "663399", opacity: 1, blurPt: 4.5 });
   });
 
-  test("project warns and preserves unsupported multi-layer shadows", async () => {
+  test("compile rejects casted multi-layer shadows outside the public authoring API", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Invalid shadow" }, () => (
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
-            boxShadow: "1px 1px 2px red, 2px 2px 4px blue",
+            boxShadow: "1px 1px 2px red, 2px 2px 4px blue" as never,
           }}
         />
       </>
     ));
 
     const result = await deck.project();
-    const [view] = result.projection!.slides[0].payload.drawing.children;
 
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
     expect(result.diagnostics.items).toContainEqual(
       expect.objectContaining({
-        code: "W_PROJECT_UNSUPPORTED_PPTX_SEMANTIC",
-        severity: "warning",
-        message:
-          "Only a single shadow layer is currently supported: 1px 1px 2px red, 2px 2px 4px blue",
-      }),
-    );
-    expect(view?.unsupportedSemantics).toContainEqual(
-      expect.objectContaining({
-        feature: "shadow",
-        property: "boxShadow",
-        reason:
-          "Only a single shadow layer is currently supported: 1px 1px 2px red, 2px 2px 4px blue",
+        code: "E_COMPILE_INVALID_STYLE_VALUE",
+        severity: "error",
+        message: expect.stringContaining("boxShadow value is not part of the public authoring API"),
       }),
     );
   });
@@ -114,8 +108,9 @@ describe("shadow-values", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
             boxShadow: "4px 8px 12px 6px rgba(15, 23, 42, 0.3)",

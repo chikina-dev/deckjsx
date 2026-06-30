@@ -5,7 +5,7 @@ describe("project/render writer reuse validation failures", () => {
   test("direct writer validates package part dependency fingerprint metadata shape", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Invalid dependency fingerprints" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>dependency</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>dependency</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -120,7 +120,7 @@ describe("project/render writer reuse validation failures", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Stale fingerprint" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 2, height: 0.5 }}>stale slide</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 2, height: 0.5 }}>stale slide</p>
       </>
     ));
 
@@ -189,15 +189,27 @@ describe("project/render writer reuse validation failures", () => {
         <>
           <div
             style={{
-              x: 1,
-              y: 1,
+              position: "absolute",
+              left: 1,
+              top: 1,
               width: 4,
               height: 2,
               backgroundColor: "#E0F2FE",
               border: "2pt solid #0369A1",
             }}
           >
-            <p style={{ x: 0.25, y: 0.25, width: 3, height: 0.5, fontSize: 20 }}>Stable</p>
+            <p
+              style={{
+                position: "absolute",
+                left: 0.25,
+                top: 0.25,
+                width: 3,
+                height: 0.5,
+                fontSize: 20,
+              }}
+            >
+              Stable
+            </p>
           </div>
         </>
       ));

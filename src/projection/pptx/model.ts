@@ -1,4 +1,5 @@
-import type { DeckOptions } from "../../authoring/index";
+import type { ComponentProvenance } from "../../authoring-metadata";
+import type { DeckOptions } from "../../authoring/options";
 import type {
   AssetProbeResult,
   AssetResolutionHashSource,
@@ -6,7 +7,6 @@ import type {
   AssetSource,
 } from "../../assets";
 import type { Diagnostics } from "../../diagnostics";
-import type { ComponentProvenance } from "../../authoring-metadata";
 import type {
   AssetEntity,
   Brand,
@@ -35,8 +35,9 @@ import type {
   TextStyleIR,
   ProjectedLayoutTableSection,
 } from "../../layout/projected";
-import type { ProjectionFormat } from "../../pipeline";
-import type { CssVisibility, StyleDeclarationValue } from "../../style/types";
+import type { ProjectionFormat } from "../../pipeline/contract";
+import type { StyleDeclarationValue } from "../../style/declaration";
+import type { CssVisibility } from "../../style/types";
 import type { TemplateAreaKind } from "../../templates";
 
 export type PackagePartId = Brand<string, "PackagePartId">;
@@ -207,7 +208,7 @@ export type PptxVideoElement = PptxBaseElement & {
 
 export type PptxShapeElement = PptxBaseElement & {
   readonly kind: "shape";
-  readonly shape: "rect" | "ellipse" | "line";
+  readonly shape: "rect" | "ellipse" | "line" | "roundRect";
   readonly fill?: FillIR;
   readonly backgroundLayers?: readonly PptxBackgroundLayer[];
   readonly stroke?: StrokeIR;
@@ -639,6 +640,7 @@ export type PptxSlideLayoutPartPayload = {
     readonly sourceKey: string;
     readonly name: string;
   };
+  readonly templateFlowStyle?: Readonly<Record<string, unknown>>;
   readonly layoutAnchors?: readonly PptxSlideLayoutAnchor[];
 };
 
@@ -646,7 +648,7 @@ export type PptxSlideLayoutAnchor = {
   readonly template: string;
   readonly area: string;
   readonly kind: TemplateAreaKind;
-  readonly frame: FrameIR;
+  readonly frame?: FrameIR;
   readonly placeholderStrategy: "none";
 };
 

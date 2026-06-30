@@ -19,8 +19,8 @@
       "import": "./dist/index.mjs"
     },
     "./adapter": {
-      "types": "./dist/adapter.d.mts",
-      "import": "./dist/adapter.mjs"
+      "types": "./dist/adapter/index.d.mts",
+      "import": "./dist/adapter/index.mjs"
     },
     "./inspect": {
       "types": "./dist/inspect.d.mts",
@@ -29,6 +29,10 @@
     "./integration": {
       "types": "./dist/integration.d.mts",
       "import": "./dist/integration.mjs"
+    },
+    "./style": {
+      "types": "./dist/style/public.d.mts",
+      "import": "./dist/style/public.mjs"
     },
     "./jsx-dev-runtime": {
       "types": "./dist/jsx-dev-runtime.d.mts",
@@ -49,8 +53,11 @@
     "test": "vp test",
     "check": "vp check",
     "benchmark:interactive": "node scripts/benchmark-interactive-dev.mjs",
+    "benchmark:node": "node scripts/benchmark-node-runtime.mjs",
     "benchmark:pptx": "bun run scripts/benchmark-pptx-writer.tsx",
     "perf:calc": "bun run scripts/performance-calculator.tsx",
+    "perf:types": "node scripts/type-performance.mjs",
+    "smoke:tarball": "node scripts/tarball-smoke.mjs",
     "verify:render": "bun run .github/render/verify-render.tsx",
     "prepublishOnly": "vp run build"
   },

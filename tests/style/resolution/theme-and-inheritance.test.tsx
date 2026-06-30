@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { resolveStyles } from "../../../src/style/resolve.ts";
+import { resolveStyles } from "@/src/style/resolve.ts";
 import * as H from "./helpers.tsx";
 
 describe("style resolution theme and inheritance", () => {
@@ -67,6 +67,7 @@ describe("style resolution theme and inheritance", () => {
       <>
         <p
           style={{
+            position: "absolute",
             color: "#2563EB",
             fontFamily: "Aptos Display",
             fontSize: 30,
@@ -187,7 +188,7 @@ describe("style resolution theme and inheritance", () => {
       breakpoints: ["base"],
     });
     const baseStyles = baseTheme.defineStyles((theme) => ({
-      classes: { title: { color: theme.colors.text } },
+      classes: { title: { target: "p.title", style: { color: theme.colors.text } } },
     }));
     const extendedTheme = baseTheme.extend((theme) => ({
       colors: { accent: "#dc2626", muted: theme.colors.text },
@@ -198,24 +199,39 @@ describe("style resolution theme and inheritance", () => {
       new H.Theme({ colors: { text: "#0f172a" }, defaults: { span: { color: "#dc2626" } } }),
     );
     const mergedStyles = mergedTheme.defineStyles((theme) => ({
-      classes: { title: { color: theme.colors.text, fontSize: theme.defaults.p.fontSize } },
+      classes: {
+        title: {
+          target: "p.title",
+          style: { color: theme.colors.text, fontSize: theme.defaults.p.fontSize },
+        },
+      },
     }));
 
-    expect(baseStyles.classes.title).toEqual({ color: "#111111" });
+    expect(baseStyles.classes.title).toEqual({
+      target: "p.title",
+      style: { color: "#111111" },
+    });
     expect(mergedTheme.colors).toEqual({ text: "#0f172a", accent: "#dc2626", muted: "#111111" });
     expect(mergedTheme.breakpoints).toEqual(["extended"]);
     expect(mergedTheme.defaults).toMatchObject({
       p: { color: "#111111", fontSize: 24 },
       span: { color: "#dc2626" },
     });
-    expect(mergedStyles.classes.title).toEqual({ color: "#0f172a", fontSize: 24 });
+    expect(mergedStyles.classes.title).toEqual({
+      target: "p.title",
+      style: { color: "#0f172a", fontSize: 24 },
+    });
   });
 
   test("theme extension proto keys are cloned as own defaults instead of prototypes", async () => {
     const extension = JSON.parse(
       '{"defaults":{"__proto__":{"p":{"evilStyle":1337,"color":"red"}}}}',
     ) as { defaults: Record<string, unknown> };
-    const theme = new H.Theme({ defaults: {} }).extend(extension);
+    const theme = (
+      new H.Theme({ defaults: {} }) as H.Theme & {
+        extend(input: object): H.Theme;
+      }
+    ).extend(extension);
     const defaults = theme.defaults as Record<string, unknown>;
     const deck = new H.Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
@@ -244,13 +260,17 @@ describe("style resolution theme and inheritance", () => {
   });
 
   test("invalid theme defaults are compile diagnostics", async () => {
-    const invalidTheme = new H.Theme(
-      { defaults: { Slide: { color: "red" }, span: { x: 1 } } },
-      "Theme defaults must use authored tag styles.",
-    );
+    const UnsafeTheme = H.Theme as { new (input: unknown): H.Theme };
+    const invalidTheme = new UnsafeTheme({
+      defaults: {
+        Slide: { color: "red" },
+        img: { fontSize: 18 },
+        p: { color: "definitely-not-a-color" },
+        span: { color: "red", left: 1 },
+      },
+    });
     const deck = new H.Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
-      // @ts-expect-error Invalid theme defaults should be rejected by public types and still diagnosed at runtime.
       theme: invalidTheme,
     });
     deck.slide(() => (
@@ -263,7 +283,156 @@ describe("style resolution theme and inheritance", () => {
 
     expect(result.diagnostics.items.map((item) => item.code)).toEqual([
       "E_THEME_INVALID_DEFAULT_KEY",
-      "E_THEME_INVALID_DEFAULT_STYLE",
+      "E_COMPILE_NON_PUBLIC_STYLE_PROP",
+      "E_COMPILE_INVALID_STYLE_VALUE",
+      "E_COMPILE_NON_PUBLIC_STYLE_PROP",
+    ]);
+    expect(result.diagnostics.items.map((item) => item.message)).toEqual([
+      'Theme default key "Slide" is not part of the public authoring API. Theme defaults are keyed by authored tags.',
+      'Style property "fontSize" is not part of the public deckjsx authoring style API for img.',
+      "color value is not part of the public authoring API. Use a supported CSS color value.",
+      'Style property "left" is not part of the public deckjsx authoring style API for span.',
+    ]);
+    expect(result.ok).toBe(false);
+  });
+
+  test("theme inputs outside the public authoring API are compile diagnostics", async () => {
+    const UnsafeTheme = H.Theme as { new (input: unknown): H.Theme };
+    const invalidTheme = new UnsafeTheme(null);
+    const deck = new H.Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      theme: invalidTheme,
+    });
+    deck.slide(() => <p>Revenue</p>);
+
+    const result = deck.compile();
+
+    expect(result.diagnostics.items).toEqual([
+      expect.objectContaining({
+        code: "E_THEME_INPUT_INVALID",
+        message: "Theme input must be an object in the public authoring API.",
+      }),
+    ]);
+    expect(result.ok).toBe(false);
+  });
+
+  test("theme default containers outside the public authoring API are compile diagnostics", async () => {
+    const UnsafeTheme = H.Theme as { new (input: unknown): H.Theme };
+    const invalidDefaultsTheme = new UnsafeTheme({ defaults: null });
+    const invalidStyleTheme = new UnsafeTheme({ defaults: { p: null } });
+    const invalidDefaultsDeck = new H.Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      theme: invalidDefaultsTheme,
+    });
+    const invalidStyleDeck = new H.Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      theme: invalidStyleTheme,
+    });
+    invalidDefaultsDeck.slide(() => <p>Defaults</p>);
+    invalidStyleDeck.slide(() => <p>Style</p>);
+
+    const diagnostics = [
+      ...invalidDefaultsDeck.compile().diagnostics.items,
+      ...invalidStyleDeck.compile().diagnostics.items,
+    ];
+
+    expect(diagnostics).toEqual([
+      expect.objectContaining({
+        code: "E_THEME_INVALID_DEFAULTS",
+        title: "theme defaults are not part of the public authoring API",
+        message:
+          "Theme defaults must be an object keyed by authored tag in the public authoring API.",
+      }),
+      expect.objectContaining({
+        code: "E_THEME_INVALID_DEFAULT_STYLE",
+        title: "theme default style is not part of the public authoring API",
+        message: 'Theme default "p" style must be an object in the public authoring API.',
+      }),
+    ]);
+  });
+
+  test("deck theme option values outside the public authoring API are compile diagnostics", async () => {
+    const nullThemeDeck = new H.Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      theme: null,
+    } as never);
+    const numberThemeDeck = new H.Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      theme: 1,
+    } as never);
+    nullThemeDeck.slide(() => <p>Null theme</p>);
+    numberThemeDeck.slide(() => <p>Number theme</p>);
+
+    const nullThemeResult = nullThemeDeck.compile();
+    const numberThemeResult = numberThemeDeck.compile();
+    const diagnostics = [
+      ...nullThemeResult.diagnostics.items,
+      ...numberThemeResult.diagnostics.items,
+    ];
+
+    expect(diagnostics).toEqual([
+      expect.objectContaining({
+        code: "E_THEME_INVALID",
+        message: "Deck theme must be a Theme object in the public authoring API.",
+      }),
+      expect.objectContaining({
+        code: "E_THEME_INVALID",
+        message: "Deck theme must be a Theme object in the public authoring API.",
+      }),
+    ]);
+    expect(nullThemeResult.ok).toBe(false);
+    expect(numberThemeResult.ok).toBe(false);
+  });
+
+  test("undefined deck theme options behave like omitted theme options", async () => {
+    const rootWithoutTheme = new H.Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      theme: undefined,
+    } as never);
+    const root = new H.Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      theme: new H.Theme({ defaults: { p: { color: "purple" } } }),
+    });
+    const child = new H.Deck<{ label: string }>({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      theme: undefined,
+    } as never);
+
+    rootWithoutTheme.slide(() => <p>Root</p>);
+    root.slide(() => <p>Root</p>);
+    child.slide(({ context }) => <p>{context.label}</p>);
+    root.mount("child", child, { label: "Child" });
+
+    const rootWithoutThemeResult = rootWithoutTheme.compile();
+    const result = root.compile();
+    const nodes = H.values(result.graph?.nodes ?? new Map());
+    const childText = nodes.find(
+      (node) => node.kind === "text" && node.origin.source.kind === "mounted",
+    );
+    const childTextStyle = result.resolvedStyles?.get(childText?.id ?? ("" as never));
+
+    expect(rootWithoutThemeResult.ok).toBe(true);
+    expect(rootWithoutThemeResult.diagnostics.items).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics.items.filter((item) => item.code === "E_THEME_INVALID")).toEqual([]);
+    expect(childTextStyle?.style).toMatchObject({ color: "purple" });
+    expect(childTextStyle?.properties.color?.source).toEqual({ layer: "theme", defaultKey: "p" });
+  });
+
+  test("bound sources preserve invalid theme diagnostics", async () => {
+    const deck = new H.Deck<{ label: string }>({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      theme: null,
+    } as never);
+    deck.slide(({ context }) => <p>{context.label}</p>);
+
+    const result = deck.withSource({ label: "Bound" }).compile();
+
+    expect(result.diagnostics.items).toEqual([
+      expect.objectContaining({
+        code: "E_THEME_INVALID",
+        message: "Deck theme must be a Theme object in the public authoring API.",
+      }),
     ]);
     expect(result.ok).toBe(false);
   });

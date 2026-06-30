@@ -1,4 +1,4 @@
-import type { PptxElement } from "../../projection/pptx/model";
+import type { PptxElement } from "@/src/projection/pptx/model";
 import { writeBackgroundLayerElements, writeGeneratedStrokeElements } from "./drawing-layer-xml";
 import {
   alphaValue,
@@ -540,8 +540,8 @@ export function writeShapeElement(
 function shapeGeometry(
   shape: Extract<PptxElement, { kind: "shape" }>["shape"],
   label: string,
-): "rect" | "ellipse" | "line" {
-  if (shape === "rect" || shape === "ellipse" || shape === "line") {
+): "rect" | "ellipse" | "line" | "roundRect" {
+  if (shape === "rect" || shape === "ellipse" || shape === "line" || shape === "roundRect") {
     return shape;
   }
 

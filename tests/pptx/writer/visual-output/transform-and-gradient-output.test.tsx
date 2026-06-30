@@ -9,8 +9,9 @@ describe("direct pptx writer transform and gradient output", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 2,
             borderWidth: 0.25,
@@ -42,8 +43,9 @@ describe("direct pptx writer transform and gradient output", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 2,
             borderWidth: 0.25,
@@ -80,8 +82,9 @@ describe("direct pptx writer transform and gradient output", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
             backgroundColor: "#D1D5DB",
@@ -92,8 +95,9 @@ describe("direct pptx writer transform and gradient output", () => {
         <shape
           shape="rect"
           style={{
-            x: 4,
-            y: 1,
+            position: "absolute",
+            left: 4,
+            top: 1,
             width: 2,
             height: 1,
             fill: "#2563EB",
@@ -124,8 +128,9 @@ describe("direct pptx writer transform and gradient output", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
             backgroundColor: "#D1D5DB",
@@ -136,8 +141,9 @@ describe("direct pptx writer transform and gradient output", () => {
         <shape
           shape="rect"
           style={{
-            x: 4,
-            y: 1,
+            position: "absolute",
+            left: 4,
+            top: 1,
             width: 1,
             height: 1,
             fill: "#2563EB",
@@ -167,8 +173,9 @@ describe("direct pptx writer transform and gradient output", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
             backgroundColor: "#D1D5DB",
@@ -204,8 +211,9 @@ describe("direct pptx writer transform and gradient output", () => {
         <>
           <div
             style={{
-              x: 1,
-              y: 1,
+              position: "absolute",
+              left: 1,
+              top: 1,
               width: 2,
               height: 2,
               background:
@@ -214,8 +222,9 @@ describe("direct pptx writer transform and gradient output", () => {
           />
           <p
             style={{
-              x: 1,
-              y: 3,
+              position: "absolute",
+              left: 1,
+              top: 3,
               width: 3,
               height: 0.75,
               fontSize: 18,
@@ -228,8 +237,9 @@ describe("direct pptx writer transform and gradient output", () => {
           <shape
             shape="rect"
             style={{
-              x: 5,
-              y: 1,
+              position: "absolute",
+              left: 5,
+              top: 1,
               width: 2,
               height: 2,
               background: "radial-gradient(circle 40% at 20% 30%, #EF4444 0%, #F59E0B 100%)",
@@ -272,8 +282,9 @@ describe("direct pptx writer transform and gradient output", () => {
         <>
           <div
             style={{
-              x: 1,
-              y: 1,
+              position: "absolute",
+              left: 1,
+              top: 1,
               width: 2,
               height: 2,
               background:
@@ -304,8 +315,9 @@ describe("direct pptx writer transform and gradient output", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
             background: "linear-gradient(90deg, #111111 0in, #777777 1in, #EEEEEE 2in)",
@@ -313,8 +325,9 @@ describe("direct pptx writer transform and gradient output", () => {
         />
         <div
           style={{
-            x: 4,
-            y: 1,
+            position: "absolute",
+            left: 4,
+            top: 1,
             width: 2,
             height: 2,
             background:
@@ -343,8 +356,9 @@ describe("direct pptx writer transform and gradient output", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
             background: "linear-gradient(90deg, #FF0000 0 50%, 75%, #0000FF 100%)",
@@ -380,8 +394,9 @@ describe("direct pptx writer transform and gradient output", () => {
         <>
           <div
             style={{
-              x: 1,
-              y: 1,
+              position: "absolute",
+              left: 1,
+              top: 1,
               width: 2,
               height: 1.25,
               background:
@@ -418,8 +433,9 @@ describe("direct pptx writer transform and gradient output", () => {
         <shape
           shape="rect"
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
             fill: "#2563EB",

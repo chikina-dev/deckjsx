@@ -19,7 +19,7 @@ Writer`; the earlier Presentation IR path is not part of the active architecture
 
 ## Versioning Strategy
 
-The current package is `0.8.0`. Until the API is stable enough for `1.0`, each new feature family
+The current package is `0.9.3`. Until the API is stable enough for `1.0`, each new feature family
 should land as a separate minor version:
 
 - `0.2`: HTML-like authoring syntax, followed by the first Semantic Author Graph work
@@ -52,7 +52,7 @@ Guidelines:
 - Keep prop types specific to each element. For example, `img` should expose image source props but
   not text typography props.
 - Avoid accepting values in the type system that the compiler cannot meaningfully support.
-- Add negative type tests for intentionally unsupported authoring patterns.
+- Add negative type tests for intentionally non-public authoring patterns.
 - Preserve runtime validation for JavaScript users and unsafe casts, but do not rely on runtime
   errors as the primary developer feedback path.
 - When a feature cannot be typed precisely yet, narrow the initial scope instead of shipping a loose
@@ -67,8 +67,8 @@ important because it lets users group multiple elements and apply layout/style b
 thinking about PowerPoint-specific terms.
 
 The first `0.2` releases should prioritize a narrow, strongly typed authoring surface over broad
-HTML compatibility. The user experience should feel guided by TypeScript: unsupported tags,
-unsupported props, invalid child placement, invalid style values, and missing required props should
+HTML compatibility. The user experience should feel guided by TypeScript: non-public tags,
+non-public props, invalid child placement, invalid style values, and missing required props should
 fail at type-check time whenever practical, with runtime validation as a secondary safety net.
 
 ### Version Split
@@ -430,7 +430,7 @@ forward calls unless they define a real public boundary.
 ### Risks
 
 - Primitive text currently throws inside `View` structured layout. The new behavior must be scoped
-  carefully so invalid text inside unsupported places still errors clearly.
+  carefully so invalid text inside non-public child positions still errors clearly.
 - `span` semantics are ambiguous if it is shipped as a text box alias. Do not ship `span` until it
   can behave as inline rich text.
 
@@ -439,7 +439,7 @@ forward calls unless they define a real public boundary.
 - Add authoring tests for intrinsic tags.
 - Add render tests for implicit text nodes.
 - Add type tests for JSX public API.
-- Add negative type tests for unsupported tags, invalid children, and missing `img` source props.
+- Add negative type tests for non-public tags, invalid children, and missing `img` source props.
 - In `0.2.1`, add Semantic Author Graph tests for JSX structure, stable graph identity, text runs,
   and styled inline spans.
 - Add diagnostics tests for semantic errors and warnings, including inspect mode behavior.
@@ -1188,8 +1188,9 @@ so applying it to a `div`/`View` should produce an error diagnostic. Shared box 
 `padding` or `backgroundColor` should remain usable across compatible node kinds unless the class
 author opts into an explicit `target`.
 At the type level, untargeted lightweight class definitions should be accepted as a union of known
-deckjsx style vocabularies. They should reject unsupported style keys, but they do not need to prove
-compatibility with every possible receiving node until compile-time diagnostics run.
+deckjsx style vocabularies. They should reject style keys that are not part of the public authoring
+API, but they do not need to prove compatibility with every possible receiving node until
+compile-time diagnostics run.
 
 Style resolution order before Theme support should be:
 
@@ -1200,9 +1201,9 @@ Style resolution order before Theme support should be:
 This order is the Semantic Author Graph / inspect-mode source of truth for `0.4`. Style-capable
 direct props should not be preserved as a deckjsx-specific cascade layer. Structural props such as
 `children`, `className`, `src`, `data`, `shape`, and `name` remain direct props, but style values
-should be authored through `style` or stylesheets. While legacy direct style props remain accepted,
-graph construction must normalize them into `authored.style` with explicit `style` object values
-taking precedence, so accepted authoring values are not silently dropped.
+should be authored through `style` or stylesheets. Direct Style Props are no longer accepted as a
+legacy authoring spelling; graph construction should report them as non-public authoring props
+instead of normalizing them into authored style.
 User-configurable defaults should not be introduced as a public `DeckOptions.defaults` API in `0.4`.
 The initial release should add the internal default layer, merge slot, and provenance kind, but
 author-configurable element or component defaults belong to Theme support rather than to a separate
@@ -1303,9 +1304,9 @@ Version split inside `0.4`:
 - Include a `theme` provenance kind in resolved style inspection types, even though `0.4.0` does not
   produce theme-origin values.
 - Use public provenance layer names `"default" | "theme" | "class" | "style"`.
-- Remove `StyleEntity.authored.direct`. Legacy direct style props that are still accepted by public
-  authoring types should normalize into `authored.style` instead of being dropped or represented as
-  a separate cascade layer.
+- Remove `StyleEntity.authored.direct`. Direct Style Props should not be accepted by public authoring
+  types or normalized into `authored.style`; JavaScript and casted inputs should produce
+  non-public-authoring diagnostics instead of being represented as a separate cascade layer.
 - Add runtime style-key classification for graph construction and diagnostics while keeping it
   aligned with the strongly typed style vocabularies.
 - Keep `compile()` and `compile({ mode: "strict" })` returning only `SemanticAuthorGraph`.
@@ -1370,7 +1371,7 @@ Version split inside `0.4`:
 - Tests for missing class error messages.
 - Tests for target-incompatible class diagnostics, such as applying text-only class properties to a
   view-like node.
-- Type tests that `new StyleSheet(...)` rejects unsupported style keys.
+- Type tests that `new StyleSheet(...)` rejects style keys outside the public authoring API.
 - Tests that clsx-like `className` inputs continue to normalize in order.
 - Tests that existing inline style behavior is unchanged.
 
@@ -1855,9 +1856,16 @@ const deck = new Deck({
   theme,
   templates: {
     titleSlide: {
+      style: {
+        display: "grid",
+        gridTemplateAreas: ['"title"', '"body"'],
+        gridTemplateRows: ["0.8in", "1fr"],
+        rowGap: 0.3,
+        padding: 0.7,
+      },
       areas: {
-        title: { frame: { x: 0.7, y: 0.6, width: 12, height: 0.8 } },
-        body: { frame: { x: 0.7, y: 1.7, width: 12, height: 4.8 } },
+        title: { style: { gridArea: "title" } },
+        body: { style: { gridArea: "body" } },
       },
     },
   },
@@ -1891,8 +1899,9 @@ deck.slide(() => <h1>Untemplated slide</h1>);
   Deck-owned templates are page-structure vocabulary.
 - Child Decks do not inherit parent templates. Template names are Deck/source-local, so parent and
   child Decks may use the same template name with different definitions.
-- A Slide Template defines named Template Areas under `areas`. Each Template Area has a complete
-  `frame` using the same frame value system as inline positional style.
+- A Slide Template defines named Template Areas under `areas`. Placement is authored through
+  `SlideTemplate.style` flow layout plus each Template Area's public style subset, such as
+  `gridArea`, `alignSelf`, and `justifySelf`.
 - `area` takes a Template Area Reference object, not a string. Authors obtain references from the
   typed slide factory `template` handle, such as `area={template.title}`.
 - The slide factory receives `template` as a top-level field only when a `template` option is used.
@@ -1906,11 +1915,11 @@ deck.slide(() => <h1>Untemplated slide</h1>);
   must appear on a direct slide child. Nested area references are compile errors.
 - One Template Area may be referenced by at most one direct authored node in a slide. Multiple
   elements in the same area should be wrapped in a container carrying the area reference.
-- Nodes with `area` are placed by the Template Area frame and removed from the normal sibling layout
-  flow. Nodes without `area` continue to use normal layout flow even on templated slides.
-- Template Area frame values override default, theme-default, and stylesheet positional values for
-  that placement. Inline positional style remains the author escape hatch and overrides
-  corresponding Template Area frame properties.
+- Nodes with `area` receive the Template Area flow placement style and then participate in the slide
+  template's normal layout. Nodes without `area` continue to use normal layout flow even on
+  templated slides.
+- Absolute positioning remains an explicit element style choice through `position: "absolute"` and
+  CSS positioning properties; Template Areas do not provide a deckjsx-specific fixed coordinate API.
 - Template relationships are graph semantics first. Concrete coordinates are resolved in
   layout/project artifacts, with enough inspection data to explain area-derived values and inline
   overrides when possible.
@@ -1933,12 +1942,12 @@ deck.slide(() => <h1>Untemplated slide</h1>);
   external `as const satisfies SlideTemplateSet` definitions.
 - Build Template Area References with an internal runtime brand plus a readable tag string for
   diagnostics/inspection. Public code should only receive them from the factory template handle.
-- Add runtime validation for the whole Deck template set, including complete `frame` values and
-  reserved `$` prefixes. Templates may be defined without a layout; final frame interpretation follows
-  the same stage as existing positional layout/style values.
+- Add runtime validation for the whole Deck template set, including public Template Area style keys
+  and reserved `$` prefixes. Templates may be defined without a layout; concrete frames are produced
+  later by normal layout/project stages.
 - Add graph fields for slide template references and node Template Area References without turning
   the graph into a resolved layout model.
-- Resolve Template Area frame placement in layout/project artifacts. Keep PPTX-specific values out of
+- Resolve Template Area flow placement in layout/project artifacts. Keep PPTX-specific values out of
   the Semantic Author Graph.
 
 ### Validation
@@ -1950,13 +1959,13 @@ deck.slide(() => <h1>Untemplated slide</h1>);
 - Type tests that `template` is not available in the factory input for untemplated slides.
 - Runtime diagnostics for missing templates, area references without an active template, mismatched
   Template Area Reference objects, unknown areas, nested area references, duplicate direct area use,
-  incomplete frames, and reserved `$` prefixes.
+  non-public template placement keys, and reserved `$` prefixes.
 - Tests that `deck.add()` and public `<Slide>` are removed from the public API.
 - Tests that same-named parent and child Deck templates are source-local and do not conflict.
-- Tests that area-bound direct children are removed from normal flow while unbound children remain in
-  normal flow.
-- Tests that Template Area frame values override class/default positional values and inline
-  positional style overrides corresponding area frame values.
+- Tests that area-bound direct children participate in the Slide Template's normal flow while
+  unbound children remain in the same flow.
+- Tests that Template Area flow style participates in class/default/style resolution without
+  introducing fixed coordinate aliases.
 - Tests that `compile()` exposes template and area graph relationships before output projection.
 
 ## Future Paged Media And Print CSS
@@ -2908,7 +2917,7 @@ v0.8.0 implementation backlog from the current design checkpoint:
   - Keep writer internals under the PPTX writer composite: build/reuse policy, XML emission,
     assembly planning, ZIP, sinks, and runtime output boundaries. Writers may consume
     PptxPackageModel snapshots and validation results, not projection internals.
-  - Preserve `src/pipeline-runner.ts` as stage orchestration rather than a home for PPTX-specific
+  - Preserve `src/pipeline/runner.ts` as stage orchestration rather than a home for PPTX-specific
     invalidation, ZIP, XML, or package validation policy.
 - Validation and regression:
   - Add semantic projection tests for Project summary filtered records, unsupported paint warning
@@ -3196,7 +3205,7 @@ Public and performance review constraints:
 - Give generated drawing nodes deterministic Pptx Element Identity derived from source graph identity,
   generated role, and local index/key. Store the generated role in the model so sandbox tooling can
   explain why background, border, outline, or other generated drawing objects exist.
-- Treat CSS-like `overflow: hidden` as a feature to reproduce, not as an unsupported authoring error.
+- Treat CSS-like `overflow: hidden` as a feature to reproduce, not as a non-public authoring error.
   Project should choose and record clipping strategy/results in the Pptx Package Model, preferring
   PPTX-native or vector-preserving strategies such as source rectangle adjustment or geometry
   clipping. More expensive fallbacks such as rasterizing clipped subtrees may be deferred only as an
@@ -3218,22 +3227,22 @@ Public and performance review constraints:
   corresponding layout relationships, and the PPTX package should preserve deckjsx's page-structure
   vocabulary without making Slide Templates identical to PowerPoint slide masters/layouts.
 - In Pptx Slide Layout Projection, represent Template Areas as placeholder-like layout anchors with
-  area identity, authoring-level area kind, frame, and origin. Keep authored area-bound content in
-  slide drawing parts, linked back to the Template Area or layout anchor as needed.
+  area identity, authoring-level area kind, and origin. Keep authored area-bound content in slide
+  drawing parts, linked back to the Template Area or layout anchor as needed.
 - Preserve `generic` Template Areas as layout anchors even when they do not map to a strong
-  PowerPoint placeholder type. The anchor still carries deckjsx template meaning, origin, frame, and
+  PowerPoint placeholder type. The anchor still carries deckjsx template meaning, origin, and
   sandbox/HMR traceability.
 - Derive template layout Package Part Identity from Source Identity plus Slide Template name. Same
   template names in different sources produce distinct layout projections, while slides using the
   same template in one source share the layout part.
 - Fingerprint template-derived layout parts from template structure and projected layout anchor data,
-  including Template Area frame, Template Area Kind, origin links, and PPTX fallback placeholder
+  including Template Area style, Template Area Kind, origin links, and PPTX fallback placeholder
   details. Do not include authored slide content from slides that use the template in the layout
   part fingerprint; that content belongs to each slide part's fingerprint.
 - For authored content placed by a Template Area, store both provenance and a direct projected
   layout-anchor relationship on the resulting Pptx Drawing Nodes. Origin explains why the node
   exists; the layout-anchor reference explains which projected template anchor constrains it.
-- Treat Template Area frame or constraint changes as dependencies of slide parts that place content
+- Treat Template Area style or constraint changes as dependencies of slide parts that place content
   through that area. Such a change invalidates both the template-derived layout part and every
   affected slide part whose drawing node frames are recalculated from that anchor.
 - Store layout identity and relevant layout fingerprint dependencies on slide parts that use a
@@ -3295,9 +3304,9 @@ Public and performance review constraints:
 - For text fitting, project supported behavior to PPTX-native text body auto-fit properties and make
   that delegation explicit in measurement metadata. Do not require v0.8.0 to implement full
   cross-runtime text measurement just to compute final rendered font sizes.
-- Report unsupported authoring-to-PPTX mapping as Project diagnostics. Treat a valid Pptx Package
-  Model property that the direct writer cannot serialize as a Render error and implementation gap,
-  not as an opportunity for the writer to reinterpret authoring semantics.
+- Report authoring-to-PPTX fidelity gaps as Project diagnostics. Treat a valid Pptx Package Model
+  property that the direct writer cannot serialize as a Render error and implementation gap, not as
+  an opportunity for the writer to reinterpret authoring semantics.
 - Remove the current `PptxPackageModel.version` field in `0.8.0`. The projected model is not a
   standalone long-term interchange format; `defineProjection()` should validate the current model
   shape and required PPTX fields rather than supporting old model-version compatibility.
@@ -3846,7 +3855,7 @@ Direct writer and package emission:
 - Keep runtime-neutral sink interfaces, collecting sinks, and tee sinks in `src/writers/pptx/sinks/`.
   Put Node filesystem output behind a separate thin runtime boundary, such as `src/runtime/node/` or a
   clearly isolated Node output module, so fs imports do not leak into the PPTX writer core.
-- Keep `src/adapter.ts` as the public writer adapter factory boundary. Export the direct `pptx()`
+- Keep `src/adapter/index.ts` as the public writer adapter factory boundary. Export the direct `pptx()`
   factory and shared adapter/result option types there, remove the core `pptxgenjs()` factory, and do
   not re-export direct writer internals such as emitters, ZIP adapters, sinks, or build artifact
   managers.
@@ -3862,7 +3871,7 @@ Direct writer and package emission:
 - Keep `src/projection/registry.ts` as the format-to-projection dispatch node for future output
   formats. It should call only public entry points of the PPTX Projection Composite Node and should
   not own PPTX model logic, package validation, summary construction, or shape-specific rules.
-- Keep `src/pipeline-runner.ts` as the compile/project/render orchestration node. It owns stage
+- Keep `src/pipeline/runner.ts` as the compile/project/render orchestration node. It owns stage
   materialization, diagnostics composition, artifact collection policy, and writer adapter dispatch,
   but it should not own PPTX-specific build artifact reuse, Assembly Plan construction, XML emission,
   ZIP policy, or package validation details.
@@ -4044,7 +4053,7 @@ v0.8.0 implementation checkpoints already reflected in the current code:
   `layoutAnchors`, untemplated slides use the default blank layout, and slides using a template point
   at the corresponding layout relationship.
 - Slides now retain dependency fingerprints for the slide layout parts that supplied their layout
-  anchors, so changing a Template Area frame or kind invalidates both the layout part and dependent
+  anchors, so changing a Template Area style or kind invalidates both the layout part and dependent
   slide package parts for future HMR/build artifact reuse.
 - Project now preserves representative unsupported CSS-like paint/transform semantics as node-local
   `unsupportedSemantics` plus nonblocking Project warnings instead of turning the whole projection
@@ -4947,7 +4956,7 @@ fixtures need final names.
     package dependency invalidation, paint fallback aggregation, and theme projection provenance.
 
 - Module boundary details:
-  - Resolved: `src/adapter.ts` is the public adapter factory boundary, and direct writer internals
+  - Resolved: `src/adapter/index.ts` is the public adapter factory boundary, and direct writer internals
     should not be re-exported through it.
   - Resolved: `src/runtime/node-output.ts` or an equivalent runtime module owns Node filesystem path
     output; the pipeline runner may dynamically call that boundary only when a path side effect is
@@ -6050,16 +6059,16 @@ Semantic Author Graph
   and leave span placement validation to graph construction.
 - Runtime JavaScript inputs that use props outside the current authoring contract should produce
   Compile diagnostics rather than JSX-runtime throws when the value can still be preserved in the
-  Author Tree. Use `E_COMPILE_UNSUPPORTED_AUTHORING_PROP` for unsupported props and describe them as
-  unsupported in the current authoring interface, not as migration-only removed props.
-- Emit unsupported authoring prop diagnostics per prop, not as one node-level aggregate. A node with
-  `x`, `y`, and `foo` should produce three `E_COMPILE_UNSUPPORTED_AUTHORING_PROP` diagnostics with
+  Author Tree. Use `E_COMPILE_NON_PUBLIC_AUTHORING_PROP` for non-public props and describe them as
+  values that are not part of the public authoring API, not as migration-only removed props.
+- Emit non-public authoring prop diagnostics per prop, not as one node-level aggregate. A node with
+  `x`, `y`, and `foo` should produce three `E_COMPILE_NON_PUBLIC_AUTHORING_PROP` diagnostics with
   paths pointing at `.props.x`, `.props.y`, and `.props.foo`.
-- Apply the same per-key diagnostic rule to Slide Declaration options. Unsupported options such as
-  `background` or `x` should each produce `E_COMPILE_UNSUPPORTED_AUTHORING_PROP` with paths pointing
-  at the slide declaration option, such as `.options.background`; wording may say unsupported slide
-  declaration option while using the same diagnostic code.
-- Validate supported Slide Declaration option values separately from unsupported options. `name`
+- Apply the same per-key diagnostic rule to Slide Declaration options. Non-public options such as
+  `background` or `x` should each produce `E_COMPILE_NON_PUBLIC_AUTHORING_PROP` with paths pointing
+  at the slide declaration option, such as `.options.background`; wording should say the option is
+  not part of the public authoring API.
+- Validate supported Slide Declaration option values separately from non-public options. `name`
   accepts missing/default handling and strings, with explicit non-string values reported through a
   slide-name option diagnostic such as `E_COMPILE_INVALID_SLIDE_NAME_OPTION`; `template` accepts
   missing/undefined and valid template references, with invalid values reported through existing
@@ -6068,35 +6077,36 @@ Semantic Author Graph
 - Supported prop names should continue to use prop-specific validation. Use
   `E_COMPILE_INVALID_STYLE_PROP` for non-object `style` values, including `null`, while treating an
   absent `style` prop or explicit `style={undefined}` as no authored inline style; use
-  `E_COMPILE_INVALID_SHAPE_PROP` for unsupported `shape` values; and use
+  `E_COMPILE_INVALID_SHAPE_PROP` for non-public `shape` values; and use
   `E_COMPILE_INVALID_IMAGE_SOURCE_PROP` for explicit non-string `img` `src` or `data` values.
 - Treat explicit `img` `src` and `data` together as ambiguous image source input. Use a dedicated
   diagnostic such as `E_COMPILE_AMBIGUOUS_IMAGE_SOURCE_PROP`, treat `src={undefined}` and
   `data={undefined}` as absent, and avoid choosing a priority that would make Asset Identity or Media
   Allocation Key depend on an implicit conflict rule.
 - Treat `shape` as a supported structural prop. Missing `shape` or explicit `shape={undefined}`
-  should use the existing default shape, while unsupported strings or non-string values should
+  should use the existing default shape, while non-public strings or non-string values should
   produce `E_COMPILE_INVALID_SHAPE_PROP`.
 - Treat `area` as a supported structural prop. Missing `area` or explicit `area={undefined}` means no
   Template Area Reference. Strings, `null`, plain objects, numbers, wrong-deck references, or other
   invalid values should use the existing Template Area Reference diagnostics such as
-  `E_TEMPLATE_AREA_REF_INVALID` rather than unsupported-prop diagnostics.
+  `E_TEMPLATE_AREA_REF_INVALID` rather than non-public-prop diagnostics.
 - Treat `children` as Author Tree child shape rather than as a style/structural prop. Prop validation
-  should not emit unsupported-prop diagnostics for `children`; child placement, primitive text, empty
+  should not emit non-public-prop diagnostics for `children`; child placement, primitive text, empty
   values, arrays, fragments, or unsupported child objects belong to JSX normalization and graph
   construction diagnostics.
 - Treat `className` as a supported prop with its existing clsx-like normalization and validation,
-  not as an unsupported prop. `undefined`, `null`, `false`, and empty strings are empty class input;
-  strings, arrays, and boolean object maps are supported; invalid className value shapes should use
-  className-specific validation rather than `E_COMPILE_UNSUPPORTED_AUTHORING_PROP`.
+  not as a non-public prop. `undefined`, `null`, and `false` are empty class input; non-empty
+  strings, arrays, and boolean object maps are supported; invalid className value shapes, empty
+  strings, whitespace-only strings, whitespace-containing object keys, or non-boolean object values
+  should use className-specific validation rather than `E_COMPILE_NON_PUBLIC_AUTHORING_PROP`.
 - Keep `StyleEntity.authored` shape stable. Stop merging Direct Style Props into
   `StyleEntity.authored.style`; only the `style` prop should populate authored style, while
   `className` continues to populate Style Class References.
 - Keep partial Semantic Author Graph construction where possible after authoring diagnostics, but do
-  not feed invalid style, shape, image source, or unsupported direct props into downstream style,
+  not feed invalid style, shape, image source, or non-public direct props into downstream style,
   asset, or projection state.
-- When an authoring node has unsupported props, keep the node and its children in the partial graph
-  when the supported portion is still meaningful. Drop only the unsupported prop values from graph,
+- When an authoring node has non-public props, keep the node and its children in the partial graph
+  when the supported portion is still meaningful. Drop only the non-public prop values from graph,
   style, layout, and asset state, while preserving supported props such as `style` and `className`.
 - Treat the current AuthorNode-based layout bridge as a v0.8.0 migration artifact. v0.8.1 should
   move toward `Semantic Author Graph + Resolved Style Snapshot + Template Area relationships + deck
@@ -6205,7 +6215,7 @@ resolvedStyles, templates, assetProbeArtifacts, deckSize, diagnostics })`. This 
   materialization helpers, or Build Artifact storage helpers. Dependency/source guards should verify
   that `fflate` is absent and that `deckjsx.author-node` no longer appears in `src/**`. Historical
   mentions in `docs/**` and roadmap context may remain.
-- Add focused v0.8.1 tests by boundary: authoring unsupported-prop tests for Direct Style Props,
+- Add focused v0.8.1 tests by boundary: authoring non-public-prop tests for Direct Style Props,
   unknown props, per-prop diagnostics, partial graph behavior, Slide Declaration options, `style`,
   `className`, `area`, `shape`, `img` source props, and `children`; layout input snapshot tests that
   prove graph/style/template/assets can become layout input without AuthorNode, public props,
@@ -6241,19 +6251,19 @@ The detailed HTML/CSS compatibility audit for this scope is recorded in
 
 ### Current Code Findings
 
-- View-like elements still default to `display: "block"` plus `layout: "absolute"` through
-  `ELEMENT_DEFAULTS.container` and `normalizeViewProps()`, but the current v0.8.2 slice now treats
-  unpositioned block children as normal-flow entries through `compileBlockFlowChildren()`. Explicit
-  frame props remain the slide-oriented opt-in for local absolute placement.
-- Implemented in the current v0.8.2 preparation slice: `display: "flex"` maps to stack layout while
-  defaulting to row direction and cross-axis stretch. A column flex child without an authored
-  `width` now stretches to the available content width unless explicit cross-size or self-alignment
-  says otherwise. Grid item self-alignment already defaults to stretch through
+- View-like elements now default to `display: "block"` plus CSS-like `position: "static"`.
+  Unpositioned block children participate in normal flow through `compileBlockFlowChildren()`.
+  Explicit `position: "absolute"` plus CSS positioning properties remains the slide-oriented opt-in
+  for local absolute placement.
+- Implemented in the current v0.8.2 preparation slice: `display: "flex"` uses the normal-flow flex
+  layout path while defaulting to row direction and cross-axis stretch. A column flex child without
+  an authored `width` now stretches to the available content width unless explicit cross-size or
+  self-alignment says otherwise. Grid item self-alignment already defaults to stretch through
   `resolveGridSelfAlignment()`.
 - Implemented in the current v0.8.2 preparation slice: `display: "flex"` now defaults to row
-  direction when neither `direction` nor `flexDirection` is authored, and its cross-axis alignment
-  defaults to stretch. The older `layout: "stack"` default remains vertical so deck-specific stack
-  authoring is not silently reinterpreted as CSS flexbox.
+  direction when `flexDirection` is omitted, and its cross-axis alignment defaults to stretch.
+  Deck-specific `layout` / `direction` style keys are no longer public authoring API; JavaScript or
+  casted inputs receive compile diagnostics instead of alternate stack-layout behavior.
 - Text measurement is not an auto-layout input yet. Stack and grid placement use declared
   width/height, flex basis, aspect-ratio derivation, tracks, and gaps. They do not measure wrapped
   text and then push following siblings by the realized text height.
@@ -6269,9 +6279,9 @@ The detailed HTML/CSS compatibility audit for this scope is recorded in
   before replacing the requested path. The regression test covers an existing non-empty output file
   plus a render failure with no artifact, proving the file remains untouched.
 - Implemented in the current v0.8.2 preparation slice: rounded-rectangle emission still clamps PPTX
-  `roundRect` adjustment to `50000`, and `borderRadius` / shape `radius` now resolve percentage
-  values against the projected short side. This makes CSS-like `borderRadius: "50%"` produce the
-  expected capsule-style geometry instead of falling through a zero base.
+  `roundRect` adjustment to `50000`, and public `borderRadius` now resolves percentage values
+  against the projected short side. This makes CSS-like `borderRadius: "50%"` produce the expected
+  capsule-style geometry instead of falling through a zero base.
 - Frame defaults are still zero-sized for explicit/local absolute boxes unless placement, explicit
   `width`/`height`, both-side insets, or a layout algorithm supplies a size. Implemented in the
   current v0.8.2 preparation slice: block-flow text receives available inline size and a
@@ -6283,15 +6293,15 @@ The detailed HTML/CSS compatibility audit for this scope is recorded in
 - `position` is not full CSS positioned layout. Implemented in the current v0.8.2 preparation slice:
   element defaults now use CSS-like `position: "static"`, and `position: "absolute"` removes an entry
   from normal stack flow. Implemented in the current slice: `position: "relative"` now keeps the node
-  in block/flex/grid flow and applies `top` / `right` / `bottom` / `left` / `inset` / `x` / `y` as a
-  visual offset without changing the sibling flow position.
+  in block/flex/grid flow and applies `top` / `right` / `bottom` / `left` / `inset` as a visual offset
+  without changing the sibling flow position.
 - Grid defaults are deck-oriented. Missing templates resolve to tracks that fill the available grid
   content frame, and implicit `gridAutoRows` / `gridAutoColumns` fall back to `1fr`-like behavior
   rather than CSS `auto` tracks. Grid item stretch is implemented, but the track defaults should be
   documented as deckjsx semantics.
 - Image and background defaults are presentation-oriented, not CSS initial values. `img` defaults to
-  `fit: "contain"` / centered object position; element background images default to no-repeat and
-  stretch when no `backgroundSize` is provided; slide backgrounds default to cover/no-repeat. CSS
+  `objectFit: "contain"` / centered object position; element background images default to no-repeat
+  and stretch when no `backgroundSize` is provided; slide backgrounds default to cover/no-repeat. CSS
   authors may expect intrinsic image sizing, `background-repeat: repeat`, and
   `background-size: auto`.
 - Shape defaults are visible by default: `shape` uses white fill with zero stroke unless styled.
@@ -6299,7 +6309,8 @@ The detailed HTML/CSS compatibility audit for this scope is recorded in
   can surprise users using `shape` as a layout/debug primitive.
 - Numeric length defaults are intentionally split by domain: `DeckLength` numbers are inches, while
   point-like text values remain points. Existing docs mention this, but v0.8.2 docs should place it
-  near the other non-CSS gotchas because most CSS lengths are unitless only for special properties.
+  near the other documented CSS subset differences because most CSS lengths are unitless only for
+  special properties.
 - Implemented in the current v0.8.2 preparation slice: CSS-wide keywords (`initial`, `inherit`,
   `unset`, `revert`, and `revert-layer`) are accepted by length-capable public style types and do
   not become explicit zero sizes. The projection fallback uses the supported-subset initial/default
@@ -6350,8 +6361,9 @@ The detailed HTML/CSS compatibility audit for this scope is recorded in
   font size, line height, direction, and letter spacing flow into text runs.
 - Completed for the current slice: implement normal-flow block layout for unpositioned block
   children. A plain nested `<div><p>...</p><p>...</p></div>` now produces vertically flowing,
-  non-overlapping frames without explicit child `x`, `y`, `width`, or `height`. `layout: "absolute"`
-  and explicit frame props remain the slide-oriented opt-in for local absolute positioning.
+  non-overlapping frames without explicit child `left`, `top`, `width`, or `height`.
+  `position: "absolute"` plus CSS positioning properties remains the slide-oriented opt-in for
+  local absolute positioning.
 - Completed for the current slice: add the v0.8.2 `auto`/intrinsic sizing subset. Unspecified block
   inline size stretches to available content width; simple text has a line-height based intrinsic
   block size; images use probed intrinsic dimensions and natural aspect ratio where available.
@@ -6372,8 +6384,8 @@ The detailed HTML/CSS compatibility audit for this scope is recorded in
 - Completed for the current slice: reconcile CSS positioning semantics. `static` is the conceptual
   default, `absolute` removes entries from flow, and `relative` is in-flow layout plus visual offset.
   `auto` inset values no longer fail length parsing; deckjsx treats them as unspecified in the
-  supported layout fallback and records `layout` unsupported semantics. Docs keep `x` / `y`
-  documented as deck-specific frame aliases rather than browser CSS properties.
+  supported layout fallback and records `layout` unsupported semantics. Public docs describe
+  `x` / `y` as invalid authoring keys that produce diagnostics, not as layout aliases.
 - Completed for the current slice: define the v0.8.2 logical-axis scope. `writingMode` and
   `direction` remain text-body projection inputs only; text nodes with `direction: "rtl"` or
   vertical `writingMode` preserve PPTX text-body direction while recording `layout` unsupported
@@ -6650,7 +6662,8 @@ render verification. This should not be treated as a background-image variant or
 
 ### Validation
 
-- Type tests reject unsupported broad HTML video props until they are intentionally modeled.
+- Type tests reject broad HTML video props that are not part of the public authoring API until they
+  are intentionally modeled.
 - Asset loader tests cover video probe/load metadata, invalid MIME/extension combinations, byte-load
   failures, and repeated-source media-part reuse.
 - Projection tests cover video element identity, package part allocation, content-type defaults,

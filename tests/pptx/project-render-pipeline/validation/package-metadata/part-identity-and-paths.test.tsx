@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import * as H from "../../helpers.tsx";
+import * as H from "@/tests/pptx/project-render-pipeline/helpers.tsx";
 
 describe("project/render validation package part identity and paths", () => {
   test("direct writer validates package part base metadata shape", async () => {
@@ -41,7 +41,10 @@ describe("project/render validation package part identity and paths", () => {
   test("direct writer validates package part category-kind compatibility", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Invalid part category" }, () => (
-      <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        data={H.SAMPLE_SVG_DATA_URI}
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;
@@ -84,7 +87,7 @@ describe("project/render validation package part identity and paths", () => {
     deck.slide({ name: "Self dependencies" }, () => (
       <img
         data={H.dataUriFromBytes("image/png", H.pngHeaderBytes(2, 1))}
-        style={{ x: 1, y: 1, width: 1, height: 1, objectFit: "stretch" }}
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1, objectFit: "fill" }}
       />
     ));
 
@@ -179,7 +182,7 @@ describe("project/render validation package part identity and paths", () => {
   test("direct writer validates package part paths match their OOXML kind family", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Path families" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>paths</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>paths</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -284,7 +287,7 @@ describe("project/render validation package part identity and paths", () => {
   test("direct writer validates package part paths are canonical zip entry paths", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Invalid package paths" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>paths</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>paths</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -341,7 +344,7 @@ describe("project/render validation package part identity and paths", () => {
   test("direct writer validates package part origin metadata shape", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Invalid part origin" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>origin</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>origin</p>
     ));
 
     const projection = (await deck.project()).projection!;

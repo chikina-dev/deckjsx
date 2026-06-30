@@ -5,7 +5,7 @@ describe("project/render validation theme support payloads", () => {
   test("project validates theme support payloads before render", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Broken theme payload" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Theme payload</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Theme payload</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -88,7 +88,7 @@ describe("project/render validation theme support payloads", () => {
       theme: new H.Theme({ defaults: { p: { color: "#2563EB", fontFamily: "Aptos" } } }),
     });
     deck.slide({ name: "Broken theme trace" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Theme trace</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Theme trace</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -365,7 +365,9 @@ describe("project/render validation theme support payloads", () => {
   test("project validates theme projection trace package references target expected part kinds", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Wrong theme trace references" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Theme trace refs</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
+        Theme trace refs
+      </p>
     ));
 
     const projection = (await deck.project()).projection!;

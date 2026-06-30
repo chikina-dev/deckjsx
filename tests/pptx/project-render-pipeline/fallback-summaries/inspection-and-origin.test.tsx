@@ -7,12 +7,12 @@ describe("project/render fallback inspection and origin", () => {
     deck.slide({ name: "Paint fallback aggregation" }, () => (
       <div
         style={{
-          x: 1,
-          y: 1,
+          position: "absolute",
+          left: 1,
+          top: 1,
           width: 3,
           height: 2,
-          background: `url("/public/texture.png")`,
-          backgroundRepeat: "space",
+          background: "repeating-linear-gradient(90deg, #FFFFFF 0%, #000000 0%)",
           filter: "blur(2px)",
         }}
       />
@@ -39,7 +39,7 @@ describe("project/render fallback inspection and origin", () => {
         slidePartIds: [detailedProject.projection?.slides[0]?.id],
         slideIds: [detailedProject.projection?.slides[0]?.payload.slideId],
         kinds: ["group"],
-        values: [`url("/public/texture.png")`],
+        values: ["repeating-linear-gradient(90deg, #FFFFFF 0%, #000000 0%)"],
         preserves: expect.arrayContaining(["authoredBackgroundInput"]),
         missing: expect.arrayContaining(["pptxBackgroundLayer"]),
         recordIndexes: expect.arrayContaining([expect.any(Number)]),
@@ -124,98 +124,50 @@ describe("project/render fallback inspection and origin", () => {
     );
   });
 
-  test("partial projection keeps computable elements for inspection", async () => {
+  test("public authoring compile errors block projection artifacts", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.slide({ name: "Partially invalid" }, () => (
+    deck.slide({ name: "Invalid authoring" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 2, height: 1, opacity: 0.4, filter: "blur(2px)" }}>Kept</p>
-        <div
+        <p
           style={{
-            x: 3,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
-            background: `url("/public/texture.png")`,
-            backgroundRepeat: "space",
-            boxShadow: "1px 1px 2px red, 2px 2px 4px blue",
+            opacity: 0.4,
+            filter: "blur(2px)",
+          }}
+        >
+          Kept
+        </p>
+        <div
+          style={{
+            position: "absolute",
+            left: 3,
+            top: 1,
+            width: 2,
+            height: 1,
+            background: "repeating-linear-gradient(90deg, #FFFFFF 0%, #000000 0%)",
+            boxShadow: "1px 1px 2px red, 2px 2px 4px blue" as never,
           }}
         />
-        <div style={{ x: "1qu" as never, y: 1, width: 2, height: 1 }} />
+        <div style={{ position: "absolute", left: "1qu" as never, top: 1, width: 2, height: 1 }} />
       </>
     ));
 
     const project = await deck.project();
 
     expect(project.ok).toBe(false);
-    expect(project.stages.project.artifact).toBe("partial");
-    expect(project.projection?.slides[0]?.payload.drawing.children).toHaveLength(2);
-    const [text, view] = project.projection?.slides[0]?.payload.drawing.children ?? [];
-    expect(project.summary?.slides[0]?.elements[0]?.textPreview).toBe("Kept");
-    expect(project.summary?.slides[0]?.elements[0]?.resolvedValues?.frame).toBeDefined();
-    expect(text?.unsupportedSemantics).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          feature: "filter",
-          property: "filter",
-          value: "blur(2px)",
-          fallback: expect.objectContaining({ strategy: "dropFilterEffect" }),
-        }),
-        expect.objectContaining({
-          feature: "opacity",
-          property: "stackingContext",
-          value: "0.4",
-          fallback: expect.objectContaining({
-            strategy: "preserveOpacityWithoutCompositedSubtree",
-          }),
-        }),
-      ]),
-    );
-    expect(view?.unsupportedSemantics).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          feature: "background",
-          property: "background",
-          fallback: expect.objectContaining({ strategy: "preserveAuthoredValueOnly" }),
-        }),
-        expect.objectContaining({ feature: "shadow", property: "boxShadow" }),
-      ]),
-    );
+    expect(project.stages.project.artifact).toBe("missing");
+    expect(project.projection).toBeUndefined();
     expect(project.diagnostics.items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          code: "W_PROJECT_UNSUPPORTED_PPTX_SEMANTIC",
-          severity: "warning",
-          notes: expect.arrayContaining([
-            `elementId=${view?.id}`,
-            "feature=background",
-            "property=background",
-          ]),
+          code: "E_COMPILE_INVALID_STYLE_VALUE",
+          severity: "error",
+          message: expect.stringContaining("left value is not part of the public authoring API"),
         }),
-        expect.objectContaining({
-          code: "W_PROJECT_UNSUPPORTED_PPTX_SEMANTIC",
-          severity: "warning",
-          notes: expect.arrayContaining([
-            `elementId=${view?.id}`,
-            "feature=shadow",
-            "property=boxShadow",
-          ]),
-        }),
-      ]),
-    );
-    expect(project.summary?.unsupportedSemantics).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ feature: "filter", property: "filter", elementId: text?.id }),
-        expect.objectContaining({
-          feature: "opacity",
-          property: "stackingContext",
-          elementId: text?.id,
-        }),
-        expect.objectContaining({
-          feature: "background",
-          property: "background",
-          elementId: view?.id,
-        }),
-        expect.objectContaining({ feature: "shadow", property: "boxShadow", elementId: view?.id }),
       ]),
     );
   });
@@ -224,9 +176,15 @@ describe("project/render fallback inspection and origin", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Origin stability" }, () => (
       <>
-        <p style={{ display: "none", x: 1, y: 1, width: 2, height: 1 }}>Hidden</p>
-        <p style={{ zIndex: 10, x: 1, y: 1, width: 2, height: 1 }}>First</p>
-        <p style={{ zIndex: 0, x: 1, y: 2, width: 2, height: 1 }}>Second</p>
+        <p style={{ position: "absolute", display: "none", left: 1, top: 1, width: 2, height: 1 }}>
+          Hidden
+        </p>
+        <p style={{ position: "absolute", zIndex: 10, left: 1, top: 1, width: 2, height: 1 }}>
+          First
+        </p>
+        <p style={{ position: "absolute", zIndex: 0, left: 1, top: 2, width: 2, height: 1 }}>
+          Second
+        </p>
       </>
     ));
 
@@ -267,9 +225,11 @@ describe("project/render fallback inspection and origin", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Sibling order" }, () => (
       <>
-        <p style={{ zIndex: 1, x: 1, y: 1, width: 2, height: 1 }}>One</p>
-        <p style={{ zIndex: 1, x: 1, y: 2, width: 2, height: 1 }}>Two</p>
-        <p style={{ zIndex: 1, x: 1, y: 3, width: 2, height: 1 }}>Three</p>
+        <p style={{ position: "absolute", zIndex: 1, left: 1, top: 1, width: 2, height: 1 }}>One</p>
+        <p style={{ position: "absolute", zIndex: 1, left: 1, top: 2, width: 2, height: 1 }}>Two</p>
+        <p style={{ position: "absolute", zIndex: 1, left: 1, top: 3, width: 2, height: 1 }}>
+          Three
+        </p>
       </>
     ));
 

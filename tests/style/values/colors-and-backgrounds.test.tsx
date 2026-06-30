@@ -9,8 +9,9 @@ describe("style value colors and backgrounds", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 2,
             backgroundColor: "rgba(255, 0, 0, 0.25)",
@@ -19,8 +20,9 @@ describe("style value colors and backgrounds", () => {
         >
           <p
             style={{
-              x: 0.5,
-              y: 0.5,
+              position: "absolute",
+              left: 0.5,
+              top: 0.5,
               width: 2,
               height: 0.5,
               fontSize: 18,
@@ -33,8 +35,9 @@ describe("style value colors and backgrounds", () => {
           <shape
             shape="rect"
             style={{
-              x: 2.75,
-              y: 0.5,
+              position: "absolute",
+              left: 2.75,
+              top: 0.5,
               width: 0.75,
               height: 0.75,
               fill: "hsla(120, 100%, 25%, 0.4)",
@@ -86,8 +89,9 @@ describe("style value colors and backgrounds", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 2,
             backgroundColor: "rebeccapurple",
@@ -96,8 +100,9 @@ describe("style value colors and backgrounds", () => {
         >
           <p
             style={{
-              x: 0.5,
-              y: 0.5,
+              position: "absolute",
+              left: 0.5,
+              top: 0.5,
               width: 2,
               height: 0.5,
               fontSize: 18,
@@ -109,7 +114,14 @@ describe("style value colors and backgrounds", () => {
           </p>
           <shape
             shape="rect"
-            style={{ x: 2.75, y: 0.5, width: 0.75, height: 0.75, fill: "mediumseagreen" }}
+            style={{
+              position: "absolute",
+              left: 2.75,
+              top: 0.5,
+              width: 0.75,
+              height: 0.75,
+              fill: "mediumseagreen",
+            }}
           />
         </div>
       </>
@@ -162,8 +174,9 @@ describe("style value colors and backgrounds", () => {
         <>
           <div
             style={{
-              x: 1,
-              y: 1,
+              position: "absolute",
+              left: 1,
+              top: 1,
               width: 3,
               height: 1,
               background: "hsl(210, 100%, 50%)",
@@ -171,15 +184,24 @@ describe("style value colors and backgrounds", () => {
             }}
           />
           <p
-            style={{ x: 1, y: 2.25, width: 3, height: 0.75, fontSize: 18, background: "#FF000080" }}
+            style={{
+              position: "absolute",
+              left: 1,
+              top: 2.25,
+              width: 3,
+              height: 0.75,
+              fontSize: 18,
+              background: "#FF000080",
+            }}
           >
             Background
           </p>
           <shape
             shape="rect"
             style={{
-              x: 5,
-              y: 1,
+              position: "absolute",
+              left: 5,
+              top: 1,
               width: 2,
               height: 1,
               fill: "rgba(239, 68, 68, 0.25)",
@@ -233,8 +255,9 @@ describe("style value colors and backgrounds", () => {
         <>
           <div
             style={{
-              x: 1,
-              y: 1,
+              position: "absolute",
+              left: 1,
+              top: 1,
               width: 3,
               height: 1,
               background: "linear-gradient(to bottom, #22C55E 0%, rgba(14, 165, 233, 0.5) 100%)",
@@ -242,8 +265,9 @@ describe("style value colors and backgrounds", () => {
           />
           <p
             style={{
-              x: 1,
-              y: 2.25,
+              position: "absolute",
+              left: 1,
+              top: 2.25,
               width: 3,
               height: 0.75,
               fontSize: 18,
@@ -255,8 +279,9 @@ describe("style value colors and backgrounds", () => {
           <shape
             shape="rect"
             style={{
-              x: 5,
-              y: 1,
+              position: "absolute",
+              left: 5,
+              top: 1,
               width: 2,
               height: 1,
               background: "linear-gradient(45deg, #EF4444 0%, #F59E0B 100%)",
@@ -264,8 +289,9 @@ describe("style value colors and backgrounds", () => {
           />
           <div
             style={{
-              x: 5,
-              y: 2.5,
+              position: "absolute",
+              left: 5,
+              top: 2.5,
               width: 2,
               height: 0.75,
               backgroundColor: "#10B981",
@@ -358,8 +384,9 @@ describe("style value colors and backgrounds", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 2,
             borderWidth: 0.25,
@@ -375,8 +402,9 @@ describe("style value colors and backgrounds", () => {
         />
         <div
           style={{
-            x: 6,
-            y: 1,
+            position: "absolute",
+            left: 6,
+            top: 1,
             width: 2,
             height: 1,
             background: `url("${H.BACKGROUND_IMAGE_PATH}") no-repeat right bottom / contain`,

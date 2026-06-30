@@ -101,7 +101,7 @@ function formatHexColor(red: number, green: number, blue: number) {
     .toUpperCase();
 }
 
-const CSS_NAMED_COLORS: Record<string, string> = {
+const CSS_NAMED_COLORS = {
   aliceblue: "F0F8FF",
   antiquewhite: "FAEBD7",
   aqua: "00FFFF",
@@ -251,7 +251,9 @@ const CSS_NAMED_COLORS: Record<string, string> = {
   yellow: "FFFF00",
   yellowgreen: "9ACD32",
   transparent: "000000",
-};
+} as const satisfies Record<string, string>;
+
+export type CssNamedColor = keyof typeof CSS_NAMED_COLORS;
 
 export function parseCssColor(value?: string): ParsedCssColor | undefined {
   if (!value) {
@@ -286,7 +288,7 @@ export function parseCssColor(value?: string): ParsedCssColor | undefined {
   }
 
   const lowered = trimmed.toLowerCase();
-  const named = CSS_NAMED_COLORS[lowered];
+  const named = (CSS_NAMED_COLORS as Readonly<Record<string, string>>)[lowered];
   if (named) {
     return {
       color: named,

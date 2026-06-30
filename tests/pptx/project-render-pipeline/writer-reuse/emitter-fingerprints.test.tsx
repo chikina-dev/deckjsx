@@ -6,7 +6,7 @@ describe("project/render writer emitter fingerprints", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "DocProps emitter" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 2, height: 0.5 }}>docprops</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 2, height: 0.5 }}>docprops</p>
       </>
     ));
 
@@ -28,7 +28,9 @@ describe("project/render writer emitter fingerprints", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Relationship emitters" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 2, height: 0.5 }}>relationships</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 2, height: 0.5 }}>
+          relationships
+        </p>
       </>
     ));
 
@@ -68,7 +70,10 @@ describe("project/render writer emitter fingerprints", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Support emitters" }, () => (
       <>
-        <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1, width: 1, height: 1 }} />
+        <img
+          data={H.SAMPLE_SVG_DATA_URI}
+          style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+        />
       </>
     ));
 
@@ -100,7 +105,7 @@ describe("project/render writer emitter fingerprints", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Artifact identity" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 2, height: 0.5 }}>identity</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 2, height: 0.5 }}>identity</p>
       </>
     ));
 

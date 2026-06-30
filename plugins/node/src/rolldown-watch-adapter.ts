@@ -1,4 +1,4 @@
-import { readFileSync, watch as watchFileSystem, type FSWatcher } from "node:fs";
+import { watch as watchFileSystem, type FSWatcher } from "node:fs";
 import path from "node:path";
 import { rolldown, watch, type OutputChunk, type Plugin, type WatchOptions } from "rolldown";
 import { isDeckjsxRuntimeExternalId } from "./dev-executor";
@@ -14,6 +14,7 @@ import {
   bundleMissingChunkDiagnostic,
   type DeckjsxDevDiagnostic,
 } from "./dev-diagnostics";
+import { deckjsxJsxTransformOptionsForCwd } from "./jsx-transform-options";
 
 export type RolldownWatchSourceSnapshot = DeckjsxDevSourceSnapshot;
 
@@ -470,22 +471,9 @@ export function createRolldownWatchOptions(input: {
       deckjsxMediaSourceOriginPlugin(),
     ],
     transform: {
-      jsx: {
-        runtime: "automatic",
-        ...(tsconfigUsesDeckjsxJsxImportSource(input.cwd) ? {} : { importSource: "deckjsx" }),
-      },
+      jsx: deckjsxJsxTransformOptionsForCwd(input.cwd),
     },
   };
-}
-
-function tsconfigUsesDeckjsxJsxImportSource(cwd: string): boolean {
-  try {
-    return /"jsxImportSource"\s*:\s*"deckjsx"/.test(
-      readFileSync(path.join(cwd, "tsconfig.json"), "utf8"),
-    );
-  } catch {
-    return false;
-  }
 }
 
 async function sourceSnapshotFromBundleEnd(input: {

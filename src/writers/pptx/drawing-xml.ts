@@ -4,7 +4,7 @@ import type {
   LinearGradientStopIR,
   ShadowIR,
   StrokeIR,
-} from "../../layout/projected";
+} from "@/src/layout/projected";
 import { XmlChunkWriter } from "./xml-writer";
 
 const MAX_WRITER_SHAPE_OBJECT_ID = Number.MAX_SAFE_INTEGER - 1;

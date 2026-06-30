@@ -14,23 +14,24 @@ import type {
   AuthorVideoElementNode,
   JsxKey,
 } from "../authoring/tree";
+import type { AuthoredTag } from "../authoring/tags";
+import {
+  CLASS_NAME_ARRAY_DEPTH_MAX,
+  classNameStringTokens,
+  dataMediaType,
+  isPublicClassNameObjectKey,
+  isPublicTableCellSpan,
+  validateAuthoringElementPropsContract,
+  validateImageSourceContract,
+  validateVideoPosterContract,
+  validateVideoSourceContract,
+} from "../authoring/contract";
+import type { AuthoringPropContractIssue } from "../authoring/contract";
 import type { ImageNodeProps, VideoNodeProps } from "../authoring/props";
 import type { ComposedAuthorRoot, SourceSlotOrigin } from "../composition/types";
 import { createDiagnostics, diagnostic, type Diagnostic, type Diagnostics } from "../diagnostics";
-import {
-  IMAGE_STYLE_KEYS,
-  SHAPE_STYLE_KEYS,
-  SLIDE_STYLE_KEYS,
-  TABLE_CELL_STYLE_KEYS,
-  TABLE_ROW_STYLE_KEYS,
-  TABLE_SECTION_STYLE_KEYS,
-  TABLE_STYLE_KEYS,
-  TEXT_RUN_STYLE_KEYS,
-  TEXT_STYLE_KEYS,
-  VIDEO_STYLE_KEYS,
-  VIEW_STYLE_KEYS,
-  type StyleDeclaration,
-} from "../style/types";
+import { validateSupportedStyleDeclaration } from "../style/authoring-validation";
+import type { StyleDeclaration } from "../style/declaration";
 import { isTemplateAreaRef, templateRefValue, type SlideTemplateSet } from "../templates";
 import { assetEntityId, graphNodeId, styleEntityId } from "./identity";
 import { semanticKindForTag, semanticRoleForTag } from "./roles";
@@ -70,6 +71,7 @@ type BuildContext = {
   activeSlideTemplate?: string;
   activeSlideTemplates?: SlideTemplateSet;
   directSlideChild?: boolean;
+  allowPrimitiveTextInContainer?: boolean;
   usedTemplateAreas?: Map<string, string>;
 };
 
@@ -84,6 +86,10 @@ function isRecord(
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isUnknownRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function hasOwnProp(props: AuthorElementProps, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(props, key);
 }
@@ -92,7 +98,7 @@ function keySegment(key: JsxKey | undefined, index: number): string {
   return key === undefined ? `index:${index}` : `key:${String(key)}`;
 }
 
-function sourceName(node: AuthorElementNode): string {
+function sourceName(node: AuthorElementNode): AuthoredTag | "slide" {
   return node.source.kind === "tag" ? node.source.tag : "slide";
 }
 
@@ -143,73 +149,6 @@ function templateAreaValueFor(node: AuthorElementNode): AuthorElementPropValue |
   return "area" in node.props ? node.props.area : undefined;
 }
 
-function supportedPropNamesFor(node: AuthorElementNode): ReadonlySet<string> {
-  if (node.source.kind === "slide") {
-    return new Set(["name", "template", "className", "style"]);
-  }
-
-  switch (node.source.tag) {
-    case "span":
-      return new Set(["className", "style"]);
-    case "table":
-      return new Set(["className", "style", "area"]);
-    case "thead":
-    case "tbody":
-    case "tfoot":
-    case "tr":
-      return new Set(["className", "style"]);
-    case "th":
-    case "td":
-      return new Set(["className", "style", "colspan", "rowspan"]);
-    case "img":
-      return new Set(["className", "style", "area", "src", "data"]);
-    case "video":
-      return new Set(["className", "style", "area", "src", "data", "poster", "posterData"]);
-    case "shape":
-      return new Set(["className", "style", "area", "shape"]);
-    default:
-      return new Set(["className", "style", "area"]);
-  }
-}
-
-function supportedStyleNamesFor(node: AuthorElementNode): ReadonlySet<string> {
-  if (node.source.kind === "slide") {
-    return new Set(SLIDE_STYLE_KEYS);
-  }
-
-  switch (node.source.tag) {
-    case "span":
-      return new Set(TEXT_RUN_STYLE_KEYS);
-    case "table":
-      return new Set(TABLE_STYLE_KEYS);
-    case "thead":
-    case "tbody":
-    case "tfoot":
-      return new Set(TABLE_SECTION_STYLE_KEYS);
-    case "tr":
-      return new Set(TABLE_ROW_STYLE_KEYS);
-    case "th":
-    case "td":
-      return new Set(TABLE_CELL_STYLE_KEYS);
-    case "img":
-      return new Set(IMAGE_STYLE_KEYS);
-    case "video":
-      return new Set(VIDEO_STYLE_KEYS);
-    case "shape":
-      return new Set(SHAPE_STYLE_KEYS);
-    case "p":
-    case "h1":
-    case "h2":
-    case "h3":
-    case "h4":
-    case "h5":
-    case "h6":
-      return new Set(TEXT_STYLE_KEYS);
-    default:
-      return new Set(VIEW_STYLE_KEYS);
-  }
-}
-
 function sourceFor(context: BuildContext): SourceOrigin {
   return context.activeSlot?.source ?? context.source;
 }
@@ -247,8 +186,6 @@ function textOriginFor(node: AuthorTextLeaf, path: string, context: BuildContext
   };
 }
 
-const MAX_CLASS_NAME_ARRAY_DEPTH = 1024;
-
 function collectClassNames(
   value: AuthorElementPropValue,
   names: string[],
@@ -260,12 +197,12 @@ function collectClassNames(
   }
 
   if (typeof value === "string") {
-    names.push(...value.trim().split(/\s+/).filter(Boolean));
+    names.push(...classNameStringTokens(value));
     return;
   }
 
   if (Array.isArray(value)) {
-    if (visitedArrays.has(value) || depth >= MAX_CLASS_NAME_ARRAY_DEPTH) {
+    if (visitedArrays.has(value) || depth >= CLASS_NAME_ARRAY_DEPTH_MAX) {
       return;
     }
 
@@ -277,7 +214,7 @@ function collectClassNames(
 
   if (isRecord(value)) {
     Object.entries(value).forEach(([name, enabled]) => {
-      if (enabled === true) {
+      if (enabled === true && isPublicClassNameObjectKey(name)) {
         collectClassNames(name, names, visitedArrays, depth);
       }
     });
@@ -377,6 +314,19 @@ function authoringPropDiagnostic(input: {
   });
 }
 
+function addAuthoringPropContractIssue(state: BuildState, issue: AuthoringPropContractIssue): void {
+  addDiagnostic(
+    state,
+    authoringPropDiagnostic({
+      code: issue.code,
+      title: issue.title,
+      path: issue.path,
+      message: issue.message,
+      ...(issue.help ? { help: issue.help } : {}),
+    }),
+  );
+}
+
 function videoPosterMissingDiagnostic(input: { path: string }): Diagnostic {
   return diagnostic({
     severity: "warning",
@@ -396,142 +346,27 @@ function videoPosterMissingDiagnostic(input: { path: string }): Diagnostic {
   });
 }
 
-function unsupportedStylePropDiagnostic(input: {
-  path: string;
-  property: string;
-  tag: string;
-}): Diagnostic {
-  return diagnostic({
-    severity: "warning",
-    code: "W_COMPILE_UNSUPPORTED_STYLE_PROP",
-    title: "unsupported style property",
-    message: `Style property "${input.property}" is not supported by the deckjsx CSS-like style subset for ${input.tag}.`,
-    labels: [
-      {
-        path: input.path,
-        message: `${input.property} is outside the supported deckjsx style property subset.`,
-      },
-    ],
-    help: [
-      "Use a supported deckjsx style key, or keep this value in your own data layer until deckjsx adds that CSS property.",
-    ],
-  });
-}
-
 function validateAuthoringProps(state: BuildState, node: AuthorElementNode, path: string): void {
-  const supported = supportedPropNamesFor(node);
   const propPath = node.source.kind === "slide" ? `${path}.options` : `${path}.props`;
-  for (const key of Object.keys(node.props)) {
-    if (!supported.has(key)) {
-      const target = node.source.kind === "slide" ? "slide declaration option" : "authoring prop";
-      addDiagnostic(
-        state,
-        authoringPropDiagnostic({
-          code: "E_COMPILE_UNSUPPORTED_AUTHORING_PROP",
-          title: `unsupported ${target}`,
-          path: `${propPath}.${key}`,
-          message: `${key} is not supported in the current deckjsx authoring interface.`,
-        }),
-      );
-    }
+  for (const issue of validateAuthoringElementPropsContract({
+    source: node.source,
+    props: node.props,
+    path,
+  })) {
+    addAuthoringPropContractIssue(state, issue);
   }
 
   if (hasOwnProp(node.props, "style")) {
     const style = node.props.style;
-    if (style !== undefined && !isRecord(style)) {
-      addDiagnostic(
-        state,
-        authoringPropDiagnostic({
-          code: "E_COMPILE_INVALID_STYLE_PROP",
-          title: "style prop is invalid",
-          path: `${propPath}.style`,
-          message: "The style prop must be an object when it is provided.",
-        }),
-      );
-    }
-
     if (isRecord(style)) {
-      const supportedStyleNames = supportedStyleNamesFor(node);
       const tag = sourceName(node);
-      Object.keys(style).forEach((key) => {
-        if (supportedStyleNames.has(key)) {
-          return;
-        }
-
-        addDiagnostic(
-          state,
-          unsupportedStylePropDiagnostic({
-            path: `${propPath}.style.${key}`,
-            property: key,
-            tag,
-          }),
-        );
-      });
-    }
-  }
-
-  if (isShapeElement(node) && node.props.shape !== undefined) {
-    if (
-      node.props.shape !== "rect" &&
-      node.props.shape !== "ellipse" &&
-      node.props.shape !== "line"
-    ) {
-      addDiagnostic(
-        state,
-        authoringPropDiagnostic({
-          code: "E_COMPILE_INVALID_SHAPE_PROP",
-          title: "shape prop is invalid",
-          path: `${propPath}.shape`,
-          message: "The shape prop must be rect, ellipse, or line.",
+      state.diagnostics.push(
+        ...validateSupportedStyleDeclaration({
+          path: `${propPath}.style`,
+          tag,
+          style,
         }),
       );
-    }
-  }
-
-  if (isSlideElement(node)) {
-    if (node.props.name !== undefined && typeof node.props.name !== "string") {
-      addDiagnostic(
-        state,
-        authoringPropDiagnostic({
-          code: "E_COMPILE_INVALID_SLIDE_NAME_OPTION",
-          title: "slide name option is invalid",
-          path: `${propPath}.name`,
-          message: "The slide declaration name option must be a string when it is provided.",
-        }),
-      );
-    }
-
-    if (node.props.template !== undefined && typeof node.props.template !== "string") {
-      addDiagnostic(
-        state,
-        authoringPropDiagnostic({
-          code: "E_COMPILE_INVALID_SLIDE_TEMPLATE_OPTION",
-          title: "slide template option is invalid",
-          path: `${propPath}.template`,
-          message: "The slide declaration template option must be a template name string.",
-        }),
-      );
-    }
-  }
-
-  if (isTableCellElement(node)) {
-    for (const key of ["colspan", "rowspan"] as const) {
-      const value = node.props[key];
-      if (value === undefined) {
-        continue;
-      }
-
-      if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
-        addDiagnostic(
-          state,
-          authoringPropDiagnostic({
-            code: "E_COMPILE_INVALID_TABLE_SPAN_PROP",
-            title: "table cell span prop is invalid",
-            path: `${propPath}.${key}`,
-            message: `${key} must be a positive integer when it is provided.`,
-          }),
-        );
-      }
     }
   }
 }
@@ -544,55 +379,9 @@ function assetForImage(
   context: BuildContext,
   path: string,
 ): AssetEntityId | undefined {
-  const hasSrc = props.src !== undefined;
-  const hasData = props.data !== undefined;
-
-  if (hasSrc && typeof props.src !== "string") {
-    addDiagnostic(
-      state,
-      authoringPropDiagnostic({
-        code: "E_COMPILE_INVALID_IMAGE_SOURCE_PROP",
-        title: "image src prop is invalid",
-        path: `${path}.props.src`,
-        message: "The img src prop must be a string when it is provided.",
-      }),
-    );
-    return undefined;
-  }
-
-  if (hasData && typeof props.data !== "string") {
-    addDiagnostic(
-      state,
-      authoringPropDiagnostic({
-        code: "E_COMPILE_INVALID_IMAGE_SOURCE_PROP",
-        title: "image data prop is invalid",
-        path: `${path}.props.data`,
-        message: "The img data prop must be a string when it is provided.",
-      }),
-    );
-    return undefined;
-  }
-
-  if (typeof props.src === "string" && typeof props.data === "string") {
-    addDiagnostic(
-      state,
-      authoringPropDiagnostic({
-        code: "E_COMPILE_AMBIGUOUS_IMAGE_SOURCE_PROP",
-        title: "image source props are ambiguous",
-        path: `${path}.props`,
-        message: "Use either img src or img data, not both.",
-      }),
-    );
-    return undefined;
-  }
-
-  if (typeof props.src !== "string" && typeof props.data !== "string") {
-    addDiagnostic(
-      state,
-      invalidStructure(path, "image source is missing", "Image nodes require either src or data.", [
-        "Add a src path or data URL to the image.",
-      ]),
-    );
+  const issue = validateImageSourceContract(props, path);
+  if (issue) {
+    addAuthoringPropContractIssue(state, issue);
     return undefined;
   }
 
@@ -617,10 +406,7 @@ function assetForImage(
     sourceField: typeof props.src === "string" ? "src" : "data",
     source,
     ...(origin ? { origin } : {}),
-    metadata:
-      typeof props.data === "string" && props.data.startsWith("data:")
-        ? { mediaType: props.data.slice(5, props.data.indexOf(";")) || undefined }
-        : {},
+    metadata: source.kind === "data" ? { mediaType: dataMediaType(source.data) } : {},
     resolution: "unresolved",
   };
   state.assets.set(id, entity);
@@ -635,16 +421,6 @@ function mediaSourceFromString(value: string): AssetEntity["source"] {
   return { kind: "path", path: value };
 }
 
-function dataMediaType(value: string): string | undefined {
-  const commaIndex = value.indexOf(",");
-  if (!value.startsWith("data:") || commaIndex === -1) {
-    return undefined;
-  }
-
-  const metadata = value.slice(5, commaIndex);
-  return metadata ? metadata.replace(/;base64$/, "") : undefined;
-}
-
 function assetForVideoSource(input: {
   state: BuildState;
   idMaterial: readonly string[];
@@ -653,74 +429,10 @@ function assetForVideoSource(input: {
   context: BuildContext;
   path: string;
 }): AssetEntityId | undefined {
-  const { state, props, path } = input;
-  const hasSrc = props.src !== undefined;
-  const hasData = props.data !== undefined;
-
-  if (hasSrc && typeof props.src !== "string") {
-    addDiagnostic(
-      state,
-      authoringPropDiagnostic({
-        code: "E_COMPILE_VIDEO_SOURCE_INVALID",
-        title: "video src prop is invalid",
-        path: `${path}.props.src`,
-        message: "The video src prop must be a string when it is provided.",
-      }),
-    );
-    return undefined;
-  }
-
-  if (hasData && typeof props.data !== "string") {
-    addDiagnostic(
-      state,
-      authoringPropDiagnostic({
-        code: "E_COMPILE_VIDEO_SOURCE_INVALID",
-        title: "video data prop is invalid",
-        path: `${path}.props.data`,
-        message: "The video data prop must be a string when it is provided.",
-      }),
-    );
-    return undefined;
-  }
-
-  if (typeof props.src === "string" && typeof props.data === "string") {
-    addDiagnostic(
-      state,
-      authoringPropDiagnostic({
-        code: "E_COMPILE_VIDEO_SOURCE_INVALID",
-        title: "video source props are ambiguous",
-        path: `${path}.props`,
-        message: "Use either video src or video data, not both.",
-      }),
-    );
-    return undefined;
-  }
-
-  if (typeof props.src !== "string" && typeof props.data !== "string") {
-    addDiagnostic(
-      state,
-      authoringPropDiagnostic({
-        code: "E_COMPILE_VIDEO_SOURCE_INVALID",
-        title: "video source is missing",
-        path: `${path}.props`,
-        message: "Video nodes require either src or data.",
-        help: ["Add a src path or data URI to the video."],
-      }),
-    );
-    return undefined;
-  }
-
-  if (typeof props.src === "string" && /^https?:\/\//i.test(props.src)) {
-    addDiagnostic(
-      state,
-      authoringPropDiagnostic({
-        code: "E_COMPILE_VIDEO_SOURCE_INVALID",
-        title: "remote video src is not supported",
-        path: `${path}.props.src`,
-        message:
-          "The video src prop must be a local path. Use video data for inline media or provide a custom asset loader for trusted remote media.",
-      }),
-    );
+  const { state, props } = input;
+  const issue = validateVideoSourceContract(props, input.path);
+  if (issue) {
+    addAuthoringPropContractIssue(state, issue);
     return undefined;
   }
 
@@ -759,49 +471,13 @@ function assetForVideoPoster(
   context: BuildContext,
   path: string,
 ): AssetEntityId | undefined {
-  const hasPoster = props.poster !== undefined;
-  const hasPosterData = props.posterData !== undefined;
-
-  if (!hasPoster && !hasPosterData) {
+  if (props.poster === undefined && props.posterData === undefined) {
     return undefined;
   }
 
-  if (hasPoster && typeof props.poster !== "string") {
-    addDiagnostic(
-      state,
-      authoringPropDiagnostic({
-        code: "E_COMPILE_VIDEO_POSTER_INVALID",
-        title: "video poster prop is invalid",
-        path: `${path}.props.poster`,
-        message: "The video poster prop must be a string when it is provided.",
-      }),
-    );
-    return undefined;
-  }
-
-  if (hasPosterData && typeof props.posterData !== "string") {
-    addDiagnostic(
-      state,
-      authoringPropDiagnostic({
-        code: "E_COMPILE_VIDEO_POSTER_INVALID",
-        title: "video posterData prop is invalid",
-        path: `${path}.props.posterData`,
-        message: "The video posterData prop must be a string when it is provided.",
-      }),
-    );
-    return undefined;
-  }
-
-  if (typeof props.poster === "string" && typeof props.posterData === "string") {
-    addDiagnostic(
-      state,
-      authoringPropDiagnostic({
-        code: "E_COMPILE_VIDEO_POSTER_INVALID",
-        title: "video poster props are ambiguous",
-        path: `${path}.props`,
-        message: "Use either video poster or video posterData, not both.",
-      }),
-    );
+  const issue = validateVideoPosterContract(props, path);
+  if (issue) {
+    addAuthoringPropContractIssue(state, issue);
     return undefined;
   }
 
@@ -842,7 +518,12 @@ function semanticBase(
   context: BuildContext,
 ) {
   const styleRef = styleRefFor(state, material, kind, node.props);
-  const templateAreaRef = templateAreaRefFor(state, templateAreaValueFor(node), path, context);
+  const templateAreaRef = templateAreaRefFor(
+    state,
+    templateAreaValueFor(node),
+    `${path}.props.area`,
+    context,
+  );
   return {
     id,
     kind,
@@ -889,7 +570,8 @@ function templateAreaRefFor(
         code: "E_TEMPLATE_AREA_REF_INVALID",
         title: "template area reference is invalid",
         path,
-        message: "The area prop must receive a Template Area Reference from the slide factory.",
+        message:
+          "The area prop must receive a Template Area Reference from the slide factory; other values are not part of the public authoring API.",
         help: ["Use area={template.areaName} inside deck.slide({ template }, ...)."],
       }),
     );
@@ -1202,6 +884,7 @@ function collectInlineText(
 type TableRowBuildInput = {
   node: AuthorTableRowElementNode;
   index: number;
+  context: BuildContext;
 };
 
 function tableSectionKindFor(node: AuthorTableSectionElementNode): TableSectionKind {
@@ -1215,8 +898,8 @@ function tableSectionKindFor(node: AuthorTableSectionElementNode): TableSectionK
   }
 }
 
-function positiveIntegerProp(value: AuthorElementPropValue): number | undefined {
-  return typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : undefined;
+function tableCellSpanProp(value: AuthorElementPropValue): number | undefined {
+  return isPublicTableCellSpan(value) ? value : undefined;
 }
 
 function buildTableCellNode(
@@ -1243,6 +926,7 @@ function buildTableCellNode(
     activeSlideTemplate: nodeContext.activeSlideTemplate,
     activeSlideTemplates: nodeContext.activeSlideTemplates,
     directSlideChild: false,
+    allowPrimitiveTextInContainer: true,
     usedTemplateAreas: nodeContext.usedTemplateAreas,
   });
 
@@ -1250,8 +934,8 @@ function buildTableCellNode(
     ...semanticBase(state, node, id, "tableCell", path, material, nodeContext),
     kind: "tableCell",
     cellKind: node.source.tag === "th" ? "header" : "data",
-    colSpan: positiveIntegerProp(node.props.colspan) ?? 1,
-    rowSpan: positiveIntegerProp(node.props.rowspan) ?? 1,
+    colSpan: tableCellSpanProp(node.props.colspan) ?? 1,
+    rowSpan: tableCellSpanProp(node.props.rowspan) ?? 1,
     children: childIds,
   });
   return { id, kind: "tableCell" };
@@ -1497,10 +1181,10 @@ function buildImplicitTableBodySection(input: {
         state,
         row.node,
         {
-          ...context,
+          ...row.context,
           parentId: id,
           parentMaterial: material,
-          path,
+          path: `${row.context.path} > tbody[implicit:${index}]`,
           inline: false,
           directSlideChild: false,
         },
@@ -1595,70 +1279,86 @@ function buildTableNode(
     implicitSectionIndex += 1;
   };
 
-  node.children.forEach((child, index) => {
-    if (child.kind === "text") {
-      if (String(child.value).trim().length > 0) {
+  const processTableChildren = (
+    children: readonly AuthorTreeNode[],
+    childContext: BuildContext,
+  ): void => {
+    children.forEach((child, index) => {
+      if (child.kind === "text") {
+        if (String(child.value).trim().length > 0) {
+          addDiagnostic(
+            state,
+            invalidStructure(
+              `${childContext.path} > text[${index}]`,
+              "invalid table child",
+              "table accepts thead, tbody, tfoot, or tr children only.",
+            ),
+          );
+        }
+        return;
+      }
+
+      if (child.kind === "fragment") {
+        const fragmentContext = contextForNode(child, childContext);
+        const segment = `fragment:${keySegment(child.key, index)}`;
+        processTableChildren(child.children, {
+          ...fragmentContext,
+          parentMaterial: [...fragmentContext.parentMaterial, segment],
+          path: `${fragmentContext.path} > fragment[${keySegment(child.key, index)}]`,
+        });
+        return;
+      }
+
+      if (isTableRowElement(child)) {
+        implicitRows.push({ node: child, index: implicitRows.length, context: childContext });
+        return;
+      }
+
+      flushImplicitRows();
+      if (!isTableSectionElement(child)) {
         addDiagnostic(
           state,
           invalidStructure(
-            `${path} > text[${index}]`,
+            `${childContext.path} > ${sourceName(child)}[${index}]`,
             "invalid table child",
             "table accepts thead, tbody, tfoot, or tr children only.",
           ),
         );
+        return;
       }
-      return;
-    }
 
-    if (child.kind === "fragment") {
-      flushImplicitRows();
-      addDiagnostic(
-        state,
-        invalidStructure(
-          `${path} > fragment[${keySegment(child.key, index)}]`,
-          "invalid table child",
-          "table accepts thead, tbody, tfoot, or tr children only.",
-        ),
+      const sectionKind = tableSectionKindFor(child);
+      reportOrder(
+        sectionKind,
+        `${childContext.path} > ${sourceName(child)}[${keySegment(child.key, index)}]`,
       );
-      return;
-    }
-
-    if (isTableRowElement(child)) {
-      implicitRows.push({ node: child, index });
-      return;
-    }
-
-    flushImplicitRows();
-    if (!isTableSectionElement(child)) {
-      addDiagnostic(
-        state,
-        invalidStructure(
-          `${path} > ${sourceName(child)}[${index}]`,
-          "invalid table child",
-          "table accepts thead, tbody, tfoot, or tr children only.",
-        ),
+      sectionIds.push(
+        buildAuthoredTableSectionNode(
+          state,
+          child,
+          {
+            ...childContext,
+            parentId: id,
+            parentMaterial: childContext.parentMaterial,
+            path: childContext.path,
+            inline: false,
+            source: sourceFor(childContext),
+            directSlideChild: false,
+          },
+          index,
+        ).id,
       );
-      return;
-    }
+    });
+  };
 
-    const sectionKind = tableSectionKindFor(child);
-    reportOrder(sectionKind, `${path} > ${sourceName(child)}[${keySegment(child.key, index)}]`);
-    sectionIds.push(
-      buildAuthoredTableSectionNode(
-        state,
-        child,
-        {
-          ...context,
-          parentId: id,
-          parentMaterial: material,
-          path,
-          inline: false,
-          source: sourceFor(context),
-          directSlideChild: false,
-        },
-        index,
-      ).id,
-    );
+  processTableChildren(node.children, {
+    ...context,
+    parentId: id,
+    parentMaterial: material,
+    path,
+    inline: false,
+    source: sourceFor(context),
+    directSlideChild: false,
   });
 
   flushImplicitRows();
@@ -1683,9 +1383,27 @@ function buildNode(
   }
 
   if (node.kind === "text") {
-    return nodeContext.inline
-      ? buildTextRunFromLeaf(state, node, nodeContext, index)
-      : buildImplicitTextNode(state, node, nodeContext, index);
+    if (nodeContext.inline) {
+      return buildTextRunFromLeaf(state, node, nodeContext, index);
+    }
+
+    if (nodeContext.allowPrimitiveTextInContainer) {
+      return buildImplicitTextNode(state, node, nodeContext, index);
+    }
+
+    if (String(node.value).trim().length > 0) {
+      addDiagnostic(
+        state,
+        invalidStructure(
+          `${nodeContext.path} > text[${index}]`,
+          "primitive text is not part of the public authoring API here",
+          "Primitive text is public content only inside text-like elements or table cells; put structural text inside a text element such as p, h1, or h2.",
+          ["Wrap the text in a text element, for example <p>Text</p>."],
+        ),
+      );
+    }
+
+    return undefined;
   }
 
   const kind = nodeSemanticKind(node);
@@ -1701,8 +1419,8 @@ function buildNode(
         state,
         invalidStructure(
           path,
-          "span cannot appear here",
-          "span must be inside a text-like element.",
+          "inline span is not part of the public authoring API here",
+          "A span child outside a text-like element is not part of the public authoring API; put inline span inside p, h1, h2, or another text-like element.",
           ["Wrap the span in <p>...</p> or move it inside an existing text element."],
         ),
       );
@@ -1792,11 +1510,22 @@ function buildNode(
   }
 
   if (isShapeElement(node)) {
+    if (node.children.length > 0) {
+      addDiagnostic(
+        state,
+        invalidStructure(path, "shape cannot have children", "Shape nodes are leaf nodes."),
+      );
+    }
+
     state.nodes.set(id, {
       ...semanticBase(state, node, id, "shape", path, material, nodeContext),
       kind: "shape",
       shape:
-        node.props.shape === "ellipse" || node.props.shape === "line" ? node.props.shape : "rect",
+        node.props.shape === "ellipse" ||
+        node.props.shape === "line" ||
+        node.props.shape === "roundRect"
+          ? node.props.shape
+          : "rect",
     });
     return { id, kind: "shape" };
   }
@@ -1888,8 +1617,8 @@ export function buildSemanticAuthorGraph(roots: readonly (AuthorTreeNode | Compo
   const slideIds: GraphNodeId[] = [];
   roots.forEach((root, index) => {
     const composed = "root" in root ? root : asComposedRoot(root, index);
-    if (composed.templates) {
-      state.templates.set(sourceKeyFor(composed.source), composed.templates);
+    if (isUnknownRecord(composed.templates)) {
+      state.templates.set(sourceKeyFor(composed.source), composed.templates as SlideTemplateSet);
     }
     const built = buildNode(
       state,

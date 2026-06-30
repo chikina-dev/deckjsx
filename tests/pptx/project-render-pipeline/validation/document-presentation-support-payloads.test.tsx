@@ -8,7 +8,9 @@ describe("project/render validation document and presentation support payloads",
       meta: { title: "Document properties" },
     });
     deck.slide({ name: "Broken doc props" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Document properties</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
+        Document properties
+      </p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -95,7 +97,9 @@ describe("project/render validation document and presentation support payloads",
   test("project validates extended document property slide count against presentation payload", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Doc props slide count" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Document properties</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
+        Document properties
+      </p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -136,7 +140,7 @@ describe("project/render validation document and presentation support payloads",
   test("project validates presentation support payloads before render", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Broken presentation payload" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Presentation</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Presentation</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -201,7 +205,7 @@ describe("project/render validation document and presentation support payloads",
   test("project validates presentation support payload slide references target slide parts", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Wrong presentation slide target" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Presentation</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Presentation</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -243,7 +247,7 @@ describe("project/render validation document and presentation support payloads",
   test("project rejects duplicate presentation support payload slide references", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Duplicate presentation slide" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Presentation</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Presentation</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -285,7 +289,7 @@ describe("project/render validation document and presentation support payloads",
   test("project validates projected support numeric ids before render", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Broken support numeric ids" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Support ids</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Support ids</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -361,7 +365,9 @@ describe("project/render validation document and presentation support payloads",
   test("project validates empty support property payloads before render", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Broken support properties" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Support properties</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
+        Support properties
+      </p>
     ));
 
     const projection = (await deck.project()).projection!;

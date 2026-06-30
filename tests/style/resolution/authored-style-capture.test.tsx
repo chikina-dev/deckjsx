@@ -28,7 +28,7 @@ describe("style resolution authored style capture", () => {
             ["selected", { active: true, disabled: false, "": true, "   ": true }],
             "wide card",
           ]}
-          style={{ x: 1 }}
+          style={{ position: "absolute", left: 1 }}
         >
           <p className={{ title: true, muted: null }}>
             Hello <span className="accent">world</span>
@@ -50,7 +50,7 @@ describe("style resolution authored style capture", () => {
 
     expect(view?.styleRef).toBeDefined();
     expect(graph.styles.get(view?.styleRef ?? ("" as never))?.authored).toEqual({
-      style: { x: 1 },
+      style: { position: "absolute", left: 1 },
       classRefs: [
         { name: "card", index: 0 },
         { name: "selected", index: 1 },
@@ -80,7 +80,7 @@ describe("style resolution authored style capture", () => {
           // @ts-expect-error direct style props are rejected by the authoring surface.
           x={1}
           y={2}
-          style={{ y: 3, width: 4 }}
+          style={{ position: "absolute", top: 3, width: 4 }}
         >
           <p>
             Hello
@@ -105,12 +105,13 @@ describe("style resolution authored style capture", () => {
     );
 
     expect(graph.styles.get(view?.styleRef ?? ("" as never))?.authored.style).toEqual({
-      y: 3,
+      position: "absolute",
+      top: 3,
       width: 4,
     });
     expect(span?.styleRef).toBeUndefined();
     expect(result.diagnostics.items.map((item) => item.code)).toContain(
-      "E_COMPILE_UNSUPPORTED_AUTHORING_PROP",
+      "E_COMPILE_NON_PUBLIC_AUTHORING_PROP",
     );
     expect(result.diagnostics.items.map((item) => item.labels[0]?.path)).toEqual(
       expect.arrayContaining([
@@ -121,7 +122,7 @@ describe("style resolution authored style capture", () => {
     );
   });
 
-  test("warns about unsupported css-like style property names while preserving authored style", async () => {
+  test("errors about non-public css-like style property names while preserving authored style", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide(() => (
@@ -144,22 +145,22 @@ describe("style resolution authored style capture", () => {
       (node) => node.kind === "container" && node.authoredTag === "div",
     );
 
-    expect(result.diagnostics.hasErrors).toBe(false);
+    expect(result.diagnostics.hasErrors).toBe(true);
     expect(result.diagnostics.items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          severity: "warning",
-          code: "W_COMPILE_UNSUPPORTED_STYLE_PROP",
+          severity: "error",
+          code: "E_COMPILE_NON_PUBLIC_STYLE_PROP",
           labels: [expect.objectContaining({ path: expect.stringContaining(".style.flex") })],
         }),
         expect.objectContaining({
-          severity: "warning",
-          code: "W_COMPILE_UNSUPPORTED_STYLE_PROP",
+          severity: "error",
+          code: "E_COMPILE_NON_PUBLIC_STYLE_PROP",
           labels: [expect.objectContaining({ path: expect.stringContaining(".style.flexFlow") })],
         }),
         expect.objectContaining({
-          severity: "warning",
-          code: "W_COMPILE_UNSUPPORTED_STYLE_PROP",
+          severity: "error",
+          code: "E_COMPILE_NON_PUBLIC_STYLE_PROP",
           labels: [
             expect.objectContaining({ path: expect.stringContaining(".style.marginInline") }),
           ],
@@ -182,7 +183,7 @@ describe("style resolution authored style capture", () => {
       new H.StyleSheet({
         classes: {
           title: { target: "p.title", style: { color: "red", fontSize: 28 } },
-          override: { style: { color: "green", fontSize: 16 } },
+          override: { target: "p.override", style: { color: "green" } },
         },
       }),
     );
@@ -212,7 +213,7 @@ describe("style resolution authored style capture", () => {
     expect(resolved?.style).toMatchObject({ color: "blue", fontSize: 28 });
     expect(
       resolved?.appliedClasses.map((source) => source.layer === "class" && source.className),
-    ).toEqual(["override", "title"]);
+    ).toEqual(["title", "override"]);
   });
 
   test("resolved element defaults use css-like static positioning", async () => {

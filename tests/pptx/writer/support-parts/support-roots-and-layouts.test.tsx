@@ -7,7 +7,9 @@ describe("direct pptx writer support roots and layouts", () => {
 
     deck.slide({ name: "Artifact output" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>Hello PPTX</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5, fontSize: 24 }}>
+          Hello PPTX
+        </p>
       </>
     ));
 
@@ -21,7 +23,7 @@ describe("direct pptx writer support roots and layouts", () => {
 
     deck.slide({ name: "Support parts" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Support</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Support</p>
       </>
     ));
 
@@ -64,7 +66,9 @@ describe("direct pptx writer support roots and layouts", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Support payloads" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Support payloads</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
+        Support payloads
+      </p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -116,7 +120,9 @@ describe("direct pptx writer support roots and layouts", () => {
   test("support XML emitters reject malformed theme, master, and layout payloads", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Support payload validation" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Support payloads</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
+        Support payloads
+      </p>
     ));
 
     const projection = (await deck.project()).projection!;

@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, test } from "vite-plus/test";
-import { createTtyPromptKeySource } from "../src/interactive/tty-key-source.ts";
+import { createTtyPromptKeySource } from "@/src/interactive/tty-key-source.ts";
 
 describe("@deckjsx/node interactive tty key source", () => {
   test("restores raw mode, pauses stdin, and closes pending reads", async () => {

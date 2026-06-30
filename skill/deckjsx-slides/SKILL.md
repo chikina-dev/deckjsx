@@ -1,579 +1,417 @@
 ---
 name: deckjsx-slides
-description: Use this skill when creating, editing, or reviewing PowerPoint slide decks with the deckjsx library, especially html-like TSX/JSX slides that compile through Deck, semantic lowercase tags, Project inspection, and the direct PPTX writer. Emphasize clean data flow by separating the authored component graph from data graph inputs, layout/style/template concerns, asset loaders, and projected output snapshots.
+description: Use this skill when creating, editing, converting, or reviewing PowerPoint decks with deckjsx. Favor idiomatic deckjsx authoring: Deck plus deck.slide(), lowercase HTML-like JSX tags, data snapshots, reusable components, Theme defaults, StyleSheet classes, templates, Project inspection, and the direct PPTX writer. Treat authored x/y positioning and coordinate-helper code as outside the public authoring API except for isolated low-level compatibility boundaries.
 ---
 
 # deckjsx Slides
 
-Use `deckjsx` as a compiler for presentation documents. Prefer html-like TSX/JSX authoring:
-`deck.slide()` declares each slide, while lowercase semantic tags describe slide content. Inspect
-authoring semantics with `Deck#compile()`, inspect output-facing state with async `Deck#project()`,
-and emit PowerPoint files with `Deck#render({ output })`.
+Use `deckjsx` as a presentation compiler, not as a PowerPoint coordinate drawing DSL.
 
-Do not introduce capitalized slide primitives such as `Slide`, `View`, `Text`, `Image`, or `Shape`
-in examples. The public authoring direction is `Deck` plus `deck.slide()` and lowercase JSX tags.
+The normal authored shape is:
 
-For Japanese guidance, read `SKILL-ja.md` in this skill folder. Keep both files aligned when updating examples or workflow.
+```text
+data snapshot -> component graph -> Semantic Author Graph -> Resolved Style -> Projected Layout -> Pptx Package Model -> writer
+```
 
-## Data Flow First
+Author slides with `Deck`, `deck.slide()`, lowercase HTML-like tags, `Theme`, `StyleSheet`,
+templates, and ordinary TypeScript components. Inspect authoring semantics with `deck.compile()`,
+inspect output-facing state with `await deck.project()`, and write PPTX with
+`await deck.render(...)`.
+
+For Japanese guidance, read `SKILL-ja.md` in this folder. Keep both files aligned.
+
+## Non-Negotiables
+
+- Do not introduce capitalized slide primitives such as `Slide`, `View`, `Text`, `Image`, or
+  `Shape`. Public authoring is `Deck` plus `deck.slide()` and lowercase JSX tags.
+- Treat authored `x`/`y` positioning as outside the public authoring API. Do not use `x` or `y`
+  style keys in slide JSX, reusable components, or StyleSheet classes.
+- Do not pass `x`, `y`, `w`, `h`, `shapeId`, or PowerPoint object names through component props.
+- Do not build helpers like `text(x, y, w, h, ...)`, `card(x, y, ...)`, or `table(x, y, ...)`.
+  Those turn deckjsx into the wrong abstraction.
+- Do not wrap slides in opaque helper calls such as `chrome(title, subtitle, body, children)` when
+  that hides templates, component hierarchy, or layout semantics from the JSX.
+- Do not spread arrays of coordinate-generated elements into slides, such as
+  `...card(0.75, 1.38, ...)` or `...statement(0.75, 4.35, ...)`.
+- Keep reusable layout and appearance in `StyleSheet` classes and `Theme` defaults. Use inline
+  `style` only for slide-local values that are genuinely local.
+- Use templates for repeated slide regions with flow layout. Template Areas use `style.gridArea`,
+  `alignSelf`, and `justifySelf`; they do not accept numeric `frame` definitions.
+
+## Project Shape
+
+For anything beyond a tiny example, split the deck into files:
+
+```text
+src/
+  deck.tsx
+  theme.ts
+  styles.ts
+  templates.ts
+  data/
+    slides.ts
+    assets.ts
+  components/
+    SlideShell.tsx
+    TitleBlock.tsx
+    CardGrid.tsx
+    MetricCard.tsx
+    SourceNote.tsx
+  slides/
+    title.tsx
+    section.tsx
+    evidence.tsx
+```
+
+Use fewer files only for a small sketch. Split when data needs a schema, a visual pattern repeats,
+templates/styles get crowded, or a slide archetype deserves a name.
+
+## Data Flow
 
 Treat a deck as two dependency graphs feeding the compiler:
 
-- Component Graph: the authored JSX structure, including `Deck`, `deck.slide()`, lowercase tags,
-  hierarchy, templates, areas, composition slots, and source-local `className`/`style` declarations.
-  This graph should be readable from the JSX and should express slide semantics, not runtime data
-  retrieval.
-- Data Graph: user or business data, framework/filesystem paths, authenticated asset records,
-  metrics, async fetches, computed tables, and other values that exist before authoring. Normalize
-  these into serializable snapshots before slide factories run, then pass them through Source Context,
-  mounted sources, local constants, or explicit props. Register assets through `deck.useAssets()`.
+- Data Graph: user/business data, source text, metrics, table rows, citations, asset references,
+  and computed values. Normalize these before slide factories run.
+- Component Graph: authored JSX structure, components, lowercase tags, templates, areas,
+  `className`, and local `style` declarations.
 
-Keep data graph decisions before authoring or at source boundaries. Avoid hiding data fetches,
-mutation, global state reads, runtime file access, or asset byte loading inside JSX nodes. Slide JSX
-should map `snapshot -> component graph -> layout/style declarations`.
-
-Review the flow before coding:
-
-```text
-data snapshot -> slide factory/source context -> lowercase JSX component graph -> Semantic Author Graph -> Resolved Style -> Layout Input Snapshot -> Projected Layout Snapshot -> Pptx Package Model -> writer
-```
-
-Use `Deck#compile()` to inspect authored semantics, `Deck#project()` to inspect Layout Input,
-Projected, and PPTX-facing models, and `Deck#render()` only when the writer side effect is needed.
-If a deck has multiple independent domains, create named snapshot objects such as `metrics`,
-`themeCopy`, or `chartAssets` instead of cross-reading data inside JSX.
+Slide JSX should map `snapshot -> component graph -> layout/style declarations`. Do not hide data
+fetching, mutation, global state reads, runtime file access, or asset byte loading inside JSX nodes.
 
 ## Core Workflow
 
-1. Create a `Deck` with an explicit slide layout.
-2. Normalize user/business data, asset references, and computed values into data snapshots before
-   slide factories run.
-3. Sketch the component graph separately from the data graph, then keep JSX as the mapping from
-   snapshot values to authored slide structure.
-4. Add slides with `deck.slide((context) => <main>...</main>)` or another view-like root.
-5. Prefer html-like tags for authoring: `div`, `section`, `article`, `main`, `header`, `footer`, `aside`, `nav`, and `figure` are view-like containers; `p` and `h1`-`h6` are text-like; `img` is a leaf image element.
-6. Put layout/container styles on view-like tags and typography styles on text-like tags. For example, put `fontSize` on `<h1>` or `<p>`, not on `<header>` or `<footer>`.
-7. Use lowercase `<shape shape="rect" />`, `<shape shape="ellipse" />`, or `<shape shape="line" />` for simple shapes.
-8. Keep component graph, data graph, layout, style, and templates conceptually separate even when layout and visual values are both written through the JSX `style` prop.
-9. Register runtime-specific image loading with `deck.useAssets(loader)` when authored assets are paths, framework-public URLs, authenticated URLs, or app media records.
-10. Use `await deck.project()` when inspecting, testing, or snapshotting output-facing computed state.
-11. Use `await deck.render({ output: "deck.pptx" })` to write a `.pptx`.
-12. Use `inspection: "none"` on Project or Render hot paths that do not need inspection summaries.
-13. Treat unsupported CSS-like fidelity gaps, such as subtree opacity compositing or clipping with transforms, as Project warnings plus preserved projected metadata when a structurally valid PPTX fallback exists.
-14. Validate library changes with `vp check` and `vp test`; for output-specific work, also run `bun run benchmark:pptx -- --iterations 1 --strict` and `bun run verify:render -- --skip-raster`, then inspect generated PPTX contents or render/open the result when possible.
+1. Create a `Deck` with explicit slide size and, for nontrivial decks, `Theme`, templates, and
+   registered styles.
+2. Normalize source data, assets, tables, metrics, and citations into typed snapshots.
+3. Define `Theme` defaults for typography, ordinary text color, and baseline visual vocabulary.
+4. Define `StyleSheet` classes for reusable layout and appearance.
+5. Define templates for repeated semantic regions such as title, body, media, sidebar, footer, and
+   source note.
+6. Implement reusable components before writing most slide declarations.
+7. Add slides with `deck.slide({ template: "..." }, ({ template }) => <main>...</main>)`.
+8. Use `await deck.project()` while debugging layout, cascade, template placement, assets, and
+   diagnostics.
+9. Use `await deck.render(...)` only when writer output is needed.
 
-## Minimal PPTX Output
+## Authoring Surface
+
+Use lowercase tags:
+
+- View-like: `main`, `section`, `article`, `div`, `header`, `footer`, `aside`, `nav`, `figure`.
+- Text-like: `h1`-`h6`, `p`, and inline `span`.
+- Media: `img` and `video`.
+- Editable simple shapes: lowercase `shape` with `shape="rect"`, `"roundRect"`, `"ellipse"`, or
+  `"line"`.
+
+Put layout/container styles on view-like tags. Put typography on text-like tags. Use `span` inside
+text-like tags for rich inline runs.
+
+## Layout Policy
+
+Prefer layout constructs in this order:
+
+1. Template areas for repeated page regions.
+2. Normal block flow for simple vertical content.
+3. Flex for rows, columns, strips, and repeated one-dimensional groups.
+4. Grid for dashboards, card grids, matrices, comparisons, and table-like structure.
+5. Inset-style placement (`left`, `top`, `right`, `bottom`) only when the supported deckjsx surface
+   needs a local overlay.
+6. Isolated absolute placement only for one-off compatibility or decorative exceptions.
+
+Use `gap`, `padding`, `gridTemplateColumns`, `gridTemplateRows`, `flexDirection`, `alignItems`,
+`justifyContent`, percentages, and `fr` tracks instead of hand-placing repeated children.
+
+For dense decks, use explicit text heights, controlled `lineHeight`, readable padding, and
+`fit: "shrink"` as a safety net. Do not solve density by hand-positioning every text box.
+
+## Good Pattern
 
 ```tsx
-import { Deck } from "deckjsx";
+import { Deck, StyleSheet, Theme } from "deckjsx";
 
-const deck = new Deck({
-  layout: { width: 10, height: 5.625, unit: "in" },
+const theme = new Theme({
+  colors: {
+    ink: "#111827",
+    muted: "#64748B",
+    paper: "#F8FAFC",
+    accent: "#2563EB",
+  },
+  fonts: {
+    display: "Aptos Display",
+    body: "Aptos",
+  },
+  defaults: {
+    h1: { fontFamily: "Aptos Display", fontSize: 30, fontWeight: 700, color: "#111827" },
+    p: { fontFamily: "Aptos", fontSize: 15, color: "#334155", fit: "shrink" },
+  },
 });
 
-deck.slide({ name: "File output" }, () => (
-  <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>Hello PPTX</p>
-));
-
-await deck.render({ output: "sample.pptx" });
-```
-
-This pattern is based on the PPTX writer coverage in `tests/pptx/writer.test.tsx`.
-
-## Full Slide Pattern
-
-```tsx
-import { Deck } from "deckjsx";
+const styles = new StyleSheet({
+  classes: {
+    slide: { target: "slide.slide", style: { backgroundColor: theme.colors.paper } },
+    title: { target: "h1.title", style: { width: "100%", height: 0.55 } },
+    cardGrid: {
+      target: "section.cardGrid",
+      style: {
+        display: "grid",
+        gridTemplateColumns: "repeat(3, 1fr)",
+        gap: 0.22,
+      },
+    },
+    card: {
+      target: "section.card",
+      style: {
+        backgroundColor: "#FFFFFF",
+        borderRadius: 0.08,
+        padding: 0.18,
+        border: "1pt solid #E2E8F0",
+      },
+    },
+    footer: {
+      target: "p.footer",
+      style: { fontSize: 8, color: theme.colors.muted, textAlign: "right" },
+    },
+  },
+});
 
 const deck = new Deck({
   layout: { width: 13.333, height: 7.5, unit: "in" },
-  meta: { title: "Quarterly Review", author: "deckjsx" },
-});
-
-deck.slide(
-  { name: "Quarterly Review", style: { backgroundColor: "#F8FAFC" } },
-  ({ composition }) => (
-    <div style={{ x: 0, y: 0, width: 13.333, height: 7.5 }}>
-      <header
-        style={{
-          x: 0.7,
-          y: 0.5,
-          width: 8.5,
-          height: 0.6,
-        }}
-      >
-        <h1
-          style={{
-            fontFamily: "Aptos Display",
-            fontSize: 28,
-            fontWeight: 700,
-            color: "#0F172A",
-          }}
-        >
-          Quarterly Review
-        </h1>
-      </header>
-      <main
-        style={{
-          x: 0.7,
-          y: 1.4,
-          width: 11.9,
-          height: 5.2,
-          display: "grid",
-          gridTemplateColumns: "1.1fr 1fr",
-          columnGap: 0.35,
-        }}
-      >
-        <p style={{ fontSize: 18, color: "#334155", fit: "shrink" }}>
-          Keep each slide focused on one message. Use the layout primitives to make the hierarchy
-          explicit.
-        </p>
-        <shape
-          shape="rect"
-          style={{
-            fill: "#2563EB",
-            borderRadius: 0.16,
-            boxShadow: "3px 3px 8px rgba(15, 23, 42, 0.22)",
-          }}
-        />
-      </main>
-      <footer
-        style={{
-          x: 11.2,
-          y: 7,
-          width: 1.4,
-          height: 0.25,
-        }}
-      >
-        <p style={{ fontSize: 9, color: "#64748B", textAlign: "right" }}>
-          {composition.slideIndex + 1} / {composition.totalSlides}
-        </p>
-      </footer>
-    </div>
-  ),
-);
-
-await deck.render({ output: "quarterly-review.pptx" });
-```
-
-## Layout, Style, And Templates
-
-Use these terms deliberately:
-
-- Layout: slide size, frames, local containing blocks, `x`, `y`, `width`, `height`, inset values,
-  `display`, flex, grid, gaps, padding, ordering, and z-index-like paint order. These values decide
-  where authored elements land in the projected PPTX model.
-- Style: fills, borders, radius, shadows, opacity, transforms, text color, typography, alignment,
-  bullets, links, background layers, and image fitting. These values decide how already-resolved
-  boxes are drawn.
-- Templates: reusable semantic regions declared on the deck and targeted from slide JSX through the
-  typed `template` handle. Templates are for repeated structure, not for one-off visual decoration.
-
-Because deckjsx is HTML/CSS-like, layout properties are authored through `style` too. Still, keep the
-mental model separate: use templates for recurring slide regions, layout for geometry and flow, and
-style for appearance.
-
-## Style Cascade
-
-When this skill says cascade, it means deckjsx's per-element style resolution, not a full browser CSS
-engine. The resolved style for each element is built property by property in this order:
-
-1. Element defaults.
-2. `Theme` defaults for the authored tag, such as `p`, `h1`, `div`, `span`, or `img`.
-3. Matching `StyleSheet` class rules registered with `deck.useStyles()`.
-4. Inline authoring style from the JSX `style` object.
-
-Later layers replace earlier layers for the same property. Avoid direct style props such as
-`x={1}`, `color="red"`, or `display="grid"` in new examples. They are planned for removal in v0.8.1;
-use `style={{ ... }}` for local inline values and `StyleSheet` classes for reusable layout/style.
-
-For class rules, `className` token order is not the conflict priority. Selector specificity wins
-first, then stylesheet registration/rule order. Use the supported selector subset: `.class`,
-`tag.class`, compound class selectors, and descendant selectors such as `.card .caption`.
-
-Inline `span` text runs inherit text-related parent values such as `color`, `fontFamily`,
-`fontSize`, `fontWeight`, `lineHeight`, `letterSpacing`, `direction`, and wrapping controls.
-Resolved-style inspection records the inherited source, while layout projection avoids duplicating
-inherited-only run styles when the parent text box already carries the concrete PPTX text body style.
-
-Cascade is source-local. Mounted decks keep their own theme and stylesheets, which is important for
-sandboxed composition and HMR-like reuse. Do not describe cascade as generic parent-to-child CSS
-inheritance unless a specific projected behavior actually implements that inheritance.
-
-## Assets
-
-Use `data` for data URIs or `src` for authored image references. Keep filesystem, framework, and
-authenticated asset concerns outside JSX by registering an asset loader on the deck.
-
-```tsx
-import type { AssetLoader } from "deckjsx";
-
-const appAssets = {
-  name: "app-assets",
-  async probe({ source }) {
-    if (source.kind !== "path") return undefined;
-    return { mediaType: "image/png", extension: "png", width: 1200, height: 800 };
-  },
-  async load({ source }) {
-    if (source.kind !== "path") return undefined;
-    return {
-      bytes: await loadBytesFromYourRuntime(source.path),
-      mediaType: "image/png",
-      extension: "png",
-      width: 1200,
-      height: 800,
-    };
-  },
-} satisfies AssetLoader;
-
-deck.useAssets(appAssets);
-```
-
-Project uses `probe()` to put dimensions and media metadata into the projected model. Render uses
-the same loader scope for `load()` so bytes, media type, and dimensions come from the same runtime
-assumptions. If dimensions cannot be probed, treat that as an asset retrieval failure instead of
-letting the writer guess.
-
-When an `img` has probed intrinsic `width` and `height`, deckjsx derives the missing projected axis
-from that natural ratio unless the author supplied `aspectRatio`. Good default patterns are
-`style={{ width: 4 }}` for natural-aspect images, a fixed `width` / `height` plus
-`objectFit: "cover"` for media boxes, and `style={{ width: 4, aspectRatio: "16 / 9" }}` for
-non-image placeholders or deliberate overrides. `aspectRatio: "auto"` means no authored ratio.
-
-Use `objectFit` / `fit`, `objectPosition`, and `crop` for foreground `img` elements. Use
-`background`, `backgroundSize`, `backgroundPosition`, `backgroundRepeat`, `backgroundClip`, and
-`backgroundOrigin` for decorative or underlay images on view-like boxes. Do not mix the two
-vocabularies in examples unless the comparison is intentional. `objectFit: "fill"` is accepted as
-the CSS spelling for deckjsx's `stretch` projection. Unsupported CSS values such as `"none"` and
-`"scale-down"` are diagnostics with a `contain` fallback until natural-size projection is modeled.
-
-## Slide Templates
-
-Use deck templates when repeated slide structure matters. Templates define named areas in deck
-configuration; slide factories receive a typed `template` handle and place normal authored JSX into
-those areas.
-
-```tsx
-const deck = new Deck({
-  layout: { width: 13.333, height: 7.5, unit: "in" },
+  theme,
   templates: {
     report: {
+      style: {
+        display: "grid",
+        gridTemplateAreas: ['"title"', '"body"', '"footer"'],
+        gridTemplateRows: ["0.7in", "1fr", "0.3in"],
+        rowGap: 0.24,
+        padding: 0.55,
+      },
       areas: {
-        title: { kind: "title", frame: { x: 0.7, y: 0.6, width: 8, height: 0.8 } },
-        body: { frame: { x: 0.7, y: 1.6, width: 8, height: 4.8 } },
+        title: { kind: "title", style: { gridArea: "title" } },
+        body: { kind: "body", style: { gridArea: "body" } },
+        footer: { kind: "footer", style: { gridArea: "footer", justifySelf: "end" } },
       },
     },
   },
 });
 
-deck.slide({ template: "report" }, ({ template }) => (
-  <main>
-    <h1 area={template.title}>Quarterly Review</h1>
-    <section area={template.body}>
-      <p style={{ width: "100%", height: 0.5 }}>Performance highlights</p>
+deck.useStyles(styles);
+
+type Card = { title: string; body: string };
+
+function CardGrid({ cards }: { cards: Card[] }) {
+  return (
+    <section className="cardGrid">
+      {cards.map((card) => (
+        <section className="card" key={card.title}>
+          <h2>{card.title}</h2>
+          <p>{card.body}</p>
+        </section>
+      ))}
     </section>
-  </main>
-));
-```
+  );
+}
 
-## CSS-like Defaults And Gotchas
-
-deckjsx is HTML/CSS-like, but v0.8 is a slide layout solver rather than a browser engine.
-
-- `display: "block"` creates a local containing block and vertically flows unpositioned children.
-  Explicit frame props such as `x`, `y`, `left`, or `top` still opt into local absolute placement.
-- `display: "flex"` defaults to CSS-like row direction and cross-axis stretch. The deck-specific
-  `layout: "stack"` default remains vertical.
-- Block-flow text gets the available width and a line-height based height. Explicit/local absolute
-  boxes still need `width` / `height`, insets, flex/grid stretch, or image intrinsic ratio when they
-  are not participating in block flow.
-- Stack and grid use declared sizes and ratios; they do not measure wrapped text and push later
-  siblings. Use declared heights and `fit: "shrink"` for text-heavy slides.
-- Numeric layout lengths are inches. Font-size-like numbers are points. Numeric `lineHeight` is a
-  multiplier, not points. CSS-like strings support common units such as `cm`, `mm`, `Q`, `pc`,
-  `vmin`, and `vmax` in addition to earlier `in`, `pt`, `px`, `%`, `em`, `rem`, `vh`, `vw`, and
-  `ch` support.
-- CSS-wide keywords (`initial`, `inherit`, `unset`, `revert`, and `revert-layer`) fall back to the
-  supported-subset default behavior with diagnostics where full CSS cascade/reset semantics are
-  missing.
-- Unsupported CSS-like style property names produce nonblocking compile warnings and remain visible
-  in graph inspection. Expect warnings for `flex`, `flexFlow`, logical spacing/sizing aliases, and
-  richer CSS properties that deckjsx has not modeled yet.
-- `letterSpacing` accepts `normal`, numbers as points, and CSS-like point lengths such as `px`,
-  `pt`, `em`, and `rem`.
-- `paragraphSpacingBefore` and `paragraphSpacingAfter` accept numbers as points and CSS-like point
-  lengths such as `px`, `pt`, `em`, and `rem`.
-- Single-value `borderRadius` accepts percentages against the projected short side, so
-  `borderRadius: "50%"` is the capsule-style spelling.
-- One `boxShadow` / `textShadow` layer projects offset, blur, and color. CSS spread radius is
-  preserved as unsupported fallback metadata because the current PPTX shadow model does not render
-  spread geometry.
-- Containers, text, and shapes default to `boxSizing: "border-box"` for slide geometry. Shapes are
-  visible white-filled PPTX primitives unless styled.
-- Grid defaults fill the available grid content frame rather than behaving like browser implicit
-  `auto` tracks. Declare tracks for precise layouts.
-- `zIndex` is projected paint order, not full CSS stacking-context behavior.
-
-## Tested Sample Patterns
-
-Use these patterns as reliable starting points because they mirror repository tests.
-
-### Multiple Slides And Page Numbers
-
-Based on `tests/authoring/deck.test.tsx`.
-
-```tsx
-const deck = new Deck({
-  layout: { width: 10, height: 5.625, unit: "in" },
-  meta: { title: "Spec test", author: "deckjsx" },
-});
-
-deck.slide({ name: "Report slide" }, ({ composition }) => (
-  <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>
-    {composition.slideIndex + 1} / {composition.totalSlides}
-  </p>
-));
-```
-
-### Exact Absolute Layout
-
-Use for polished PowerPoint composition where placement must be predictable.
-
-```tsx
-deck.slide({ name: "Absolute" }, () => (
-  <main style={{ x: 0, y: 0, width: 10, height: 5.625 }}>
-    <h1 style={{ x: 0.75, y: 0.6, width: 8, height: 0.55, fontSize: 26 }}>Executive Summary</h1>
-    <section
-      style={{
-        x: 0.75,
-        y: 1.4,
-        width: 5.5,
-        height: 4.5,
-        backgroundColor: "#E0F2FE",
-        borderRadius: 0.12,
-      }}
-    />
-  </main>
-));
-```
-
-### Stack Or Flex Layout
-
-Based on `tests/layout/stack.test.tsx`.
-
-```tsx
-<section
-  style={{
-    x: 1,
-    y: 1,
-    width: 6,
-    height: 3,
-    display: "flex",
-    flexDirection: "column",
-    gap: 0.25,
-    padding: 0.5,
-  }}
->
-  <p style={{ width: 2, height: 0.5, fontSize: 18, order: -1 }}>First</p>
-  <p style={{ width: 2, height: 0.5, fontSize: 18 }}>Second</p>
-  <p
-    style={{
-      position: "absolute",
-      left: 1,
-      top: 0.25,
-      width: 1.5,
-      height: 0.5,
-      fontSize: 16,
-    }}
-  >
-    Overlay
-  </p>
-</section>
-```
-
-### Grid Layout
-
-Based on `tests/layout/grid.test.tsx`.
-
-```tsx
-<section
-  style={{
-    x: 1,
-    y: 1,
-    width: 8,
-    height: 5,
-    display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
-    gridTemplateRows: "1fr 1fr",
-    columnGap: 0.5,
-    rowGap: 0.5,
-    padding: 0.5,
-  }}
->
-  <div style={{ gridColumn: "span 2", backgroundColor: "#D1D5DB" }} />
-  <div style={{ placeSelf: "start center", width: 1, height: 0.5, backgroundColor: "#CBD5E1" }} />
-</section>
-```
-
-### Image Fit, Crop, And Position
-
-Based on `tests/style/image-values.test.tsx`.
-
-```tsx
-<img
-  data={WIDE_SVG_DATA_URI}
-  style={{
-    x: 1,
-    y: 1,
-    width: 1,
-    height: 2,
-    objectFit: "cover",
-    objectPosition: "right 25% bottom 10%",
-  }}
-/>
-```
-
-### Background Layers
-
-Based on `tests/style/background-layers.test.tsx`.
-
-```tsx
 deck.slide(
-  {
-    name: "Background",
-    style: {
-      background:
-        `url("${WIDE_SVG_DATA_URI}") no-repeat right bottom / contain, ` +
-        "linear-gradient(180deg, #111111 0%, #333333 100%)",
-    },
-  },
-  () => (
-    <div
-      style={{
-        x: 1,
-        y: 1,
-        width: 2,
-        height: 1,
-        background: `url("${SAMPLE_SVG_DATA_URI}") repeat-x left top / contain`,
-      }}
-    />
+  { name: "Findings", template: "report", className: "slide" },
+  ({ template, composition }) => (
+    <main>
+      <h1 area={template.title} className="title">
+        Findings
+      </h1>
+      <section area={template.body}>
+        <CardGrid cards={findings.cards} />
+      </section>
+      <p area={template.footer} className="footer">
+        {composition.slideIndex + 1}
+      </p>
+    </main>
   ),
 );
 ```
 
-### Gradients And Shadows
+This pattern keeps page-level placement in template definitions, repeated rhythm in classes, and
+slide content in data/components.
 
-Based on `tests/style/gradient-values.test.tsx` and `tests/pptx/writer.test.tsx`.
+## Anti-Pattern
+
+Do not use the earlier coordinate-heavy pattern as a starting point. This code is an anti-pattern:
 
 ```tsx
-deck.slide(
-  {
-    name: "Effects",
-    style: {
-      backgroundImage:
-        "radial-gradient(ellipse 20% 30% at 25% 75%, rgba(37, 99, 235, 0.4) 0%, #F97316 100%)",
-    },
-  },
-  () => (
-    <shape
-      shape="rect"
-      style={{
-        x: 1,
-        y: 1,
-        width: 2,
-        height: 1,
-        fill: "#F97316",
-        boxShadow: "6px 6px 10px rgba(15, 23, 42, 0.35)",
-        stroke: "dodgerblue",
-        strokeWidth: "3pt",
-        strokeDasharray: "1 4",
-      }}
-    />
+type Frame = { left: number; top: number; width: number; height: number };
+
+function placed(frame: Frame, children: JSX.Element) {
+  return <div style={{ position: "absolute", ...frame }}>{children}</div>;
+}
+
+deck.slide({ name: "Quarterly Review" }, () =>
+  placed(
+    { left: 0, top: 0, width: 13.333, height: 7.5 },
+    <>
+      {placed({ left: 0.7, top: 0.5, width: 8.5, height: 0.6 }, <h1>Quarterly Review</h1>)}
+      {placed({ left: 0.7, top: 1.4, width: 11.9, height: 5.2 }, <p>Summary text</p>)}
+      {placed({ left: 11.2, top: 7, width: 1.4, height: 0.25 }, <p>1 / 8</p>)}
+    </>,
   ),
 );
 ```
 
-### Typography, Links, And Lists
+Why it is wrong:
 
-Based on `tests/style/typography-values.test.tsx` and `tests/style/values.test.tsx`.
+- It makes slide JSX a coordinate transcription instead of a component graph.
+- It wraps meaningful slide regions in a generic positioning helper instead of naming them.
+- Repeated regions such as title, body, and footer are not templates.
+- Typography and recurring layout are not promoted into `Theme` or `StyleSheet`.
+- The slide body cannot scale into a multi-file deck with reusable components.
+- Future edits require touching raw positions across slides.
+
+Refactor this shape into `templates.ts`, `theme.ts`, `styles.ts`, data snapshots, and named
+components before adding more slides.
+
+### Coordinate Helper Slide
+
+Do not build slides like this:
 
 ```tsx
-<p
-  style={{
-    x: 1,
-    y: 1,
-    width: 4,
-    height: 0.75,
-    fontSize: "2rem",
-    color: "#0F172A",
-    href: "https://example.com/docs",
-    tooltip: "Open docs",
-    listStyleType: "circle",
-    listIndent: "3ch",
-    fit: "shrink",
-  }}
->
-  Linked bullet text
-</p>
+deck.slide(
+  { name: "Three disputes" },
+  chrome(
+    "03 AI MODEL GEOPOLITICS",
+    "Fable/Mythos停止は、技術・法制度・政治が分離されない危うさを示した",
+    "安全性の事実認定、法的権限、政治的動機が分離されないまま、一つの停止措置に流れ込んだ",
+    [
+      ...card(0.75, 1.38, 2.65, 2.55, "技術", ["Fable固有の問題か"], "blue"),
+      ...card(3.68, 1.38, 2.65, 2.55, "法制度", ["EARでAPI利用をどう扱うか"], "red"),
+      ...card(6.6, 1.38, 2.65, 2.55, "政治", ["米中AI競争の文脈"], "amber"),
+      ...statement(
+        0.75,
+        4.35,
+        8.5,
+        "この事案は、AI時代の輸出管理が企業の利用可否に直撃する",
+        "navy",
+      ),
+    ],
+  ),
+);
 ```
 
-## Design Rules For Decks
+Why it is wrong:
 
-- Build the real slides first; avoid landing-page or explanatory scaffolding.
-- Prefer 16:9 layouts with `{ width: 13.333, height: 7.5, unit: "in" }` unless the user specifies another size.
-- Use absolute placement for presentation-critical layouts where exact alignment matters.
-- Use `display: "flex"` or `layout: "stack"` for simple rows/columns and repeated content.
-- Use `display: "grid"` for dashboards, comparisons, matrices, or dense analytic slides.
-- Keep slide text short. Use hierarchy through size, weight, color, spacing, and alignment rather than long paragraphs.
-- Place repeated furniture such as page numbers, section labels, or small metadata consistently.
-- Use `fit: "shrink"` or controlled `height` for text boxes that may vary, then inspect the generated output.
+- `deck.slide()` receives an opaque helper result instead of readable lowercase JSX.
+- `chrome(...)` hides the slide shell that should be a template or component.
+- `card(x, y, w, h, ...)` encodes layout as arguments instead of component structure and CSS-like
+  classes.
+- Spreading arrays of generated nodes erases semantic ownership and makes Project/component
+  inspection less useful.
+- The actual data model is trapped inside a slide call instead of named arrays or typed records.
 
-## Using JSX-Like References Carefully
+Use data and components instead:
 
-When composition or data flow feels unclear, borrow architectural ideas from React, Preact, MDX,
-Remotion, and local JSX-oriented skills such as `vercel-react-best-practices` or
-`building-components`. Useful references include readable component hierarchy, pushing data fetching
-out of render/JSX, hoisting static structures, passing stable props or snapshots, and avoiding
-inline component definitions when the same structure is repeated.
+```tsx
+const disputes = [
+  { lens: "技術", tone: "blue", points: ["Fable固有の問題か", "他モデルでも可能な能力か"] },
+  { lens: "法制度", tone: "red", points: ["EARでAPI利用をどう扱うか", "透明で公平な手続きの有無"] },
+  { lens: "政治", tone: "amber", points: ["米中AI競争の文脈", "同盟国アクセスの境界"] },
+];
 
-Do not copy browser or React runtime assumptions into deckjsx authoring. deckjsx JSX is compiler
-input for PowerPoint output, not an interactive DOM. Avoid guidance based on hydration, lifecycle
-hooks, event handlers, client/server component boundaries, or browser layout engines unless the
-deckjsx implementation explicitly supports the behavior. Side effects belong in Source Context,
-asset loaders, Project inspection, Render, or other explicit runtime boundaries.
+deck.slide({ name: "Three disputes", template: "report", className: "slide" }, ({ template }) => (
+  <main>
+    <TitleBlock
+      area={template.title}
+      kicker="03 AI MODEL GEOPOLITICS"
+      title="Fable/Mythos停止は、技術・法制度・政治が分離されない危うさを示した"
+      lead="安全性の事実認定、法的権限、政治的動機が分離されないまま、一つの停止措置に流れ込んだ"
+    />
+    <section area={template.body} className="disputeGrid">
+      {disputes.map((item) => (
+        <DisputeCard key={item.lens} dispute={item} />
+      ))}
+    </section>
+    <Statement area={template.footer} tone="navy">
+      この事案は、AI時代の輸出管理が企業の利用可否に直撃することを示した
+    </Statement>
+  </main>
+));
+```
 
-## deckjsx API Notes
+The replacement keeps content in data, slide furniture in templates/components, and repeated card
+layout in `StyleSheet` classes such as `.disputeGrid` and `.disputeCard`.
 
-- Preferred authoring surface: `Deck`, `deck.slide()`, and lowercase html-like tags. View-like tags are `div`, `section`, `article`, `main`, `header`, `footer`, `aside`, `nav`, and `figure`; text-like tags are `p` and `h1`-`h6`; image tags are `img`.
-- Do not use `<Slide>`, `<View>`, `<Text>`, `<Image>`, or `<Shape>` in deck examples or tests that are meant to demonstrate the public html-like authoring surface.
-- `Deck#slide()` receives `{ composition }`; use `composition.slideIndex` and `composition.totalSlides`.
-- Geometry numbers default to inches; font-size numbers default to points.
-- View-like tags accept view/layout styles. Text styles belong on `p` or `h1`-`h6`.
-- Use `span` inside text-like elements for rich inline text runs.
-- Supported length strings include units such as `"in"`, `"pt"`, `"px"`, and `"%"`.
-- Prefer CSS-like aliases where available: `left`, `top`, `display`, `flexDirection`, `objectFit`, `objectPosition`, `background`, `border`, `boxShadow`, `textDecoration`, and grid properties.
-- `img` accepts `src` for paths and `data` for data URIs. It is a leaf element and does not accept children.
-- `shape` currently supports `shape="rect"`, `"ellipse"`, or `"line"`.
-- The implemented writer is the direct PPTX writer. Use `await deck.render({ output })` for the default path or `pptx()` from `deckjsx/adapter` when an explicit writer adapter is needed.
-- Treat writer internals as private. XML emission, package assembly, ZIP details, and output sinks should not appear in deck authoring guidance.
+## Style Cascade
 
-## Visual Styling
+Resolved style is built property by property in this order:
 
-- Use `backgroundColor`, `background`, or `backgroundImage` on slides and view-like tags.
-- Use `border`, per-side borders, `borderRadius`, `outline`, `boxShadow`, `opacity`, `rotation`, `flipH`, and `flipV` when useful.
-- For text, use `fontFamily`, `fontSize`, `fontWeight`, `fontStyle`/`italic`, `color`, `textAlign`, `verticalAlign`, `lineHeight`, `letterSpacing`, `textTransform`, bullets through `listStyleType`, and links through `href`/`tooltip`.
-- For images, set `objectFit: "cover"` or `"contain"` and refine with `objectPosition` or `crop`.
-- Use PowerPoint-safe fonts unless the user has provided a target environment.
+1. Element defaults.
+2. `Theme` defaults for authored tags such as `p`, `h1`, `div`, `span`, or `img`.
+3. Matching `StyleSheet` class rules registered with `deck.useStyles()`.
+4. Inline `style` from JSX.
+
+Avoid direct style props such as `x={1}`, `color="red"`, or `display="grid"`. Use
+`style={{ ... }}` for local values and `StyleSheet` classes for reusable layout/style. Class
+conflicts follow selector specificity, then stylesheet registration/rule order.
+
+## Assets
+
+Use `data` for data URIs and `src` for authored image references. Keep filesystem, framework, and
+authenticated asset concerns outside JSX by registering an asset loader or plugin.
+
+Use `objectFit`, `objectPosition`, and `crop` for foreground images. Use `background`,
+`backgroundSize`, `backgroundPosition`, `backgroundRepeat`, `backgroundClip`, and
+`backgroundOrigin` for decorative or underlay images on view-like boxes.
+
+## Authoring Model
+
+Authoring starts from semantic slide structure: templates define repeated regions, components name
+content patterns, `Theme` defines baseline typography and visual vocabulary, and `StyleSheet`
+classes define reusable layout and appearance. Slide-local inline `style` is for one-off values,
+not a replacement for component structure.
+
+## Layout Flow
+
+View-like elements participate in normal flow by default. Use block, flex, and grid layout to create
+rhythm inside a region. Declare tracks, gaps, padding, and alignment in `StyleSheet` classes when a
+pattern repeats.
+
+## Positioning
+
+Absolute placement is explicit: use `position: "absolute"` with `left`, `top`, `right`, `bottom`,
+`width`, `height`, or `inset` only when an element genuinely needs local fixed placement. Prefer
+template areas for repeated slide-level regions.
+
+## Style Type Safety
+
+Use only public style keys accepted by the authored tag. Text styles belong on `p`, headings, table
+cells, and `span`; media fitting belongs on `img` and `video`; shape paint belongs on `shape`.
+`x` and `y` are not public authoring style keys.
+
+## Diagnostics
+
+Invalid props, unsupported style keys, invalid CSS-like values, table hierarchy mistakes, and
+misused template areas should be treated as compile diagnostics. Do not work around diagnostics with
+casts or compatibility aliases; fix the authored JSX, style, template, or data model.
+
+## Red Flags
+
+Stop and refactor if:
+
+- A generated deck is one huge TSX file.
+- Most elements are individually fixed-positioned instead of using flow, grid, flex, or templates.
+- Repeated formatting appears as copied inline style blocks.
+- Components accept coordinates instead of semantic data.
+- Slide declarations call opaque layout helpers such as `chrome(...)`, `card(...)`, or
+  `statement(...)`.
+- Slide declarations spread arrays returned by helper functions into JSX or slide factories.
+- Tables, cards, timelines, and source lists are hand-placed cell by cell.
+- A change to spacing, typography, or footer style requires editing many slides.
 
 ## Testing And Review
 
-- Before implementing, identify whether the change belongs to the component graph, data graph, style
-  resolution, layout snapshot, projection, writer, or runtime/source boundary.
-- In reviews, trace `data snapshot -> JSX -> compile -> project -> render` and confirm downstream
-  modules do not reach back into live data graph state.
-- When changing compiler behavior, add or update tests that assert authoring semantics through
-  `deck.compile()` or output-facing computed state through `await deck.project()`.
-- When changing writer output, create a temporary `.pptx`, unzip/inspect XML when needed, and assert meaningful emitted markup.
-- For render regressions, run `bun run verify:render -- --skip-raster`; use the Docker/GitHub render workflow when LibreOffice/raster verification matters.
-- Keep Node-only file writing in output/runtime code, not core compiler normalization.
-- If a generated deck looks wrong, check resolved frames in `await deck.project()` first; most visual bugs are layout or unit normalization issues before writer emission.
+- Before implementing, identify whether the change belongs to the data graph, component graph,
+  style resolution, layout, projection, writer, or runtime/source boundary.
+- In reviews, trace `data snapshot -> JSX -> compile -> project -> render`.
+- Use `deck.compile()` for authoring semantics and `await deck.project()` for output-facing layout,
+  resolved style, diagnostics, and package projection inspection.
+- For library changes, run `vp check` and `vp test`. For output-specific work, also run
+  `bun run benchmark:pptx -- --iterations 1 --strict` and
+  `bun run verify:render -- --skip-raster` when available.
+- For generated standalone decks, run that project's type/build command and render the `.pptx`.

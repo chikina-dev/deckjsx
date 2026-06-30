@@ -1,4 +1,4 @@
-import { createDiagnostics, diagnostic, type Diagnostics } from "../../diagnostics";
+import { createDiagnostics, diagnostic, type Diagnostics } from "@/src/diagnostics";
 import type {
   RenderAssemblyExpectedEntrySummary,
   RenderAssemblyFinalEntrySummary,
@@ -6,9 +6,9 @@ import type {
   RenderAssemblyPlanEntrySummary,
   RenderAssemblyReasonDetails,
   RenderInspectionSummary,
-} from "../../pipeline";
-import type { PptxPackageBuildArtifact } from "../../pipeline-artifacts";
-import type { PptxPackagePart } from "../../projection/pptx/model";
+} from "@/src/pipeline/public";
+import type { PptxPackageBuildArtifact } from "@/src/pipeline/artifacts";
+import type { PptxPackagePart } from "@/src/projection/pptx/model";
 import { packagePartOrderKey } from "./package-part";
 import type { PptxZipEntry } from "./zip";
 

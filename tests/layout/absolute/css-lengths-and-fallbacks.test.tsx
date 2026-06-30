@@ -6,7 +6,7 @@ describe("absolute layout CSS lengths and fallbacks", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Aspect ratio flow" }, () => (
-      <div style={{ x: 1, y: 1, width: 3, height: 2 }}>
+      <div style={{ position: "absolute", left: 1, top: 1, width: 3, height: 2 }}>
         <p style={{ aspectRatio: "16 / 9", fontSize: 18 }}>Ratio</p>
         <p style={{ fontSize: 18 }}>Next</p>
       </div>
@@ -15,7 +15,9 @@ describe("absolute layout CSS lengths and fallbacks", () => {
     const project = await deck.project();
 
     expect(project.ok).toBe(true);
-    expect(H.summarizeNodes(project.projection!.slides[0].payload.drawing.children)).toEqual([
+    expect(
+      H.summarizeNodes(H.expectPptxProjection(project).slides[0].payload.drawing.children),
+    ).toEqual([
       {
         kind: "group",
         frame: {
@@ -56,15 +58,19 @@ describe("absolute layout CSS lengths and fallbacks", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Spacing shorthand" }, () => (
-      <div style={{ x: 1, y: 1, width: 4, height: 2, padding: "10% 5%" }}>
-        <p style={{ margin: "5% 10% 0", fontSize: 18 }}>Shorthand</p>
+      <div
+        style={{ position: "absolute", left: 1, top: 1, width: 4, height: 2, padding: "10% 5%" }}
+      >
+        <p style={{ margin: ["5%", "10%", 0, "10%"], fontSize: 18 }}>Shorthand</p>
       </div>
     ));
 
     const project = await deck.project();
 
     expect(project.ok).toBe(true);
-    expect(H.summarizeNodes(project.projection!.slides[0].payload.drawing.children)).toEqual([
+    expect(
+      H.summarizeNodes(H.expectPptxProjection(project).slides[0].payload.drawing.children),
+    ).toEqual([
       {
         kind: "group",
         frame: {
@@ -96,8 +102,9 @@ describe("absolute layout CSS lengths and fallbacks", () => {
     deck.slide({ name: "CSS length units" }, () => (
       <div
         style={{
-          x: "2.54cm",
-          y: "25.4mm",
+          position: "absolute",
+          left: "2.54cm",
+          top: "25.4mm",
           width: "6pc",
           height: "10vmin",
         }}
@@ -107,7 +114,9 @@ describe("absolute layout CSS lengths and fallbacks", () => {
     const project = await deck.project();
 
     expect(project.ok).toBe(true);
-    expect(H.summarizeNodes(project.projection!.slides[0].payload.drawing.children)).toEqual([
+    expect(
+      H.summarizeNodes(H.expectPptxProjection(project).slides[0].payload.drawing.children),
+    ).toEqual([
       {
         kind: "group",
         frame: {
@@ -121,14 +130,14 @@ describe("absolute layout CSS lengths and fallbacks", () => {
     ]);
   });
 
-  test("render records unsupported css layout keywords instead of silently dropping them", async () => {
+  test("render rejects unsupported css layout keywords", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Unsupported CSS layout keywords" }, () => (
       <div
         style={{
-          x: 1,
-          y: 1,
+          left: 1,
+          top: 1,
           width: 2,
           height: 1,
           display: "inline-block" as never,
@@ -139,48 +148,36 @@ describe("absolute layout CSS lengths and fallbacks", () => {
     ));
 
     const project = await deck.project();
-    const [group] = project.projection!.slides[0].payload.drawing.children;
 
-    expect(project.ok).toBe(true);
-    expect(group?.unsupportedSemantics).toContainEqual(
-      expect.objectContaining({
-        feature: "layout",
-        property: "display",
-        value: "inline-block",
-        fallback: expect.objectContaining({
-          strategy: "preserveAuthoredValueOnly",
-          missing: expect.arrayContaining(["cssDisplayBehavior"]),
-        }),
-      }),
-    );
-    expect(group?.unsupportedSemantics).toContainEqual(
-      expect.objectContaining({
-        feature: "layout",
-        property: "overflow",
-        value: "auto",
-      }),
-    );
-    expect(group?.unsupportedSemantics).toContainEqual(
-      expect.objectContaining({
-        feature: "layout",
-        property: "position",
-        value: "fixed",
-      }),
-    );
-    expect(project.summary?.unsupportedSemantics).toEqual(
+    expect(project.ok).toBe(false);
+    expect(project.projection).toBeUndefined();
+    expect(project.diagnostics.items).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ feature: "layout", property: "display" }),
-        expect.objectContaining({ feature: "layout", property: "overflow" }),
-        expect.objectContaining({ feature: "layout", property: "position" }),
+        expect.objectContaining({
+          code: "E_COMPILE_INVALID_STYLE_VALUE",
+          message: expect.stringContaining("display value is not part of the public authoring API"),
+        }),
+        expect.objectContaining({
+          code: "E_COMPILE_INVALID_STYLE_VALUE",
+          message: expect.stringContaining(
+            "overflow value is not part of the public authoring API",
+          ),
+        }),
+        expect.objectContaining({
+          code: "E_COMPILE_INVALID_STYLE_VALUE",
+          message: expect.stringContaining(
+            "position value is not part of the public authoring API",
+          ),
+        }),
       ]),
     );
   });
 
-  test("render records auto inset fallback instead of failing length parsing", async () => {
+  test("render rejects auto inset at the public authoring boundary", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
-    deck.slide({ name: "Auto inset fallback" }, () => (
-      <div style={{ x: 1, y: 1, width: 3, height: 2 }}>
+    deck.slide({ name: "Auto inset rejection" }, () => (
+      <div style={{ position: "absolute", left: 1, top: 1, width: 3, height: 2 }}>
         <p
           style={{
             position: "absolute",
@@ -195,104 +192,56 @@ describe("absolute layout CSS lengths and fallbacks", () => {
     ));
 
     const project = await deck.project();
-    const [group] = project.projection!.slides[0].payload.drawing.children;
-    const [text] = group?.kind === "group" ? group.children : [];
 
-    expect(project.ok).toBe(true);
-    expect(H.summarizeNodes(project.projection!.slides[0].payload.drawing.children)).toEqual([
-      {
-        kind: "group",
-        frame: {
-          xEmu: 1 * H.EMU_PER_INCH,
-          yEmu: 1 * H.EMU_PER_INCH,
-          widthEmu: 3 * H.EMU_PER_INCH,
-          heightEmu: 2 * H.EMU_PER_INCH,
-        },
-        children: [
-          {
-            kind: "text",
-            frame: {
-              xEmu: 1 * H.EMU_PER_INCH,
-              yEmu: 1 * H.EMU_PER_INCH,
-              widthEmu: 3 * H.EMU_PER_INCH,
-              heightEmu: 0.3 * H.EMU_PER_INCH,
-            },
-            text: "Auto inset",
-            fontSizePt: 18,
-          },
-        ],
-      },
-    ]);
-    expect(text?.unsupportedSemantics).toContainEqual(
+    expect(project.ok).toBe(false);
+    expect(project.diagnostics.items).toContainEqual(
       expect.objectContaining({
-        feature: "layout",
-        property: "inset",
-        value: "auto 0",
-        fallback: expect.objectContaining({
-          strategy: "preserveAuthoredValueOnly",
-          missing: expect.arrayContaining(["cssAutoInsetResolution"]),
-        }),
+        code: "E_COMPILE_INVALID_STYLE_VALUE",
+        severity: "error",
+        message: expect.stringContaining("inset value is not part of the public authoring API"),
       }),
     );
   });
 
-  test("render treats css-wide length keywords as defaults instead of zero-sized boxes", async () => {
+  test("render rejects css-wide sizing and padding authoring", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "CSS-wide length defaults" }, () => (
       <p
-        style={{
-          x: 1,
-          y: 1,
-          width: "initial",
-          height: "initial",
-          padding: "initial",
-          fontSize: "initial",
-          lineHeight: "initial",
-          letterSpacing: "initial",
-        }}
+        style={
+          {
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: "initial",
+            height: "initial",
+            padding: "initial",
+            fontSize: "initial",
+            lineHeight: "initial",
+            letterSpacing: "initial",
+          } as never
+        }
       >
         Defaults
       </p>
     ));
 
     const project = await deck.project();
-    const [text] = project.projection!.slides[0].payload.drawing.children;
 
-    expect(project.ok).toBe(true);
-    expect(H.summarizeNodes(project.projection!.slides[0].payload.drawing.children)).toEqual([
-      {
-        kind: "text",
-        frame: {
-          xEmu: 1 * H.EMU_PER_INCH,
-          yEmu: 1 * H.EMU_PER_INCH,
-          widthEmu: 9 * H.EMU_PER_INCH,
-          heightEmu: 0.3 * H.EMU_PER_INCH,
-        },
-        text: "Defaults",
-        fontSizePt: undefined,
-      },
-    ]);
-    expect(text?.unsupportedSemantics).toEqual(
+    expect(project.ok).toBe(false);
+    expect(project.diagnostics.items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          feature: "layout",
-          property: "width",
-          value: "initial",
-          fallback: expect.objectContaining({
-            strategy: "preserveAuthoredValueOnly",
-            missing: expect.arrayContaining(["cssWideKeywordCascade"]),
-          }),
+          code: "E_COMPILE_INVALID_STYLE_VALUE",
+          message: expect.stringContaining("width value is not part of the public authoring API"),
         }),
         expect.objectContaining({
-          feature: "layout",
-          property: "height",
-          value: "initial",
+          code: "E_COMPILE_INVALID_STYLE_VALUE",
+          message: expect.stringContaining("height value is not part of the public authoring API"),
         }),
         expect.objectContaining({
-          feature: "layout",
-          property: "letterSpacing",
-          value: "initial",
+          code: "E_COMPILE_INVALID_STYLE_VALUE",
+          message: expect.stringContaining("padding value is not part of the public authoring API"),
         }),
       ]),
     );

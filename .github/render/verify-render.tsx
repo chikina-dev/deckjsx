@@ -4,7 +4,7 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, parse } from "node:path";
 import { spawn } from "node:child_process";
 import { strFromU8, unzipSync, type Unzipped } from "fflate";
-import { Deck } from "../../src/index.ts";
+import { Deck } from "@/src/index.ts";
 
 type Options = {
   baseline: string | null;
@@ -804,9 +804,17 @@ async function writeVerificationDeck(output: string) {
     meta: { title: "deckjsx v0.8 verification fixture", author: "deckjsx" },
     templates: {
       report: {
+        style: {
+          display: "grid",
+          gridTemplateColumns: "6.2in 1fr",
+          gridTemplateRows: "0.7in 3.8in",
+          gridTemplateAreas: ['"title side"', '"body side"'],
+          padding: 0.7,
+          rowGap: 0.1,
+        },
         areas: {
-          title: { kind: "title", frame: { x: 0.7, y: 0.55, width: 7.8, height: 0.7 } },
-          body: { kind: "body", frame: { x: 0.7, y: 1.35, width: 6.2, height: 3.8 } },
+          title: { kind: "title", style: { gridArea: "title" } },
+          body: { kind: "body", style: { gridArea: "body" } },
         },
       },
     },
@@ -821,12 +829,20 @@ async function writeVerificationDeck(output: string) {
     </p>,
     <img
       data={pngData}
-      style={{ x: 7.25, y: 1.45, width: 1.2, height: 1.2, objectFit: "stretch" }}
+      style={{
+        position: "absolute",
+        left: 7.25,
+        top: 1.45,
+        width: 1.2,
+        height: 1.2,
+        objectFit: "fill",
+      }}
     />,
     <p
       style={{
-        x: 7.25,
-        y: 3,
+        position: "absolute",
+        left: 7.25,
+        top: 3,
         width: 2,
         height: 0.4,
         fontSize: 15,
@@ -836,27 +852,94 @@ async function writeVerificationDeck(output: string) {
     >
       Linked docs
     </p>,
-    <p style={{ x: 0.7, y: 4.45, width: 5.2, height: 0.45, fontSize: 16, color: "#334155" }}>
+    <p
+      style={{
+        position: "absolute",
+        left: 0.7,
+        top: 4.45,
+        width: 5.2,
+        height: 0.45,
+        fontSize: 16,
+        color: "#334155",
+      }}
+    >
       Migration <span style={{ color: "#DC2626", fontWeight: 700 }}>bold red</span> signal
     </p>,
   ]);
 
   deck.slide({ name: "Paint order" }, () => [
-    <p style={{ x: 1, y: 0.8, width: 3, height: 0.45, fontSize: 18, zIndex: 10 }}>Front layer</p>,
-    <shape shape="rect" style={{ x: 0.8, y: 1.55, width: 2.4, height: 0.7, fill: "#16A34A" }} />,
-    <p style={{ x: 1, y: 1.65, width: 3, height: 0.45, fontSize: 18, zIndex: 1 }}>Middle layer</p>,
-    <p style={{ x: 1, y: 2.5, width: 3, height: 0.45, fontSize: 18, zIndex: -1 }}>Back layer</p>,
+    <p
+      style={{
+        position: "absolute",
+        left: 1,
+        top: 0.8,
+        width: 3,
+        height: 0.45,
+        fontSize: 18,
+        zIndex: 10,
+      }}
+    >
+      Front layer
+    </p>,
+    <shape
+      shape="rect"
+      style={{
+        position: "absolute",
+        left: 0.8,
+        top: 1.55,
+        width: 2.4,
+        height: 0.7,
+        fill: "#16A34A",
+      }}
+    />,
+    <p
+      style={{
+        position: "absolute",
+        left: 1,
+        top: 1.65,
+        width: 3,
+        height: 0.45,
+        fontSize: 18,
+        zIndex: 1,
+      }}
+    >
+      Middle layer
+    </p>,
+    <p
+      style={{
+        position: "absolute",
+        left: 1,
+        top: 2.5,
+        width: 3,
+        height: 0.45,
+        fontSize: 18,
+        zIndex: -1,
+      }}
+    >
+      Back layer
+    </p>,
   ]);
 
   deck.slide({ name: "Image crop" }, () => [
-    <h1 style={{ x: 0.8, y: 0.75, width: 6, height: 0.55, fontSize: 22, color: "#0F172A" }}>
+    <h1
+      style={{
+        position: "absolute",
+        left: 0.8,
+        top: 0.75,
+        width: 6,
+        height: 0.55,
+        fontSize: 22,
+        color: "#0F172A",
+      }}
+    >
       Image crop verification
     </h1>,
     <img
       data={widePngData}
       style={{
-        x: 0.8,
-        y: 1.55,
+        position: "absolute",
+        left: 0.8,
+        top: 1.55,
         width: 3,
         height: 1.5,
         crop: { left: "10%", right: "20%", bottom: "30%" },
@@ -865,14 +948,25 @@ async function writeVerificationDeck(output: string) {
   ]);
 
   deck.slide({ name: "Shadow effect" }, () => [
-    <h1 style={{ x: 0.8, y: 0.75, width: 6, height: 0.55, fontSize: 22, color: "#0F172A" }}>
+    <h1
+      style={{
+        position: "absolute",
+        left: 0.8,
+        top: 0.75,
+        width: 6,
+        height: 0.55,
+        fontSize: 22,
+        color: "#0F172A",
+      }}
+    >
       Shadow verification
     </h1>,
     <shape
       shape="rect"
       style={{
-        x: 0.8,
-        y: 1.55,
+        position: "absolute",
+        left: 0.8,
+        top: 1.55,
         width: 3,
         height: 1.25,
         fill: "#DBEAFE",
@@ -883,14 +977,25 @@ async function writeVerificationDeck(output: string) {
   ]);
 
   deck.slide({ name: "Gradient fill" }, () => [
-    <h1 style={{ x: 0.8, y: 0.75, width: 6, height: 0.55, fontSize: 22, color: "#0F172A" }}>
+    <h1
+      style={{
+        position: "absolute",
+        left: 0.8,
+        top: 0.75,
+        width: 6,
+        height: 0.55,
+        fontSize: 22,
+        color: "#0F172A",
+      }}
+    >
       Gradient verification
     </h1>,
     <shape
       shape="rect"
       style={{
-        x: 0.8,
-        y: 1.55,
+        position: "absolute",
+        left: 0.8,
+        top: 1.55,
         width: 3,
         height: 1.25,
         fill: "linear-gradient(45deg, #EF4444 0%, #F59E0B 100%)",
@@ -900,13 +1005,24 @@ async function writeVerificationDeck(output: string) {
   ]);
 
   deck.slide({ name: "Text body semantics" }, () => [
-    <h1 style={{ x: 0.8, y: 0.55, width: 6.5, height: 0.5, fontSize: 22, color: "#0F172A" }}>
+    <h1
+      style={{
+        position: "absolute",
+        left: 0.8,
+        top: 0.55,
+        width: 6.5,
+        height: 0.5,
+        fontSize: 22,
+        color: "#0F172A",
+      }}
+    >
       Text body verification
     </h1>,
     <p
       style={{
-        x: 0.8,
-        y: 1.25,
+        position: "absolute",
+        left: 0.8,
+        top: 1.25,
         width: 2.8,
         height: 0.5,
         fontSize: 18,
@@ -919,8 +1035,9 @@ async function writeVerificationDeck(output: string) {
     </p>,
     <p
       style={{
-        x: 0.8,
-        y: 1.95,
+        position: "absolute",
+        left: 0.8,
+        top: 1.95,
         width: 2.8,
         height: 0.5,
         fontSize: 18,
@@ -932,8 +1049,9 @@ async function writeVerificationDeck(output: string) {
     </p>,
     <p
       style={{
-        x: 0.8,
-        y: 2.65,
+        position: "absolute",
+        left: 0.8,
+        top: 2.65,
         width: 2.8,
         height: 0.5,
         fontSize: 18,
@@ -945,8 +1063,9 @@ async function writeVerificationDeck(output: string) {
     </p>,
     <p
       style={{
-        x: 4.2,
-        y: 1.25,
+        position: "absolute",
+        left: 4.2,
+        top: 1.25,
         width: 2.8,
         height: 0.5,
         fontSize: 18,
@@ -961,13 +1080,24 @@ async function writeVerificationDeck(output: string) {
     >
       Decorated
     </p>,
-    <p style={{ x: 4.2, y: 1.95, width: 3, height: 0.5, fontSize: 18, listStyleType: "circle" }}>
+    <p
+      style={{
+        position: "absolute",
+        left: 4.2,
+        top: 1.95,
+        width: 3,
+        height: 0.5,
+        fontSize: 18,
+        listStyleType: "circle",
+      }}
+    >
       Bullet item
     </p>,
     <p
       style={{
-        x: 4.2,
-        y: 2.65,
+        position: "absolute",
+        left: 4.2,
+        top: 2.65,
         width: 3,
         height: 0.5,
         fontSize: 18,
@@ -981,7 +1111,17 @@ async function writeVerificationDeck(output: string) {
     >
       Number item
     </p>,
-    <p style={{ x: 0.8, y: 3.35, width: 4, height: 0.5, fontSize: 18, textAlign: "justify" }}>
+    <p
+      style={{
+        position: "absolute",
+        left: 0.8,
+        top: 3.35,
+        width: 4,
+        height: 0.5,
+        fontSize: 18,
+        textAlign: "justify",
+      }}
+    >
       Justified text
     </p>,
   ]);
@@ -1014,7 +1154,7 @@ async function writeSampleDeck(output: string) {
   });
 
   deck.slide({ name: "deckjsx Sample Report", style: { backgroundColor: "#F8FAFC" } }, () => [
-    <header style={{ x: 0.7, y: 0.55, width: 8.4, height: 0.7 }}>
+    <header style={{ position: "absolute", left: 0.7, top: 0.55, width: 8.4, height: 0.7 }}>
       <h1
         style={{
           width: "100%",
@@ -1029,8 +1169,9 @@ async function writeSampleDeck(output: string) {
     </header>,
     <main
       style={{
-        x: 0.7,
-        y: 1.35,
+        position: "absolute",
+        left: 0.7,
+        top: 1.35,
         width: 8.6,
         height: 3.6,
         display: "grid",
@@ -1074,13 +1215,27 @@ async function writeSampleDeck(output: string) {
   ]);
 
   deck.slide({ name: "Takeaways" }, () => [
-    <h1 style={{ x: 0.7, y: 0.55, width: 8, height: 0.7, fontSize: 26, color: "#0F172A" }}>
+    <h1
+      style={{
+        position: "absolute",
+        left: 0.7,
+        top: 0.55,
+        width: 8,
+        height: 0.7,
+        fontSize: 26,
+        color: "#0F172A",
+      }}
+    >
       Takeaways
     </h1>,
-    <p style={{ x: 0.9, y: 1.45, width: 7.6, height: 0.5, fontSize: 18 }}>
+    <p
+      style={{ position: "absolute", left: 0.9, top: 1.45, width: 7.6, height: 0.5, fontSize: 18 }}
+    >
       JSX authoring stays declarative.
     </p>,
-    <p style={{ x: 0.9, y: 2.15, width: 7.6, height: 0.5, fontSize: 18 }}>
+    <p
+      style={{ position: "absolute", left: 0.9, top: 2.15, width: 7.6, height: 0.5, fontSize: 18 }}
+    >
       typed TSX keeps slide intent inspectable.
     </p>,
   ]);

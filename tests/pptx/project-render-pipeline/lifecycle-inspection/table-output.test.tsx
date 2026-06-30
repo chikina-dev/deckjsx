@@ -6,7 +6,16 @@ describe("project/render table output", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Table" }, () => (
       <>
-        <table style={{ x: 1, y: 1, width: 6, height: 2, tableLayout: "fixed" }}>
+        <table
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 6,
+            height: 2,
+            tableLayout: "fixed",
+          }}
+        >
           <thead>
             <tr>
               <th colspan={2}>Metric</th>
@@ -40,7 +49,16 @@ describe("project/render table output", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Row span table" }, () => (
       <>
-        <table style={{ x: 1, y: 1, width: 6, height: 2, tableLayout: "fixed" }}>
+        <table
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 6,
+            height: 2,
+            tableLayout: "fixed",
+          }}
+        >
           <tbody>
             <tr>
               <td rowspan={2}>Region</td>
@@ -78,7 +96,16 @@ describe("project/render table output", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Row span expands columns" }, () => (
       <>
-        <table style={{ x: 1, y: 1, width: 6, height: 2, tableLayout: "fixed" }}>
+        <table
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 6,
+            height: 2,
+            tableLayout: "fixed",
+          }}
+        >
           <tbody>
             <tr>
               <td rowspan={2}>Region</td>
@@ -107,7 +134,16 @@ describe("project/render table output", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Unsafe table" }, () => (
       <>
-        <table style={{ x: 1, y: 1, width: 4, height: 1, tableLayout: "fixed" }}>
+        <table
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 4,
+            height: 1,
+            tableLayout: "fixed",
+          }}
+        >
           <tbody>
             <tr>
               <td>Safe</td>
@@ -189,7 +225,7 @@ describe("project/render table output", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Rich cell" }, () => (
       <>
-        <table style={{ x: 1, y: 1, width: 6, height: 2 }}>
+        <table style={{ position: "absolute", left: 1, top: 1, width: 6, height: 2 }}>
           <tbody>
             <tr>
               <td>
@@ -244,8 +280,9 @@ describe("project/render table output", () => {
       <>
         <table
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 1,
             tableLayout: "auto",
@@ -313,7 +350,7 @@ describe("project/render table output", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Unset table layout" }, () => (
       <>
-        <table style={{ x: 1, y: 1, width: 4, height: 1 }}>
+        <table style={{ position: "absolute", left: 1, top: 1, width: 4, height: 1 }}>
           <tbody>
             <tr>
               <td>A</td>
@@ -355,7 +392,7 @@ describe("project/render table output", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Styled table" }, () => (
       <>
-        <table style={{ x: 1, y: 1, width: 4, height: 1 }}>
+        <table style={{ position: "absolute", left: 1, top: 1, width: 4, height: 1 }}>
           <tbody>
             <tr>
               <td
@@ -397,7 +434,7 @@ describe("project/render table output", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Table styles" }, () => (
       <>
-        <table style={{ x: 1, y: 1, width: 4, height: 1 }}>
+        <table style={{ position: "absolute", left: 1, top: 1, width: 4, height: 1 }}>
           <thead>
             <tr>
               <th>Header</th>

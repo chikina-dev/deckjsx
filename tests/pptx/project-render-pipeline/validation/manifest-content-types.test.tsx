@@ -5,7 +5,7 @@ describe("project/render validation manifest content types", () => {
   test("project validates manifest payloads before render", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Broken manifest payload" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Manifest</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Manifest</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -156,7 +156,7 @@ describe("project/render validation manifest content types", () => {
   test("project validates content type override part names are canonical package paths", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Broken content type part name" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Manifest path</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Manifest path</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -211,7 +211,10 @@ describe("project/render validation manifest content types", () => {
   test("project validates content type coverage before render", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Missing content type coverage" }, () => (
-      <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        data={H.SAMPLE_SVG_DATA_URI}
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;
@@ -268,7 +271,10 @@ describe("project/render validation manifest content types", () => {
   test("project validates content type default extensions are canonical extension tokens", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Broken content type default extension" }, () => (
-      <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        data={H.SAMPLE_SVG_DATA_URI}
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;
@@ -332,7 +338,10 @@ describe("project/render validation manifest content types", () => {
   test("project validates content type values before render", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Invalid content type values" }, () => (
-      <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        data={H.SAMPLE_SVG_DATA_URI}
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;

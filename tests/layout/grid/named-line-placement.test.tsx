@@ -9,13 +9,14 @@ describe("grid named and line placement", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 6,
             height: 4,
             display: "grid",
-            gridTemplateColumns: "2in 1in 3in",
-            gridTemplateRows: "1in 3in",
+            gridTemplateColumns: ["2in", "1in", "3in"],
+            gridTemplateRows: ["1in", "3in"],
             gridTemplateAreas: ['"hero hero aside"', '"footer footer aside"'],
           }}
         >
@@ -27,7 +28,9 @@ describe("grid named and line placement", () => {
     ));
 
     expect(
-      H.summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+      H.summarizeNodes(
+        H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children,
+      ),
     ).toEqual([
       {
         kind: "group",
@@ -80,13 +83,14 @@ describe("grid named and line placement", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 6,
             height: 4,
             display: "grid",
-            gridTemplateColumns: "1in 2in 3in",
-            gridTemplateRows: "1in 1in 2in",
+            gridTemplateColumns: ["1in", "2in", "3in"],
+            gridTemplateRows: ["1in", "1in", "2in"],
           }}
         >
           <div style={{ gridArea: "1 / 2 / 3 / 4", backgroundColor: "#D1D5DB" }} />
@@ -96,7 +100,9 @@ describe("grid named and line placement", () => {
     ));
 
     expect(
-      H.summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+      H.summarizeNodes(
+        H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children,
+      ),
     ).toEqual([
       {
         kind: "group",
@@ -139,13 +145,14 @@ describe("grid named and line placement", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 6,
             height: 4,
             display: "grid",
-            gridTemplateColumns: "1in 2in 3in",
-            gridTemplateRows: "1in 1in 2in",
+            gridTemplateColumns: ["1in", "2in", "3in"],
+            gridTemplateRows: ["1in", "1in", "2in"],
           }}
         >
           <div
@@ -171,7 +178,9 @@ describe("grid named and line placement", () => {
     ));
 
     expect(
-      H.summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+      H.summarizeNodes(
+        H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children,
+      ),
     ).toEqual([
       {
         kind: "group",
@@ -214,13 +223,14 @@ describe("grid named and line placement", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 6,
             height: 4,
             display: "grid",
-            gridTemplateColumns: "1in 2in 3in",
-            gridTemplateRows: "1in 1in 2in",
+            gridTemplateColumns: ["1in", "2in", "3in"],
+            gridTemplateRows: ["1in", "1in", "2in"],
           }}
         >
           <div
@@ -237,7 +247,9 @@ describe("grid named and line placement", () => {
     ));
 
     expect(
-      H.summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+      H.summarizeNodes(
+        H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children,
+      ),
     ).toEqual([
       {
         kind: "group",

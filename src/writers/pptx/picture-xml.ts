@@ -3,9 +3,9 @@ import type {
   PptxElement,
   PptxPackageModel,
   PptxSlidePart,
-} from "../../projection/pptx/model";
-import type { FrameIR, ImageSourceIR, ObjectPositionIR } from "../../layout/projected";
-import { EMU_PER_INCH } from "../../types";
+} from "@/src/projection/pptx/model";
+import type { FrameIR, ImageSourceIR, ObjectPositionIR } from "@/src/layout/projected";
+import { EMU_PER_INCH } from "@/src/types";
 import {
   alphaValue,
   requireProjectedRelationshipId,

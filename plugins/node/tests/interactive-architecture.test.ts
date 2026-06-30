@@ -1,11 +1,11 @@
 import { describe, expect, test } from "vite-plus/test";
-import { createInteractiveDiagnosticSnapshot } from "../src/interactive/diagnostic-snapshot.ts";
+import { createInteractiveDiagnosticSnapshot } from "@/src/interactive/diagnostic-snapshot.ts";
 import {
   createInteractiveInspectorModel,
   isInteractiveResult,
-} from "../src/interactive/inspector-model.ts";
-import { normalizeDevConsoleEvent } from "../src/dev-console/events.ts";
-import type { DeckjsxDevDiagnostic } from "../src/dev-diagnostics.ts";
+} from "@/src/interactive/inspector-model.ts";
+import { normalizeDevConsoleEvent } from "@/src/dev-console/events.ts";
+import type { DeckjsxDevDiagnostic } from "@/src/dev-diagnostics.ts";
 
 describe("interactive architecture boundaries", () => {
   test("diagnostic snapshot accumulates diagnostic events until a compilation result replaces them", () => {

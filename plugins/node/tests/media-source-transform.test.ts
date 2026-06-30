@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { transformDeckjsxMediaSourceOrigins } from "../src/media-source-transform.ts";
+import { transformDeckjsxMediaSourceOrigins } from "@/src/media-source-transform.ts";
 
 describe("@deckjsx/node media source transform", () => {
   test("annotates intrinsic media path literals with prop-level source origins", () => {

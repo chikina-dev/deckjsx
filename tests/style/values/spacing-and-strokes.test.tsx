@@ -7,15 +7,22 @@ describe("style value spacing and strokes", () => {
 
     deck.slide({ name: "Spacing values" }, () => (
       <>
-        <div style={{ inset: [1, 2, 1.5, 3], backgroundColor: "#E5E7EB" }} />
         <div
           style={{
-            x: 0,
-            y: 0,
+            position: "absolute",
+            inset: [1, 2, 1.5, 3],
+            backgroundColor: "#E5E7EB",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
             width: 6,
             height: 2,
-            layout: "stack",
-            direction: "horizontal",
+            display: "flex",
+            flexDirection: "row",
             paddingTop: "0.25in",
             paddingRight: "0.5in",
             paddingBottom: "0.25in",
@@ -75,8 +82,9 @@ describe("style value spacing and strokes", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
             border: "thick dashed dodgerblue",
@@ -85,8 +93,9 @@ describe("style value spacing and strokes", () => {
         />
         <p
           style={{
-            x: 1,
-            y: 2.25,
+            position: "absolute",
+            left: 1,
+            top: 2.25,
             width: 2,
             height: 0.5,
             borderTop: "1pt solid #111111",
@@ -101,14 +110,13 @@ describe("style value spacing and strokes", () => {
         <shape
           shape="rect"
           style={{
-            x: 4,
-            y: 1,
+            position: "absolute",
+            left: 4,
+            top: 1,
             width: 2,
             height: 1,
             fill: "#F97316",
-            stroke: "rebeccapurple",
-            strokeWidth: "3pt",
-            strokeOpacity: 0.25,
+            stroke: "3pt solid rgba(102, 51, 153, 0.25)",
             strokeDasharray: "1 4",
             strokeLinecap: "square",
             strokeLinejoin: "bevel",
@@ -192,6 +200,7 @@ describe("style value spacing and strokes", () => {
       dashType: "sysDot",
       lineCap: "square",
       lineJoin: "bevel",
+      style: "solid",
       transparency: 75,
     });
   });

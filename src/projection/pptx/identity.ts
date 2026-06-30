@@ -1,4 +1,4 @@
-import type { GraphNodeId, SemanticSlideNode } from "../../graph";
+import type { GraphNodeId, SemanticSlideNode } from "@/src/graph";
 import type { PackagePartId, PptxElementId, PptxSerializedIdentity } from "./model";
 
 const MAX_WRITER_SHAPE_OBJECT_ID = Number.MAX_SAFE_INTEGER - 1;

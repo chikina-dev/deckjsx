@@ -9,8 +9,9 @@ describe("grid layout fundamentals", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 6,
             height: 4,
             display: "grid",
@@ -37,7 +38,9 @@ describe("grid layout fundamentals", () => {
     ));
 
     expect(
-      H.summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+      H.summarizeNodes(
+        H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children,
+      ),
     ).toEqual([
       {
         kind: "group",
@@ -92,13 +95,14 @@ describe("grid layout fundamentals", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 8,
             height: 5,
             display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr",
-            gridTemplateRows: "1fr 1fr",
+            gridTemplateColumns: ["1fr", "1fr", "1fr"],
+            gridTemplateRows: ["1fr", "1fr"],
             columnGap: 0.5,
             rowGap: 0.5,
             padding: 0.5,
@@ -122,7 +126,9 @@ describe("grid layout fundamentals", () => {
     ));
 
     expect(
-      H.summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+      H.summarizeNodes(
+        H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children,
+      ),
     ).toEqual([
       {
         kind: "group",
@@ -158,14 +164,15 @@ describe("grid layout fundamentals", () => {
     ]);
   });
 
-  test("render treats css-wide grid item sizes as stretch defaults", async () => {
+  test("render rejects css-wide grid item size authoring", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Grid css-wide size defaults" }, () => (
       <div
         style={{
-          x: 1,
-          y: 1,
+          position: "absolute",
+          left: 1,
+          top: 1,
           width: 4,
           height: 2,
           display: "grid",
@@ -177,31 +184,21 @@ describe("grid layout fundamentals", () => {
       </div>
     ));
 
-    expect(
-      H.summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
-    ).toEqual([
-      {
-        kind: "group",
-        frame: {
-          xEmu: 1 * H.EMU_PER_INCH,
-          yEmu: 1 * H.EMU_PER_INCH,
-          widthEmu: 4 * H.EMU_PER_INCH,
-          heightEmu: 2 * H.EMU_PER_INCH,
-        },
-        children: [
-          {
-            kind: "group",
-            frame: {
-              xEmu: 1 * H.EMU_PER_INCH,
-              yEmu: 1 * H.EMU_PER_INCH,
-              widthEmu: 4 * H.EMU_PER_INCH,
-              heightEmu: 2 * H.EMU_PER_INCH,
-            },
-            children: [],
-          },
-        ],
-      },
-    ]);
+    const project = await deck.project();
+
+    expect(project.ok).toBe(false);
+    expect(project.diagnostics.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "E_COMPILE_INVALID_STYLE_VALUE",
+          message: expect.stringContaining("width value is not part of the public authoring API"),
+        }),
+        expect.objectContaining({
+          code: "E_COMPILE_INVALID_STYLE_VALUE",
+          message: expect.stringContaining("height value is not part of the public authoring API"),
+        }),
+      ]),
+    );
   });
 
   test("render resolves percentage padding and gaps in grid layout", async () => {
@@ -210,8 +207,9 @@ describe("grid layout fundamentals", () => {
     deck.slide({ name: "Grid percentage spacing" }, () => (
       <div
         style={{
-          x: 1,
-          y: 1,
+          position: "absolute",
+          left: 1,
+          top: 1,
           width: 8,
           height: 4,
           display: "grid",
@@ -228,7 +226,9 @@ describe("grid layout fundamentals", () => {
     ));
 
     expect(
-      H.summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+      H.summarizeNodes(
+        H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children,
+      ),
     ).toEqual([
       {
         kind: "group",
@@ -273,8 +273,9 @@ describe("grid layout fundamentals", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 8,
             height: 5,
             display: "grid",
@@ -293,7 +294,9 @@ describe("grid layout fundamentals", () => {
     ));
 
     expect(
-      H.summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+      H.summarizeNodes(
+        H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children,
+      ),
     ).toEqual([
       {
         kind: "group",
@@ -336,8 +339,9 @@ describe("grid layout fundamentals", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 7,
             height: 5,
             display: "grid",
@@ -358,7 +362,9 @@ describe("grid layout fundamentals", () => {
     ));
 
     expect(
-      H.summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+      H.summarizeNodes(
+        H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children,
+      ),
     ).toEqual([
       {
         kind: "group",

@@ -8,7 +8,14 @@ describe("project/render media relationships", () => {
       <>
         <img
           data={H.dataUriFromBytes("image/png", H.pngHeaderBytes(2, 1))}
-          style={{ x: 1, y: 1, width: 2, height: 1, objectFit: "stretch" }}
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 2,
+            height: 1,
+            objectFit: "fill",
+          }}
         />
       </>
     ));
@@ -65,7 +72,7 @@ describe("project/render media relationships", () => {
       <>
         <video
           data={H.dataUriFromBytes("video/mp4", new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112]))}
-          style={{ x: 1, y: 1, width: 4, height: 2.25 }}
+          style={{ position: "absolute", left: 1, top: 1, width: 4, height: 2.25 }}
         />
       </>
     ));
@@ -102,11 +109,25 @@ describe("project/render media relationships", () => {
       <>
         <img
           data={H.dataUriFromBytes("image/png", H.pngHeaderBytes(2, 1))}
-          style={{ x: 1, y: 1, width: 1, height: 1, objectFit: "stretch" }}
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 1,
+            height: 1,
+            objectFit: "fill",
+          }}
         />
         <img
           data={H.dataUriFromBytes("image/png", H.pngHeaderBytes(2, 1))}
-          style={{ x: 2, y: 1, width: 1, height: 1, objectFit: "stretch" }}
+          style={{
+            position: "absolute",
+            left: 2,
+            top: 1,
+            width: 1,
+            height: 1,
+            objectFit: "fill",
+          }}
         />
       </>
     ));
@@ -140,8 +161,9 @@ describe("project/render media relationships", () => {
       <>
         <div
           style={{
-            x: 0,
-            y: 0,
+            position: "absolute",
+            left: 0,
+            top: 0,
             width: 10,
             height: 5.625,
             background: `url("${H.SAMPLE_SVG_DATA_URI}")`,
@@ -152,15 +174,27 @@ describe("project/render media relationships", () => {
         <img
           data={H.SAMPLE_SVG_DATA_URI}
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 1.5,
             height: 1.5,
             href: "https://example.com/image",
             tooltip: "Open image",
           }}
         />
-        <p style={{ x: 3, y: 1, width: 2, height: 0.5, href: "https://example.com/text" }}>Link</p>
+        <p
+          style={{
+            position: "absolute",
+            left: 3,
+            top: 1,
+            width: 2,
+            height: 0.5,
+            href: "https://example.com/text",
+          }}
+        >
+          Link
+        </p>
       </>
     ));
 
@@ -228,8 +262,14 @@ describe("project/render media relationships", () => {
     });
     deck.slide({ name: "Hashed media" }, () => (
       <>
-        <img src="/public/a.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
-        <img src="/public/b.png" style={{ x: 2, y: 1, width: 1, height: 1 }} />
+        <img
+          src="/public/a.png"
+          style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+        />
+        <img
+          src="/public/b.png"
+          style={{ position: "absolute", left: 2, top: 1, width: 1, height: 1 }}
+        />
       </>
     ));
 

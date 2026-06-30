@@ -2,21 +2,56 @@ import { Buffer } from "node:buffer";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Deck as SourceDeck } from "@/src/index.ts";
 import {
   isPptxContentTypesPart,
   isPptxMediaPart,
+  isPptxPackageModel,
   isPptxRelationshipsPart,
   isPptxSlidePart,
   isPptxSupportPart,
-} from "../src/inspect.ts";
+} from "@/src/inspect.ts";
+import type { DeckOptions } from "@/src/authoring/options";
+import type { SourceContextValue } from "@/src/composition/types.ts";
+import type { ProjectOptions } from "@/src/pipeline/public.ts";
+import type { InternalCompileResult, InternalProjectResult } from "@/src/pipeline/results.ts";
+import type { DeckPlugin } from "@/src/plugin.ts";
 import type {
   PptxElement,
   PptxKnownPackagePart,
+  PptxPackageModel,
+  PptxPackageModelCandidate,
   PptxPackagePart,
-} from "../src/projection/pptx/model.ts";
+} from "@/src/projection/pptx/model.ts";
+import type { DataUriString } from "@/src/index.ts";
+import type { EmptySlideTemplateSet, SlideTemplateSet } from "@/src/templates.ts";
 
 export type RenderedNode = PptxElement;
 export type Unzipped = Record<string, Uint8Array>;
+
+export class Deck<
+  TSourceContext extends SourceContextValue | void = void,
+  TTemplates extends SlideTemplateSet = EmptySlideTemplateSet,
+> extends SourceDeck<TSourceContext, TTemplates> {
+  constructor(options: DeckOptions<TTemplates>) {
+    super(options);
+  }
+
+  override project(
+    this: Deck<void, TTemplates>,
+    options?: ProjectOptions,
+  ): Promise<InternalProjectResult> {
+    return super.project(options) as Promise<InternalProjectResult>;
+  }
+
+  override compile(this: Deck<void, TTemplates>): InternalCompileResult {
+    return super.compile() as InternalCompileResult;
+  }
+
+  override plugin(plugin: DeckPlugin): this {
+    return super.plugin(plugin);
+  }
+}
 
 const ZIP_TEXT_DECODER = new TextDecoder();
 
@@ -120,11 +155,11 @@ export type NodeSummary =
 
 export const SAMPLE_SVG_DATA_URI = `data:image/svg+xml;base64,${Buffer.from(
   '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="#f97316"/></svg>',
-).toString("base64")}`;
+).toString("base64")}` as DataUriString;
 
 export const WIDE_SVG_DATA_URI = `data:image/svg+xml;base64,${Buffer.from(
   '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50"><rect width="100" height="50" fill="#2563eb"/></svg>',
-).toString("base64")}`;
+).toString("base64")}` as DataUriString;
 
 export function isPptxPartKind<K extends PptxKnownPackagePart["kind"]>(
   part: PptxPackagePart,
@@ -184,6 +219,16 @@ export function expectPptxPartByPath<K extends PptxKnownPackagePart["kind"]>(
     throw new Error(`Expected a PPTX package part with kind "${kind}" at "${path}".`);
   }
   return part;
+}
+
+export function expectPptxProjection(
+  result: Readonly<Record<string, unknown>> & { readonly projection?: unknown },
+): PptxPackageModel {
+  const projection = result.projection as PptxPackageModelCandidate;
+  if (!isPptxPackageModel(projection)) {
+    throw new Error("Expected a detailed PPTX projection.");
+  }
+  return projection;
 }
 
 export function summarizeNodes(nodes: readonly PptxElement[]): NodeSummary[] {

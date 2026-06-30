@@ -1,7 +1,9 @@
 import type { EdgeStrokeIR, StrokeIR } from "../layout/projected";
 import {
   type BorderStyle,
+  type BorderWidthValue,
   type DeckLength,
+  type ProjectedStrokeStyle,
   type ShapeStyle,
   type StrokeDashType,
   type StrokeLineCap,
@@ -90,16 +92,24 @@ function parseBorderStyleToken(value: string):
     return { style: "solid" };
   }
 
-  if (normalized === "dash" || normalized === "dashed") {
-    return { style: "dash" };
+  if (normalized === "dashed") {
+    return { style: "dashed", dashType: "dash" };
   }
 
-  if (normalized === "dot" || normalized === "dotted") {
-    return { style: "dash", dashType: "sysDot" };
+  if (normalized === "dotted") {
+    return { style: "dotted", dashType: "sysDot" };
   }
 }
 
-function parseBorderWidthToken(value: string): DeckLength | undefined {
+function projectedStrokeStyle(style?: BorderStyle): ProjectedStrokeStyle | undefined {
+  if (style === "dashed" || style === "dotted") {
+    return "dash";
+  }
+
+  return style;
+}
+
+function parseBorderWidthToken(value: string): BorderWidthValue | undefined {
   const normalized = value.trim().toLowerCase();
   if (normalized === "thin") {
     return "1pt";
@@ -113,14 +123,14 @@ function parseBorderWidthToken(value: string): DeckLength | undefined {
     return "5pt";
   }
 
-  if (isDeckLengthString(normalized) && /^-?\d*\.?\d+(in|pt|px|%)$/i.test(normalized)) {
-    return normalized;
+  if (isDeckLengthString(normalized) && /^\d*\.?\d+(in|pt|px|%)$/i.test(normalized)) {
+    return normalized as BorderWidthValue;
   }
 }
 
 export function parseBorderShorthand(value?: string): {
   borderColor?: string;
-  borderWidth?: DeckLength;
+  borderWidth?: BorderWidthValue;
   borderStyle?: BorderStyle;
   borderDashType?: StrokeDashType;
 } {
@@ -130,7 +140,7 @@ export function parseBorderShorthand(value?: string): {
 
   const tokens = tokenizeCssShorthand(value);
   let borderColor: string | undefined;
-  let borderWidth: DeckLength | undefined;
+  let borderWidth: BorderWidthValue | undefined;
   let borderStyle: BorderStyle | undefined;
   let borderDashType: StrokeDashType | undefined;
 
@@ -161,7 +171,7 @@ export function parseBorderShorthand(value?: string): {
 
 export function parseOutlineShorthand(value?: string): {
   outlineColor?: string;
-  outlineWidth?: DeckLength;
+  outlineWidth?: BorderWidthValue;
   outlineStyle?: BorderStyle;
   outlineDashType?: StrokeDashType;
 } {
@@ -176,7 +186,7 @@ export function parseOutlineShorthand(value?: string): {
 
 export function parseStrokeShorthand(value?: string): {
   strokeColor?: string;
-  strokeWidth?: DeckLength;
+  strokeWidth?: BorderWidthValue;
   strokeStyle?: BorderStyle;
   strokeDashType?: StrokeDashType;
 } {
@@ -242,9 +252,25 @@ export function parseSideBorderAuthoring(value?: string) {
   };
 }
 
+function normalizeBorderWidthForStroke(width?: BorderWidthValue): DeckLength | undefined {
+  if (width === "thin") {
+    return "1pt";
+  }
+
+  if (width === "medium") {
+    return "3pt";
+  }
+
+  if (width === "thick") {
+    return "5pt";
+  }
+
+  return width as DeckLength | undefined;
+}
+
 export function toStroke(
   color?: string,
-  width?: DeckLength,
+  width?: BorderWidthValue,
   style?: BorderStyle,
   dashType?: StrokeDashType,
   lineCap?: StrokeLineCap,
@@ -256,12 +282,13 @@ export function toStroke(
   if (!parsed) {
     return undefined;
   }
-  const projectedDashType = dashType ?? (style === "dash" ? "dash" : undefined);
+  const projectedDashType =
+    dashType ?? (style === "dashed" ? "dash" : style === "dotted" ? "sysDot" : undefined);
 
   return {
     color: parsed.color,
-    widthPt: parseStrokeWidth(width, 1, context),
-    style,
+    widthPt: parseStrokeWidth(normalizeBorderWidthForStroke(width), 1, context),
+    style: projectedStrokeStyle(style),
     ...(projectedDashType ? { dashType: projectedDashType } : {}),
     ...(lineCap ? { lineCap } : {}),
     ...(lineJoin ? { lineJoin } : {}),
@@ -402,7 +429,6 @@ export function resolveNodeStrokes(
     | "borderColor"
     | "borderWidth"
     | "borderStyle"
-    | "borderTransparency"
     | "borderTop"
     | "borderRight"
     | "borderBottom"
@@ -419,8 +445,9 @@ export function resolveNodeStrokes(
     | "borderRightStyle"
     | "borderBottomStyle"
     | "borderLeftStyle"
-  > &
-    Partial<Pick<ShapeStyle, "stroke" | "strokeDasharray" | "strokeLinecap" | "strokeLinejoin">>,
+  > & {
+    readonly borderTransparency?: number;
+  } & Partial<Pick<ShapeStyle, "stroke" | "strokeDasharray" | "strokeLinecap" | "strokeLinejoin">>,
   context?: LengthResolutionContext,
 ): {
   stroke?: StrokeIR;

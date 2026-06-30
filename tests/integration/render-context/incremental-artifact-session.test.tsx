@@ -5,14 +5,14 @@ describe("deckjsx integration incremental artifact session", () => {
   test("incremental artifact session attaches opaque write tokens to render results", async () => {
     const outsideDeck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     outsideDeck.slide({ name: "Outside" }, () => (
-      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>outside</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>outside</p>
     ));
     const outsideRender = await outsideDeck.render(H.pptx());
 
     const session = H.createIncrementalArtifactSession();
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Inside" }, () => (
-      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>inside</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>inside</p>
     ));
 
     let render = await deck.render(H.pptx());
@@ -157,7 +157,7 @@ describe("deckjsx integration incremental artifact session", () => {
     await cycle.run(async () => {
       const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
       deck.slide({ name: "Late write" }, () => (
-        <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>late</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>late</p>
       ));
       token = H.getArtifactWriteToken(await deck.render(H.pptx()));
     });
@@ -181,7 +181,7 @@ describe("deckjsx integration incremental artifact session", () => {
     await outer.run(async () => {
       const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
       deck.slide({ name: "Outer" }, () => (
-        <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>outer</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>outer</p>
       ));
       outerToken = H.getArtifactWriteToken(await deck.render(H.pptx()));
       await inner.run(async () => {
@@ -222,7 +222,7 @@ describe("deckjsx integration incremental artifact session", () => {
       await innerReady;
       const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
       deck.slide({ name: "Outer async" }, () => (
-        <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>outer async</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>outer async</p>
       ));
       outerRecord = H.recordArtifactWrite(H.getArtifactWriteToken(await deck.render(H.pptx())), {
         path: "/project/outer.pptx",
@@ -319,7 +319,7 @@ describe("deckjsx integration incremental artifact session", () => {
     await H.runIncrementalArtifactCycle(session, {}, async () => {
       const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
       deck.slide({ name: "Helper cycle" }, () => (
-        <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>helper</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>helper</p>
       ));
       token = H.getArtifactWriteToken(await deck.render(H.pptx()));
     });
@@ -342,7 +342,9 @@ describe("deckjsx integration incremental artifact session", () => {
       H.runIncrementalArtifactCycle(session, {}, async () => {
         const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
         deck.slide({ name: "Rejected helper cycle" }, () => (
-          <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>helper reject</p>
+          <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>
+            helper reject
+          </p>
         ));
         token = H.getArtifactWriteToken(await deck.render(H.pptx()));
         throw new Error("helper cycle failed");
@@ -434,10 +436,10 @@ describe("deckjsx integration incremental artifact session", () => {
         async () => {
           const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
           deck.slide({ name: "Edited" }, () => (
-            <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{title}</p>
+            <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>{title}</p>
           ));
           deck.slide({ name: "Stable" }, () => (
-            <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>stable</p>
+            <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>stable</p>
           ));
           render = await deck.render(H.pptx({ inspection: "none" }));
         },
@@ -462,5 +464,41 @@ describe("deckjsx integration incremental artifact session", () => {
     expect(second.patchPlan?.parts).toEqual(
       expect.arrayContaining([expect.objectContaining({ buildStatus: "reused" })]),
     );
+  });
+
+  test("incremental artifact session does not reuse retained root artifacts after a mounted child Deck changes", async () => {
+    const session = H.createIncrementalArtifactSession();
+    const parent = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const child = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    let first = await parent.render(H.pptx());
+    let second = first;
+
+    child.slide(() => (
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>before</p>
+    ));
+    parent.mount("child", child);
+
+    await H.runIncrementalArtifactCycle(session, {}, async () => {
+      first = await parent.render(H.pptx({ inspection: "none" }));
+    });
+
+    child.slide(() => (
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>after</p>
+    ));
+
+    await H.runIncrementalArtifactCycle(session, {}, async () => {
+      second = await parent.render(H.pptx({ inspection: "none" }));
+    });
+
+    const firstPackage = H.unzipSync(first.artifact?.bytes ?? new Uint8Array());
+    const secondPackage = H.unzipSync(second.artifact?.bytes ?? new Uint8Array());
+    const firstSlide1 = H.textDecoder.decode(firstPackage["ppt/slides/slide1.xml"]);
+    const secondSlide1 = H.textDecoder.decode(secondPackage["ppt/slides/slide1.xml"]);
+    const secondSlide2 = H.textDecoder.decode(secondPackage["ppt/slides/slide2.xml"]);
+
+    expect(firstSlide1).toContain("before");
+    expect(firstPackage["ppt/slides/slide2.xml"]).toBeUndefined();
+    expect(secondSlide1).toContain("before");
+    expect(secondSlide2).toContain("after");
   });
 });

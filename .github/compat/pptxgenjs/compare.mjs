@@ -19,7 +19,23 @@ const wideSvgData = `data:image/svg+xml;base64,${Buffer.from(
 ).toString("base64")}`;
 
 function element(type, props, children) {
-  return jsx(type, children === undefined ? props : { ...props, children });
+  const nextProps = normalizeDeckjsxProps(children === undefined ? props : { ...props, children });
+  return jsx(type, nextProps);
+}
+
+function normalizeDeckjsxProps(props) {
+  const style = props?.style;
+  if (!style || typeof style !== "object" || style.position !== undefined) {
+    return props;
+  }
+
+  const usesPositioning =
+    style.left !== undefined ||
+    style.top !== undefined ||
+    style.right !== undefined ||
+    style.bottom !== undefined ||
+    style.inset !== undefined;
+  return usesPositioning ? { ...props, style: { position: "absolute", ...style } } : props;
 }
 
 function view(props, children) {
@@ -304,20 +320,24 @@ async function writeDirectDeck() {
   });
 
   deck.slide({ name: "Migration oracle", style: { backgroundColor: "#F8FAFC" } }, () =>
-    view({ style: { x: 0.5, y: 0.35, width: 9, height: 4.9 } }, [
+    view({ style: { left: 0.5, top: 0.35, width: 9, height: 4.9 } }, [
       text(
-        { style: { x: 0.5, y: 0.45, width: 4.8, height: 0.6, fontSize: 28, color: "#111827" } },
+        {
+          style: { left: 0.5, top: 0.45, width: 4.8, height: 0.6, fontSize: 28, color: "#111827" },
+        },
         "Migration oracle",
       ),
       text(
-        { style: { x: 0.5, y: 1.2, width: 5.8, height: 0.55, fontSize: 16, color: "#334155" } },
+        {
+          style: { left: 0.5, top: 1.2, width: 5.8, height: 0.55, fontSize: 16, color: "#334155" },
+        },
         "direct writer regression fixture",
       ),
       shape({
         shape: "rect",
         style: {
-          x: 1,
-          y: 2,
+          left: 1,
+          top: 2,
           width: 2.2,
           height: 1.1,
           fill: "#F97316",
@@ -327,7 +347,7 @@ async function writeDirectDeck() {
       }),
       image({
         data: pngData,
-        style: { x: 6.4, y: 1.1, width: 1.2, height: 1.2, objectFit: "stretch" },
+        style: { left: 6.4, top: 1.1, width: 1.2, height: 1.2, objectFit: "fill" },
       }),
     ]),
   );
@@ -335,8 +355,8 @@ async function writeDirectDeck() {
     text(
       {
         style: {
-          x: 0.9,
-          y: 0.9,
+          left: 0.9,
+          top: 0.9,
           width: 3.6,
           height: 0.55,
           fontSize: 20,
@@ -349,8 +369,8 @@ async function writeDirectDeck() {
     shape({
       shape: "rect",
       style: {
-        x: 0.9,
-        y: 1.8,
+        left: 0.9,
+        top: 1.8,
         width: 2.5,
         height: 0.8,
         fill: "#DBEAFE",
@@ -361,55 +381,79 @@ async function writeDirectDeck() {
   deck.slide({ name: "Paint order oracle", style: { backgroundColor: "#FFFFFF" } }, () => [
     text(
       {
-        style: { x: 1, y: 0.8, width: 3, height: 0.45, fontSize: 18, color: "#111827", zIndex: 10 },
+        style: {
+          left: 1,
+          top: 0.8,
+          width: 3,
+          height: 0.45,
+          fontSize: 18,
+          color: "#111827",
+          zIndex: 10,
+        },
       },
       "Front layer",
     ),
     shape({
       shape: "rect",
-      style: { x: 0.8, y: 1.55, width: 2.4, height: 0.7, fill: "#16A34A", zIndex: 0 },
+      style: { left: 0.8, top: 1.55, width: 2.4, height: 0.7, fill: "#16A34A", zIndex: 0 },
     }),
     text(
       {
-        style: { x: 1, y: 1.65, width: 3, height: 0.45, fontSize: 18, color: "#111827", zIndex: 1 },
+        style: {
+          left: 1,
+          top: 1.65,
+          width: 3,
+          height: 0.45,
+          fontSize: 18,
+          color: "#111827",
+          zIndex: 1,
+        },
       },
       "Middle layer",
     ),
     text(
       {
-        style: { x: 1, y: 2.5, width: 3, height: 0.45, fontSize: 18, color: "#111827", zIndex: -1 },
+        style: {
+          left: 1,
+          top: 2.5,
+          width: 3,
+          height: 0.45,
+          fontSize: 18,
+          color: "#111827",
+          zIndex: -1,
+        },
       },
       "Back layer",
     ),
   ]);
   deck.slide({ name: "Rich text oracle", style: { backgroundColor: "#FFFFFF" } }, () => [
     text(
-      { style: { x: 0.9, y: 0.75, width: 4.8, height: 0.55, fontSize: 22, color: "#111827" } },
+      { style: { left: 0.9, top: 0.75, width: 4.8, height: 0.55, fontSize: 22, color: "#111827" } },
       "Rich text oracle",
     ),
-    text({ style: { x: 0.9, y: 1.55, width: 6.8, height: 0.8, fontSize: 20, color: "#334155" } }, [
-      "Migration ",
-      element("span", { style: { color: "#DC2626", fontWeight: 700 } }, "bold red"),
-      " signal",
-    ]),
+    text(
+      { style: { left: 0.9, top: 1.55, width: 6.8, height: 0.8, fontSize: 20, color: "#334155" } },
+      [
+        "Migration ",
+        element("span", { style: { color: "#DC2626", fontWeight: 700 } }, "bold red"),
+        " signal",
+      ],
+    ),
   ]);
   deck.slide({ name: "Effects oracle", style: { backgroundColor: "#FFFFFF" } }, () => [
     text(
-      { style: { x: 0.9, y: 0.75, width: 4.8, height: 0.55, fontSize: 22, color: "#111827" } },
+      { style: { left: 0.9, top: 0.75, width: 4.8, height: 0.55, fontSize: 22, color: "#111827" } },
       "Effects oracle",
     ),
     shape({
       shape: "rect",
       style: {
-        x: 1.2,
-        y: 1.65,
+        left: 1.2,
+        top: 1.65,
         width: 2.8,
         height: 1.1,
-        fill: "#7C3AED",
-        transparency: 35,
-        stroke: "#0F172A",
-        strokeWidth: "2pt",
-        strokeOpacity: 0.8,
+        fill: "rgba(124, 58, 237, 0.65)",
+        stroke: "2pt solid rgba(15, 23, 42, 0.8)",
         strokeDasharray: "1 4",
         transform: "rotate(15deg)",
       },
@@ -417,14 +461,14 @@ async function writeDirectDeck() {
   ]);
   deck.slide({ name: "Image crop oracle", style: { backgroundColor: "#FFFFFF" } }, () => [
     text(
-      { style: { x: 0.9, y: 0.75, width: 4.8, height: 0.55, fontSize: 22, color: "#111827" } },
+      { style: { left: 0.9, top: 0.75, width: 4.8, height: 0.55, fontSize: 22, color: "#111827" } },
       "Image crop oracle",
     ),
     image({
       data: wideSvgData,
       style: {
-        x: 1.2,
-        y: 1.6,
+        left: 1.2,
+        top: 1.6,
         width: 2.4,
         height: 1.2,
         crop: { left: "10%", right: "20%", bottom: "30%" },
@@ -433,14 +477,14 @@ async function writeDirectDeck() {
   ]);
   deck.slide({ name: "Shadow oracle", style: { backgroundColor: "#FFFFFF" } }, () => [
     text(
-      { style: { x: 0.9, y: 0.75, width: 4.8, height: 0.55, fontSize: 22, color: "#111827" } },
+      { style: { left: 0.9, top: 0.75, width: 4.8, height: 0.55, fontSize: 22, color: "#111827" } },
       "Shadow oracle",
     ),
     shape({
       shape: "rect",
       style: {
-        x: 1.2,
-        y: 1.65,
+        left: 1.2,
+        top: 1.65,
         width: 2.8,
         height: 1.1,
         fill: "#DBEAFE",
@@ -451,14 +495,14 @@ async function writeDirectDeck() {
   ]);
   deck.slide({ name: "Text body oracle", style: { backgroundColor: "#FFFFFF" } }, () => [
     text(
-      { style: { x: 0.9, y: 0.55, width: 4.8, height: 0.55, fontSize: 22, color: "#111827" } },
+      { style: { left: 0.9, top: 0.55, width: 4.8, height: 0.55, fontSize: 22, color: "#111827" } },
       "Text body oracle",
     ),
     text(
       {
         style: {
-          x: 0.9,
-          y: 1.2,
+          left: 0.9,
+          top: 1.2,
           width: 2.8,
           height: 0.5,
           fontSize: 18,
@@ -469,18 +513,18 @@ async function writeDirectDeck() {
       "RTL text",
     ),
     text(
-      { style: { x: 0.9, y: 1.9, width: 2.8, height: 0.5, fontSize: 18, superscript: true } },
+      { style: { left: 0.9, top: 1.9, width: 2.8, height: 0.5, fontSize: 18, superscript: true } },
       "Super",
     ),
     text(
-      { style: { x: 0.9, y: 2.6, width: 2.8, height: 0.5, fontSize: 18, subscript: true } },
+      { style: { left: 0.9, top: 2.6, width: 2.8, height: 0.5, fontSize: 18, subscript: true } },
       "Sub",
     ),
     text(
       {
         style: {
-          x: 4.2,
-          y: 1.2,
+          left: 4.2,
+          top: 1.2,
           width: 2.8,
           height: 0.5,
           fontSize: 18,
@@ -492,14 +536,23 @@ async function writeDirectDeck() {
       "Decorated",
     ),
     text(
-      { style: { x: 4.2, y: 1.9, width: 3, height: 0.5, fontSize: 18, listStyleType: "circle" } },
+      {
+        style: {
+          left: 4.2,
+          top: 1.9,
+          width: 3,
+          height: 0.5,
+          fontSize: 18,
+          listStyleType: "circle",
+        },
+      },
       "Bullet item",
     ),
     text(
       {
         style: {
-          x: 4.2,
-          y: 2.6,
+          left: 4.2,
+          top: 2.6,
           width: 3,
           height: 0.5,
           fontSize: 18,
@@ -512,18 +565,27 @@ async function writeDirectDeck() {
   ]);
   deck.slide({ name: "Paragraph oracle", style: { backgroundColor: "#FFFFFF" } }, () => [
     text(
-      { style: { x: 0.9, y: 0.55, width: 4.8, height: 0.55, fontSize: 22, color: "#111827" } },
+      { style: { left: 0.9, top: 0.55, width: 4.8, height: 0.55, fontSize: 22, color: "#111827" } },
       "Paragraph oracle",
     ),
     text(
-      { style: { x: 0.9, y: 1.25, width: 1, height: 2, fontSize: 18, writingMode: "vertical-rl" } },
+      {
+        style: {
+          left: 0.9,
+          top: 1.25,
+          width: 1,
+          height: 2,
+          fontSize: 18,
+          writingMode: "vertical-rl",
+        },
+      },
       "Vertical text",
     ),
     text(
       {
         style: {
-          x: 2.4,
-          y: 1.25,
+          left: 2.4,
+          top: 1.25,
           width: 5,
           height: 1,
           fontSize: 18,
@@ -537,18 +599,20 @@ async function writeDirectDeck() {
       "Alpha\tBeta\tGamma",
     ),
     text(
-      { style: { x: 0.9, y: 3.6, width: 2.4, height: 0.45, fontSize: 16, lineHeight: "28pt" } },
+      {
+        style: { left: 0.9, top: 3.6, width: 2.4, height: 0.45, fontSize: 16, lineHeight: "28pt" },
+      },
       "Line spacing points",
     ),
     text(
-      { style: { x: 3.4, y: 3.6, width: 2.6, height: 0.45, fontSize: 16, lineHeight: 1.5 } },
+      { style: { left: 3.4, top: 3.6, width: 2.6, height: 0.45, fontSize: 16, lineHeight: 1.5 } },
       "Line spacing multiple",
     ),
     text(
       {
         style: {
-          x: 6.2,
-          y: 3.6,
+          left: 6.2,
+          top: 3.6,
           width: 2.6,
           height: 0.45,
           fontSize: 16,
@@ -559,32 +623,50 @@ async function writeDirectDeck() {
       "Paragraph spacing",
     ),
     text(
-      { style: { x: 0.9, y: 4.25, width: 2.6, height: 0.45, fontSize: 16, letterSpacing: 1.5 } },
+      {
+        style: { left: 0.9, top: 4.25, width: 2.6, height: 0.45, fontSize: 16, letterSpacing: 1.5 },
+      },
       "Spaced text",
     ),
     text(
-      { style: { x: 3.6, y: 4.25, width: 1.6, height: 0.45, fontSize: 16, fit: "shrink" } },
+      { style: { left: 3.6, top: 4.25, width: 1.6, height: 0.45, fontSize: 16, fit: "shrink" } },
       "Fit shrink",
     ),
     text(
-      { style: { x: 5.3, y: 4.25, width: 1.6, height: 0.45, fontSize: 16, fit: "resize" } },
+      { style: { left: 5.3, top: 4.25, width: 1.6, height: 0.45, fontSize: 16, fit: "resize" } },
       "Fit resize",
     ),
     text(
-      { style: { x: 7, y: 4.05, width: 1.4, height: 0.8, fontSize: 16, verticalAlign: "middle" } },
+      {
+        style: {
+          left: 7,
+          top: 4.05,
+          width: 1.4,
+          height: 0.8,
+          fontSize: 16,
+          verticalAlign: "middle",
+        },
+      },
       "Middle",
     ),
     text(
       {
-        style: { x: 8.5, y: 4.05, width: 1.2, height: 0.8, fontSize: 16, verticalAlign: "bottom" },
+        style: {
+          left: 8.5,
+          top: 4.05,
+          width: 1.2,
+          height: 0.8,
+          fontSize: 16,
+          verticalAlign: "bottom",
+        },
       },
       "Bottom",
     ),
     text(
       {
         style: {
-          x: 6.7,
-          y: 3.05,
+          left: 6.7,
+          top: 3.05,
           width: 2.4,
           height: 0.45,
           fontSize: 16,
@@ -594,34 +676,52 @@ async function writeDirectDeck() {
       "Padded text",
     ),
     text(
-      { style: { x: 3.6, y: 3.05, width: 1.5, height: 0.45, fontSize: 16, textAlign: "center" } },
+      {
+        style: {
+          left: 3.6,
+          top: 3.05,
+          width: 1.5,
+          height: 0.45,
+          fontSize: 16,
+          textAlign: "center",
+        },
+      },
       "Center",
     ),
     text(
-      { style: { x: 5.2, y: 3.05, width: 1.3, height: 0.45, fontSize: 16, textAlign: "right" } },
+      {
+        style: { left: 5.2, top: 3.05, width: 1.3, height: 0.45, fontSize: 16, textAlign: "right" },
+      },
       "Right",
     ),
     text(
-      { style: { x: 9.05, y: 3.05, width: 0.9, height: 0.45, fontSize: 16, textAlign: "justify" } },
+      {
+        style: {
+          left: 9.05,
+          top: 3.05,
+          width: 0.9,
+          height: 0.45,
+          fontSize: 16,
+          textAlign: "justify",
+        },
+      },
       "Just",
     ),
   ]);
   deck.slide({ name: "Image effects oracle", style: { backgroundColor: "#FFFFFF" } }, () => [
     text(
-      { style: { x: 0.9, y: 0.75, width: 4.8, height: 0.55, fontSize: 22, color: "#111827" } },
+      { style: { left: 0.9, top: 0.75, width: 4.8, height: 0.55, fontSize: 22, color: "#111827" } },
       "Image effects oracle",
     ),
     image({
       data: wideSvgData,
       style: {
-        x: 1.2,
-        y: 1.75,
+        left: 1.2,
+        top: 1.75,
         width: 2.6,
         height: 1.3,
-        rotation: 12,
-        flipH: true,
-        flipV: true,
-        transparency: 40,
+        opacity: 0.6,
+        transform: "rotate(12deg) scale(-1, -1)",
       },
     }),
   ]);
@@ -629,8 +729,8 @@ async function writeDirectDeck() {
     image({
       data: wideSvgData,
       style: {
-        x: 0.6,
-        y: 0.7,
+        left: 0.6,
+        top: 0.7,
         width: 5.2,
         height: 2.6,
         objectFit: "cover",
@@ -641,8 +741,8 @@ async function writeDirectDeck() {
     text(
       {
         style: {
-          x: 0.9,
-          y: 0.75,
+          left: 0.9,
+          top: 0.75,
           width: 4.8,
           height: 0.55,
           fontSize: 22,
@@ -655,14 +755,13 @@ async function writeDirectDeck() {
     text(
       {
         style: {
-          x: 0.9,
-          y: 1.55,
+          left: 0.9,
+          top: 1.55,
           width: 4.8,
           height: 0.65,
           fontSize: 18,
           color: "#FFFFFF",
-          backgroundColor: "#0F172A",
-          backgroundTransparency: 15,
+          backgroundColor: "rgba(15, 23, 42, 0.85)",
           zIndex: 2,
         },
       },

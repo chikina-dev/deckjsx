@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import * as H from "../../helpers.tsx";
+import * as H from "@/tests/pptx/project-render-pipeline/helpers.tsx";
 
 describe("project/render validation package requirement and order metadata", () => {
   test("direct writer validates package part requirement metadata shape", async () => {
@@ -132,7 +132,10 @@ describe("project/render validation package requirement and order metadata", () 
   test("direct writer validates package part requirement dependency uniqueness", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Duplicate requirement dependency" }, () => (
-      <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        data={H.SAMPLE_SVG_DATA_URI}
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;
@@ -195,7 +198,10 @@ describe("project/render validation package requirement and order metadata", () 
   test("direct writer validates package part order key semantic group", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Invalid order key group" }, () => (
-      <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        data={H.SAMPLE_SVG_DATA_URI}
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;
@@ -242,7 +248,7 @@ describe("project/render validation package requirement and order metadata", () 
   test("direct writer validates package part order key encoded value", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Invalid order key value" }, () => (
-      <p style={{ x: 1, y: 1, width: 2, height: 0.5 }}>order</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 2, height: 0.5 }}>order</p>
     ));
 
     const projection = (await deck.project()).projection!;

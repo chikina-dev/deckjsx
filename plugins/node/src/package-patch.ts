@@ -9,9 +9,13 @@ import {
 
 export { PATCH_MANIFEST_PATH };
 
+/** Diagnostic emitted by `@deckjsx/node` write and patch inspection helpers. */
 export type WriteDiagnostic = {
+  /** Stable diagnostic code for tooling and tests. */
   readonly code: string;
+  /** Human-readable diagnostic message. */
   readonly message: string;
+  /** Filesystem path related to the diagnostic, when available. */
   readonly path?: string;
 };
 

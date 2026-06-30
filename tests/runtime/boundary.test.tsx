@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck } from "../../src/index.ts";
+import { Deck } from "@/src/index.ts";
 
 describe("runtime boundary", () => {
   test("render returns an in-memory pptx artifact", async () => {

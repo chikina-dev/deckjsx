@@ -3,9 +3,9 @@ import {
   diagnostic,
   type Diagnostic,
   type Diagnostics,
-} from "../../diagnostics";
-import type { FrameIR } from "../../layout/projected";
-import { isTemplateAreaKind } from "../../templates";
+} from "@/src/diagnostics";
+import type { FrameIR } from "@/src/layout/projected";
+import { isTemplateAreaKind } from "@/src/templates";
 import { isPptxSlidePart } from "./model";
 import type {
   PackagePartId,
@@ -875,7 +875,9 @@ function validateSlideLayoutAnchor(input: {
     );
   }
 
-  issues.push(...validateFrame({ path: `${input.path}.frame`, frame: input.anchor.frame }));
+  if (input.anchor.frame !== undefined) {
+    issues.push(...validateFrame({ path: `${input.path}.frame`, frame: input.anchor.frame }));
+  }
 
   return issues;
 }
@@ -4773,7 +4775,12 @@ function validateDrawingElementPayload(input: {
   }
 
   if (element.kind === "shape") {
-    if (element.shape !== "rect" && element.shape !== "ellipse" && element.shape !== "line") {
+    if (
+      element.shape !== "rect" &&
+      element.shape !== "ellipse" &&
+      element.shape !== "line" &&
+      element.shape !== "roundRect"
+    ) {
       issues.push(
         drawingPayloadDiagnostic({ path: `${input.path}.shape`, message: "invalid shape kind" }),
       );

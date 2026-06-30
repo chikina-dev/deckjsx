@@ -51,7 +51,10 @@ describe("deckjsx integration asset loaders and invalidation", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Asset" }, () => (
-      <img src="./asset.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        src="./asset.png"
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     deck.plugin(
@@ -158,10 +161,13 @@ describe("deckjsx integration asset loaders and invalidation", () => {
     parent.plugin(H.assetExtension({ name: "test:parent-assets", loader: parentLoader }));
     child.plugin(H.assetExtension({ name: "test:child-assets", loader: childLoader }));
     parent.slide({ name: "Parent" }, () => (
-      <p style={{ x: 1, y: 1, width: 2, height: 0.5 }}>parent</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 2, height: 0.5 }}>parent</p>
     ));
     child.slide({ name: "Child asset" }, () => (
-      <img src="./child.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        src="./child.png"
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
     parent.mount("child", child);
 
@@ -185,10 +191,10 @@ describe("deckjsx integration asset loaders and invalidation", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Incremental" }, () => (
-      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{title}</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>{title}</p>
     ));
     deck.slide({ name: "Stable" }, () => (
-      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>stable</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>stable</p>
     ));
 
     const first = await deck.render(H.pptx({ inspection: "summary" }));
@@ -279,7 +285,7 @@ describe("deckjsx integration asset loaders and invalidation", () => {
           src: { importer: "/project/src/deck.tsx", source: "./asset.png" },
         })}
         src="./asset.png"
-        style={{ x: 1, y: 1, width: 1, height: 1 }}
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
       />
     ));
 
@@ -328,7 +334,7 @@ describe("deckjsx integration asset loaders and invalidation", () => {
       name: "test:stable-plugin",
     });
     deck.slide({ name: "Execution invalidation" }, () => (
-      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{title}</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>{title}</p>
     ));
 
     await deck.render(H.pptx());

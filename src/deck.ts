@@ -1,31 +1,34 @@
-import type { DeckOptions } from "./authoring/index";
-import type { RenderOptions, WriterAdapter } from "./adapter";
+import type { DeckOptions } from "./authoring/options/public";
+import { validateDeckOptions } from "./authoring/options/validation";
+import type { RenderOptions, WriterAdapter } from "./adapter/public";
 import {
   COMPOSITION_SOURCE,
+  compositionRevisionForSource,
   type CompositionEntry,
   type CompositionSource,
   type CompositionSourceInternals,
-  type SlideFactory,
-  type SlideFactoryInputWithTemplate,
-  type SlideOptions,
-  type SourceContextInput,
-  type SourceContextValue,
-} from "./composition/types";
-import type { Diagnostics } from "./diagnostics";
-import type { DeckPlugin } from "./plugin";
+} from "./composition/source";
+import type {
+  SlideFactory,
+  SlideFactoryInputWithTemplate,
+  SlideOptions,
+  SourceContextInput,
+  SourceContextValue,
+} from "./composition/public";
+import { createDiagnostics, type Diagnostics } from "./diagnostics";
 import type { SemanticAuthorGraph } from "./graph";
-import { resultOk, stageSummary, type ProjectOptions, type StageArtifactStatus } from "./pipeline";
-import { PipelineArtifactCollection } from "./pipeline-artifacts";
-import {
-  compileSource,
-  projectSource,
-  renderSource,
-  type CompileResult,
-  type ProjectResult,
-  type RenderResult,
-} from "./pipeline-runner";
-import type { PptxPackageModel, PptxPackageModelCandidate } from "./projection/pptx/model";
-import type { StyleSheet } from "./style/stylesheet";
+import { resultOk, stageSummary } from "./pipeline/stage";
+import type { ProjectOptions, ProjectionFormat, StageArtifactStatus } from "./pipeline/contract";
+import type { DefinedGraphInput, DefinedProjectionInput } from "./pipeline/artifact-input";
+import { compileSource, defineGraphForSource } from "./compile-runner";
+import type {
+  CompiledAuthorGraph,
+  CompileResult,
+  ProjectResult,
+  RenderResult,
+} from "./pipeline/results-public";
+import { isDeckPlugin } from "./plugin";
+import type { StyleSheetValue } from "./style/stylesheet/public";
 import type { EmptySlideTemplateSet, SlideTemplateSet, TemplateName } from "./templates";
 
 export type {
@@ -35,8 +38,31 @@ export type {
   SlideFactoryInputWithTemplate,
   SlideOptions,
   SourceContextMapper,
-} from "./composition/types";
-export type { CompileResult, ProjectResult, RenderResult } from "./pipeline-runner";
+} from "./composition/public";
+export type { CompileResult, ProjectResult, RenderResult } from "./pipeline/results-public";
+
+/**
+ * Public plugin value accepted by `Deck#plugin(...)`.
+ *
+ * Root `deckjsx` exposes plugin registration only. It intentionally does not expose hook context,
+ * asset loader, or integration authoring shapes; plugin authors should import `DeckPlugin` and the
+ * related lifecycle types from `deckjsx/integration`.
+ */
+export type DeckPluginInput = {
+  readonly kind: "deckjsx.plugin";
+  readonly id: string;
+  readonly name?: string;
+};
+
+/**
+ * Public projected document definition accepted by `Deck#defineProjection(...)`.
+ *
+ * This root API only guarantees the lightweight projection contract. Adapter-specific projection
+ * details remain validated at runtime and are exposed through inspection/integration surfaces.
+ */
+export type ProjectionDefinitionInput = {
+  readonly format: ProjectionFormat;
+};
 
 type WithSource<
   TSourceContext extends SourceContextValue | void,
@@ -46,6 +72,52 @@ type WithSource<
   : (sourceContext: TSourceContext) => BoundSource<TSourceContext, TTemplates>;
 
 type PresentStageArtifactStatus = Exclude<StageArtifactStatus, "missing">;
+type DeckPipelineArtifacts = {
+  readonly graph?: DefinedGraphInput;
+  readonly projection?: DefinedProjectionInput;
+  invalidateFromSource(): void;
+};
+type ProjectSourceInput<
+  TSourceContext extends SourceContextValue | void,
+  TTemplates extends SlideTemplateSet,
+> = {
+  readonly source: CompositionSource<TSourceContext, TTemplates>;
+  readonly options: DeckOptions;
+  readonly projectOptions?: ProjectOptions;
+  readonly definedGraph?: DefinedGraphInput;
+  readonly definedProjection?: DefinedProjectionInput;
+  readonly artifacts?: DeckPipelineArtifacts;
+};
+type RenderSourceInput<
+  TSourceContext extends SourceContextValue | void,
+  TTemplates extends SlideTemplateSet,
+> = {
+  readonly source: CompositionSource<TSourceContext, TTemplates>;
+  readonly options: DeckOptions;
+  readonly renderInput?: RenderOptions | WriterAdapter;
+  readonly definedGraph?: DefinedGraphInput;
+  readonly definedProjection?: DefinedProjectionInput;
+  readonly artifacts?: DeckPipelineArtifacts;
+};
+type PipelineRunnerModule = {
+  readonly createPipelineArtifacts: () => DeckPipelineArtifacts;
+  readonly projectSource: <
+    TSourceContext extends SourceContextValue | void,
+    TTemplates extends SlideTemplateSet,
+  >(
+    input: ProjectSourceInput<TSourceContext, TTemplates>,
+  ) => Promise<ProjectResult>;
+  readonly renderSource: <
+    TSourceContext extends SourceContextValue | void,
+    TTemplates extends SlideTemplateSet,
+  >(
+    input: RenderSourceInput<TSourceContext, TTemplates>,
+  ) => Promise<RenderResult>;
+};
+
+function loadPipelineRunner(): Promise<PipelineRunnerModule> {
+  return import("./pipeline/runner") as Promise<PipelineRunnerModule>;
+}
 
 function projectedArtifactStatus(value: undefined, diagnostics: Diagnostics): "missing";
 function projectedArtifactStatus<T>(value: T, diagnostics: Diagnostics): PresentStageArtifactStatus;
@@ -92,9 +164,10 @@ export class BoundSource<
       entries: source.entries,
       stylesheets: source.stylesheets,
       plugins: source.plugins,
-      ...(source.theme ? { theme: source.theme } : {}),
-      ...(source.templates ? { templates: source.templates } : {}),
+      ...(Object.hasOwn(source, "theme") ? { theme: source.theme } : {}),
+      ...(Object.hasOwn(source, "templates") ? { templates: source.templates } : {}),
       cycleId: source.cycleId,
+      revision: source.revision,
       boundContext: { present: true, value: this.#sourceContext },
     };
   }
@@ -105,6 +178,17 @@ export class BoundSource<
    * @returns A compile result with diagnostics, stage summaries, and graph artifacts when available.
    */
   compile(): CompileResult {
+    const optionsDiagnostics = validateDeckOptions(this.#source.options);
+    if (optionsDiagnostics.hasErrors) {
+      return {
+        ok: false,
+        diagnostics: optionsDiagnostics,
+        stages: {
+          compile: stageSummary("compile", optionsDiagnostics, "missing"),
+        },
+      };
+    }
+
     return compileSource(this);
   }
 
@@ -114,11 +198,13 @@ export class BoundSource<
    * @returns A project result with diagnostics, stage summaries, and the projected model when valid.
    */
   project(options?: ProjectOptions): Promise<ProjectResult> {
-    return projectSource({
-      source: this,
-      options: this.#source.options,
-      projectOptions: options,
-    });
+    return loadPipelineRunner().then(({ projectSource }) =>
+      projectSource({
+        source: this,
+        options: this.#source.options,
+        projectOptions: options,
+      }),
+    );
   }
 
   /**
@@ -127,12 +213,14 @@ export class BoundSource<
    * @param config - Render options for the default adapter, or an explicit Writer Adapter.
    * @returns A Promise resolving to render diagnostics, stage summaries, and an artifact when render succeeds.
    */
-  render(config?: RenderOptions | WriterAdapter<PptxPackageModel>): Promise<RenderResult> {
-    return renderSource({
-      source: this,
-      options: this.#source.options,
-      renderInput: config ?? {},
-    });
+  render(config?: RenderOptions | WriterAdapter): Promise<RenderResult> {
+    return loadPipelineRunner().then(({ renderSource }) =>
+      renderSource({
+        source: this,
+        options: this.#source.options,
+        renderInput: config ?? {},
+      }),
+    );
   }
 }
 
@@ -156,9 +244,12 @@ export class Deck<
 > implements CompositionSource<TSourceContext, TTemplates> {
   readonly #options: DeckOptions<TTemplates>;
   readonly #entries: CompositionEntry<TSourceContext, TTemplates>[] = [];
-  readonly #stylesheets: StyleSheet[] = [];
-  readonly #plugins: DeckPlugin[] = [];
-  readonly #artifacts = new PipelineArtifactCollection();
+  readonly #stylesheets: StyleSheetValue[] = [];
+  readonly #plugins: DeckPluginInput[] = [];
+  #artifacts?: DeckPipelineArtifacts;
+  #definedGraph?: DefinedGraphInput;
+  #definedProjection?: DefinedProjectionInput;
+  #revision = 0;
 
   /** Bind Source Context to this Deck so it can be compiled, projected, rendered, or mounted. */
   readonly withSource: WithSource<TSourceContext, TTemplates>;
@@ -176,14 +267,32 @@ export class Deck<
     return this.#options;
   }
 
+  #invalidateFromSource(): void {
+    this.#revision += 1;
+    this.#definedGraph = undefined;
+    this.#definedProjection = undefined;
+    this.#artifacts?.invalidateFromSource();
+  }
+
+  #pipelineArtifacts(createPipelineArtifacts: () => DeckPipelineArtifacts): DeckPipelineArtifacts {
+    this.#artifacts ??= createPipelineArtifacts();
+    return this.#artifacts;
+  }
+
+  #artifactGraph(): DefinedGraphInput | undefined {
+    const graph = this.#artifacts?.graph;
+    return graph?.compositionRevision === compositionRevisionForSource(this) ? graph : undefined;
+  }
+
   [COMPOSITION_SOURCE](): CompositionSourceInternals<TSourceContext, TTemplates> {
     return {
       entries: this.#entries,
       stylesheets: this.#stylesheets,
       plugins: this.#plugins,
-      ...(this.#options.theme ? { theme: this.#options.theme } : {}),
-      ...(this.#options.templates ? { templates: this.#options.templates } : {}),
+      ...(this.#options.theme !== undefined ? { theme: this.#options.theme } : {}),
+      ...(this.#options.templates !== undefined ? { templates: this.#options.templates } : {}),
       cycleId: this,
+      revision: this.#revision,
       boundContext: { present: false },
     };
   }
@@ -194,9 +303,9 @@ export class Deck<
    * @param stylesheet - The StyleSheet to apply to slides declared by this Deck source.
    * @returns This Deck, for fluent authoring.
    */
-  useStyles(stylesheet: StyleSheet): this {
+  useStyles(stylesheet: StyleSheetValue): this {
     this.#stylesheets.push(stylesheet);
-    this.#artifacts.invalidateFromSource();
+    this.#invalidateFromSource();
     return this;
   }
 
@@ -205,15 +314,17 @@ export class Deck<
    *
    * Plugins participate in deckjsx pipeline stages without changing ordinary authoring props.
    */
-  plugin(plugin: DeckPlugin): this {
-    const existing = this.#plugins.findIndex((item) => item.id === plugin.id);
+  plugin(plugin: DeckPluginInput): this {
+    const existing = isDeckPlugin(plugin)
+      ? this.#plugins.findIndex((item) => isDeckPlugin(item) && item.id === plugin.id)
+      : -1;
     if (existing >= 0) {
       this.#plugins.splice(existing, 1, plugin);
-      this.#artifacts.invalidateFromSource();
+      this.#invalidateFromSource();
       return this;
     }
     this.#plugins.push(plugin);
-    this.#artifacts.invalidateFromSource();
+    this.#invalidateFromSource();
     return this;
   }
 
@@ -272,14 +383,15 @@ export class Deck<
           SlideFactoryInputWithTemplate<TSourceContext, TTemplates, TemplateName<TTemplates>>
         >,
   ): this {
-    const options = typeof optionsOrFactory === "function" ? undefined : optionsOrFactory;
+    const hasOptions = typeof optionsOrFactory !== "function";
+    const options = hasOptions ? optionsOrFactory : undefined;
     const factory = typeof optionsOrFactory === "function" ? optionsOrFactory : maybeFactory;
     if (!factory) {
       throw new Error("deck.slide() requires a slide factory.");
     }
 
-    this.#entries.push({ kind: "slide", ...(options ? { options } : {}), factory });
-    this.#artifacts.invalidateFromSource();
+    this.#entries.push({ kind: "slide", ...(hasOptions ? { options } : {}), factory });
+    this.#invalidateFromSource();
     return this;
   }
 
@@ -317,29 +429,43 @@ export class Deck<
       ...(context.length > 0 ? { contextProvider: context[0] } : {}),
       ...(child instanceof BoundSource && context.length > 0 ? { invalidExtraContext: true } : {}),
     });
-    this.#artifacts.invalidateFromSource();
+    this.#invalidateFromSource();
     return this;
   }
 
   /**
    * Replace the current compiled graph artifact before calling `project()` or `render()`.
    *
-   * @param graph - The Semantic Author Graph to use as this Deck's compiled state.
+   * This is a low-level pipeline override for tools. It is not an authoring escape hatch and does
+   * not widen public JSX props, public style keys, Theme defaults, or StyleSheet class styles.
+   *
+   * @param graph - A compiled graph definition to use as this Deck's compiled state. Detailed
+   * internal graph shape is validated by lower-level pipeline stages.
    * @returns This Deck, for fluent pipeline editing.
    */
-  defineGraph(graph: SemanticAuthorGraph): this {
-    this.#artifacts.replaceGraphArtifact(this, graph);
+  defineGraph(graph: CompiledAuthorGraph): this {
+    this.#definedGraph = defineGraphForSource(this, graph as SemanticAuthorGraph);
+    this.#definedProjection = undefined;
+    this.#artifacts?.invalidateFromSource();
     return this;
   }
 
   /**
    * Replace the current projected document model artifact before calling `render()`.
    *
-   * @param projection - The projected PPTX Package Model to use as this Deck's projection state.
+   * This is a low-level pipeline override for tools. It bypasses normal projection work for the
+   * current Deck instance, but render-time diagnostics still validate adapter-specific shape.
+   *
+   * @param projection - A projection definition to use as this Deck's projection state. Detailed
+   * adapter-specific shape is validated at runtime.
    * @returns This Deck, for fluent pipeline editing.
    */
-  defineProjection(projection: PptxPackageModelCandidate): this {
-    this.#artifacts.replaceProjectionArtifact(projection);
+  defineProjection<TProjection extends ProjectionDefinitionInput>(projection: TProjection): this {
+    this.#definedGraph = undefined;
+    this.#definedProjection = {
+      projection,
+      diagnostics: createDiagnostics(),
+    };
     return this;
   }
 
@@ -350,8 +476,20 @@ export class Deck<
    */
   compile(this: Deck<void, TTemplates>): CompileResult;
   compile(this: Deck<void, TTemplates>): CompileResult {
-    if (this.#artifacts.graph) {
-      const diagnostics = this.#artifacts.graph.diagnostics;
+    const optionsDiagnostics = validateDeckOptions(this.#options);
+    if (optionsDiagnostics.hasErrors) {
+      return {
+        ok: false,
+        diagnostics: optionsDiagnostics,
+        stages: {
+          compile: stageSummary("compile", optionsDiagnostics, "missing"),
+        },
+      };
+    }
+
+    const graphArtifact = this.#definedGraph ?? this.#artifactGraph();
+    if (graphArtifact) {
+      const diagnostics = graphArtifact.diagnostics;
 
       return {
         ok: resultOk(diagnostics),
@@ -360,15 +498,15 @@ export class Deck<
           compile: stageSummary(
             "compile",
             diagnostics,
-            projectedArtifactStatus(this.#artifacts.graph.graph, diagnostics),
+            projectedArtifactStatus(graphArtifact.graph, diagnostics),
           ),
         },
-        graph: this.#artifacts.graph.graph,
-        resolvedStyles: this.#artifacts.graph.resolvedStyles,
+        graph: graphArtifact.graph,
+        resolvedStyles: graphArtifact.resolvedStyles,
       };
     }
 
-    return compileSource(this, this.#artifacts);
+    return compileSource(this);
   }
 
   /**
@@ -377,13 +515,18 @@ export class Deck<
    * @returns A project result with diagnostics, stage summaries, and the projected model when valid.
    */
   project(this: Deck<void, TTemplates>, options?: ProjectOptions): Promise<ProjectResult> {
-    return projectSource({
-      source: this,
-      options: this.#options,
-      projectOptions: options,
-      definedGraph: this.#artifacts.graph,
-      definedProjection: this.#artifacts.projection,
-      artifacts: this.#artifacts,
+    return loadPipelineRunner().then(({ createPipelineArtifacts, projectSource }) => {
+      const artifacts = this.#pipelineArtifacts(createPipelineArtifacts);
+      const artifactGraph = this.#artifactGraph();
+      return projectSource({
+        source: this,
+        options: this.#options,
+        projectOptions: options,
+        definedGraph: this.#definedGraph ?? artifactGraph,
+        definedProjection:
+          this.#definedProjection ?? (artifactGraph ? artifacts.projection : undefined),
+        artifacts,
+      });
     });
   }
 
@@ -395,15 +538,20 @@ export class Deck<
    */
   render(
     this: Deck<void, TTemplates>,
-    config?: RenderOptions | WriterAdapter<PptxPackageModel>,
+    config?: RenderOptions | WriterAdapter,
   ): Promise<RenderResult> {
-    return renderSource({
-      source: this,
-      options: this.#options,
-      renderInput: config ?? {},
-      definedGraph: this.#artifacts.graph,
-      definedProjection: this.#artifacts.projection,
-      artifacts: this.#artifacts,
+    return loadPipelineRunner().then(({ createPipelineArtifacts, renderSource }) => {
+      const artifacts = this.#pipelineArtifacts(createPipelineArtifacts);
+      const artifactGraph = this.#artifactGraph();
+      return renderSource({
+        source: this,
+        options: this.#options,
+        renderInput: config ?? {},
+        definedGraph: this.#definedGraph ?? artifactGraph,
+        definedProjection:
+          this.#definedProjection ?? (artifactGraph ? artifacts.projection : undefined),
+        artifacts,
+      });
     });
   }
 }

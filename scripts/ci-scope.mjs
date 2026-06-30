@@ -15,8 +15,12 @@ const ROOT_CORE_PATHS = [
 
 const NODE_PACKAGE_PATHS = [
   /^\.github\/workflows\/ci\.yml$/,
+  /^\.github\/scripts\/benchmark-node-runtime-with-diagnostics\.sh$/,
   /^plugins\/node\//,
+  /^sample\//,
   /^src\//,
+  /^scripts\/benchmark-node-runtime\.mjs$/,
+  /^scripts\/tarball-smoke\.mjs$/,
   /^tests\/types\//,
   /^package\.json$/,
   /^bun\.lock$/,
@@ -24,12 +28,12 @@ const NODE_PACKAGE_PATHS = [
   /^vite\.config\.ts$/,
 ];
 
-const PPTX_BENCHMARK_PATHS = [
+const DIRECT_PPTX_BENCHMARK_PATHS = [
   /^\.github\/workflows\/ci\.yml$/,
-  /^src\/writers\/pptx\//,
-  /^src\/projection\/pptx\//,
-  /^src\/pipeline(?:-|\.|$)/,
-  /^src\/adapter\.ts$/,
+  /^src\/writers\/pptx(?:\.ts|\/)/,
+  /^src\/projection\/pptx(?:\.ts|\/)/,
+  /^src\/pipeline(?:\/|-|\.|$)/,
+  /^src\/adapter(?:\.ts|\/)/,
   /^tests\/pptx\//,
   /^scripts\/benchmark-pptx-writer\.tsx$/,
   /^\.github\/scripts\/benchmark-pptx-with-diagnostics\.sh$/,
@@ -45,12 +49,12 @@ function matchesAny(path, patterns) {
   return patterns.some((pattern) => pattern.test(path));
 }
 
-export function classifyCiScope(changedPaths) {
+function classifyCiScope(changedPaths) {
   const paths = changedPaths.map(normalizePath).filter(Boolean);
   const docsOnly = paths.length > 0 && paths.every((path) => MARKDOWN_PATH_RE.test(path));
 
   return {
-    benchmark: !docsOnly && paths.some((path) => matchesAny(path, PPTX_BENCHMARK_PATHS)),
+    benchmark: !docsOnly && paths.some((path) => matchesAny(path, DIRECT_PPTX_BENCHMARK_PATHS)),
     core: !docsOnly && paths.some((path) => matchesAny(path, ROOT_CORE_PATHS)),
     docsOnly,
     node: !docsOnly && paths.some((path) => matchesAny(path, NODE_PACKAGE_PATHS)),

@@ -9,8 +9,9 @@ describe("direct pptx writer stroke and shape output", () => {
       <>
         <p
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 3,
             height: 0.75,
             textShadow: "4px 4px 8px rgba(37, 99, 235, 0.5)",
@@ -21,8 +22,9 @@ describe("direct pptx writer stroke and shape output", () => {
         <shape
           shape="rect"
           style={{
-            x: 1,
-            y: 2,
+            position: "absolute",
+            left: 1,
+            top: 2,
             width: 2,
             height: 1,
             fill: "#F97316",
@@ -31,7 +33,14 @@ describe("direct pptx writer stroke and shape output", () => {
         />
         <img
           data={H.SAMPLE_SVG_DATA_URI}
-          style={{ x: 4, y: 1, width: 1.5, height: 1.5, boxShadow: "3px 3px 6px rebeccapurple" }}
+          style={{
+            position: "absolute",
+            left: 4,
+            top: 1,
+            width: 1.5,
+            height: 1.5,
+            boxShadow: "3px 3px 6px #663399",
+          }}
         />
       </>
     ));
@@ -57,13 +66,13 @@ describe("direct pptx writer stroke and shape output", () => {
         <shape
           shape="rect"
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 1.5,
             height: 0.75,
             fill: "#F97316",
-            stroke: "dodgerblue",
-            strokeWidth: "3pt",
+            stroke: "3pt solid dodgerblue",
             strokeDasharray: "1 4",
           }}
         />
@@ -88,8 +97,9 @@ describe("direct pptx writer stroke and shape output", () => {
         <shape
           shape="rect"
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 1.5,
             height: 0.75,
             fill: "#F97316",
@@ -118,8 +128,9 @@ describe("direct pptx writer stroke and shape output", () => {
         <shape
           shape="rect"
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 1.5,
             height: 0.75,
             fill: "#F97316",
@@ -148,13 +159,13 @@ describe("direct pptx writer stroke and shape output", () => {
         <shape
           shape="rect"
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 1.5,
             height: 0.75,
             fill: "#F97316",
-            stroke: "dodgerblue",
-            strokeWidth: "3pt",
+            stroke: "3pt solid dodgerblue",
             strokeLinecap: "square",
             strokeLinejoin: "bevel",
           }}
@@ -179,8 +190,9 @@ describe("direct pptx writer stroke and shape output", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
             backgroundColor: "#F8FAFC",
@@ -189,8 +201,9 @@ describe("direct pptx writer stroke and shape output", () => {
         />
         <p
           style={{
-            x: 3.5,
-            y: 1,
+            position: "absolute",
+            left: 3.5,
+            top: 1,
             width: 2,
             height: 1,
             backgroundColor: "#E0F2FE",
@@ -201,12 +214,21 @@ describe("direct pptx writer stroke and shape output", () => {
         </p>
         <shape
           shape="rect"
-          style={{ x: 6, y: 1, width: 2, height: 1, fill: "#DCFCE7", radius: 0.375 }}
+          style={{
+            position: "absolute",
+            left: 6,
+            top: 1,
+            width: 2,
+            height: 1,
+            fill: "#DCFCE7",
+            borderRadius: 0.375,
+          }}
         />
         <div
           style={{
-            x: 1,
-            y: 2.5,
+            position: "absolute",
+            left: 1,
+            top: 2.5,
             width: 2,
             height: 1,
             backgroundColor: "#FEE2E2",
@@ -236,6 +258,26 @@ describe("direct pptx writer stroke and shape output", () => {
     expect(capsuleBlock).toContain('<a:gd name="adj" fmla="val 50000"/>');
   });
 
+  test("output accepts roundRect as a shape geometry alias", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Round rect shape alias" }, () => (
+      <shape
+        shape="roundRect"
+        style={{ position: "absolute", left: 1, top: 1, width: 2, height: 1, fill: "#DCFCE7" }}
+      />
+    ));
+
+    const content = await H.renderDeckBytes(deck);
+
+    const zip = H.unzipSync(content);
+    const slideXml = H.zipEntry(zip, "ppt/slides/slide1.xml");
+    const shapeBlocks: string[] = slideXml?.match(/<p:sp>[\s\S]*?<\/p:sp>/g) ?? [];
+    const shapeBlock = shapeBlocks.find((block) => block.includes('val="DCFCE7"'));
+
+    expect(shapeBlock).toContain('<a:prstGeom prst="roundRect">');
+  });
+
   test("output keeps XML fill and line patches aligned when generated shapes are interleaved", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
@@ -243,28 +285,27 @@ describe("direct pptx writer stroke and shape output", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 3,
             height: 2,
             outline: "2pt solid #111111",
             borderTop: "3pt solid #222222",
             border: "2pt solid #1E90FF",
             background: "linear-gradient(90deg, #EF4444 0%, #F59E0B 100%)",
-            strokeLinecap: "square",
-            strokeLinejoin: "bevel",
           }}
         >
           <shape
             shape="rect"
             style={{
-              x: 0.5,
-              y: 0.5,
+              position: "absolute",
+              left: 0.5,
+              top: 0.5,
               width: 1,
               height: 0.75,
               fill: "linear-gradient(180deg, #22C55E 0%, #0EA5E9 100%)",
-              stroke: "#9333EA",
-              strokeWidth: "2pt",
+              stroke: "2pt solid #9333EA",
               strokeLinecap: "round",
             }}
           />
@@ -301,8 +342,8 @@ describe("direct pptx writer stroke and shape output", () => {
     expect(backgroundLayerBlock).not.toContain('cap="sq"');
     expect(mainShapeBlock).toContain("<a:gradFill");
     expect(mainShapeBlock).toContain('cap="rnd"');
-    expect(viewStrokeBlock).toContain('cap="sq"');
-    expect(viewStrokeBlock).toContain("<a:bevel/>");
+    expect(viewStrokeBlock).not.toContain('cap="sq"');
+    expect(viewStrokeBlock).not.toContain("<a:bevel/>");
     expect(outlineBlock).not.toContain('val="EF4444"');
     expect(topEdgeBlock).not.toContain('val="22C55E"');
     expect(blockIndex(backgroundLayerBlock)).toBeLessThan(blockIndex(topEdgeBlock));

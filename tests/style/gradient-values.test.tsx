@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck } from "../../src/index.ts";
+import { Deck } from "../helpers.ts";
 
 describe("gradient-values", () => {
   test("render supports radial-gradient fills", async () => {
@@ -17,8 +17,9 @@ describe("gradient-values", () => {
         <>
           <div
             style={{
-              x: 1,
-              y: 1,
+              position: "absolute",
+              left: 1,
+              top: 1,
               width: 2,
               height: 2,
               background:
@@ -27,8 +28,9 @@ describe("gradient-values", () => {
           />
           <p
             style={{
-              x: 1,
-              y: 3,
+              position: "absolute",
+              left: 1,
+              top: 3,
               width: 3,
               height: 0.75,
               fontSize: 18,
@@ -41,8 +43,9 @@ describe("gradient-values", () => {
           <shape
             shape="rect"
             style={{
-              x: 5,
-              y: 1,
+              position: "absolute",
+              left: 5,
+              top: 1,
               width: 2,
               height: 2,
               background: "radial-gradient(circle 40% at 20% 30%, #EF4444 0%, #F59E0B 100%)",
@@ -126,8 +129,9 @@ describe("gradient-values", () => {
         <>
           <div
             style={{
-              x: 1,
-              y: 1,
+              position: "absolute",
+              left: 1,
+              top: 1,
               width: 2,
               height: 2,
               background:
@@ -177,8 +181,9 @@ describe("gradient-values", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
             background: "linear-gradient(90deg, #111111 0in, #777777 1in, #EEEEEE 2in)",
@@ -186,8 +191,9 @@ describe("gradient-values", () => {
         />
         <div
           style={{
-            x: 4,
-            y: 1,
+            position: "absolute",
+            left: 4,
+            top: 1,
             width: 2,
             height: 2,
             background:
@@ -238,8 +244,9 @@ describe("gradient-values", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
             background: "linear-gradient(90deg, #FF0000 0 50%, 75%, #0000FF 100%)",
@@ -279,8 +286,9 @@ describe("gradient-values", () => {
         <>
           <div
             style={{
-              x: 1,
-              y: 1,
+              position: "absolute",
+              left: 1,
+              top: 1,
               width: 3,
               height: 1.5,
               background: "linear-gradient(to bottom, #22C55E 0%, rgba(14, 165, 233, 0.5) 100%)",
@@ -288,8 +296,9 @@ describe("gradient-values", () => {
           />
           <p
             style={{
-              x: 1,
-              y: 3,
+              position: "absolute",
+              left: 1,
+              top: 3,
               width: 3,
               height: 0.75,
               fontSize: 18,
@@ -301,8 +310,9 @@ describe("gradient-values", () => {
           <shape
             shape="rect"
             style={{
-              x: 5,
-              y: 1,
+              position: "absolute",
+              left: 5,
+              top: 1,
               width: 2,
               height: 2,
               fill: "linear-gradient(45deg, #EF4444 0%, #F59E0B 100%)",
@@ -371,8 +381,9 @@ describe("gradient-values", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
             background: "radial-gradient(circle 10% 20% at center, #FFFFFF 0%, #000000 100%)",

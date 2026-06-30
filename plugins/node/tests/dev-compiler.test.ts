@@ -11,6 +11,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { unzipSync } from "fflate";
 import { describe, expect, test } from "vite-plus/test";
 import { Deck } from "deckjsx";
 import { pptx } from "deckjsx/adapter";
@@ -24,22 +25,24 @@ import {
   classifyDevWrites,
   devOutputIgnoreFiles,
   normalizeDevOutputPaths,
-} from "../src/tracked-output-coordinator.ts";
-import { createDevArtifactPlanApplier } from "../src/dev-artifact-plan-applier.ts";
+} from "@/src/tracked-output-coordinator.ts";
+import { createDevArtifactPlanApplier } from "@/src/dev-artifact-plan-applier.ts";
 import {
   createDevModuleGraphSnapshot,
   filterChangedSourceIdsForDevGraph,
-} from "../src/dev-module-graph.ts";
-import { createDevChangeScheduler } from "../src/dev-change-scheduler.ts";
-import { createEntryExecutionHost } from "../src/entry-execution-host.ts";
-import { bundleFailedDiagnosticFromError } from "../src/dev-diagnostics.ts";
+} from "@/src/dev-module-graph.ts";
+import { createDevChangeScheduler } from "@/src/dev-change-scheduler.ts";
+import { createEntryExecutionHost } from "@/src/entry-execution-host.ts";
+import { bundleFailedDiagnosticFromError } from "@/src/dev-diagnostics.ts";
 import {
   createRolldownWatchAdapter,
   createRolldownWatchOptions,
-} from "../src/rolldown-watch-adapter.ts";
-import { createDeckjsxDevCompiler } from "../src/dev-compiler.ts";
-import { observeDeckjsxDevAssetFile } from "../src/dev-asset-observer.ts";
-import type { DevAssetFileWatcher } from "../src/dev-asset-file-watcher.ts";
+} from "@/src/rolldown-watch-adapter.ts";
+import { createDeckjsxDevCompiler } from "@/src/dev-compiler.ts";
+import { observeDeckjsxDevAssetFile } from "@/src/dev-asset-observer.ts";
+import type { DevAssetFileWatcher } from "@/src/dev-asset-file-watcher.ts";
+
+const textDecoder = new TextDecoder();
 
 type TestWriteResult =
   | { readonly status: "created" }
@@ -631,11 +634,11 @@ describe("@deckjsx/node dev diagnostics", () => {
       bundleFailedDiagnosticFromError(
         [
           "[PARSE_ERROR] Unexpected token",
-          "   ╭─[ main.tsx:9:24 ]",
+          "   ╭─[ main.tsx:9:20 ]",
           "   │",
-          " 9 │   <p style={{ x: 1, y: }}>",
-          "   │                        ┬",
-          "   │                        ╰──",
+          " 9 │   <p style={{ left: }}>",
+          "   │                    ┬",
+          "   │                    ╰──",
           "───╯",
         ].join("\n"),
         "/project/src/main.tsx",
@@ -648,8 +651,8 @@ describe("@deckjsx/node dev diagnostics", () => {
       primary: {
         file: "/project/src/main.tsx",
         line: 9,
-        column: 24,
-        sourceLine: "  <p style={{ x: 1, y: }}>",
+        column: 20,
+        sourceLine: "  <p style={{ left: }}>",
         spanLength: 1,
       },
       labels: [{ message: "while bundling this source" }],
@@ -767,6 +770,27 @@ describe("@deckjsx/node rolldown watch adapter", () => {
 
     expect(options.transform?.jsx?.importSource).toBeUndefined();
     await rm(cwd, { force: true, recursive: true });
+  });
+
+  test("does not override a deckjsx jsxImportSource inherited from a parent tsconfig", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "deckjsx-watch-options-"));
+    const cwd = path.join(root, "slides");
+    await mkdir(cwd);
+    await writeFile(
+      path.join(root, "tsconfig.json"),
+      JSON.stringify({ compilerOptions: { jsxImportSource: "deckjsx" } }),
+    );
+
+    const options = createRolldownWatchOptions({
+      cwd,
+      entry: "main.tsx",
+      onBuildStart() {},
+      onModuleId() {},
+      onWatchChange() {},
+    }) as { readonly transform?: { readonly jsx?: { readonly importSource?: string } } };
+
+    expect(options.transform?.jsx?.importSource).toBeUndefined();
+    await rm(root, { force: true, recursive: true });
   });
 
   test("defaults TSX JSX imports to deckjsx when tsconfig does not declare an import source", () => {
@@ -1327,7 +1351,7 @@ describe("@deckjsx/node dev compiler", () => {
         'import { jsx } from "deckjsx/jsx-runtime";',
         "module.exports = (async () => {",
         '  const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });',
-        '  deck.slide({ name: "Dev smoke" }, () => jsx("p", { style: { x: 1, y: 1, width: 5, height: 0.5 }, children: "dev smoke" }));',
+        '  deck.slide({ name: "Dev smoke" }, () => jsx("main", { style: { width: 9, height: 4.5, display: "flex", flexDirection: "column", gap: 0.15, padding: 0.5 }, children: jsx("p", { style: { width: 5, height: 0.5 }, children: "dev smoke" }) }));',
         '  await write(await deck.render(pptx()), "output.pptx");',
         "})();",
       ].join("\n"),
@@ -1361,6 +1385,76 @@ describe("@deckjsx/node dev compiler", () => {
           result: expect.objectContaining({ status: "created" }),
         },
       ]);
+    } finally {
+      await compiler.close();
+      await rm(cwd, { force: true, recursive: true });
+    }
+  });
+
+  test("updates composed multi-Deck output through real dev compilations", async () => {
+    const cwd = await mkdtemp(path.join(process.cwd(), ".deckjsx-dev-smoke-"));
+    const entryPath = path.join(cwd, "entry.cts");
+    const outputPath = path.join(cwd, "output.pptx");
+    const entrySource = (childColor: string) =>
+      [
+        'import { write } from "@deckjsx/node";',
+        'import { Deck, StyleSheet } from "deckjsx";',
+        'import { pptx } from "deckjsx/adapter";',
+        'import { jsx } from "deckjsx/jsx-runtime";',
+        "module.exports = (async () => {",
+        '  const parent = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });',
+        '  const child = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });',
+        '  parent.useStyles(new StyleSheet({ classes: { note: { target: "p.note", style: { color: "#FF0000" } } } }));',
+        `  child.useStyles(new StyleSheet({ classes: { note: { target: "p.note", style: { color: "${childColor}" } } } }));`,
+        '  parent.slide({ name: "Parent" }, () => jsx("p", { className: "note", style: { position: "absolute", left: 1, top: 1, width: 4, height: 0.6 }, children: "Parent note" }));',
+        '  child.slide({ name: "Child" }, () => jsx("p", { className: "note", style: { position: "absolute", left: 1, top: 1, width: 4, height: 0.6 }, children: "Child note" }));',
+        '  parent.mount("child", child);',
+        '  await write(await parent.render(pptx({ inspection: "none" })), "output.pptx");',
+        "})();",
+      ].join("\n");
+    const childSlideXml = async () => {
+      const zip = unzipSync(await readFile(outputPath));
+      return textDecoder.decode(zip["ppt/slides/slide2.xml"]);
+    };
+
+    await mkdir(path.join(cwd, "node_modules", "@deckjsx"), { recursive: true });
+    await symlink(path.resolve("../.."), path.join(cwd, "node_modules", "deckjsx"), "dir");
+    await symlink(
+      path.resolve("plugins/node"),
+      path.join(cwd, "node_modules", "@deckjsx", "node"),
+      "dir",
+    );
+    await writeFile(entryPath, entrySource("#0000FF"));
+
+    const compiler = createDeckjsxDevCompiler({
+      cwd,
+      entry: "entry.cts",
+      out: "output.pptx",
+    });
+    try {
+      compiler.start();
+      const first = await compiler.runNextCompilation();
+      if (!first.ok) {
+        throw new Error(
+          `expected first multi-Deck dev compilation to succeed: ${JSON.stringify(first.diagnostics)}`,
+        );
+      }
+      expect(await childSlideXml()).toContain('<a:srgbClr val="0000FF"/>');
+
+      await writeFile(entryPath, entrySource("#00AA00"));
+      compiler.invalidate([entryPath]);
+      const second = await compiler.runNextCompilation();
+      if (!second.ok) {
+        throw new Error(
+          `expected second multi-Deck dev compilation to succeed: ${JSON.stringify(second.diagnostics)}`,
+        );
+      }
+
+      const secondChildSlideXml = await childSlideXml();
+      expect(second.status).toBe("artifactUpdated");
+      expect(secondChildSlideXml).toContain("Child note");
+      expect(secondChildSlideXml).toContain('<a:srgbClr val="00AA00"/>');
+      expect(secondChildSlideXml).not.toContain('<a:srgbClr val="0000FF"/>');
     } finally {
       await compiler.close();
       await rm(cwd, { force: true, recursive: true });

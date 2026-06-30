@@ -9,8 +9,9 @@ describe("stack layout flex sizing and display", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 6.5,
             height: 1.5,
             display: "flex",
@@ -24,8 +25,9 @@ describe("stack layout flex sizing and display", () => {
         </div>
         <div
           style={{
-            x: 1,
-            y: 3,
+            position: "absolute",
+            left: 1,
+            top: 3,
             width: 4.5,
             height: 1.5,
             display: "flex",
@@ -41,7 +43,9 @@ describe("stack layout flex sizing and display", () => {
     ));
 
     expect(
-      H.summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+      H.summarizeNodes(
+        H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children,
+      ),
     ).toEqual([
       {
         kind: "group",
@@ -119,8 +123,9 @@ describe("stack layout flex sizing and display", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 3,
             display: "flex",
@@ -129,14 +134,20 @@ describe("stack layout flex sizing and display", () => {
           }}
         >
           <p style={{ width: 2, height: 0.5, fontSize: 18 }}>A</p>
-          <p style={{ display: "none", width: 2, height: 0.75, fontSize: 18 }}>Hidden</p>
+          <p
+            style={{ position: "absolute", display: "none", width: 2, height: 0.75, fontSize: 18 }}
+          >
+            Hidden
+          </p>
           <p style={{ width: 2, height: 0.5, fontSize: 18 }}>B</p>
         </div>
       </>
     ));
 
     expect(
-      H.summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+      H.summarizeNodes(
+        H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children,
+      ),
     ).toEqual([
       {
         kind: "group",

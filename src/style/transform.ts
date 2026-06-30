@@ -305,6 +305,20 @@ function parseTransformNumberArgument(value: string) {
   return parsed;
 }
 
+function parseTransformAngleArgument(value: string) {
+  const trimmed = value.trim();
+  if (!/^[-+]?(?:\d+|\d*\.\d+)(?:deg|rad|turn)?$/i.test(trimmed)) {
+    throw new Error(`Unsupported transform angle: ${value}`);
+  }
+
+  const angle = normalizeHue(trimmed);
+  if (angle === undefined || !Number.isFinite(angle)) {
+    throw new Error(`Unsupported transform angle: ${value}`);
+  }
+
+  return angle;
+}
+
 function parseTransformLengthArgument(value: string): DeckLength {
   const trimmed = value.trim();
   if (trimmed === "0") {
@@ -367,14 +381,9 @@ export function parseTransformShorthand(value?: string): ParsedTransformOperatio
           `${name}() requires exactly one angle value.`,
         );
 
-        const angle = normalizeHue(arg);
-        if (angle === undefined || !Number.isFinite(angle)) {
-          throw new Error(`Unsupported transform angle: ${arg}`);
-        }
-
         operations.push({
           kind: "rotate",
-          angle,
+          angle: parseTransformAngleArgument(arg),
         });
         break;
       }
@@ -471,14 +480,9 @@ export function parseTransformShorthand(value?: string): ParsedTransformOperatio
           "skewX() requires exactly one angle value.",
         );
 
-        const angle = normalizeHue(arg);
-        if (angle === undefined || !Number.isFinite(angle)) {
-          throw new Error(`Unsupported transform angle: ${arg}`);
-        }
-
         operations.push({
           kind: "skew",
-          x: angle,
+          x: parseTransformAngleArgument(arg),
           y: 0,
         });
         break;
@@ -490,15 +494,10 @@ export function parseTransformShorthand(value?: string): ParsedTransformOperatio
           "skewY() requires exactly one angle value.",
         );
 
-        const angle = normalizeHue(arg);
-        if (angle === undefined || !Number.isFinite(angle)) {
-          throw new Error(`Unsupported transform angle: ${arg}`);
-        }
-
         operations.push({
           kind: "skew",
           x: 0,
-          y: angle,
+          y: parseTransformAngleArgument(arg),
         });
         break;
       }
@@ -509,16 +508,10 @@ export function parseTransformShorthand(value?: string): ParsedTransformOperatio
           "skew() requires one or two angle values.",
         );
 
-        const x = normalizeHue(xArg);
-        const y = normalizeHue(yArg ?? "0deg");
-        if (x === undefined || y === undefined || !Number.isFinite(x) || !Number.isFinite(y)) {
-          throw new Error(`Unsupported transform angle: ${rawArgs}`);
-        }
-
         operations.push({
           kind: "skew",
-          x,
-          y,
+          x: parseTransformAngleArgument(xArg),
+          y: parseTransformAngleArgument(yArg ?? "0deg"),
         });
         break;
       }

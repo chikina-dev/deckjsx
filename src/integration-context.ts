@@ -1,5 +1,5 @@
 import type { AssetLoader } from "./assets";
-import type { DeckPlugin } from "./plugin";
+import { validDeckPlugins } from "./plugin";
 import type { MediaSourceOrigin } from "./media-source-origin";
 
 type Brand<T, B extends string> = T & { readonly __brand: B };
@@ -17,9 +17,11 @@ export function integrationContextId(value: string): IntegrationContextId {
 }
 
 export function integrationContextsFromPlugins(
-  plugins: readonly DeckPlugin[] | undefined,
+  plugins: readonly unknown[] | undefined,
 ): readonly DeckIntegrationContext[] {
-  return (plugins ?? []).flatMap((plugin) => (plugin.integration ? [plugin.integration] : []));
+  return validDeckPlugins(plugins).flatMap((plugin) =>
+    plugin.integration ? [plugin.integration] : [],
+  );
 }
 
 export function mergeIntegrationContexts(
@@ -46,7 +48,7 @@ export function mergeIntegrationContexts(
 }
 
 export function integrationContextFromPlugins(
-  plugins: readonly DeckPlugin[] | undefined,
+  plugins: readonly unknown[] | undefined,
 ): DeckIntegrationContext | undefined {
   return mergeIntegrationContexts(integrationContextsFromPlugins(plugins));
 }

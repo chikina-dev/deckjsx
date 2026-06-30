@@ -4,10 +4,10 @@ import type {
   PptxRelationshipsPart,
   PptxRelationshipsPayload,
   PptxRelationship,
-} from "../../projection/pptx/model";
+} from "@/src/projection/pptx/model";
 import { XmlChunkWriter } from "./xml-writer";
 
-export { relationshipOwnerPath } from "../../projection/pptx/relationships";
+export { relationshipOwnerPath } from "@/src/projection/pptx/relationships";
 
 const RELATIONSHIP_TYPES: Record<string, string> = {
   coreProperties:

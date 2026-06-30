@@ -183,6 +183,12 @@ jobs:
         working-directory: plugins/node
         run: ../../node_modules/.bin/vp pack
 
+      - name: Install sample dependencies
+        run: npm install --no-audit --no-fund --prefix sample
+
+      - name: Smoke test public sample
+        run: npm run --prefix sample smoke
+
       - name: Test @deckjsx/node
         working-directory: plugins/node
         run: ../../node_modules/.bin/vp test
@@ -201,6 +207,9 @@ jobs:
 
       - name: Compare direct PPTX writer with oracle
         run: npm run --prefix .github/compat/pptxgenjs compare
+
+      - name: Smoke test packed packages
+        run: bun run smoke:tarball
 
       - name: Pack selected package
         working-directory: ${{ steps.release.outputs.package_dir }}

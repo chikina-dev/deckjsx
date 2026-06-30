@@ -10,8 +10,8 @@ import {
   parseInteractiveInputLine,
   runInteractiveDevCommandLoop,
   updateInteractivePromptState,
-} from "../src/interactive/repl.ts";
-import type { InteractiveDevSession } from "../src/interactive/session.ts";
+} from "@/src/interactive/repl.ts";
+import type { InteractiveDevSession } from "@/src/interactive/session.ts";
 
 async function* lines(input: readonly string[]): AsyncIterable<string> {
   for (const line of input) {

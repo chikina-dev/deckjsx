@@ -1,11 +1,11 @@
-import type { DeckOptions } from "../../authoring/index";
-import type { AssetEntityId, GraphNodeId, SemanticAuthorGraph, StyleEntityId } from "../../graph";
+import type { DeckOptions } from "@/src/authoring/options";
+import type { AssetEntityId, GraphNodeId, SemanticAuthorGraph, StyleEntityId } from "@/src/graph";
 import type {
   AssetArtifact,
   DefinedGraphArtifact,
   DefinedProjectionArtifact,
-} from "../../pipeline-artifacts";
-import type { ResolvedStyleMap } from "../../style/resolve";
+} from "@/src/pipeline/artifacts";
+import type { ResolvedStyleMap } from "@/src/style/resolve";
 import type { SlideProjectionFingerprintSnapshot } from "./artifact";
 import { fingerprintString, stableJson } from "./fingerprint";
 import { isPptxPackageModel, type PptxPackageModel } from "./model";

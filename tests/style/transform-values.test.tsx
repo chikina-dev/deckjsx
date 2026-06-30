@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck } from "../../src/index.ts";
+import { Deck } from "../helpers.ts";
 
 describe("transform-values", () => {
   test("render normalizes transform rotate, translate, scale, and mirror aliases", async () => {
@@ -9,8 +9,9 @@ describe("transform-values", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
             transform: "rotate(15deg) translate(50%, 25%) scaleX(-1)",
@@ -18,8 +19,9 @@ describe("transform-values", () => {
         />
         <p
           style={{
-            x: 1,
-            y: 2.5,
+            position: "absolute",
+            left: 1,
+            top: 2.5,
             width: 2,
             height: 0.75,
             fontSize: 18,
@@ -31,8 +33,9 @@ describe("transform-values", () => {
         <shape
           shape="rect"
           style={{
-            x: 4,
-            y: 1,
+            position: "absolute",
+            left: 4,
+            top: 1,
             width: 1.5,
             height: 1.5,
             fill: "#2563EB",
@@ -41,7 +44,14 @@ describe("transform-values", () => {
         />
         <img
           src="/tmp/transform.png"
-          style={{ x: 6, y: 1, width: 1, height: 1, transform: "rotate(1rad) scale(-1, -1)" }}
+          style={{
+            position: "absolute",
+            left: 6,
+            top: 1,
+            width: 1,
+            height: 1,
+            transform: "rotate(1rad) scale(-1, -1)",
+          }}
         />
       </>
     ));
@@ -106,8 +116,9 @@ describe("transform-values", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
             transformOrigin: "left top",
@@ -117,8 +128,9 @@ describe("transform-values", () => {
         <shape
           shape="rect"
           style={{
-            x: 4,
-            y: 1,
+            position: "absolute",
+            left: 4,
+            top: 1,
             width: 2,
             height: 1,
             fill: "#2563EB",
@@ -128,8 +140,9 @@ describe("transform-values", () => {
         />
         <div
           style={{
-            x: 1,
-            y: 3,
+            position: "absolute",
+            left: 1,
+            top: 3,
             width: 2,
             height: 1,
             transformOrigin: "left top",
@@ -139,8 +152,9 @@ describe("transform-values", () => {
         <shape
           shape="rect"
           style={{
-            x: 4,
-            y: 3,
+            position: "absolute",
+            left: 4,
+            top: 3,
             width: 1,
             height: 1,
             fill: "#10B981",
@@ -150,8 +164,9 @@ describe("transform-values", () => {
         />
         <div
           style={{
-            x: 6,
-            y: 1,
+            position: "absolute",
+            left: 6,
+            top: 1,
             width: 2,
             height: 1,
             transformOrigin: "left top",
@@ -203,39 +218,32 @@ describe("transform-values", () => {
     expect(matrix?.rotation).toBeUndefined();
   });
 
-  test("project warns and preserves unsupported transform functions", async () => {
+  test("project rejects unsupported transform functions", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Unsupported transform" }, () => (
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
-            transform: "matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)",
+            transform: "matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)" as never,
           }}
         />
       </>
     ));
 
     const result = await deck.project();
-    const [view] = result.projection!.slides[0].payload.drawing.children;
 
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
     expect(result.diagnostics.items).toContainEqual(
       expect.objectContaining({
-        code: "W_PROJECT_UNSUPPORTED_PPTX_SEMANTIC",
-        severity: "warning",
-        message: "Unsupported transform function: matrix3d",
-      }),
-    );
-    expect(view?.unsupportedSemantics).toContainEqual(
-      expect.objectContaining({
-        feature: "transform",
-        property: "transform",
-        reason: "Unsupported transform function: matrix3d",
+        code: "E_COMPILE_INVALID_STYLE_VALUE",
+        severity: "error",
+        message: expect.stringContaining("transform value is not part of the public authoring API"),
       }),
     );
   });

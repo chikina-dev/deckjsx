@@ -15,7 +15,10 @@ describe("project/render asset diagnostics", () => {
     });
     deck.slide({ name: "Broken probe" }, () => (
       <>
-        <img src="/public/broken.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+        <img
+          src="/public/broken.png"
+          style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+        />
       </>
     ));
 
@@ -43,7 +46,10 @@ describe("project/render asset diagnostics", () => {
   test("project reports missing integration context for project-local path sources", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Missing context" }, () => (
-      <img src="./local.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        src="./local.png"
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     const project = await H.projectSource({
@@ -74,7 +80,10 @@ describe("project/render asset diagnostics", () => {
     });
     deck.slide({ name: "Invalid probe" }, () => (
       <>
-        <img src="/public/invalid-probe.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+        <img
+          src="/public/invalid-probe.png"
+          style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+        />
       </>
     ));
 
@@ -110,7 +119,10 @@ describe("project/render asset diagnostics", () => {
     });
     deck.slide({ name: "Incomplete probe" }, () => (
       <>
-        <img src="/public/dimensionless.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+        <img
+          src="/public/dimensionless.png"
+          style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+        />
       </>
     ));
 
@@ -154,7 +166,10 @@ describe("project/render asset diagnostics", () => {
     });
     deck.slide({ name: "Broken load" }, () => (
       <>
-        <img src="/public/broken.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+        <img
+          src="/public/broken.png"
+          style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+        />
       </>
     ));
 
@@ -205,7 +220,10 @@ describe("project/render asset diagnostics", () => {
     });
     deck.slide({ name: "Invalid load" }, () => (
       <>
-        <img src="/public/invalid-load.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+        <img
+          src="/public/invalid-load.png"
+          style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+        />
       </>
     ));
 
@@ -265,7 +283,10 @@ describe("project/render asset diagnostics", () => {
     };
     deck.slide({ name: "Probe warning" }, () => (
       <>
-        <img src="/public/probe-warning.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+        <img
+          src="/public/probe-warning.png"
+          style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+        />
       </>
     ));
 
@@ -330,7 +351,10 @@ describe("project/render asset diagnostics", () => {
     };
     deck.slide({ name: "Load warning" }, () => (
       <>
-        <img src="/public/load-warning.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+        <img
+          src="/public/load-warning.png"
+          style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+        />
       </>
     ));
 

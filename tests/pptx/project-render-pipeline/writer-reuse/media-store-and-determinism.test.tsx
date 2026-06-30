@@ -6,7 +6,10 @@ describe("project/render writer media store and determinism", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Media bytes" }, () => (
       <>
-        <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1, width: 1, height: 1 }} />
+        <img
+          data={H.SAMPLE_SVG_DATA_URI}
+          style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+        />
       </>
     ));
 
@@ -68,7 +71,7 @@ describe("project/render writer media store and determinism", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Store reuse" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 2, height: 0.5 }}>store</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 2, height: 0.5 }}>store</p>
       </>
     ));
 
@@ -93,7 +96,14 @@ describe("project/render writer media store and determinism", () => {
       <>
         <img
           data={H.dataUriFromBytes("image/png", H.pngHeaderBytes(2, 1))}
-          style={{ x: 1, y: 1, width: 2, height: 1, objectFit: "stretch" }}
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 2,
+            height: 1,
+            objectFit: "fill",
+          }}
         />
       </>
     ));
@@ -119,12 +129,20 @@ describe("project/render writer media store and determinism", () => {
         <>
           <img
             data={H.SAMPLE_SVG_DATA_URI}
-            style={{ x: 1, y: 1, width: 1.25, height: 1.25, fit: "stretch" }}
+            style={{
+              position: "absolute",
+              left: 1,
+              top: 1,
+              width: 1.25,
+              height: 1.25,
+              objectFit: "fill",
+            }}
           />
           <div
             style={{
-              x: 2.75,
-              y: 1,
+              position: "absolute",
+              left: 2.75,
+              top: 1,
               width: 3,
               height: 1.25,
               background: `url("${H.SAMPLE_SVG_DATA_URI}")`,

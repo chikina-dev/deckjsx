@@ -109,7 +109,9 @@ describe("direct pptx writer theme output", () => {
     });
 
     deck.slide({ name: "Theme reference serialization" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Theme reference</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
+        Theme reference
+      </p>
     ));
 
     const project = await deck.project();

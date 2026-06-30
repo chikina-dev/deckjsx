@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck } from "../../src/index.ts";
+import { Deck } from "../helpers.ts";
 import { WIDE_SVG_DATA_URI } from "../helpers.ts";
 
 describe("image-values", () => {
@@ -11,8 +11,9 @@ describe("image-values", () => {
         <img
           data={WIDE_SVG_DATA_URI}
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 1,
             height: 2,
             objectFit: "cover",
@@ -21,8 +22,9 @@ describe("image-values", () => {
         />
         <div
           style={{
-            x: 3,
-            y: 1,
+            position: "absolute",
+            left: 3,
+            top: 1,
             width: 2,
             height: 2,
             background:
@@ -57,35 +59,33 @@ describe("image-values", () => {
     });
   });
 
-  test("render reports unsupported objectPosition fallbacks", async () => {
+  test("render rejects unsupported objectPosition values", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Invalid image position" }, () => (
       <img
         data={WIDE_SVG_DATA_URI}
         style={{
-          x: 1,
-          y: 1,
+          position: "absolute",
+          left: 1,
+          top: 1,
           width: 2,
           height: 1,
-          objectPosition: "somewhere else",
+          objectPosition: "somewhere else" as never,
         }}
       />
     ));
 
-    const [imageNode] = (await deck.project()).projection!.slides[0].payload.drawing.children;
+    const result = await deck.project();
 
-    expect(imageNode?.kind).toBe("image");
-    if (imageNode?.kind !== "image") {
-      throw new Error("Expected image node.");
-    }
-    expect(imageNode.objectPosition).toEqual({ x: 0.5, y: 0.5 });
-    expect(imageNode.unsupportedSemantics).toContainEqual(
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.items).toContainEqual(
       expect.objectContaining({
-        feature: "image",
-        property: "objectPosition",
-        value: "somewhere else",
-        fallback: expect.objectContaining({ strategy: "preserveAuthoredValueOnly" }),
+        code: "E_COMPILE_INVALID_STYLE_VALUE",
+        severity: "error",
+        message: expect.stringContaining(
+          "objectPosition value is not part of the public authoring API",
+        ),
       }),
     );
   });
@@ -97,8 +97,9 @@ describe("image-values", () => {
       <img
         data={WIDE_SVG_DATA_URI}
         style={{
-          x: 1,
-          y: 1,
+          position: "absolute",
+          left: 1,
+          top: 1,
           width: 2,
           height: 1,
           objectFit: "fill",
@@ -115,7 +116,7 @@ describe("image-values", () => {
     expect(imageNode.fit).toBe("stretch");
   });
 
-  test("render reports unsupported css objectFit values with a safe fallback", async () => {
+  test("render rejects unsupported css objectFit values", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Object fit unsupported" }, () => (
@@ -123,8 +124,9 @@ describe("image-values", () => {
         data={WIDE_SVG_DATA_URI}
         style={
           {
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
             objectFit: "none",
@@ -133,19 +135,14 @@ describe("image-values", () => {
       />
     ));
 
-    const [imageNode] = (await deck.project()).projection!.slides[0].payload.drawing.children;
+    const result = await deck.project();
 
-    expect(imageNode?.kind).toBe("image");
-    if (imageNode?.kind !== "image") {
-      throw new Error("Expected image node.");
-    }
-    expect(imageNode.fit).toBe("contain");
-    expect(imageNode.unsupportedSemantics).toContainEqual(
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.items).toContainEqual(
       expect.objectContaining({
-        feature: "image",
-        property: "objectFit",
-        value: "none",
-        fallback: expect.objectContaining({ strategy: "preserveAuthoredValueOnly" }),
+        code: "E_COMPILE_INVALID_STYLE_VALUE",
+        severity: "error",
+        message: expect.stringContaining("objectFit value is not part of the public authoring API"),
       }),
     );
   });

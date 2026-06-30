@@ -2,8 +2,8 @@ import type {
   PptxBackgroundLayer,
   PptxElement,
   PptxGeneratedStrokeLayer,
-} from "../../projection/pptx/model";
-import type { FrameIR, StrokeIR } from "../../layout/projected";
+} from "@/src/projection/pptx/model";
+import type { FrameIR, StrokeIR } from "@/src/layout/projected";
 import { writeNonVisual, writeShapeProperties } from "./drawing-xml";
 import type { SlideImageRenderContext } from "./picture-xml";
 import { writeBackgroundPictureElements } from "./picture-xml";

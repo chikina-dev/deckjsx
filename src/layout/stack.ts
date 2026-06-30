@@ -3,7 +3,6 @@ import type {
   CssFlexWrap,
   CssJustifyContent,
   DeckLength,
-  StackAlignment,
   StackAxis,
 } from "../style/types";
 import { parseLength, type LengthResolutionContext } from "../style/length";
@@ -46,7 +45,7 @@ export type StackMetrics<TChild> = {
 };
 
 export function resolveJustifyOffset(
-  justifyContent: StackAlignment | CssJustifyContent | undefined,
+  justifyContent: CssJustifyContent | undefined,
   availableEmu: number,
   usedEmu: number,
   childCount: number,
@@ -81,10 +80,7 @@ export function resolveJustifyOffset(
   return { offsetEmu: 0, extraGapEmu: 0 };
 }
 
-export function resolveCrossOffset(
-  alignment: StackAlignment | CssAlignItems | undefined,
-  freeEmu: number,
-) {
+export function resolveCrossOffset(alignment: CssAlignItems | undefined, freeEmu: number) {
   if (alignment === "center") {
     return freeEmu / 2;
   }
@@ -97,7 +93,7 @@ export function resolveCrossOffset(
 }
 
 export function resolveCrossPlacement(
-  alignment: StackAlignment | CssAlignItems | undefined,
+  alignment: CssAlignItems | undefined,
   availableCross: number,
   childCross: number,
   hasExplicitCrossSize: boolean,

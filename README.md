@@ -31,6 +31,17 @@ The package currently targets PPTX output through deckjsx's direct PPTX writer. 
 surface is `deckjsx`; explicit writer selection lives in `deckjsx/adapter`; inspection helpers live
 in `deckjsx/inspect`; runtime filesystem writes live in `@deckjsx/node`.
 
+For Node.js or Bun projects that write PPTX files or use the resident dev watcher, install both
+packages:
+
+```bash
+bun install deckjsx @deckjsx/node
+```
+
+`deckjsx` owns authoring, compile/project/render, and writer adapters. `@deckjsx/node` owns
+filesystem output, Node local asset loading, and the `deckjsx` CLI binary used for commands such as
+`deckjsx dev`.
+
 ## Usage
 
 ```tsx
@@ -43,10 +54,17 @@ const deck = new Deck({
   meta: { title: "Quarterly Review", author: "deckjsx" },
   templates: {
     report: {
+      style: {
+        display: "grid",
+        gridTemplateAreas: ['"title"', '"body"', '"footer"'],
+        gridTemplateRows: ["0.8in", "1fr", "0.35in"],
+        rowGap: 0.35,
+        padding: 0.7,
+      },
       areas: {
-        title: { kind: "title", frame: { x: 0.7, y: 0.5, width: 11.9, height: 0.8 } },
-        body: { frame: { x: 0.7, y: 1.5, width: 11.9, height: 4.9 } },
-        footer: { frame: { x: 0.7, y: 6.9, width: 11.9, height: 0.3 } },
+        title: { kind: "title", style: { gridArea: "title" } },
+        body: { style: { gridArea: "body" } },
+        footer: { kind: "footer", style: { gridArea: "footer" } },
       },
     },
   },
@@ -61,15 +79,20 @@ const deck = new Deck({
 deck.useStyles(
   new StyleSheet({
     classes: {
-      review: { backgroundColor: "#F8FAFC" },
       title: { target: "h1.title", style: { width: "100%", height: 0.6 } },
       contentGrid: {
         target: "section.contentGrid",
         style: { display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 0.35 },
       },
       lead: { target: "p.lead", style: { lineHeight: 1.2 } },
-      chartFrame: { backgroundColor: "#E0F2FE", borderRadius: 0.15, padding: 0.25 },
-      chart: { width: "100%", height: "100%", fit: "contain" },
+      chartFrame: {
+        target: "figure.chartFrame",
+        style: { backgroundColor: "#E0F2FE", borderRadius: 0.15, padding: 0.25 },
+      },
+      chart: {
+        target: "img.chart",
+        style: { width: "100%", height: "100%", objectFit: "contain" },
+      },
       footerText: {
         target: "p.footerText",
         style: { width: "100%", height: 0.3, fontSize: 11, color: "#64748B", textAlign: "right" },
@@ -79,9 +102,9 @@ deck.useStyles(
 );
 
 deck.slide(
-  { name: "Quarterly Review", template: "report", className: "review" },
+  { name: "Quarterly Review", template: "report", style: { backgroundColor: "#F8FAFC" } },
   ({ composition, template }) => (
-    <main>
+    <>
       <h1 area={template.title} className="title">
         Quarterly Review
       </h1>
@@ -98,7 +121,7 @@ deck.slide(
       <p area={template.footer} className="footerText">
         {composition.slideIndex + 1} / {composition.totalSlides}
       </p>
-    </main>
+    </>
   ),
 );
 
@@ -111,12 +134,21 @@ const rendered = await deck.render(pptx());
 if (!rendered.ok) {
   throw new Error("PPTX render failed");
 }
-await write(rendered, "quarterly-review.pptx");
+const written = await write(rendered, "quarterly-review.pptx");
+if (!written.ok) {
+  throw new Error(written.diagnostics.map((item) => item.message).join("\n"));
+}
 ```
 
 Use `deck.compile()` for authoring semantics, `await deck.project()` for output-facing inspection,
 and `await deck.render(pptx())` for runtime-neutral PPTX bytes and patch metadata. Use
 `@deckjsx/node` when writing those rendered bytes to a filesystem path.
+
+`deck.render(pptx())` does not write to disk. It produces a render result containing PPTX bytes,
+diagnostics, and patch metadata. `write(rendered, path)` writes that artifact to disk and returns a
+result with `ok`, `status`, `strategy`, `bytesWritten`, `patchedParts`, and `diagnostics`. Successful
+statuses include `created`, `patched`, and `replaced`; check `written.ok` when you only need success
+or failure.
 
 When a hot path only needs the projected model or rendered artifact, inspection summaries can be
 skipped with `await deck.project({ inspection: "none" })` or
@@ -169,25 +201,30 @@ The lowercase `shape` element compiles to PPTX shapes:
 
 ```tsx
 <shape shape="rect" className="accentBlock" />
+<shape shape="roundRect" style={{ width: "100%", height: 1, fill: "#DCFCE7" }} />
 ```
+
+Supported shape values are `rect`, `roundRect`, `ellipse`, and `line`. You can also create a rounded
+rectangle with `shape="rect"` plus `style.borderRadius` when you need to control the corner size.
 
 ## Layout, Style, And Templates
 
 `deckjsx` keeps layout, style, and templates as separate authoring ideas even when they are written
 through JSX and CSS-like objects.
 
-- Layout describes where things are and how children flow: deck slide size, `x`, `y`, `width`,
-  `height`, `left`, `top`, `right`, `bottom`, `display`, flex, grid, gaps, padding, and stacking
-  order. Project resolves these values into concrete frames and paint order.
-- Style describes how resolved boxes are drawn: fills, borders, shadows, opacity, rotation, text
+- Layout describes where things are and how children flow: deck slide size, `width`, `height`,
+  `left`, `top`, `right`, `bottom`, `inset`, `display`, flex, grid, gaps, padding, and stacking
+  order. Project resolves these values into concrete frames and paint order. Element styles do not
+  use `x` or `y`.
+- Style describes how resolved boxes are drawn: fills, borders, shadows, opacity, transforms, text
   color, font, alignment, bullets, links, image fitting, and background layers.
 - Templates describe reusable slide structure: named areas such as `title`, `body`, `media`, or
   `footer` that authored JSX can target without exposing PowerPoint placeholder ids.
 
 Reusable layout and appearance should usually live in `StyleSheet` classes and `Theme` defaults.
 Use the JSX `style` prop for slide-local variations, data-dependent overrides, or one-off values
-that should stay close to the authored element. Direct style props exist in the current v0.8 surface,
-but they are not the preferred HTML/CSS-like authoring form and are planned to be removed in v0.8.1.
+that should stay close to the authored element. Direct style props such as `<p left={1}>` are not
+part of the public authoring interface.
 
 Templates should be used when the same semantic slide regions repeat across slides; layout should be
 used for per-slide geometry and flow; visual style should be used for appearance after the geometry
@@ -207,9 +244,9 @@ For each style-capable element, values are resolved in this order:
 3. Matching `StyleSheet` class rules registered with `deck.useStyles()`.
 4. Authored inline style from the JSX `style` object.
 
-Later layers replace earlier layers property by property. The v0.8 authoring surface still accepts
-some direct style props, but new examples should prefer `style={{ ... }}` for inline values because
-direct style props are planned for removal in v0.8.1.
+Later layers replace earlier layers property by property. Inline visual and layout values belong in
+`style={{ ... }}`; structural props such as `className`, `area`, `src`, `data`, `shape`, `colspan`,
+and `rowspan` remain regular JSX props.
 
 ```tsx
 import { Deck, StyleSheet, Theme } from "deckjsx";
@@ -226,7 +263,7 @@ const deck = new Deck({
 deck.useStyles(
   new StyleSheet({
     classes: {
-      muted: { color: "#64748B" },
+      muted: { target: "p.muted", style: { color: "#64748B" } },
       title: { target: "p.title", style: { color: "#0F172A", fontSize: 28, fontWeight: 700 } },
     },
   }),
@@ -239,8 +276,9 @@ In this example, `fontSize`, `fontWeight`, and `color` come from the matching `t
 theme default supplies any remaining `p` defaults. `className`
 token order is preserved for inspection, but it is not the priority rule for conflicting class
 styles. Class conflicts are resolved by selector specificity first, then stylesheet registration and
-rule order. Supported selectors are intentionally small: class selectors, tag/class compounds, and
-descendant selectors such as `.title`, `p.title`, or `.card .caption`.
+rule order. Supported typed selectors are intentionally small: tag/class compounds and descendant
+selectors whose rightmost selector names an authored tag, such as `p.title`, `div.card p.caption`,
+or `section.contentGrid p.lead`.
 
 Inline `span` text runs inherit text-related parent values such as `color`, `fontFamily`,
 `fontSize`, `fontWeight`, `lineHeight`, `letterSpacing`, `direction`, and wrapping controls. The
@@ -261,21 +299,28 @@ const deck = new Deck({
   layout: { width: 13.333, height: 7.5, unit: "in" },
   templates: {
     report: {
+      style: {
+        display: "grid",
+        gridTemplateAreas: ['"title"', '"body"'],
+        gridTemplateRows: ["0.8in", "1fr"],
+        rowGap: 0.3,
+        padding: 0.7,
+      },
       areas: {
-        title: { kind: "title", frame: { x: 0.7, y: 0.6, width: 8, height: 0.8 } },
-        body: { frame: { x: 0.7, y: 1.6, width: 8, height: 4.8 } },
+        title: { kind: "title", style: { gridArea: "title" } },
+        body: { style: { gridArea: "body" } },
       },
     },
   },
 });
 
 deck.slide({ template: "report" }, ({ template }) => (
-  <main>
+  <>
     <h1 area={template.title}>Quarterly Review</h1>
     <section area={template.body}>
       <p style={{ width: "100%", height: 0.5 }}>Performance highlights</p>
     </section>
-  </main>
+  </>
 ));
 ```
 
@@ -283,6 +328,9 @@ deck.slide({ template: "report" }, ({ template }) => (
 `"generic"`. Missing kinds default to `"generic"` and are not inferred from area names. Project keeps
 Template Area anchors visible in the Pptx Package Model inspection surface, while the writer decides
 how to serialize the corresponding PPTX slide layout structure.
+Template Areas are authored through flow styles. Put reusable region layout on the template root with
+grid or flex style, then give each area a public placement style such as `gridArea`. Fixed template
+frames are not part of the public authoring API.
 
 ## Assets
 
@@ -345,21 +393,27 @@ and an image with only `height` can derive its projected width. Author `aspectRa
 intentional crops, logos, or placeholder boxes. `aspectRatio: "auto"` is accepted as the CSS-like
 spelling for no authored ratio.
 
-For foreground images, use `objectFit` / `fit`, `objectPosition`, and `crop`. `objectFit: "fill"`
-uses the same projection as deckjsx's `stretch` fit; unsupported CSS values such as `"none"` and
-`"scale-down"` are preserved as diagnostics and fall back to `contain`:
+For foreground images, use `objectFit`, `objectPosition`, and `crop`. The public `objectFit`
+values are `contain`, `cover`, and `fill`; `fill` uses the same projection behavior as a stretched
+image. Values outside that public authoring set are type errors in TSX and compile diagnostics for
+JavaScript or casted input.
 
 ```tsx
-<img src="hero.png" style={{ x: 1, y: 1, width: 4 }} />
-<img src="portrait.png" style={{ x: 5.3, y: 1, width: 2, height: 2, objectFit: "cover" }} />
-<img src="map.png" style={{ x: 1, y: 3.4, width: 4, height: 1.6, objectPosition: "right 25% bottom 10%" }} />
+<section style={{ display: "grid", gridTemplateColumns: "2fr 1fr", columnGap: 0.3 }}>
+  <img src="hero.png" style={{ width: "100%", height: 2.4, objectFit: "cover" }} />
+  <img
+    src="portrait.png"
+    style={{ width: "100%", height: 2.4, objectFit: "cover", objectPosition: "center top" }}
+  />
+</section>
+<img src="map.png" style={{ width: "100%", height: 1.6, objectPosition: "right 25% bottom 10%" }} />
 ```
 
 For decorative or underlay images inside a box, use background layers with `backgroundSize`,
 `backgroundPosition`, `backgroundRepeat`, `backgroundClip`, and `backgroundOrigin`.
 
-Primitive string and number children inside view-like elements are normalized to implicit text
-nodes. Inline rich text uses `span` inside text-like elements:
+Primitive text belongs inside text-like elements such as `p` or `h1`; view-like elements contain
+authored elements. Inline rich text uses `span` inside text-like elements:
 
 ```tsx
 <p>
@@ -367,74 +421,70 @@ nodes. Inline rich text uses `span` inside text-like elements:
 </p>
 ```
 
-## View-like Layout Semantics
+## Authoring Model
 
-View-like elements are containing blocks for their children. Child `x`, `y`, `left`, `top`, `right`,
-`bottom`, `width`, and `height` values are resolved relative to the parent view-like element, not
-the slide, so authors can build panels with local coordinates. Percentage lengths use
-the parent frame as their reference.
+deckjsx authoring uses typed TSX elements, typed `style` objects, and typed StyleSheet/Theme
+definitions. Each tag accepts the props, children, and style group that belongs to that authored
+element. View tags accept view children, text tags accept text content, media and shape tags do not
+accept children, and table tags accept table-structured children.
 
-```tsx
-<div className="panel">
-  <p className="localPercentFrame">local percent frame</p>
-  <p className="insetFrame">inset frame</p>
-</div>
+## Layout Flow
+
+Unpositioned authored content participates in normal slide flow. View-like elements can use block,
+flex, or grid layout to build local regions, and text boxes receive flow-friendly defaults for
+available width and line-height based height. Numeric layout lengths are inches; font-size-like
+numbers are points. CSS unit strings are accepted only where the public style type allows a CSS-like
+length. For `display: "flex"` and `display: "grid"`, normal-flow children are laid out inside the
+content frame after padding. Use string grid track lists for one or two tracks, and arrays such as
+`gridTemplateColumns: ["1fr", "2in", "1fr"]` when a template has more tracks.
+
+## Positioning
+
+Absolute placement is explicit. Use `position: "absolute"` with `left`, `top`, `right`, `bottom`,
+`inset`, `width`, and `height` when a slide element needs fixed geometry. The public authoring style
+API does not include `x` or `y` style properties, and direct style props such as `<p left={1}>` are
+not public props. Template Areas should usually be modeled with grid or flex style on the template
+root and `gridArea` on named areas. View-like elements are containing blocks for absolute children,
+so positioned descendants resolve offsets against their parent content frame rather than the slide
+frame.
+
+## Style Type Safety
+
+Style groups are scoped to their elements. Text styles are separate from view layout styles, media
+fit styles stay on media elements, and shape paint styles stay on shapes. StyleSheet classes with
+style declarations use explicit targets such as `p.title`, `div.card`, or `div.card p.caption`,
+allowing TypeScript to check the style against the authored tag selected by the target. Targetless
+and class-only classes are reserved for class-name presence and selector participation, not for broad
+style declarations.
+
+deckjsx does not expose one public "all style keys" declaration type. Internal resolved-style maps
+exist after validation, but authoring stays on tag-specific style types so invalid element/key pairs
+fail before they reach layout or projection.
+
+Style-focused modules can import the same public style contract from `deckjsx/style` without taking
+a dependency on Deck authoring, projection, or writer APIs:
+
+```ts
+import { StyleSheet, Theme, type ViewStyle } from "deckjsx/style";
 ```
 
-For `display: "flex"` and `display: "grid"`, normal-flow children are laid out inside
-the content frame after padding. `gap`, `flexGrow`, percentage widths, `fr` grid tracks,
-and simple `gridColumn` / `gridRow` spans resolve to concrete slide coordinates during
-rendering. Absolutely positioned children inside flex or grid containers also use the
-container content frame, including padding, as their containing block.
+## Diagnostics
 
-`display: "flex"` follows CSS-like defaults for the supported subset: row direction when
-`flexDirection` is omitted, and cross-axis stretch when `alignItems` is omitted. The older
-deck-specific `layout: "stack"` default remains vertical.
-
-Use direct slide children when you want slide-global absolute placement. Use children
-inside a view-like element when you want a local, web-like layout region.
-
-`overflow: "hidden"` is projected as clipping metadata rather than treated as an authoring error.
-When CSS-like clipping, transform, opacity, or compositing behavior cannot be represented exactly in
-PPTX yet, Project reports nonblocking warnings and preserves the observable projected values for
-inspection.
-
-Unsupported CSS-like meanings that can still produce a structurally valid PPTX are reported through
-Project diagnostics and the inspection surface rather than treated as authoring errors. These records
-include the unsupported feature, the projected value, and a fallback strategy describing which values
-were preserved and which behavior is still missing. Malformed projected unsupported-semantic payloads
-from custom projections fail before Render emits bytes.
-
-## CSS-like Defaults And Gotchas
-
-deckjsx intentionally stays close to HTML/CSS naming, but the current v0.8 layout engine is a slide
-layout solver, not a browser. These are the defaults most likely to surprise CSS authors:
-
-| Area              | deckjsx v0.8 behavior                                                                                                                                               | Browser expectation                                            | Guidance                                                                               |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Block views       | `display: "block"` creates a local containing block and vertically flows unpositioned children; explicit frame props still opt into local absolute placement.       | Block formatting creates vertical flow.                        | Use ordinary block flow for simple stacks; use flex/grid or explicit frames for decks. |
-| Flex              | `display: "flex"` defaults to row and cross-axis stretch.                                                                                                           | Same for the supported subset.                                 | Prefer flex for simple rows/columns.                                                   |
-| Sizing            | Block-flow text gets available width and a line-height based height; explicit/local absolute boxes still need size, insets, layout stretch, or image ratio.         | Many elements have intrinsic or content-based size.            | Use declared sizes for precise PPTX geometry; rely on block defaults for simple text.  |
-| Text measurement  | Stack/grid do not measure wrapped text to push later siblings.                                                                                                      | Browser layout uses measured content.                          | Use declared heights or `fit: "shrink"` for text boxes.                                |
-| Units             | Layout numbers are inches; font-size-like numbers are points. Strings support common CSS units including `cm`, `mm`, `Q`, `pc`, `vmin`, and `vmax`.                 | CSS unitless numbers are property-specific.                    | Use strings for CSS-like units when supported, or keep numeric domains explicit.       |
-| CSS-wide keywords | `initial`, `inherit`, `unset`, `revert`, and `revert-layer` fall back to supported-subset defaults with diagnostics where full cascade/reset semantics are missing. | CSS has full cascade defaulting semantics.                     | Prefer ordinary omission for defaults; inspect diagnostics when using reset keywords.  |
-| Text spacing      | `letterSpacing` accepts `normal` or point lengths; paragraph before/after spacing accepts point lengths.                                                            | CSS text spacing uses property-specific length rules.          | Prefer `px`, `pt`, `em`, or `rem` when porting CSS-like text spacing.                  |
-| Style keys        | Unsupported CSS-like property names produce nonblocking compile warnings and remain visible in graph inspection.                                                    | Browsers ignore invalid declarations after parsing rules.      | Use supported style keys; expect warnings for `flex`, `flexFlow`, or logical aliases.  |
-| Box sizing        | Containers, text, and shapes default to `border-box`.                                                                                                               | CSS initial is `content-box`.                                  | This is deliberate for slide geometry.                                                 |
-| Border radius     | Single-value `borderRadius` supports percentages against the projected short side.                                                                                  | CSS supports richer per-corner radii.                          | `borderRadius: "50%"` works for capsule-like PPTX geometry.                            |
-| Shadows           | One shadow layer projects offset/blur/color; spread radius is preserved as unsupported fallback metadata.                                                           | CSS box-shadow supports spread and multiple layers.            | Avoid relying on spread for exact PPTX output; Project diagnostics preserve it.        |
-| Grid              | Missing tracks fill the available grid content frame.                                                                                                               | CSS implicit tracks default to `auto`.                         | Declare tracks for precise dashboards.                                                 |
-| Images            | Foreground images default to contain/center and can use probed natural ratio.                                                                                       | `<img>` has intrinsic layout behavior in normal document flow. | Use one axis plus probed dimensions, or set both axes for a fixed box.                 |
-| Shapes            | Shapes default to visible white fill with no stroke.                                                                                                                | CSS boxes are transparent unless styled.                       | Use `fill: "transparent"` or a `div` when you need a layout/debug box.                 |
-| zIndex            | Simple projected paint-order number.                                                                                                                                | CSS stacking contexts and `auto`.                              | Use it for slide paint order, not browser compositing semantics.                       |
+TypeScript is the first line of defense for authored code. Compile diagnostics back it up for
+JavaScript or casted inputs: unknown props, style keys outside the public authoring API, style keys
+on the wrong element, and malformed CSS-like values are reported as values that are not part of the
+public authoring API. Projection diagnostics continue to describe supported PPTX fallback behavior
+for representable CSS-like features such as clipping, transform, opacity, and compositing metadata.
 
 ## Development
 
 ```bash
 vp install
-vp check
-vp build
+vp check --no-fmt
+vp pack
 vp test
+bun run perf:types
+bun run benchmark:node
 bun run benchmark:pptx -- --iterations 1 --strict
 bun run verify:render -- --skip-raster
 ```

@@ -9,8 +9,9 @@ describe("style value typography and images", () => {
       <>
         <p
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 3,
             height: 1,
             fontSize: 20,
@@ -30,8 +31,9 @@ describe("style value typography and images", () => {
         </p>
         <p
           style={{
-            x: 1,
-            y: 2.25,
+            position: "absolute",
+            left: 1,
+            top: 2.25,
             width: 3,
             height: 1,
             wordBreak: "break-word",
@@ -79,16 +81,16 @@ describe("style value typography and images", () => {
         <img
           src="/tmp/demo.png"
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
             objectFit: "cover",
             objectPosition: "right 25% bottom 10%",
             crop: { top: "10%", right: "20%", bottom: 0.3, left: 0.4 },
             borderRadius: "1px",
-            opacity: 0.5,
-            transparency: 25,
+            opacity: 0.75,
           }}
         />
       </>
@@ -104,7 +106,7 @@ describe("style value typography and images", () => {
     expect(image.objectPosition).toEqual({ x: 0.75, y: 0.9 });
     expect(image.crop).toEqual({ top: 0.1, right: 0.2, bottom: 0.3, left: 0.4 });
     expect(image.rounding).toBe(true);
-    expect(image.opacity).toBe(0.5);
-    expect(image.transparency).toBe(25);
+    expect(image.opacity).toBe(0.75);
+    expect(image.transparency).toBeUndefined();
   });
 });

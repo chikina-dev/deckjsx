@@ -1,6 +1,7 @@
 node_modules
 dist
 .deckjsx
+.tmp
 *.tgz
 sample/output*.pptx
 *.log

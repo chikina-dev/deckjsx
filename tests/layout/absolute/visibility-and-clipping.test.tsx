@@ -7,11 +7,24 @@ describe("absolute layout visibility and clipping", () => {
 
     deck.slide({ name: "Visibility and zIndex" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 2, height: 0.5, fontSize: 18, zIndex: 10 }}>Front</p>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 2,
+            height: 0.5,
+            fontSize: 18,
+            zIndex: 10,
+          }}
+        >
+          Front
+        </p>
         <div
           style={{
-            x: 1,
-            y: 2,
+            position: "absolute",
+            left: 1,
+            top: 2,
             width: 2,
             height: 0.75,
             backgroundColor: "#D1D5DB",
@@ -19,11 +32,23 @@ describe("absolute layout visibility and clipping", () => {
             zIndex: -1,
           }}
         />
-        <p style={{ x: 1, y: 3, width: 2, height: 0.5, fontSize: 18, zIndex: 1 }}>Middle</p>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 3,
+            width: 2,
+            height: 0.5,
+            fontSize: 18,
+            zIndex: 1,
+          }}
+        >
+          Middle
+        </p>
       </>
     ));
 
-    const ir = (await deck.project()).projection!;
+    const ir = H.expectPptxProjection(await deck.project());
 
     expect(
       ir.slides[0].payload.drawing.children.map((node) => ({
@@ -80,24 +105,67 @@ describe("absolute layout visibility and clipping", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 3,
             height: 2,
             overflow: "hidden",
             backgroundColor: "#E5E7EB",
           }}
         >
-          <p style={{ x: 0.5, y: 0.5, width: 4, height: 0.75, fontSize: 18 }}>Clip me</p>
-          <p style={{ x: 3.5, y: 0.5, width: 1, height: 0.5, fontSize: 18 }}>Drop me</p>
+          <p
+            style={{
+              position: "absolute",
+              left: 0.5,
+              top: 0.5,
+              width: 4,
+              height: 0.75,
+              fontSize: 18,
+            }}
+          >
+            Clip me
+          </p>
+          <p
+            style={{
+              position: "absolute",
+              left: 3.5,
+              top: 0.5,
+              width: 1,
+              height: 0.5,
+              fontSize: 18,
+            }}
+          >
+            Drop me
+          </p>
         </div>
-        <div style={{ x: 5, y: 1, width: 3, height: 2, backgroundColor: "#E5E7EB" }}>
-          <p style={{ x: 0.5, y: 0.5, width: 4, height: 0.75, fontSize: 18 }}>Visible</p>
+        <div
+          style={{
+            position: "absolute",
+            left: 5,
+            top: 1,
+            width: 3,
+            height: 2,
+            backgroundColor: "#E5E7EB",
+          }}
+        >
+          <p
+            style={{
+              position: "absolute",
+              left: 0.5,
+              top: 0.5,
+              width: 4,
+              height: 0.75,
+              fontSize: 18,
+            }}
+          >
+            Visible
+          </p>
         </div>
       </>
     ));
 
-    const ir = (await deck.project()).projection!;
+    const ir = H.expectPptxProjection(await deck.project());
     const [hiddenGroup, visibleGroup] = ir.slides[0].payload.drawing.children;
 
     expect(H.summarizeNodes([hiddenGroup])).toEqual([
@@ -185,8 +253,9 @@ describe("absolute layout visibility and clipping", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 2,
             overflow: "hidden",
@@ -195,13 +264,20 @@ describe("absolute layout visibility and clipping", () => {
         >
           <img
             data={H.WIDE_SVG_DATA_URI}
-            style={{ x: -0.5, y: 0.5, width: 3, height: 1, fit: "stretch" }}
+            style={{
+              position: "absolute",
+              left: -0.5,
+              top: 0.5,
+              width: 3,
+              height: 1,
+              objectFit: "fill",
+            }}
           />
         </div>
       </>
     ));
 
-    const ir = (await deck.project()).projection!;
+    const ir = H.expectPptxProjection(await deck.project());
     const [group] = ir.slides[0].payload.drawing.children;
 
     expect(group?.kind).toBe("group");

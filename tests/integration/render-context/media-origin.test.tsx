@@ -57,7 +57,7 @@ describe("deckjsx integration media origin", () => {
           },
         })}
         src="./asset.png"
-        style={{ x: 1, y: 1, width: 1, height: 1 }}
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
       />
     ));
 
@@ -154,7 +154,7 @@ describe("deckjsx integration media origin", () => {
         })}
         src="./clip.mp4"
         poster="./poster.png"
-        style={{ x: 1, y: 1, width: 2, height: 1 }}
+        style={{ position: "absolute", left: 1, top: 1, width: 2, height: 1 }}
       />
     ));
 

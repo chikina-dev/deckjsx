@@ -1,23 +1,42 @@
 import path from "node:path";
 import type { DeckjsxDevDiagnostic } from "./dev-diagnostics";
 
+/**
+ * Bundled source snapshot that can be executed by the Node dev compiler.
+ *
+ * Paths are normalized to absolute paths by the helper constructor so invalidation and watch
+ * comparisons remain stable across equivalent relative inputs.
+ */
 export type DeckjsxDevExecutableSourceSnapshot = {
   readonly status: "executable";
+  /** JavaScript source code to execute for this compilation cycle. */
   readonly code: string;
+  /** Module ids represented by the bundled source. */
   readonly moduleIds: readonly string[];
+  /** Files the source provider wants the dev compiler to watch. */
   readonly watchFiles: readonly string[];
+  /** Source or asset ids that changed for this snapshot. */
   readonly changedSourceIds: readonly string[];
 };
 
+/** Source snapshot used when bundling failed and no executable source is available. */
 export type DeckjsxDevDiagnosticSourceSnapshot = {
   readonly status: "diagnostic";
+  /** Diagnostics explaining why the source cannot be executed. */
   readonly diagnostics: readonly DeckjsxDevDiagnostic[];
 };
 
+/** Source snapshot returned by a `DevSourceProvider`. */
 export type DeckjsxDevSourceSnapshot =
   | DeckjsxDevExecutableSourceSnapshot
   | DeckjsxDevDiagnosticSourceSnapshot;
 
+/**
+ * Create an executable source snapshot with normalized paths.
+ *
+ * @param input - Bundled source code plus module, watch, and changed-source path lists.
+ * @returns A source snapshot accepted by the dev compiler.
+ */
 export function createExecutableSourceSnapshot(input: {
   readonly cwd?: string;
   readonly code: string;
@@ -35,6 +54,12 @@ export function createExecutableSourceSnapshot(input: {
   };
 }
 
+/**
+ * Create a diagnostic source snapshot for bundle/provider failures.
+ *
+ * @param diagnostics - Diagnostics to report for the failed source snapshot.
+ * @returns A non-executable source snapshot.
+ */
 export function createDiagnosticSourceSnapshot(
   diagnostics: readonly DeckjsxDevDiagnostic[],
 ): DeckjsxDevDiagnosticSourceSnapshot {
@@ -44,6 +69,7 @@ export function createDiagnosticSourceSnapshot(
   };
 }
 
+/** Return whether a dev source snapshot contains executable code. */
 export function isExecutableSourceSnapshot(
   snapshot: DeckjsxDevSourceSnapshot,
 ): snapshot is DeckjsxDevExecutableSourceSnapshot {

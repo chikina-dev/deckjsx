@@ -63,54 +63,7 @@ jobs:
       - name: Classify CI scope
         id: scope
         shell: bash
-        run: |
-          docs_only=true
-          benchmark=false
-          core=false
-          node=false
-
-          if [ ! -s changed-files.txt ]; then
-            docs_only=false
-          fi
-
-          while IFS= read -r path; do
-            path="${path#./}"
-            case "$path" in
-              *.md|*.mdx) ;;
-              *) docs_only=false ;;
-            esac
-
-            case "$path" in
-              .github/workflows/ci.yml|src/*|tests/*|scripts/*|package.json|bun.lock|tsconfig.json|vite.config.ts)
-                core=true
-                ;;
-            esac
-
-            case "$path" in
-              .github/workflows/ci.yml|plugins/node/*|src/*|tests/types/*|package.json|bun.lock|tsconfig.json|vite.config.ts)
-                node=true
-                ;;
-            esac
-
-            case "$path" in
-              .github/workflows/ci.yml|src/writers/pptx/*|src/projection/pptx/*|src/pipeline|src/pipeline-*|src/pipeline.*|src/adapter.ts|tests/pptx/*|scripts/benchmark-pptx-writer.tsx|.github/scripts/benchmark-pptx-with-diagnostics.sh|package.json|bun.lock)
-                benchmark=true
-                ;;
-            esac
-          done < changed-files.txt
-
-          if [ "$docs_only" = "true" ]; then
-            benchmark=false
-            core=false
-            node=false
-          fi
-
-          {
-            echo "benchmark=$benchmark"
-            echo "core=$core"
-            echo "docsOnly=$docs_only"
-            echo "node=$node"
-          } | tee -a "$GITHUB_OUTPUT"
+        run: node scripts/ci-scope.mjs --github-output "$GITHUB_OUTPUT" < changed-files.txt
 
   core:
     name: Core check and test
@@ -141,6 +94,9 @@ jobs:
 
       - name: Build
         run: bun run build
+
+      - name: Type performance
+        run: bun run perf:types
 
       - name: Test
         run: bun run test
@@ -214,6 +170,18 @@ jobs:
         working-directory: plugins/node
         run: ../../node_modules/.bin/vp pack
 
+      - name: Install sample dependencies
+        run: npm install --no-audit --no-fund --prefix sample
+
+      - name: Smoke test public sample
+        run: npm run --prefix sample smoke
+
+      - name: Benchmark @deckjsx/node runtime
+        run: bash .github/scripts/benchmark-node-runtime-with-diagnostics.sh
+
       - name: Test @deckjsx/node
         working-directory: plugins/node
         run: ../../node_modules/.bin/vp test
+
+      - name: Smoke test packed packages
+        run: bun run smoke:tarball

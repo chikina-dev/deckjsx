@@ -4,8 +4,8 @@ import type { Diagnostic } from "./diagnostics";
 import type { AssetEntityId, SemanticAuthorGraph } from "./graph";
 import type { DeckIntegrationContext } from "./integration-context";
 import type { MediaSourceOrigin } from "./media-source-origin";
-import type { RenderedArtifact } from "./pipeline";
-import type { AssetArtifact } from "./pipeline-artifacts";
+import type { RenderedArtifact } from "./pipeline/contract";
+import type { AssetArtifact } from "./pipeline/artifacts";
 import { isPptxPackageModel, type PptxPackageModel } from "./projection/pptx/model";
 import type { ResolvedStyleMap } from "./style/resolve";
 
@@ -206,6 +206,130 @@ export type DeckPlugin = {
   readonly hooks?: DeckPluginHooks;
 };
 
+export function isDeckPlugin(value: unknown): value is DeckPlugin {
+  return (
+    isRecord(value) &&
+    value.kind === "deckjsx.plugin" &&
+    typeof value.id === "string" &&
+    deckPluginValidationMessage(value) === undefined
+  );
+}
+
+function deckPluginValidationMessage(plugin: unknown): string | undefined {
+  if (!isRecord(plugin) || plugin.kind !== "deckjsx.plugin" || typeof plugin.id !== "string") {
+    return 'Deck plugin must be an object with kind "deckjsx.plugin" and a string id.';
+  }
+
+  for (const key of Object.keys(plugin)) {
+    if (
+      key !== "kind" &&
+      key !== "id" &&
+      key !== "name" &&
+      key !== "integration" &&
+      key !== "hooks"
+    ) {
+      return `Deck plugin ${key} is not part of the public authoring API.`;
+    }
+  }
+
+  if (plugin.name !== undefined && typeof plugin.name !== "string") {
+    return "Deck plugin name must be a string when provided.";
+  }
+
+  if (plugin.integration !== undefined) {
+    const integrationMessage = deckPluginIntegrationValidationMessage(plugin.integration);
+    if (integrationMessage) {
+      return integrationMessage;
+    }
+  }
+
+  if (plugin.hooks !== undefined) {
+    if (!isRecord(plugin.hooks)) {
+      return "Deck plugin hooks must be an object when provided.";
+    }
+
+    for (const [hookName, hook] of Object.entries(plugin.hooks)) {
+      if (!(hookName in allowedPluginHookUpdateKeys)) {
+        return `Deck plugin hooks.${hookName} is not part of the public authoring API.`;
+      }
+      if (hook !== undefined && typeof hook !== "function") {
+        return `Deck plugin hooks.${hookName} must be a function when provided.`;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function deckPluginIntegrationValidationMessage(integration: unknown): string | undefined {
+  if (!isRecord(integration)) {
+    return "Deck plugin integration must be an object when provided.";
+  }
+
+  for (const key of Object.keys(integration)) {
+    if (key !== "id" && key !== "assetLoaders" && key !== "mediaSourceOrigin") {
+      return `Deck plugin integration.${key} is not part of the public authoring API.`;
+    }
+  }
+
+  if (typeof integration.id !== "string") {
+    return "Deck plugin integration.id must be a string.";
+  }
+
+  if (integration.assetLoaders !== undefined && !isAssetLoaderArray(integration.assetLoaders)) {
+    return "Deck plugin integration.assetLoaders must be an array of Asset Loaders.";
+  }
+
+  if (
+    integration.mediaSourceOrigin !== undefined &&
+    !isMediaSourceOrigin(integration.mediaSourceOrigin)
+  ) {
+    return "Deck plugin integration.mediaSourceOrigin must be a Media Source Origin object.";
+  }
+
+  return undefined;
+}
+
+export function invalidDeckPluginDiagnostic(plugin?: unknown): Diagnostic {
+  return {
+    severity: "error",
+    code: "E_PLUGIN_INVALID",
+    title: "deck plugin is not part of the public authoring API",
+    message:
+      deckPluginValidationMessage(plugin) ??
+      'Deck plugin must be an object with kind "deckjsx.plugin" and a string id.',
+    labels: [],
+  };
+}
+
+function invalidDeckPluginListDiagnostic(): Diagnostic {
+  return {
+    severity: "error",
+    code: "E_PLUGIN_INVALID",
+    title: "deck plugin is not part of the public authoring API",
+    message: "Deck plugins must be an array of Deck Plugins when provided.",
+    labels: [],
+  };
+}
+
+export function validateDeckPlugins(plugins: unknown): readonly Diagnostic[] {
+  if (plugins === undefined) {
+    return [];
+  }
+
+  if (!Array.isArray(plugins)) {
+    return [invalidDeckPluginListDiagnostic()];
+  }
+
+  return plugins
+    .filter((plugin) => !isDeckPlugin(plugin))
+    .map((plugin) => invalidDeckPluginDiagnostic(plugin));
+}
+
+export function validDeckPlugins(plugins: unknown): readonly DeckPlugin[] {
+  return Array.isArray(plugins) ? plugins.filter(isDeckPlugin) : [];
+}
+
 export function mergeAssetLoaders(
   ...groups: readonly (readonly AssetLoader[] | undefined)[]
 ): readonly AssetLoader[] | undefined {
@@ -232,6 +356,16 @@ export function applyPluginHooks<TContext extends object>(
       continue;
     }
     if (!result) {
+      continue;
+    }
+
+    if (!isHookResultObject(result)) {
+      diagnostics.push(pluginHookInvalidResultDiagnostic({ plugin, hookName }));
+      continue;
+    }
+
+    if (result.diagnostics !== undefined && !isDiagnosticArray(result.diagnostics)) {
+      diagnostics.push(pluginHookInvalidResultDiagnosticsDiagnostic({ plugin, hookName }));
       continue;
     }
 
@@ -288,6 +422,60 @@ function snapshotPluginHookContext<TContext extends object>(context: TContext): 
     snapshot.assetLoaders = [...snapshot.assetLoaders];
   }
   return snapshot as TContext;
+}
+
+function isHookResultObject(result: unknown): result is Partial<object> & {
+  readonly diagnostics?: unknown;
+} {
+  return isRecord(result) && !Array.isArray(result);
+}
+
+function isDiagnosticArray(value: unknown): value is readonly Diagnostic[] {
+  return Array.isArray(value) && value.every(isDiagnosticValue);
+}
+
+function isDiagnosticValue(value: unknown): value is Diagnostic {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["severity", "code", "title", "message", "labels", "notes", "help"]) &&
+    (value.severity === "error" || value.severity === "warning") &&
+    typeof value.code === "string" &&
+    typeof value.title === "string" &&
+    (value.message === undefined || typeof value.message === "string") &&
+    Array.isArray(value.labels) &&
+    value.labels.every(isDiagnosticLabelValue) &&
+    (value.notes === undefined || isStringArray(value.notes)) &&
+    (value.help === undefined || isStringArray(value.help))
+  );
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+  return Object.keys(value).every((key) => allowed.includes(key));
+}
+
+function isDiagnosticLabelValue(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["path", "message", "sourceSpan", "severity"]) &&
+    typeof value.path === "string" &&
+    typeof value.message === "string" &&
+    (value.sourceSpan === undefined || isSourceSpanValue(value.sourceSpan)) &&
+    (value.severity === undefined || value.severity === "primary" || value.severity === "secondary")
+  );
+}
+
+function isSourceSpanValue(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["file", "line", "column"]) &&
+    (value.file === undefined || typeof value.file === "string") &&
+    (value.line === undefined || typeof value.line === "number") &&
+    (value.column === undefined || typeof value.column === "number")
+  );
+}
+
+function isStringArray(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
 function snapshotSemanticAuthorGraph(graph: SemanticAuthorGraph): SemanticAuthorGraph {
@@ -391,14 +579,86 @@ function isAssetArtifactMap(value: unknown): value is ReadonlyMap<AssetEntityId,
 function isAssetArtifactValue(value: unknown): value is AssetArtifact {
   return (
     isRecord(value) &&
+    hasOnlyKeys(value, [
+      "assetEntityId",
+      "source",
+      "sourceField",
+      "resolverIdentity",
+      "origin",
+      "probe",
+      "load",
+      "diagnostics",
+    ]) &&
     typeof value.assetEntityId === "string" &&
     isAssetSource(value.source) &&
     isAssetSourceField(value.sourceField) &&
     (value.resolverIdentity === undefined || typeof value.resolverIdentity === "string") &&
     (value.origin === undefined || isMediaSourceOrigin(value.origin)) &&
-    (value.probe === undefined || isRecord(value.probe)) &&
-    (value.load === undefined || isRecord(value.load)) &&
+    (value.probe === undefined || isAssetProbeResult(value.probe)) &&
+    (value.load === undefined || isAssetLoadResult(value.load)) &&
     isDiagnosticsValue(value.diagnostics)
+  );
+}
+
+function isAssetProbeResult(value: unknown): boolean {
+  return isAssetProbeResultWithAllowedKeys(value, [
+    "mediaType",
+    "extension",
+    "width",
+    "height",
+    "byteLength",
+    "hash",
+    "provenance",
+  ]);
+}
+
+function isAssetProbeResultWithAllowedKeys(
+  value: unknown,
+  allowedKeys: readonly string[],
+): boolean {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, allowedKeys) &&
+    (value.mediaType === undefined || typeof value.mediaType === "string") &&
+    (value.extension === undefined || typeof value.extension === "string") &&
+    (value.width === undefined || typeof value.width === "number") &&
+    (value.height === undefined || typeof value.height === "number") &&
+    (value.byteLength === undefined || typeof value.byteLength === "number") &&
+    (value.hash === undefined || typeof value.hash === "string") &&
+    (value.provenance === undefined || isAssetResolutionProvenance(value.provenance))
+  );
+}
+
+function isAssetLoadResult(value: unknown): boolean {
+  return (
+    isAssetProbeResultWithAllowedKeys(value, [
+      "mediaType",
+      "extension",
+      "width",
+      "height",
+      "byteLength",
+      "hash",
+      "provenance",
+      "bytes",
+    ]) &&
+    isRecord(value) &&
+    value.bytes instanceof Uint8Array
+  );
+}
+
+function isAssetResolutionProvenance(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["kind", "resolvedId", "hashSource"]) &&
+    (value.kind === "inline" ||
+      value.kind === "fetch" ||
+      value.kind === "file" ||
+      value.kind === "publicAsset" ||
+      value.kind === "generatedAsset") &&
+    (value.resolvedId === undefined || typeof value.resolvedId === "string") &&
+    (value.hashSource === undefined ||
+      value.hashSource === "loader" ||
+      value.hashSource === "bytes")
   );
 }
 
@@ -408,13 +668,18 @@ function isAssetSource(value: unknown): value is AssetSource {
   }
   switch (value.kind) {
     case "bytes":
-      return value.bytes instanceof Uint8Array;
+      return (
+        hasOnlyKeys(value, ["kind", "bytes", "mediaType", "extension"]) &&
+        value.bytes instanceof Uint8Array &&
+        (value.mediaType === undefined || typeof value.mediaType === "string") &&
+        (value.extension === undefined || typeof value.extension === "string")
+      );
     case "data":
-      return typeof value.data === "string";
+      return hasOnlyKeys(value, ["kind", "data"]) && typeof value.data === "string";
     case "url":
-      return typeof value.url === "string";
+      return hasOnlyKeys(value, ["kind", "url"]) && typeof value.url === "string";
     case "path":
-      return typeof value.path === "string";
+      return hasOnlyKeys(value, ["kind", "path"]) && typeof value.path === "string";
     default:
       return false;
   }
@@ -425,7 +690,7 @@ function isAssetSourceField(value: unknown): boolean {
 }
 
 function isDiagnosticsValue(value: unknown): value is { readonly items: readonly Diagnostic[] } {
-  return isRecord(value) && Array.isArray(value.items);
+  return isRecord(value) && hasOnlyKeys(value, ["items"]) && isDiagnosticArray(value.items);
 }
 
 function isAssetLoaderArray(value: unknown): value is readonly AssetLoader[] {
@@ -434,6 +699,7 @@ function isAssetLoaderArray(value: unknown): value is readonly AssetLoader[] {
     value.every(
       (loader) =>
         isRecord(loader) &&
+        hasOnlyKeys(loader, ["resolverIdentity", "probe", "load"]) &&
         typeof loader.resolverIdentity === "string" &&
         (loader.probe === undefined || typeof loader.probe === "function") &&
         (loader.load === undefined || typeof loader.load === "function"),
@@ -444,6 +710,7 @@ function isAssetLoaderArray(value: unknown): value is readonly AssetLoader[] {
 function isMediaSourceOrigin(value: unknown): value is MediaSourceOrigin {
   return (
     isRecord(value) &&
+    hasOnlyKeys(value, ["importer", "source", "sourceIdentity"]) &&
     (value.importer === undefined || typeof value.importer === "string") &&
     (value.source === undefined || typeof value.source === "string") &&
     (value.sourceIdentity === undefined || typeof value.sourceIdentity === "string")
@@ -453,6 +720,7 @@ function isMediaSourceOrigin(value: unknown): value is MediaSourceOrigin {
 function isIntegrationContext(value: unknown): value is DeckIntegrationContext {
   return (
     isRecord(value) &&
+    hasOnlyKeys(value, ["id", "assetLoaders", "mediaSourceOrigin"]) &&
     typeof value.id === "string" &&
     (value.assetLoaders === undefined || isAssetLoaderArray(value.assetLoaders)) &&
     (value.mediaSourceOrigin === undefined || isMediaSourceOrigin(value.mediaSourceOrigin))
@@ -466,6 +734,7 @@ function isPptxPackageModelValue(value: unknown): value is PptxPackageModel {
 function isRenderedArtifact(value: unknown): value is RenderedArtifact {
   return (
     isRecord(value) &&
+    hasOnlyKeys(value, ["format", "mediaType", "extension", "bytes"]) &&
     typeof value.format === "string" &&
     typeof value.mediaType === "string" &&
     typeof value.extension === "string" &&
@@ -498,6 +767,32 @@ function pluginHookInvalidUpdateDiagnostic(input: {
     code: "E_PLUGIN_HOOK_INVALID_UPDATE",
     title: "plugin hook returned invalid updates",
     message: `${input.plugin.id}.${input.hookName} returned unsupported update keys: ${input.invalidUpdateKeys.join(", ")}`,
+    labels: [],
+  };
+}
+
+function pluginHookInvalidResultDiagnostic(input: {
+  readonly plugin: DeckPlugin;
+  readonly hookName: keyof DeckPluginHooks;
+}): Diagnostic {
+  return {
+    severity: "error",
+    code: "E_PLUGIN_HOOK_INVALID_RESULT",
+    title: "plugin hook returned invalid result",
+    message: `${input.plugin.id}.${input.hookName} must return an object or void.`,
+    labels: [],
+  };
+}
+
+function pluginHookInvalidResultDiagnosticsDiagnostic(input: {
+  readonly plugin: DeckPlugin;
+  readonly hookName: keyof DeckPluginHooks;
+}): Diagnostic {
+  return {
+    severity: "error",
+    code: "E_PLUGIN_HOOK_INVALID_RESULT",
+    title: "plugin hook returned invalid result",
+    message: `${input.plugin.id}.${input.hookName} diagnostics must be an array of diagnostics when provided.`,
     labels: [],
   };
 }

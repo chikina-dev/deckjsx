@@ -72,7 +72,10 @@ describe("deckjsx integration plugin lifecycle", () => {
       },
     });
     deck.slide({ name: "Lifecycle" }, () => (
-      <img src="./asset.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        src="./asset.png"
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     const render = await deck.render(H.pptx());
@@ -118,13 +121,15 @@ describe("deckjsx integration plugin lifecycle", () => {
       },
     });
     deck.slide({ name: "Original Slide" }, () => (
-      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>tree transformed</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>
+        tree transformed
+      </p>
     ));
 
     const project = await deck.project();
 
     expect(project.ok).toBe(true);
-    expect(project.projection?.slides[0]?.payload.name).toBe("Tree Hook Slide");
+    expect(H.expectPptxProjection(project).slides[0]?.payload.name).toBe("Tree Hook Slide");
   });
 
   test("project lifecycle hooks can replace projection models before render", async () => {
@@ -166,13 +171,15 @@ describe("deckjsx integration plugin lifecycle", () => {
       },
     });
     deck.slide({ name: "Original Slide" }, () => (
-      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>project transformed</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>
+        project transformed
+      </p>
     ));
 
     const project = await deck.project();
 
     expect(project.ok).toBe(true);
-    expect(project.projection?.slides[0]?.payload.name).toBe("Project Hook Slide");
+    expect(H.expectPptxProjection(project).slides[0]?.payload.name).toBe("Project Hook Slide");
   });
 
   test("render lifecycle hooks run around prototype writer adapter methods", async () => {
@@ -212,7 +219,7 @@ describe("deckjsx integration plugin lifecycle", () => {
       },
     });
     deck.slide({ name: "Prototype writer" }, () => (
-      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>prototype</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>prototype</p>
     ));
 
     const render = await deck.render(new PrototypeWriter());

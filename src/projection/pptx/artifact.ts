@@ -1,5 +1,5 @@
-import { createDiagnostics, diagnostic, type Diagnostics } from "../../diagnostics";
-import type { AssetEntityId, GraphNodeId, SourceOrigin } from "../../graph";
+import { createDiagnostics, diagnostic, type Diagnostics } from "@/src/diagnostics";
+import type { AssetEntityId, GraphNodeId, SourceOrigin } from "@/src/graph";
 import type {
   PackagePartId,
   PptxPackageModel,

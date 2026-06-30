@@ -9,12 +9,13 @@ describe("grid track sizing and repeat", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 6,
             height: 2,
             display: "grid",
-            gridTemplateColumns: "minmax(1in, 2in) minmax(0.5in, 1fr) 1fr",
+            gridTemplateColumns: ["minmax(1in, 2in)", "minmax(0.5in, 1fr)", "1fr"],
             gridTemplateRows: "1fr",
           }}
         >
@@ -26,7 +27,9 @@ describe("grid track sizing and repeat", () => {
     ));
 
     expect(
-      H.summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+      H.summarizeNodes(
+        H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children,
+      ),
     ).toEqual([
       {
         kind: "group",
@@ -82,8 +85,9 @@ describe("grid track sizing and repeat", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 6,
             height: 2,
             display: "grid",
@@ -101,7 +105,9 @@ describe("grid track sizing and repeat", () => {
     ));
 
     expect(
-      H.summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+      H.summarizeNodes(
+        H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children,
+      ),
     ).toEqual([
       {
         kind: "group",
@@ -157,8 +163,9 @@ describe("grid track sizing and repeat", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 5,
             height: 2,
             display: "grid",
@@ -174,7 +181,9 @@ describe("grid track sizing and repeat", () => {
     ));
 
     expect(
-      H.summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+      H.summarizeNodes(
+        H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children,
+      ),
     ).toEqual([
       {
         kind: "group",
@@ -230,8 +239,9 @@ describe("grid track sizing and repeat", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 8,
             height: 2,
             display: "grid",
@@ -246,7 +256,9 @@ describe("grid track sizing and repeat", () => {
     ));
 
     expect(
-      H.summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+      H.summarizeNodes(
+        H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children,
+      ),
     ).toEqual([
       {
         kind: "group",
@@ -291,8 +303,9 @@ describe("grid track sizing and repeat", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 8,
             height: 4,
             display: "grid",
@@ -310,7 +323,9 @@ describe("grid track sizing and repeat", () => {
     ));
 
     expect(
-      H.summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+      H.summarizeNodes(
+        H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children,
+      ),
     ).toEqual([
       {
         kind: "group",

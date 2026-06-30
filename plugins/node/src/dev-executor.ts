@@ -1,5 +1,6 @@
 import path from "node:path";
 import { rolldown, type OutputChunk, type Plugin } from "rolldown";
+import { deckjsxJsxTransformOptionsForCwd } from "./jsx-transform-options";
 import { transformDeckjsxMediaSourceOrigins } from "./media-source-transform";
 
 export type DeckjsxBundleInput = {
@@ -33,10 +34,7 @@ export async function bundleDeckjsxEntry(input: DeckjsxBundleInput): Promise<Dec
     external: isDeckjsxRuntimeExternalId,
     plugins: [deckjsxMediaSourceOriginPlugin()],
     transform: {
-      jsx: {
-        runtime: "automatic",
-        importSource: "deckjsx",
-      },
+      jsx: deckjsxJsxTransformOptionsForCwd(cwd),
     },
   });
 

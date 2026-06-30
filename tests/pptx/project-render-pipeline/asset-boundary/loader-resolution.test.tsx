@@ -25,7 +25,7 @@ describe("project/render asset loader resolution", () => {
       <>
         <img
           src="https://assets.example.test/chart.png"
-          style={{ x: 1, y: 1, width: 2, height: 1 }}
+          style={{ position: "absolute", left: 1, top: 1, width: 2, height: 1 }}
         />
       </>
     ));
@@ -79,7 +79,10 @@ describe("project/render asset loader resolution", () => {
     });
     deck.slide({ name: "Resolver scoped load" }, () => (
       <>
-        <img src="/public/scoped.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+        <img
+          src="/public/scoped.png"
+          style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+        />
       </>
     ));
 
@@ -111,7 +114,10 @@ describe("project/render asset loader resolution", () => {
     });
     deck.slide({ name: "Missing load" }, () => (
       <>
-        <img src="/public/missing-load.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+        <img
+          src="/public/missing-load.png"
+          style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+        />
       </>
     ));
 

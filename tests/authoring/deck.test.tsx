@@ -1,7 +1,170 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck } from "../../src/index.ts";
+import { Deck } from "@/src/index.ts";
+import { expectPptxProjection } from "../helpers";
 
 describe("Deck", () => {
+  test("compile reports deck option containers outside the public authoring API", () => {
+    const deck = new (Deck as { new (options: unknown): Deck })(null);
+    deck.slide(() => <p>invalid options</p>);
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.items).toEqual([
+      expect.objectContaining({
+        code: "E_DECK_INVALID_OPTIONS",
+        title: "deck options are not part of the public authoring API",
+        message: "Deck options must be an object in the public authoring API.",
+      }),
+    ]);
+  });
+
+  test("compile reports deck layout options outside the public authoring API", () => {
+    const missingLayoutDeck = new Deck({ layout: null } as never);
+    missingLayoutDeck.slide(() => <p>missing layout</p>);
+    const invalidLayoutDeck = new Deck({
+      layout: { width: 0, height: Number.NaN, unit: "px" },
+    } as never);
+    invalidLayoutDeck.slide(() => <p>invalid layout</p>);
+
+    const missingLayoutResult = missingLayoutDeck.compile();
+    const invalidLayoutResult = invalidLayoutDeck.compile();
+
+    expect(missingLayoutResult.ok).toBe(false);
+    expect(missingLayoutResult.graph).toBeUndefined();
+    expect(missingLayoutResult.diagnostics.items).toEqual([
+      expect.objectContaining({
+        code: "E_DECK_INVALID_LAYOUT",
+        message: "Deck layout must be an object in the public authoring API.",
+      }),
+    ]);
+    expect(invalidLayoutResult.ok).toBe(false);
+    expect(invalidLayoutResult.graph).toBeUndefined();
+    expect(invalidLayoutResult.diagnostics.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "E_DECK_INVALID_LAYOUT",
+          message:
+            "Deck layout width must be a positive finite number in the public authoring API.",
+        }),
+        expect.objectContaining({
+          code: "E_DECK_INVALID_LAYOUT",
+          message:
+            "Deck layout height must be a positive finite number in the public authoring API.",
+        }),
+        expect.objectContaining({
+          code: "E_DECK_INVALID_LAYOUT",
+          message: 'Deck layout unit must be "in" or "pt" in the public authoring API.',
+        }),
+      ]),
+    );
+  });
+
+  test("project reports deck layout options outside the public authoring API", async () => {
+    const deck = new Deck({ layout: { width: -1, height: 5.625, unit: "in" } } as never);
+    deck.slide(() => <p>invalid layout</p>);
+
+    const result = await deck.project();
+
+    expect(result.ok).toBe(false);
+    expect(result.projection).toBeUndefined();
+    expect(result.diagnostics.items).toEqual([
+      expect.objectContaining({
+        code: "E_DECK_INVALID_LAYOUT",
+        message: "Deck layout width must be a positive finite number in the public authoring API.",
+      }),
+    ]);
+    expect(result.stages.compile.artifact).toBe("missing");
+    expect(result.stages.project.artifact).toBe("missing");
+  });
+
+  test("compile reports deck metadata outside the public authoring API", () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      meta: { title: 1, author: null, subject: [], keywords: "private" },
+    } as never);
+    deck.slide(() => <p>invalid meta</p>);
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "E_DECK_INVALID_META",
+          message: "Deck metadata title must be a string in the public authoring API.",
+        }),
+        expect.objectContaining({
+          code: "E_DECK_INVALID_META",
+          message: "Deck metadata author must be a string in the public authoring API.",
+        }),
+        expect.objectContaining({
+          code: "E_DECK_INVALID_META",
+          message: "Deck metadata subject must be a string in the public authoring API.",
+        }),
+        expect.objectContaining({
+          code: "E_DECK_INVALID_META",
+          message: "Deck metadata keywords is not part of the public authoring API.",
+        }),
+      ]),
+    );
+  });
+
+  test("project reports deck output options outside the public authoring API", async () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      output: { format: "pdf", target: "deck.pdf" },
+    } as never);
+    deck.slide(() => <p>invalid output</p>);
+
+    const result = await deck.project();
+
+    expect(result.ok).toBe(false);
+    expect(result.projection).toBeUndefined();
+    expect(result.diagnostics.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "E_DECK_INVALID_OUTPUT",
+          message: 'Deck output format must be "pptx" when provided in the public authoring API.',
+        }),
+        expect.objectContaining({
+          code: "E_DECK_INVALID_OUTPUT",
+          message: "Deck output target is not part of the public authoring API.",
+        }),
+      ]),
+    );
+    expect(result.stages.compile.artifact).toBe("missing");
+    expect(result.stages.project.artifact).toBe("missing");
+  });
+
+  test("compile reports unknown deck options outside the public authoring API", () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      defaults: { p: { fontSize: 18 } },
+      styles: [],
+    } as never);
+    deck.slide(() => <p>unknown deck options</p>);
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "E_DECK_INVALID_OPTIONS",
+          message: "Deck option defaults is not part of the public authoring API.",
+        }),
+        expect.objectContaining({
+          code: "E_DECK_INVALID_OPTIONS",
+          message: "Deck option styles is not part of the public authoring API.",
+        }),
+      ]),
+    );
+  });
+
   test("render compiles multiple slides and passes composition context to factories", async () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
@@ -10,7 +173,7 @@ describe("Deck", () => {
 
     deck.slide({ name: "Slide 1" }, ({ composition }) => (
       <>
-        <p style={{ x: 1, y: 1, width: 4, height: 0.5, fontSize: 24 }}>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5, fontSize: 24 }}>
           {composition.slideIndex + 1} / {composition.totalSlides}
         </p>
       </>
@@ -18,13 +181,13 @@ describe("Deck", () => {
 
     deck.slide({ name: "Slide 2" }, ({ composition }) => (
       <>
-        <p style={{ x: 2, y: 1.5, width: 3, height: 0.5, fontSize: 18 }}>
+        <p style={{ position: "absolute", left: 2, top: 1.5, width: 3, height: 0.5, fontSize: 18 }}>
           {composition.slideIndex + 1} / {composition.totalSlides}
         </p>
       </>
     ));
 
-    const ir = (await deck.project()).projection!;
+    const ir = expectPptxProjection(await deck.project());
 
     expect({
       meta: ir.meta,
@@ -59,95 +222,87 @@ describe("Deck", () => {
   test("render preserves rich design props in the IR", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
-    deck.slide(
-      { name: "Design", style: { backgroundColor: "#112233", backgroundTransparency: 12 } },
-      () => (
-        <>
-          <div
+    deck.slide({ name: "Design", style: { backgroundColor: "rgba(17, 34, 51, 0.88)" } }, () => (
+      <>
+        <div
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 5,
+            height: 3,
+            backgroundColor: "rgba(248, 225, 108, 0.85)",
+            borderColor: "rgba(31, 41, 55, 0.8)",
+            borderWidth: "2pt",
+            borderStyle: "dashed",
+            borderRadius: 0.2,
+            transform: "rotate(5deg) scaleX(-1)",
+          }}
+        >
+          <p
             style={{
-              x: 1,
-              y: 1,
-              width: 5,
-              height: 3,
-              backgroundColor: "#F8E16C",
-              backgroundTransparency: 15,
-              borderColor: "#1F2937",
-              borderWidth: "2pt",
-              borderStyle: "dash",
-              borderTransparency: 20,
-              borderRadius: 0.2,
-              rotation: 5,
-              flipH: true,
+              position: "absolute",
+              left: 0.5,
+              top: 0.5,
+              width: 4,
+              height: 0.9,
+              fontFamily: "Aptos",
+              fontSize: 22,
+              fontWeight: 700,
+              fontStyle: "italic",
+              textDecorationLine: "underline line-through",
+              color: "#0F172A",
+              textAlign: "center",
+              verticalAlign: "middle",
+              backgroundColor: "rgba(255, 255, 255, 0.75)",
+              borderColor: "rgba(220, 38, 38, 0.9)",
+              borderWidth: "1pt",
+              borderStyle: "solid",
+              borderRadius: 0.1,
+              padding: ["4pt", "8pt", "4pt", "8pt"],
+              lineHeight: "24pt",
+              paragraphSpacingBefore: 2,
+              paragraphSpacingAfter: 3,
+              letterSpacing: 1,
+              fit: "shrink",
+              whiteSpace: "nowrap",
             }}
           >
-            <p
-              style={{
-                x: 0.5,
-                y: 0.5,
-                width: 4,
-                height: 0.9,
-                fontFamily: "Aptos",
-                fontSize: 22,
-                fontWeight: 700,
-                italic: true,
-                underline: true,
-                strike: true,
-                color: "#0F172A",
-                textAlign: "center",
-                verticalAlign: "middle",
-                backgroundColor: "#FFFFFF",
-                backgroundTransparency: 25,
-                borderColor: "#DC2626",
-                borderWidth: "1pt",
-                borderStyle: "solid",
-                borderTransparency: 10,
-                borderRadius: 0.1,
-                padding: ["4pt", "8pt", "4pt", "8pt"],
-                lineSpacing: 24,
-                lineSpacingMultiple: 1.2,
-                paragraphSpacingBefore: 2,
-                paragraphSpacingAfter: 3,
-                charSpacing: 1,
-                fit: "shrink",
-                wrap: false,
-              }}
-            >
-              Styled
-            </p>
-            <shape
-              shape="rect"
-              style={{
-                x: 0.5,
-                y: 1.8,
-                width: 1.5,
-                height: 0.75,
-                fill: "#2563EB",
-                fillTransparency: 30,
-                borderColor: "#1D4ED8",
-                borderWidth: 2,
-                borderStyle: "dash",
-                borderTransparency: 5,
-                radius: 0.15,
-              }}
-            />
-            <img
-              src="/tmp/demo.png"
-              style={{
-                x: 2.5,
-                y: 1.8,
-                width: 1,
-                height: 1,
-                transparency: 35,
-                rounding: true,
-                flipV: true,
-              }}
-            />
-          </div>
-        </>
-      ),
-    );
+            Styled
+          </p>
+          <shape
+            shape="rect"
+            style={{
+              position: "absolute",
+              left: 0.5,
+              top: 1.8,
+              width: 1.5,
+              height: 0.75,
+              fill: "rgba(37, 99, 235, 0.7)",
+              borderColor: "rgba(29, 78, 216, 0.95)",
+              borderWidth: 2,
+              borderStyle: "dashed",
+              borderRadius: 0.15,
+            }}
+          />
+          <img
+            src="/tmp/demo.png"
+            style={{
+              position: "absolute",
+              left: 2.5,
+              top: 1.8,
+              width: 1,
+              height: 1,
+              opacity: 0.65,
+              borderRadius: 0.2,
+              transform: "scaleY(-1)",
+            }}
+          />
+        </div>
+      </>
+    ));
 
-    const ir = (await deck.project()).projection!;
+    const ir = expectPptxProjection(await deck.project());
     const slide = ir.slides[0]?.payload;
     const group = slide?.drawing.children[0];
 
@@ -195,7 +350,6 @@ describe("Deck", () => {
       fontWeight: 700,
       italic: true,
       lineSpacing: 24,
-      lineSpacingMultiple: 1.2,
       paddingPt: [4, 8, 4, 8],
       paragraphSpacingAfter: 3,
       paragraphSpacingBefore: 2,
@@ -225,7 +379,8 @@ describe("Deck", () => {
       throw new Error("Expected image element.");
     }
     expect(image.source).toEqual({ kind: "path", path: "/tmp/demo.png" });
-    expect(image.transparency).toBe(35);
+    expect(image.opacity).toBe(0.65);
+    expect(image.transparency).toBeUndefined();
     expect(image.rounding).toBe(true);
     expect(image.flipV).toBe(true);
   });

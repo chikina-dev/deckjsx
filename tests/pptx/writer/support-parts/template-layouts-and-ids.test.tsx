@@ -7,9 +7,15 @@ describe("direct pptx writer template layouts and ids", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
       templates: {
         report: {
+          style: {
+            display: "grid",
+            gridTemplateAreas: ['"title"', '"body"'],
+            gridTemplateRows: ["1fr", "3fr"],
+            padding: 0.7,
+          },
           areas: {
-            title: { kind: "title", frame: { x: 0.7, y: 0.6, width: 8, height: 0.8 } },
-            body: { frame: { x: 0.7, y: 1.6, width: 8, height: 3.5 } },
+            title: { kind: "title", style: { gridArea: "title" } },
+            body: { style: { gridArea: "body" } },
           },
         },
       },
@@ -90,7 +96,7 @@ describe("direct pptx writer template layouts and ids", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Relationship ids" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Relationships</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Relationships</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -185,7 +191,7 @@ describe("direct pptx writer template layouts and ids", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Missing relationship ids" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Relationships</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Relationships</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -294,7 +300,7 @@ describe("direct pptx writer template layouts and ids", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Missing owner paths" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Owner paths</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Owner paths</p>
     ));
 
     const projection = (await deck.project()).projection!;

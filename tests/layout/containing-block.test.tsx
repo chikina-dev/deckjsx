@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, EMU_PER_INCH } from "../../src/index.ts";
-import { summarizeNodes } from "../helpers.ts";
+import { Deck, EMU_PER_INCH } from "@/src/index.ts";
+import { expectPptxProjection, summarizeNodes } from "../helpers.ts";
 
 const toEmu = (inches: number) => inches * EMU_PER_INCH;
 const toRoundedEmu = (inches: number) => Math.round(toEmu(inches));
@@ -11,18 +11,37 @@ describe(" containing blocks", () => {
 
     deck.slide({ name: "Relative layout" }, () => (
       <>
-        <div style={{ x: 1, y: 1, width: 6, height: 3 }}>
-          <p style={{ x: "10%", y: "20%", width: "50%", height: "25%", fontSize: 12 }}>
+        <div style={{ position: "absolute", left: 1, top: 1, width: 6, height: 3 }}>
+          <p
+            style={{
+              position: "absolute",
+              left: "10%",
+              top: "20%",
+              width: "50%",
+              height: "25%",
+              fontSize: 12,
+            }}
+          >
             percent child
           </p>
-          <p style={{ left: "55%", top: "10%", right: "10%", bottom: "60%", fontSize: 12 }}>
+          <p
+            style={{
+              position: "absolute",
+              left: "55%",
+              top: "10%",
+              right: "10%",
+              bottom: "60%",
+              fontSize: 12,
+            }}
+          >
             inset child
           </p>
         </div>
         <div
           style={{
-            x: 1,
-            y: 4.25,
+            position: "absolute",
+            left: 1,
+            top: 4.25,
             width: 6,
             height: 0.8,
             display: "flex",
@@ -42,8 +61,9 @@ describe(" containing blocks", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 7,
             height: 3,
             display: "grid",
@@ -58,8 +78,9 @@ describe(" containing blocks", () => {
         </div>
         <div
           style={{
-            x: 1,
-            y: 4.25,
+            position: "absolute",
+            left: 1,
+            top: 4.25,
             width: 7,
             height: 0.85,
             display: "flex",
@@ -83,7 +104,7 @@ describe(" containing blocks", () => {
       </>
     ));
 
-    const ir = (await deck.project()).projection!;
+    const ir = expectPptxProjection(await deck.project());
 
     expect(summarizeNodes(ir.slides[0].payload.drawing.children)).toEqual([
       {

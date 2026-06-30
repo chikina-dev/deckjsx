@@ -1,5 +1,5 @@
-import type { AssetEntity } from "../../graph";
-import type { ImageSourceIR } from "../../layout/projected";
+import type { AssetEntity } from "@/src/graph";
+import type { ImageSourceIR } from "@/src/layout/projected";
 import {
   drawingFromElements,
   mapElements,

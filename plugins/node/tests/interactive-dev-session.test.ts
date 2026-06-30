@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vite-plus/test";
-import { createInteractiveDevSession } from "../src/interactive/session.ts";
-import { createNodeDevInspectionStore } from "../src/dev-inspection-store.ts";
-import type { DeckjsxDevCompiler, DeckjsxDevCompilerEvent } from "../src/dev-compiler.ts";
-import type { DeckjsxDevCompilationResult } from "../src/dev-compilation.ts";
+import { createInteractiveDevSession } from "@/src/interactive/session.ts";
+import { createNodeDevInspectionStore } from "@/src/dev-inspection-store.ts";
+import type { DeckjsxDevCompiler, DeckjsxDevCompilerEvent } from "@/src/dev-compiler.ts";
+import type { DeckjsxDevCompilationResult } from "@/src/dev-compilation.ts";
 import type { IncrementalArtifactSession } from "deckjsx/integration";
 
 function createFakeCompiler(): {

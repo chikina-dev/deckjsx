@@ -1,6 +1,6 @@
 import type {
-  BorderStyle,
   CssVisibility,
+  ProjectedStrokeStyle,
   StrokeDashType,
   StrokeLineCap,
   StrokeLineJoin,
@@ -235,7 +235,7 @@ export type ProjectedLayoutVideo = ProjectedLayoutBaseNode & {
 
 export type ProjectedLayoutShape = ProjectedLayoutBaseNode & {
   kind: "shape";
-  shape: "rect" | "ellipse" | "line";
+  shape: "rect" | "ellipse" | "line" | "roundRect";
   fill?: FillIR;
   backgroundLayers?: ReadonlyArray<BackgroundLayerIR>;
   stroke?: StrokeIR;
@@ -302,7 +302,7 @@ export type BackgroundLayerIR = FillIR | BackgroundImageLayerIR;
 export type StrokeIR = {
   color: string;
   widthPt: number;
-  style?: BorderStyle;
+  style?: ProjectedStrokeStyle;
   dashType?: StrokeDashType;
   lineCap?: StrokeLineCap;
   lineJoin?: StrokeLineJoin;

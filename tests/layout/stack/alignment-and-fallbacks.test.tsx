@@ -9,8 +9,9 @@ describe("stack layout alignment and fallbacks", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 6,
             height: 3,
             display: "flex",
@@ -27,7 +28,7 @@ describe("stack layout alignment and fallbacks", () => {
       </>
     ));
 
-    const ir = (await deck.project()).projection!;
+    const ir = H.expectPptxProjection(await deck.project());
 
     expect(H.summarizeNodes(ir.slides[0].payload.drawing.children)).toEqual([
       {
@@ -74,14 +75,15 @@ describe("stack layout alignment and fallbacks", () => {
     ]);
   });
 
-  test("render records unsupported flex and alignment css keywords", async () => {
+  test("render rejects unsupported flex and alignment css keywords", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Unsupported flex CSS keywords" }, () => (
       <div
         style={{
-          x: 1,
-          y: 1,
+          position: "absolute",
+          left: 1,
+          top: 1,
           width: 4,
           height: 2,
           display: "flex",
@@ -96,47 +98,48 @@ describe("stack layout alignment and fallbacks", () => {
     ));
 
     const project = await deck.project();
-    const [group] = project.projection!.slides[0].payload.drawing.children;
 
-    expect(project.ok).toBe(true);
-    expect(group?.unsupportedSemantics).toContainEqual(
-      expect.objectContaining({
-        feature: "layout",
-        property: "flexDirection",
-        value: "row-reverse",
-      }),
-    );
-    expect(group?.unsupportedSemantics).toContainEqual(
-      expect.objectContaining({
-        feature: "layout",
-        property: "flexWrap",
-        value: "wrap-reverse",
-      }),
-    );
-    expect(group?.unsupportedSemantics).toContainEqual(
-      expect.objectContaining({
-        feature: "layout",
-        property: "justifyContent",
-        value: "safe center",
-      }),
-    );
-    expect(group?.unsupportedSemantics).toContainEqual(
-      expect.objectContaining({
-        feature: "layout",
-        property: "alignItems",
-        value: "first baseline",
-      }),
+    expect(project.ok).toBe(false);
+    expect(project.projection).toBeUndefined();
+    expect(project.diagnostics.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "E_COMPILE_INVALID_STYLE_VALUE",
+          message: expect.stringContaining(
+            "flexDirection value is not part of the public authoring API",
+          ),
+        }),
+        expect.objectContaining({
+          code: "E_COMPILE_INVALID_STYLE_VALUE",
+          message: expect.stringContaining(
+            "flexWrap value is not part of the public authoring API",
+          ),
+        }),
+        expect.objectContaining({
+          code: "E_COMPILE_INVALID_STYLE_VALUE",
+          message: expect.stringContaining(
+            "justifyContent value is not part of the public authoring API",
+          ),
+        }),
+        expect.objectContaining({
+          code: "E_COMPILE_INVALID_STYLE_VALUE",
+          message: expect.stringContaining(
+            "alignItems value is not part of the public authoring API",
+          ),
+        }),
+      ]),
     );
   });
 
-  test("render records auto margin fallback instead of failing spacing parsing", async () => {
+  test("render rejects auto margin at the public authoring boundary", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
-    deck.slide({ name: "Auto margin fallback" }, () => (
+    deck.slide({ name: "Auto margin rejection" }, () => (
       <div
         style={{
-          x: 1,
-          y: 1,
+          position: "absolute",
+          left: 1,
+          top: 1,
           width: 4,
           height: 2,
           display: "flex",
@@ -148,19 +151,13 @@ describe("stack layout alignment and fallbacks", () => {
     ));
 
     const project = await deck.project();
-    const [group] = project.projection!.slides[0].payload.drawing.children;
-    const [text] = group?.kind === "group" ? group.children : [];
 
-    expect(project.ok).toBe(true);
-    expect(text?.unsupportedSemantics).toContainEqual(
+    expect(project.ok).toBe(false);
+    expect(project.diagnostics.items).toContainEqual(
       expect.objectContaining({
-        feature: "layout",
-        property: "margin",
-        value: JSON.stringify(["0", "auto", "0", "auto"]),
-        fallback: expect.objectContaining({
-          strategy: "preserveAuthoredValueOnly",
-          missing: expect.arrayContaining(["cssAutoMarginResolution"]),
-        }),
+        code: "E_COMPILE_INVALID_STYLE_VALUE",
+        severity: "error",
+        message: expect.stringContaining("margin value is not part of the public authoring API"),
       }),
     );
   });

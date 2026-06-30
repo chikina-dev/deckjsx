@@ -79,7 +79,7 @@ describe("project/render defined projection and package features", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Identity" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Stable</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Stable</p>
       </>
     ));
 
@@ -100,7 +100,7 @@ describe("project/render defined projection and package features", () => {
       theme: new H.Theme({ defaults: { p: { color: "#334155", fontSize: 20 } } }),
     });
     deck.slide({ name: "Manifest" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Theme default</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Theme default</p>
     ));
 
     const project = await deck.project();
@@ -304,7 +304,7 @@ describe("project/render defined projection and package features", () => {
       theme: new H.Theme({ defaults: { p: { color: "#0F172A", fontSize: 24 } } }),
     });
     controlDeck.slide({ name: "Manifest" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Theme default</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Theme default</p>
     ));
     const controlProject = await controlDeck.project();
     const controlThemePayload = controlProject.projection?.parts.find(

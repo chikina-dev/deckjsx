@@ -4,7 +4,14 @@ import * as H from "./helpers.tsx";
 describe("style resolution cascade specificity", () => {
   test("stylesheet source order wins over className token order", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.useStyles(new H.StyleSheet({ classes: { a: { color: "red" }, b: { color: "blue" } } }));
+    deck.useStyles(
+      new H.StyleSheet({
+        classes: {
+          a: { target: "p.a", style: { color: "red" } },
+          b: { target: "p.b", style: { color: "blue" } },
+        },
+      }),
+    );
 
     deck.slide(() => (
       <>
@@ -46,11 +53,13 @@ describe("style resolution cascade specificity", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.useStyles(
       new H.StyleSheet({
-        classes: { caption: { target: ".card .caption", style: { color: "red" } } },
+        classes: { caption: { target: "div.card p.caption", style: { color: "red" } } },
       }),
     );
     deck.useStyles(
-      new H.StyleSheet({ classes: { caption: { target: ".caption", style: { color: "blue" } } } }),
+      new H.StyleSheet({
+        classes: { caption: { target: "p.caption", style: { color: "blue" } } },
+      }),
     );
 
     deck.slide(() => (
@@ -72,7 +81,7 @@ describe("style resolution cascade specificity", () => {
     expect(
       resolved?.properties.color?.source.layer === "class" &&
         resolved.properties.color.source.selector,
-    ).toBe(".card .caption");
+    ).toBe("div.card p.caption");
   });
 
   test("target selectors match authored tags, classes, and descendants", async () => {
@@ -82,7 +91,7 @@ describe("style resolution cascade specificity", () => {
         classes: {
           title: { target: "header.title", style: { backgroundColor: "#eef" } },
           caption: { target: "div.card p.caption", style: { color: "green" } },
-          "report/title": { style: { fontWeight: 700 } },
+          "report/title": { target: "p.report\\/title", style: { fontWeight: 700 } },
         },
       }),
     );
@@ -114,7 +123,7 @@ describe("style resolution cascade specificity", () => {
       fontWeight: 700,
     });
     expect(result.resolvedStyles?.get(text?.id ?? ("" as never))?.appliedClasses).toContainEqual(
-      expect.objectContaining({ className: "report/title", selector: ".report\\/title" }),
+      expect.objectContaining({ className: "report/title", selector: "p.report\\/title" }),
     );
   });
 
@@ -122,8 +131,12 @@ describe("style resolution cascade specificity", () => {
     const parentDeck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     const childDeck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
-    parentDeck.useStyles(new H.StyleSheet({ classes: { note: { color: "red" } } }));
-    childDeck.useStyles(new H.StyleSheet({ classes: { note: { color: "blue" } } }));
+    parentDeck.useStyles(
+      new H.StyleSheet({ classes: { note: { target: "p.note", style: { color: "red" } } } }),
+    );
+    childDeck.useStyles(
+      new H.StyleSheet({ classes: { note: { target: "p.note", style: { color: "blue" } } } }),
+    );
 
     parentDeck.slide(() => (
       <>
@@ -148,6 +161,31 @@ describe("style resolution cascade specificity", () => {
       color: "red",
     });
     expect(result.resolvedStyles?.get(childText?.id ?? ("" as never))?.style).toMatchObject({
+      color: "blue",
+    });
+  });
+
+  test("root Deck compile does not reuse stale resolved styles after a mounted child stylesheet changes", async () => {
+    const parentDeck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const childDeck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    childDeck.slide(() => (
+      <>
+        <p className="note">Child</p>
+      </>
+    ));
+    parentDeck.mount("child", childDeck);
+
+    const before = await parentDeck.project();
+    childDeck.useStyles(
+      new H.StyleSheet({ classes: { note: { target: "p.note", style: { color: "blue" } } } }),
+    );
+    const after = parentDeck.compile();
+    const childText = H.values(after.graph?.nodes ?? new Map()).find(
+      (node) => node.kind === "text" && node.authoredTag === "p",
+    );
+
+    expect(before.ok).toBe(true);
+    expect(after.resolvedStyles?.get(childText?.id ?? ("" as never))?.style).toMatchObject({
       color: "blue",
     });
   });

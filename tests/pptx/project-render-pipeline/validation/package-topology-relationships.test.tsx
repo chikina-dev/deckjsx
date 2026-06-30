@@ -9,7 +9,7 @@ describe("project/render validation package topology relationships", () => {
         <video
           data={H.dataUriFromBytes("video/mp4", new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112]))}
           posterData={H.dataUriFromBytes("image/png", H.pngHeaderBytes(2, 1))}
-          style={{ x: 1, y: 1, width: 4, height: 2.25 }}
+          style={{ position: "absolute", left: 1, top: 1, width: 4, height: 2.25 }}
         />
       </>
     ));
@@ -93,7 +93,7 @@ describe("project/render validation package topology relationships", () => {
   test("project validates presentation support relationships required by package topology", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Missing presentation support relationships" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>support</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>support</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -175,7 +175,7 @@ describe("project/render validation package topology relationships", () => {
   test("project validates slide master and layout support relationships required by package topology", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Missing master layout relationships" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>support</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>support</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -263,7 +263,7 @@ describe("project/render validation package topology relationships", () => {
   test("project validates root package relationships required to open the PPTX package", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Missing root relationships" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>root</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>root</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -342,7 +342,7 @@ describe("project/render validation package topology relationships", () => {
   test("project rejects known package relationships marked as external", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "External package relationship" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Relationships</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Relationships</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -405,7 +405,7 @@ describe("project/render validation package topology relationships", () => {
   test("project validates external relationship targets use supported URL schemes", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "External target URL" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Relationships</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Relationships</p>
     ));
 
     const projection = (await deck.project()).projection!;

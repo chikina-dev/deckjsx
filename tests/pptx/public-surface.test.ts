@@ -57,9 +57,10 @@ describe("public surface", () => {
     expect(pkg.files).toEqual(["dist"]);
     expect(pkg.exports).toEqual({
       ".": { types: "./dist/index.d.mts", import: "./dist/index.mjs" },
-      "./adapter": { types: "./dist/adapter.d.mts", import: "./dist/adapter.mjs" },
+      "./adapter": { types: "./dist/adapter/index.d.mts", import: "./dist/adapter/index.mjs" },
       "./inspect": { types: "./dist/inspect.d.mts", import: "./dist/inspect.mjs" },
       "./integration": { types: "./dist/integration.d.mts", import: "./dist/integration.mjs" },
+      "./style": { types: "./dist/style/public.d.mts", import: "./dist/style/public.mjs" },
       "./jsx-dev-runtime": {
         types: "./dist/jsx-dev-runtime.d.mts",
         import: "./dist/jsx-dev-runtime.mjs",
@@ -77,6 +78,20 @@ describe("public surface", () => {
         }
       }
     }
+  });
+
+  test("built root entry can render through its lazy pipeline chunk", async () => {
+    const rootEntryUrl = new URL("../../dist/index.mjs", import.meta.url).href;
+    const { Deck } = (await import(rootEntryUrl)) as Pick<typeof import("@/src/index.ts"), "Deck">;
+
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Built runtime" }, () => null);
+
+    const render = await deck.render();
+
+    expect(render.ok).toBe(true);
+    expect(render.artifact?.format).toBe("pptx");
+    expect(render.artifact?.bytes.subarray(0, 2).toString()).toBe("80,75");
   });
 
   test("core package manifest publishes a dependency-free runtime", async () => {

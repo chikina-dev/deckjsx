@@ -12,7 +12,7 @@ import type {
   PptxThemePartPayload,
   PptxThemePart,
   PptxViewPropertiesPart,
-} from "../../projection/pptx/model";
+} from "@/src/projection/pptx/model";
 import { relationshipOwnerPath } from "./package-xml";
 import { XmlChunkWriter } from "./xml-writer";
 

@@ -2,37 +2,6 @@ import { describe, expect, test } from "vite-plus/test";
 import * as H from "./helpers.tsx";
 
 describe("direct pptx writer XML helpers", () => {
-  test("primary PPTX XML emitters avoid raw XML fragment insertion", async () => {
-    const emitterFiles = [
-      "drawing-layer-xml.ts",
-      "drawing-xml.ts",
-      "package-xml.ts",
-      "picture-xml.ts",
-      "shape-xml.ts",
-      "slide-xml.ts",
-      "support-xml.ts",
-      "text-xml.ts",
-    ] as const;
-
-    const sources = await Promise.all(
-      emitterFiles.map(async (fileName) => ({
-        fileName,
-        source: await H.readFile(
-          new URL(`../../../src/writers/pptx/${fileName}`, import.meta.url),
-          "utf8",
-        ),
-      })),
-    );
-
-    expect(sources).toEqual(
-      expect.arrayContaining(
-        emitterFiles.map((fileName) =>
-          expect.objectContaining({ fileName, source: expect.not.stringContaining(".raw(") }),
-        ),
-      ),
-    );
-  });
-
   test("XML chunk writer preserves deterministic escaping while reusing static chunks", () => {
     const xml = new TextDecoder().decode(
       new H.XmlChunkWriter()

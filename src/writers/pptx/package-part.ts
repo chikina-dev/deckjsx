@@ -1,4 +1,4 @@
-import type { PptxPackagePart } from "../../projection/pptx/model";
+import type { PptxPackagePart } from "@/src/projection/pptx/model";
 
 export function packagePartOrderKey(part: PptxPackagePart): string {
   const value = part.orderKey?.value;

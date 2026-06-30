@@ -1,8 +1,8 @@
-import type { AssetArtifact } from "../../pipeline-artifacts";
-import { createDiagnostics, diagnostic, type Diagnostics } from "../../diagnostics";
-import type { ImageSourceIR } from "../../layout/projected";
-import type { PptxMediaPartPayload, PptxPackagePart } from "../../projection/pptx/model";
-import { isPptxMediaPart } from "../../projection/pptx/model";
+import type { AssetArtifact } from "@/src/pipeline/artifacts";
+import { createDiagnostics, diagnostic, type Diagnostics } from "@/src/diagnostics";
+import type { ImageSourceIR } from "@/src/layout/projected";
+import type { PptxMediaPartPayload, PptxPackagePart } from "@/src/projection/pptx/model";
+import { isPptxMediaPart } from "@/src/projection/pptx/model";
 
 type PptxMediaContext = {
   readonly assetsById?: ReadonlyMap<

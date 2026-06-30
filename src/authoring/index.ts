@@ -1,24 +1,9 @@
-import type { JsxKey } from "./tree";
-import type { EmptySlideTemplateSet, SlideTemplateSet } from "../templates";
-import type { Theme } from "../style/theme";
-import type {
-  ImageNodeProps,
-  ShapeNodeProps,
-  SlideNodeProps,
-  TableCellNodeProps,
-  TableNodeProps,
-  TableRowNodeProps,
-  TableSectionNodeProps,
-  TextNodeProps,
-  TextRunNodeProps,
-  VideoNodeProps,
-  ViewNodeProps,
-} from "./props";
-
 export type {
   ClassNameObject,
   ClassNameValue,
   ClassNameValueArray,
+  DataUriString,
+  ImageSourceString,
   ImageNodeProps,
   ShapeNodeProps,
   SlideNodeProps,
@@ -28,34 +13,41 @@ export type {
   TableSectionNodeProps,
   TextNodeProps,
   TextRunNodeProps,
+  VideoSourceString,
   VideoNodeProps,
   ViewNodeProps,
 } from "./props";
+export type { ShapeName, TableCellSpan } from "./contract";
 export type {
   BorderStyle,
+  BorderWidthValue,
   CssAlignContent,
   CssAlignItems,
   CssAlignSelf,
   CssAspectRatio,
   CssBoxSizing,
+  CssBorderWidth,
   CssDisplay,
   CssBorderCollapse,
   CssFlexBasis,
   CssFlexDirection,
+  CssFlexFactor,
   CssFlexWrap,
+  CssFontWeight,
+  CssGridAreaAuthoringString,
   CssGridAutoFlow,
   CssGridLine,
   CssGridPlacement,
-  CssGridShorthand,
   CssGridTemplate,
   CssGridTemplateAreas,
-  CssGridTemplateShorthand,
   CssGridTrack,
+  CssInteger,
   CssJustifyContent,
   CssJustifySelf,
   CssLetterSpacing,
   CssObjectPosition,
   CssOverflow,
+  CssPointLength,
   CssPosition,
   CssTableLayout,
   CssVisibility,
@@ -64,12 +56,16 @@ export type {
   ImageCropAuthoring,
   ImageCropValue,
   ImageStyle,
-  LayoutMode,
+  ListStart,
+  NonNegativeDeckLength,
+  NonNegativeDeckLengthString,
+  NonNegativeDeckPointLength,
+  NonNegativeDeckPointLengthString,
+  NonNegativeSpacing,
   ShapeStyle,
   SlideStyle,
   Spacing,
-  StackAlignment,
-  StackAxis,
+  StyleForAuthoredTag,
   StrokeDashType,
   StrokeLineCap,
   StrokeLineJoin,
@@ -83,157 +79,55 @@ export type {
   TextTabStopAlignment,
   TextTabStopAuthoring,
   TextTabStopLength,
+  TooltipText,
   VerticalAlign,
   VideoStyle,
   ViewStyle,
 } from "../style/types";
+export type { DeckOptions } from "./options/public";
+export type { DeckJsxElement, DeckJsxElementValue, JsxNode, JsxNodeArray } from "./jsx-types";
 export type {
-  StyleClassDefinition,
-  StyleClassStyle,
-  StyleSheet,
-  StyleTargetSelector,
-} from "../style/stylesheet";
-
-export type DeckJsxElement = {
-  readonly $$typeof: "deckjsx.author-tree";
-};
-
-export interface TextJsxChildArray extends ReadonlyArray<TextJsxChild> {}
-export type TextJsxChild =
-  | DeckJsxElement
-  | string
-  | number
-  | boolean
-  | null
-  | undefined
-  | TextJsxChildArray;
-export interface ContentJsxChildArray extends ReadonlyArray<ContentJsxChild> {}
-export type ContentJsxChild = DeckJsxElement | boolean | null | undefined | ContentJsxChildArray;
-export interface ViewIntrinsicJsxChildArray extends ReadonlyArray<ViewIntrinsicJsxChild> {}
-export type ViewIntrinsicJsxChild = ContentJsxChild | string | number | ViewIntrinsicJsxChildArray;
-export interface JsxNodeArray extends ReadonlyArray<JsxNode> {}
-export type JsxNode = DeckJsxElement | string | number | boolean | null | undefined | JsxNodeArray;
-
-export type DeckOptions<TTemplates extends SlideTemplateSet = EmptySlideTemplateSet> = {
-  layout: {
-    width: number;
-    height: number;
-    unit: "in" | "pt";
-  };
-  templates?: TTemplates;
-  meta?: {
-    title?: string;
-    author?: string;
-    subject?: string;
-  };
-  theme?: Theme;
-  output?: {
-    format?: "pptx";
-  };
-};
+  ContentJsxChild,
+  ContentJsxChildArray,
+  ContentJsxElement,
+  DeckJsxIntrinsicElements,
+  ImageProps,
+  IntrinsicDivProps,
+  IntrinsicImgProps,
+  IntrinsicPProps,
+  IntrinsicShapeProps,
+  IntrinsicSpanProps,
+  IntrinsicTableCellProps,
+  IntrinsicTableProps,
+  IntrinsicTableRowProps,
+  IntrinsicTableSectionProps,
+  IntrinsicTableTag,
+  IntrinsicTextTag,
+  IntrinsicVideoProps,
+  IntrinsicViewTag,
+  ShapeProps,
+  SlideProps,
+  TableCellJsxChild,
+  TableCellJsxChildArray,
+  TableJsxChild,
+  TableJsxChildArray,
+  TableRowJsxChild,
+  TableRowJsxChildArray,
+  TableSectionJsxChild,
+  TableSectionJsxChildArray,
+  TextJsxChild,
+  TextJsxChildArray,
+  TextProps,
+  VideoProps,
+  ViewIntrinsicJsxChild,
+  ViewIntrinsicJsxChildArray,
+  ViewProps,
+} from "./intrinsic";
+export type { StyleClassStyle, StyleSheetValue } from "../style/stylesheet";
 
 export type SlideContext = {
-  composition: import("../composition/types").CompositionContext;
+  composition: import("../composition/public").CompositionContext;
 };
 
 export type SlideFactory<TSourceContext = void> =
-  import("../composition/types").SlideFactory<TSourceContext>;
-
-export type SlideProps = SlideNodeProps & {
-  children?: ContentJsxChild;
-};
-
-export type ViewProps = ViewNodeProps & {
-  children?: ContentJsxChild;
-};
-
-export type TextProps = TextNodeProps & {
-  children?: TextJsxChild;
-};
-
-export type ImageProps = ImageNodeProps & {
-  children?: never;
-};
-
-export type VideoProps = VideoNodeProps & {
-  children?: never;
-};
-
-export type ShapeProps = ShapeNodeProps & {
-  children?: never;
-};
-
-type IntrinsicKeyProps = {
-  key?: JsxKey;
-};
-
-export type IntrinsicDivProps = ViewNodeProps &
-  IntrinsicKeyProps & {
-    children?: ViewIntrinsicJsxChild;
-  };
-
-export type IntrinsicPProps = TextNodeProps &
-  IntrinsicKeyProps & {
-    children?: TextJsxChild;
-  };
-
-export type IntrinsicSpanProps = TextRunNodeProps &
-  IntrinsicKeyProps & {
-    children?: TextJsxChild;
-  };
-
-export type IntrinsicImgProps = ImageProps & IntrinsicKeyProps;
-export type IntrinsicVideoProps = VideoProps & IntrinsicKeyProps;
-export type IntrinsicShapeProps = ShapeProps & IntrinsicKeyProps;
-
-export type IntrinsicViewTag =
-  | "article"
-  | "aside"
-  | "div"
-  | "figure"
-  | "footer"
-  | "header"
-  | "main"
-  | "nav"
-  | "section";
-
-export type IntrinsicTextTag = "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p";
-export type IntrinsicTableTag = "table" | "thead" | "tbody" | "tfoot" | "tr" | "th" | "td";
-
-export type IntrinsicTableProps = TableNodeProps &
-  IntrinsicKeyProps & {
-    children?: ContentJsxChild;
-  };
-
-export type IntrinsicTableSectionProps = TableSectionNodeProps &
-  IntrinsicKeyProps & {
-    children?: ContentJsxChild;
-  };
-
-export type IntrinsicTableRowProps = TableRowNodeProps &
-  IntrinsicKeyProps & {
-    children?: ContentJsxChild;
-  };
-
-export type IntrinsicTableCellProps = TableCellNodeProps &
-  IntrinsicKeyProps & {
-    children?: ViewIntrinsicJsxChild;
-  };
-
-export type DeckJsxIntrinsicElements = {
-  img: IntrinsicImgProps;
-  shape: IntrinsicShapeProps;
-  span: IntrinsicSpanProps;
-  video: IntrinsicVideoProps;
-  table: IntrinsicTableProps;
-  thead: IntrinsicTableSectionProps;
-  tbody: IntrinsicTableSectionProps;
-  tfoot: IntrinsicTableSectionProps;
-  tr: IntrinsicTableRowProps;
-  th: IntrinsicTableCellProps;
-  td: IntrinsicTableCellProps;
-} & {
-  [Tag in IntrinsicViewTag]: IntrinsicDivProps;
-} & {
-  [Tag in IntrinsicTextTag]: IntrinsicPProps;
-};
+  import("../composition/public").SlideFactory<TSourceContext>;

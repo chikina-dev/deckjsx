@@ -5,7 +5,16 @@ describe("project/render validation slide and template support payloads", () => 
   test("project validates slide payloads before render", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Broken slide payload" }, () => (
-      <div style={{ x: 1, y: 1, width: 3, height: 2, backgroundColor: "#2563EB" }} />
+      <div
+        style={{
+          position: "absolute",
+          left: 1,
+          top: 1,
+          width: 3,
+          height: 2,
+          backgroundColor: "#2563EB",
+        }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;
@@ -200,7 +209,8 @@ describe("project/render validation slide and template support payloads", () => 
       layout: { width: 10, height: 5.625, unit: "in" },
       templates: {
         report: {
-          areas: { title: { kind: "title", frame: { x: 0.5, y: 0.5, width: 8, height: 1 } } },
+          style: { display: "grid", gridTemplateAreas: ['"title"'], padding: 0.5 },
+          areas: { title: { kind: "title", style: { gridArea: "title" } } },
         },
       },
     });
@@ -270,7 +280,9 @@ describe("project/render validation slide and template support payloads", () => 
   test("project validates slide master and layout support payloads before render", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Broken support payloads" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Support payloads</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
+        Support payloads
+      </p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -369,7 +381,9 @@ describe("project/render validation slide and template support payloads", () => 
   test("project validates slide master and layout support payload reference part kinds", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Wrong support payload targets" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Support targets</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
+        Support targets
+      </p>
     ));
 
     const projection = (await deck.project()).projection!;

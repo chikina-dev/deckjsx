@@ -1,10 +1,7 @@
-import type { DeckOptions } from "../../authoring/index";
-import type { GraphNodeId, SemanticAuthorGraph, SourceOrigin } from "../../graph";
-import { frameFromProps } from "../../layout/absolute";
-import type { Frame } from "../../layout/frame";
-import type { FrameIR } from "../../layout/projected";
-import type { ResolvedStyleMap } from "../../style/resolve";
-import type { SlideTemplate } from "../../templates";
+import type { DeckOptions } from "@/src/authoring/options";
+import type { GraphNodeId, SemanticAuthorGraph, SourceOrigin } from "@/src/graph";
+import type { ResolvedStyleMap } from "@/src/style/resolve";
+import type { SlideTemplate } from "@/src/templates";
 import { packageIdentity, slidePartIdFor } from "./identity";
 import { DEFAULT_COLOR_MAP, DEFAULT_THEME_COLORS, defaultThemeProjectionTrace } from "./theme";
 import type {
@@ -76,15 +73,6 @@ function defaultTextStylePayload(): PptxDefaultTextStylePayload {
   };
 }
 
-function frameToFrameIR(frame: Frame): FrameIR {
-  return {
-    xEmu: frame.xEmu,
-    yEmu: frame.yEmu,
-    widthEmu: frame.widthEmu,
-    heightEmu: frame.heightEmu,
-  };
-}
-
 function sourceKeyForOrigin(source: SourceOrigin | undefined): string {
   return !source || source.kind === "root" ? "root" : source.sourceIdentity;
 }
@@ -96,33 +84,15 @@ export function slideLayoutPartIdForTemplate(input: {
   return packageIdentity("support", `slide-layout:${input.sourceKey}:${input.template}`);
 }
 
-function slideFrameFromSize(size: PptxPackageModel["size"]): Frame {
-  return {
-    xEmu: 0,
-    yEmu: 0,
-    widthEmu: size.widthEmu,
-    heightEmu: size.heightEmu,
-  };
-}
-
 function templateLayoutAnchors(input: {
   readonly templateName: string;
   readonly template: SlideTemplate;
-  readonly size: PptxPackageModel["size"];
 }): readonly PptxSlideLayoutAnchor[] {
-  const slideFrame = slideFrameFromSize(input.size);
-
   return Object.entries(input.template.areas).map(([area, templateArea]) => ({
     template: input.templateName,
     area,
     kind: templateArea.kind ?? "generic",
-    frame: frameToFrameIR(
-      frameFromProps(templateArea.frame, slideFrame, undefined, {
-        viewportWidthEmu: input.size.widthEmu,
-        viewportHeightEmu: input.size.heightEmu,
-      }),
-    ),
-    placeholderStrategy: "none",
+    placeholderStrategy: "none" as const,
   }));
 }
 
@@ -154,10 +124,12 @@ function templateSlideLayoutParts(input: {
             sourceKey,
             name: templateName,
           },
+          ...(template.style
+            ? { templateFlowStyle: template.style as Readonly<Record<string, unknown>> }
+            : {}),
           layoutAnchors: templateLayoutAnchors({
             templateName,
             template,
-            size: input.size,
           }),
         } satisfies PptxSlideLayoutPartPayload,
       });

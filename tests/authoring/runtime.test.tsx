@@ -1,16 +1,17 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck } from "../../src/index.ts";
-import { isAuthorTreeNode } from "../../src/authoring/tree.ts";
-import { withAuthoringRuntimeObservers } from "../../src/authoring-runtime-observer.ts";
-import { authoringMetadata } from "../../src/integration.ts";
-import { jsxDEV } from "../../src/jsx-dev-runtime.ts";
-import { Fragment, jsx } from "../../src/jsx-runtime.ts";
-import { createElementWithMetadata } from "../../src/jsx.ts";
+import { Deck } from "@/src/index.ts";
+import { isAuthorTreeNode } from "@/src/authoring/tree.ts";
+import { withAuthoringRuntimeObservers } from "@/src/authoring-runtime-observer.ts";
+import { authoringMetadata } from "@/src/integration.ts";
+import { jsxDEV } from "@/src/jsx-dev-runtime.ts";
+import { Fragment, jsx } from "@/src/jsx-runtime.ts";
+import { createElementWithMetadata } from "@/src/jsx.ts";
+import { expectPptxProjection } from "../helpers";
 
 describe("authoring and JSX runtime", () => {
   test("JSX primitives produce nested Author Tree nodes", async () => {
     const node = (
-      <div key="outer" style={{ x: 1, y: 2 }}>
+      <div key="outer" style={{ position: "absolute", left: 1, top: 2 }}>
         <>
           <p key={1}>First</p>
           {[<p>Second</p>, false, null]}
@@ -24,7 +25,7 @@ describe("authoring and JSX runtime", () => {
     }
 
     expect(node.source).toEqual({ kind: "tag", tag: "div" });
-    expect(node.props).toEqual({ style: { x: 1, y: 2 } });
+    expect(node.props).toEqual({ style: { position: "absolute", left: 1, top: 2 } });
     expect(node.children).toHaveLength(1);
     expect(node.children[0]).toMatchObject({ kind: "fragment" });
     if (node.children[0]?.kind !== "fragment") {
@@ -230,7 +231,10 @@ describe("authoring and JSX runtime", () => {
     function MetricCard() {
       return jsxDEV(
         "p",
-        { children: "Revenue", style: { x: 1, y: 1, width: 3, height: 1 } },
+        {
+          children: "Revenue",
+          style: { position: "absolute", left: 1, top: 1, width: 3, height: 1 },
+        },
         undefined,
         false,
         { fileName: "/project/src/components/MetricCard.tsx", lineNumber: 7, columnNumber: 10 },
@@ -246,8 +250,8 @@ describe("authoring and JSX runtime", () => {
       }),
     );
 
-    const result = await deck.project();
-    const [element] = result.projection?.slides[0]?.payload.drawing.children ?? [];
+    const projection = expectPptxProjection(await deck.project());
+    const [element] = projection.slides[0]?.payload.drawing.children ?? [];
 
     expect(element?.origin.componentProvenance).toEqual({
       stack: [
@@ -260,53 +264,100 @@ describe("authoring and JSX runtime", () => {
     });
   });
 
-  test("lowercase div normalizes primitive children to implicit text nodes", async () => {
+  test("lowercase div reports primitive children that bypass public JSX types", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
-    deck.slide({ name: "Intrinsic content" }, () => (
-      <>
-        <div style={{ x: 1, y: 1, width: 6, height: 3 }}>
-          Title
-          <p style={{ x: 0, y: 0.5, width: 4, height: 0.5 }}>Paragraph</p>
-          <img src="/tmp/demo.png" style={{ x: 0, y: 1.1, width: 1, height: 1 }} />
-          42
-        </div>
-      </>
-    ));
+    deck.slide({ name: "Intrinsic content" }, () =>
+      jsx("div", {
+        style: { position: "absolute", left: 1, top: 1, width: 6, height: 3 },
+        children: [
+          "Title",
+          jsx("p", {
+            style: { position: "absolute", left: 0, top: 0.5, width: 4, height: 0.5 },
+            children: "Paragraph",
+          }),
+          jsx("img", {
+            src: "/tmp/demo.png",
+            style: { position: "absolute", left: 0, top: 1.1, width: 1, height: 1 },
+          }),
+          42,
+        ],
+      } as never),
+    );
 
-    const ir = (await deck.project()).projection!;
-    const [group] = ir.slides[0]?.payload.drawing.children ?? [];
-    if (!group || group.kind !== "group") {
-      throw new Error("Expected intrinsic div to compile to a group.");
-    }
+    const result = deck.compile();
 
-    expect(group.children.map((child) => child.kind)).toEqual(["text", "text", "image", "text"]);
-    expect(
-      group.children.filter((child) => child.kind === "text").map((child) => child.content.text),
-    ).toEqual(["Title", "Paragraph", "42"]);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "E_SEMANTIC_STRUCTURE",
+          title: "primitive text is not part of the public authoring API here",
+          message: expect.stringContaining("Primitive text is public content only inside"),
+          help: expect.arrayContaining([expect.stringContaining("<p>Text</p>")]),
+        }),
+      ]),
+    );
   });
 
-  test("implicit text nodes preserve explicit edge spaces", async () => {
+  test("table cells reject inline spans that bypass public JSX child types", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Invalid table span" }, () => (
+      <table style={{ position: "absolute", left: 1, top: 1, width: 6, height: 1 }}>
+        <tbody>
+          <tr>
+            <td>{jsx("span", { children: "inline" } as never) as never}</td>
+          </tr>
+        </tbody>
+      </table>
+    ));
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        code: "E_SEMANTIC_STRUCTURE",
+        title: "inline span is not part of the public authoring API here",
+        message: expect.stringContaining("outside a text-like element"),
+      }),
+    );
+  });
+
+  test("table cells still accept primitive text as authored cell content", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Explicit spaces" }, () => (
       <>
-        <div style={{ x: 1, y: 1, width: 6, height: 3 }}>
-          {"Hello "}
-          <p>there</p>
-          {" again"}
-        </div>
+        <table style={{ position: "absolute", left: 1, top: 1, width: 6, height: 1 }}>
+          <tbody>
+            <tr>
+              <td>{"Hello "}</td>
+              <td>there</td>
+              <td>{" again"}</td>
+            </tr>
+          </tbody>
+        </table>
       </>
     ));
 
-    const ir = (await deck.project()).projection!;
-    const [group] = ir.slides[0]?.payload.drawing.children ?? [];
-    if (!group || group.kind !== "group") {
-      throw new Error("Expected intrinsic div to compile to a group.");
+    const ir = expectPptxProjection(await deck.project());
+    const [table] = ir.slides[0]?.payload.drawing.children ?? [];
+    if (!table || table.kind !== "table") {
+      throw new Error("Expected intrinsic table to compile to a table.");
     }
 
     expect(
-      group.children.filter((child) => child.kind === "text").map((child) => child.content.text),
+      table.sections.flatMap((section) =>
+        section.rows.flatMap((row) =>
+          row.cells.flatMap((cell) =>
+            cell.children
+              .filter((child) => child.kind === "text")
+              .map((child) => child.content.text),
+          ),
+        ),
+      ),
     ).toEqual(["Hello ", "there", " again"]);
   });
 
@@ -315,19 +366,21 @@ describe("authoring and JSX runtime", () => {
 
     deck.slide({ name: "Semantic intrinsics" }, () => (
       <>
-        <main style={{ x: 0.5, y: 0.5, width: 9, height: 4 }}>
-          <header style={{ x: 0, y: 0, width: 9, height: 1 }}>
-            <h1 style={{ x: 0, y: 0, width: 8, height: 0.6 }}>Report</h1>
+        <main style={{ position: "absolute", left: 0.5, top: 0.5, width: 9, height: 4 }}>
+          <header style={{ position: "absolute", left: 0, top: 0, width: 9, height: 1 }}>
+            <h1 style={{ position: "absolute", left: 0, top: 0, width: 8, height: 0.6 }}>Report</h1>
           </header>
-          <section style={{ x: 0, y: 1.1, width: 9, height: 2 }}>
-            <p style={{ x: 0, y: 0, width: 8, height: 0.5 }}>Body</p>
+          <section style={{ position: "absolute", left: 0, top: 1.1, width: 9, height: 2 }}>
+            <p style={{ position: "absolute", left: 0, top: 0, width: 8, height: 0.5 }}>Body</p>
           </section>
-          <footer style={{ x: 0, y: 3.4, width: 9, height: 0.5 }}>Footer</footer>
+          <footer style={{ position: "absolute", left: 0, top: 3.4, width: 9, height: 0.5 }}>
+            <p>Footer</p>
+          </footer>
         </main>
       </>
     ));
 
-    const ir = (await deck.project()).projection!;
+    const ir = expectPptxProjection(await deck.project());
     const [main] = ir.slides[0]?.payload.drawing.children ?? [];
     if (!main || main.kind !== "group") {
       throw new Error("Expected main to compile to a group.");
@@ -349,13 +402,13 @@ describe("authoring and JSX runtime", () => {
 
     deck.slide({ name: "Rich text" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 6, height: 1, fontSize: 20 }}>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 6, height: 1, fontSize: 20 }}>
           Sales <span style={{ color: "#DC2626", fontWeight: 700 }}>grew</span> YoY
         </p>
       </>
     ));
 
-    const ir = (await deck.project()).projection!;
+    const ir = expectPptxProjection(await deck.project());
     const [text] = ir.slides[0]?.payload.drawing.children ?? [];
     if (!text || text.kind !== "text") {
       throw new Error("Expected rich paragraph to compile to a text node.");
@@ -373,11 +426,13 @@ describe("authoring and JSX runtime", () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Content slide" }, () => (
-      <p style={{ x: 1, y: 1, width: 3, height: 1, fontSize: 20 }}>Valid</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 1, fontSize: 20 }}>
+        Valid
+      </p>
     ));
 
     const result = await deck.project();
     expect(result.ok).toBe(true);
-    expect(result.projection?.slides[0]?.payload.name).toBe("Content slide");
+    expect(expectPptxProjection(result).slides[0]?.payload.name).toBe("Content slide");
   });
 });

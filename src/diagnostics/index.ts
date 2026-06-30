@@ -1,11 +1,21 @@
-import type { SourceSpan } from "../authoring/tree";
-
 export type DiagnosticSeverity = "error" | "warning";
+
+/**
+ * Public source-location summary attached to diagnostics.
+ *
+ * This shape is diagnostic metadata only. It mirrors the fields deckjsx can receive from development
+ * JSX runtimes without exposing Author Tree node types through the root authoring API.
+ */
+export type DiagnosticSourceSpan = {
+  readonly file?: string;
+  readonly line?: number;
+  readonly column?: number;
+};
 
 export type DiagnosticLabel = {
   readonly message: string;
   readonly path: string;
-  readonly sourceSpan?: SourceSpan;
+  readonly sourceSpan?: DiagnosticSourceSpan;
   readonly severity?: "primary" | "secondary";
 };
 

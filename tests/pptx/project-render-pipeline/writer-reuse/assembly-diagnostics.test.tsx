@@ -8,7 +8,14 @@ describe("project/render writer reuse assembly diagnostics", () => {
       <>
         <img
           src="/public/missing.png"
-          style={{ x: 1, y: 1, width: 2, height: 1, objectFit: "stretch" }}
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 2,
+            height: 1,
+            objectFit: "fill",
+          }}
         />
       </>
     ));
@@ -100,7 +107,9 @@ describe("project/render writer reuse assembly diagnostics", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Optional media" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>optional still renders</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>
+          optional still renders
+        </p>
       </>
     ));
 

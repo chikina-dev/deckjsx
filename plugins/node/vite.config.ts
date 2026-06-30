@@ -4,6 +4,14 @@ export default defineConfig({
   test: {
     alias: [
       {
+        find: /^@\/scripts\//,
+        replacement: new URL("../../scripts/", import.meta.url).pathname,
+      },
+      {
+        find: /^@\//,
+        replacement: new URL("./", import.meta.url).pathname,
+      },
+      {
         find: "deckjsx/jsx-dev-runtime",
         replacement: new URL("../../dist/jsx-dev-runtime.mjs", import.meta.url).pathname,
       },
@@ -21,7 +29,7 @@ export default defineConfig({
       },
       {
         find: "deckjsx/adapter",
-        replacement: new URL("../../dist/adapter.mjs", import.meta.url).pathname,
+        replacement: new URL("../../dist/adapter/index.mjs", import.meta.url).pathname,
       },
       {
         find: "deckjsx",

@@ -7,7 +7,7 @@ describe("direct pptx writer text output", () => {
 
     deck.slide({ name: "Rich text" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 6, height: 1, fontSize: 20 }}>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 6, height: 1, fontSize: 20 }}>
           Sales <span style={{ color: "#DC2626", fontWeight: 700 }}>grew</span> YoY
         </p>
       </>
@@ -38,8 +38,9 @@ describe("direct pptx writer text output", () => {
       <>
         <p
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 3,
             height: 0.75,
             direction: "rtl",
@@ -49,13 +50,29 @@ describe("direct pptx writer text output", () => {
         >
           RTL link
         </p>
-        <p style={{ x: 1, y: 2, width: 3, height: 0.75, superscript: true }}>Super</p>
-        <p style={{ x: 1, y: 3, width: 3, height: 0.75, subscript: true }}>Sub</p>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 2,
+            width: 3,
+            height: 0.75,
+            superscript: true,
+          }}
+        >
+          Super
+        </p>
+        <p
+          style={{ position: "absolute", left: 1, top: 3, width: 3, height: 0.75, subscript: true }}
+        >
+          Sub
+        </p>
         <img
           data={H.SAMPLE_SVG_DATA_URI}
           style={{
-            x: 5,
-            y: 1,
+            position: "absolute",
+            left: 5,
+            top: 1,
             width: 1.5,
             height: 1.5,
             href: "https://example.com/image",
@@ -65,8 +82,9 @@ describe("direct pptx writer text output", () => {
         <shape
           shape="rect"
           style={{
-            x: 5,
-            y: 3,
+            position: "absolute",
+            left: 5,
+            top: 3,
             width: 2,
             height: 1,
             fill: "#2563EB",
@@ -99,11 +117,23 @@ describe("direct pptx writer text output", () => {
 
     deck.slide({ name: "List output" }, () => (
       <>
-        <p style={{ x: 1, y: 0.25, width: 3, height: 0.5, listStyleType: "disc" }}>Disc item</p>
         <p
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 0.25,
+            width: 3,
+            height: 0.5,
+            listStyleType: "disc",
+          }}
+        >
+          Disc item
+        </p>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 3,
             height: 0.75,
             listStyleType: "circle",
@@ -113,7 +143,15 @@ describe("direct pptx writer text output", () => {
           Bullet item
         </p>
         <p
-          style={{ x: 1, y: 2, width: 3, height: 0.75, listStyleType: "upper-roman", listStart: 3 }}
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 2,
+            width: 3,
+            height: 0.75,
+            listStyleType: "upper-roman",
+            listStart: 3,
+          }}
         >
           Number item
         </p>
@@ -139,8 +177,9 @@ describe("direct pptx writer text output", () => {
       <>
         <p
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 2,
             writingMode: "vertical-rl",
@@ -174,8 +213,9 @@ describe("direct pptx writer text output", () => {
       <>
         <p
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 1,
             tabStops: [
@@ -207,14 +247,28 @@ describe("direct pptx writer text output", () => {
 
     deck.slide({ name: "Paragraph spacing output" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 4, height: 0.75, lineHeight: "28pt" }}>
-          Line spacing points
-        </p>
-        <p style={{ x: 1, y: 2, width: 4, height: 0.75, lineHeight: 1.5 }}>Line spacing multiple</p>
         <p
           style={{
-            x: 1,
-            y: 3,
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 4,
+            height: 0.75,
+            lineHeight: "28pt",
+          }}
+        >
+          Line spacing points
+        </p>
+        <p
+          style={{ position: "absolute", left: 1, top: 2, width: 4, height: 0.75, lineHeight: 1.5 }}
+        >
+          Line spacing multiple
+        </p>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 3,
             width: 4,
             height: 0.75,
             paragraphSpacingBefore: 12,
@@ -225,8 +279,9 @@ describe("direct pptx writer text output", () => {
         </p>
         <p
           style={{
-            x: 1,
-            y: 4,
+            position: "absolute",
+            left: 1,
+            top: 4,
             width: 4,
             height: 0.75,
             paragraphSpacingBefore: "24px",
@@ -257,13 +312,43 @@ describe("direct pptx writer text output", () => {
 
     deck.slide({ name: "Character spacing output" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 4, height: 0.75, fontSize: 18, letterSpacing: 1.5 }}>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 4,
+            height: 0.75,
+            fontSize: 18,
+            letterSpacing: 1.5,
+          }}
+        >
           Spaced text
         </p>
-        <p style={{ x: 1, y: 2, width: 4, height: 0.75, fontSize: 18, letterSpacing: "2px" }}>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 2,
+            width: 4,
+            height: 0.75,
+            fontSize: 18,
+            letterSpacing: "2px",
+          }}
+        >
           Pixel spaced text
         </p>
-        <p style={{ x: 1, y: 3, width: 4, height: 0.75, fontSize: 20, letterSpacing: "0.1em" }}>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 3,
+            width: 4,
+            height: 0.75,
+            fontSize: 20,
+            letterSpacing: "0.1em",
+          }}
+        >
           Em spaced text
         </p>
       </>
@@ -284,12 +369,56 @@ describe("direct pptx writer text output", () => {
 
     deck.slide({ name: " fit align output" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 2, height: 0.5, fontSize: 18, fit: "shrink" }}>Fit shrink</p>
-        <p style={{ x: 1, y: 2, width: 2, height: 0.5, fontSize: 18, fit: "resize" }}>Fit resize</p>
-        <p style={{ x: 4, y: 1, width: 2, height: 1, fontSize: 18, verticalAlign: "middle" }}>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 2,
+            height: 0.5,
+            fontSize: 18,
+            fit: "shrink",
+          }}
+        >
+          Fit shrink
+        </p>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 2,
+            width: 2,
+            height: 0.5,
+            fontSize: 18,
+            fit: "resize",
+          }}
+        >
+          Fit resize
+        </p>
+        <p
+          style={{
+            position: "absolute",
+            left: 4,
+            top: 1,
+            width: 2,
+            height: 1,
+            fontSize: 18,
+            verticalAlign: "middle",
+          }}
+        >
           Middle align
         </p>
-        <p style={{ x: 4, y: 2.5, width: 2, height: 1, fontSize: 18, verticalAlign: "bottom" }}>
+        <p
+          style={{
+            position: "absolute",
+            left: 4,
+            top: 2.5,
+            width: 2,
+            height: 1,
+            fontSize: 18,
+            verticalAlign: "bottom",
+          }}
+        >
           Bottom align
         </p>
       </>
@@ -314,8 +443,9 @@ describe("direct pptx writer text output", () => {
       <>
         <p
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 3,
             height: 1,
             fontSize: 18,
@@ -344,11 +474,43 @@ describe("direct pptx writer text output", () => {
 
     deck.slide({ name: " align output" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 2, height: 0.5, fontSize: 18, textAlign: "center" }}>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 2,
+            height: 0.5,
+            fontSize: 18,
+            textAlign: "center",
+          }}
+        >
           Center
         </p>
-        <p style={{ x: 1, y: 2, width: 2, height: 0.5, fontSize: 18, textAlign: "right" }}>Right</p>
-        <p style={{ x: 1, y: 3, width: 2, height: 0.5, fontSize: 18, textAlign: "justify" }}>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 2,
+            width: 2,
+            height: 0.5,
+            fontSize: 18,
+            textAlign: "right",
+          }}
+        >
+          Right
+        </p>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 3,
+            width: 2,
+            height: 0.5,
+            fontSize: 18,
+            textAlign: "justify",
+          }}
+        >
           Justify
         </p>
       </>
@@ -373,11 +535,16 @@ describe("direct pptx writer text output", () => {
 
     deck.slide({ name: " indent output" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 4, height: 1, textIndent: "36pt" }}>Plain indent</p>
+        <p
+          style={{ position: "absolute", left: 1, top: 1, width: 4, height: 1, textIndent: "36pt" }}
+        >
+          Plain indent
+        </p>
         <p
           style={{
-            x: 1,
-            y: 2.25,
+            position: "absolute",
+            left: 1,
+            top: 2.25,
             width: 4,
             height: 1,
             listStyleType: "circle",

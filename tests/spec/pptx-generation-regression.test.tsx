@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck } from "../../src/index.ts";
-import { isPptxRelationshipsPart, isPptxSupportPart } from "../../src/inspect.ts";
-import type { PptxPackagePart, PptxRelationship } from "../../src/inspect.ts";
+import { Deck } from "../helpers.ts";
+import { isPptxRelationshipsPart, isPptxSupportPart } from "@/src/inspect.ts";
+import type { PptxPackagePart, PptxRelationship } from "@/src/inspect.ts";
 import { SAMPLE_SVG_DATA_URI, strFromU8, unzipSync, type Unzipped } from "../helpers.ts";
 
 function zipEntry(zip: Unzipped, path: string): string {
@@ -38,10 +38,22 @@ describe("ADR 0006 PPTX generation regression spec", () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Regression topology" }, () => (
       <>
-        <p style={{ x: 0.5, y: 0.4, width: 3, height: 0.5, href: "https://example.com/spec" }}>
+        <p
+          style={{
+            position: "absolute",
+            left: 0.5,
+            top: 0.4,
+            width: 3,
+            height: 0.5,
+            href: "https://example.com/spec",
+          }}
+        >
           Spec link
         </p>
-        <img data={SAMPLE_SVG_DATA_URI} style={{ x: 0.5, y: 1.2, width: 1, height: 1 }} />
+        <img
+          data={SAMPLE_SVG_DATA_URI}
+          style={{ position: "absolute", left: 0.5, top: 1.2, width: 1, height: 1 }}
+        />
       </>
     ));
 
@@ -79,9 +91,16 @@ describe("ADR 0006 PPTX generation regression spec", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
       templates: {
         report: {
+          style: {
+            display: "grid",
+            gridTemplateAreas: ['"title"', '"body"'],
+            gridTemplateRows: ["0.7in", "1fr"],
+            rowGap: 0.2,
+            padding: 0.7,
+          },
           areas: {
-            title: { kind: "title", frame: { x: 0.7, y: 0.5, width: 8.6, height: 0.7 } },
-            body: { kind: "body", frame: { x: 0.7, y: 1.4, width: 8.6, height: 3.8 } },
+            title: { kind: "title", style: { gridArea: "title" } },
+            body: { kind: "body", style: { gridArea: "body" } },
           },
         },
       },

@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vite-plus/test";
-import type { GraphNodeId } from "../../src/graph";
-import type { ProjectedLayoutSlide } from "../../src/layout/projected.ts";
-import { packageIdentity } from "../../src/projection/pptx/identity.ts";
-import type { PptxPackagePart } from "../../src/projection/pptx/model.ts";
-import { pptxSlidePartFor } from "../../src/projection/pptx/slide.ts";
+import type { GraphNodeId } from "@/src/graph";
+import type { ProjectedLayoutSlide } from "@/src/layout/projected.ts";
+import { packageIdentity } from "@/src/projection/pptx/identity.ts";
+import type { PptxPackagePart } from "@/src/projection/pptx/model.ts";
+import { pptxSlidePartFor } from "@/src/projection/pptx/slide.ts";
 
 describe("pptx projection from layout snapshot", () => {
   test("projects a slide part from a standalone ProjectedLayoutSlide", () => {

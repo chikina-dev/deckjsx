@@ -40,40 +40,95 @@ import {
 } from "./package-patch";
 
 export type { WriteDiagnostic } from "./package-patch";
+
+/**
+ * Disk write strategy used by `write()`.
+ *
+ * `atomic-replace` writes a temporary file and renames it over the target, `in-place` updates
+ * patchable PPTX parts inside an existing file, and `write-file` writes bytes directly when a safer
+ * strategy is unavailable or unnecessary.
+ */
 export type WriteStrategy = "atomic-replace" | "in-place" | "write-file";
 
+/**
+ * Result returned by `@deckjsx/node` file writes.
+ *
+ * `write()` reports ordinary render or filesystem failures through this value instead of throwing.
+ * Check `ok` first, then inspect `diagnostics` for user-facing failure details. `patchedParts` is
+ * populated only when the in-place PPTX patch path succeeds.
+ */
 export type WriteResult = {
+  /** Whether the requested file write completed successfully. */
+  readonly ok: boolean;
+  /** Output path passed to `write()`, after deckjsx has associated diagnostics with the target. */
   readonly path: string;
+  /** High-level outcome of the attempted write. */
   readonly status: "created" | "failed" | "patched" | "replaced";
+  /** File write mechanism selected for this attempt. */
   readonly strategy: WriteStrategy;
+  /** Number of bytes written or patched during this attempt. */
   readonly bytesWritten: number;
+  /** PPTX package part paths updated by an in-place patch. */
   readonly patchedParts: readonly string[];
+  /** Node writer diagnostics. Empty when `ok` is true unless the strategy reports non-fatal detail. */
   readonly diagnostics: readonly WriteDiagnostic[];
 };
+type WriteResultInput = Omit<WriteResult, "ok">;
 
+/** Inspection status for one PPTX package part in an existing output file. */
 export type PatchablePptxPartInspectionStatus = "missing" | "stale" | "unsupported" | "verified";
 
+/**
+ * Inspection record for one part that deckjsx may patch in-place.
+ *
+ * The record compares the current file entry with the render patch plan and explains whether the
+ * part is present, still valid, stale, or unsupported by the in-place patcher.
+ */
 export type PatchablePptxPartInspection = Omit<
   RenderPatchPlanPart,
   "buildReason" | "buildStatus"
 > & {
+  /** Whether the current output file entry can be reused, patched, or must be rebuilt. */
   readonly status: PatchablePptxPartInspectionStatus;
+  /** Fingerprint found in the current output file, when the part exists and can be inspected. */
   readonly currentFingerprint?: string;
+  /** ZIP compression method for the current output entry, when available. */
   readonly zipMethod?: number;
 };
 
+/**
+ * Result of checking whether an existing PPTX can be updated through deckjsx in-place patching.
+ *
+ * This is an inspection helper for tooling and development workflows. It does not modify the file.
+ */
 export type PatchablePptxInspectionResult = {
+  /** PPTX file path that was inspected. */
   readonly path: string;
+  /** Whether inspection completed without diagnostics. */
   readonly ok: boolean;
+  /** Whether every required part can be patched in-place. */
   readonly patchable: boolean;
+  /** Path of the deckjsx patch manifest inside the PPTX package. */
   readonly manifestPath: string;
+  /** Number of patch-plan parts inspected. */
   readonly partCount: number;
+  /** Per-part inspection records. */
   readonly parts: readonly PatchablePptxPartInspection[];
+  /** Inspection diagnostics, including file read and manifest parse failures. */
   readonly diagnostics: readonly WriteDiagnostic[];
 };
 
+/**
+ * Options for the Node file asset loader.
+ *
+ * The loader resolves local filesystem assets only. When `root` is provided, resolved assets must
+ * stay inside that directory. `resolverIdentity` can be set by integrations that need stable cache
+ * identity across equivalent loader configurations.
+ */
 export type NodeFileAssetLoaderOptions = {
+  /** Optional filesystem root that local asset paths must remain within. */
   readonly root?: string;
+  /** Optional stable identity used for asset cache and invalidation records. */
   readonly resolverIdentity?: string;
 };
 
@@ -95,6 +150,13 @@ type WriteLockResult =
 const WRITE_LOCK_HEADER = "deckjsx-lock-v1";
 const textEncoder = new TextEncoder();
 
+/**
+ * Create a Node.js local file asset loader.
+ *
+ * Use this when deck authoring references `src` paths such as `<img src="./chart.png" />` and the
+ * render pipeline should load them from disk. Remote URLs and inline data are handled by other
+ * asset paths; this loader only resolves local files.
+ */
 export function createNodeFileAssetLoader(options: NodeFileAssetLoaderOptions = {}): AssetLoader {
   const normalizedOptions = {
     ...options,
@@ -168,6 +230,12 @@ export function createNodeFileAssetLoader(options: NodeFileAssetLoaderOptions = 
   };
 }
 
+/**
+ * Create a Deck plugin that installs the Node.js local file asset loader.
+ *
+ * Register it with `deck.plugin(nodeAssets())` in Node-based rendering contexts. Browser and remote
+ * runtimes should provide their own asset loaders instead of relying on filesystem access.
+ */
 export function nodeAssets(options: NodeFileAssetLoaderOptions = {}): DeckPlugin {
   return {
     kind: "deckjsx.plugin",
@@ -180,6 +248,16 @@ export function nodeAssets(options: NodeFileAssetLoaderOptions = {}): DeckPlugin
   };
 }
 
+/**
+ * Inspect an existing PPTX file for deckjsx in-place patch compatibility.
+ *
+ * The function reads the PPTX package and deckjsx patch manifest, then reports which planned parts
+ * are verified, stale, missing, or unsupported. It is read-only and returns diagnostics instead of
+ * throwing for ordinary inspection failures.
+ *
+ * @param outputPath - Existing `.pptx` file path to inspect.
+ * @returns Per-part patchability status plus diagnostics for read or manifest failures.
+ */
 export async function inspectPatchablePptx(
   outputPath: string,
 ): Promise<PatchablePptxInspectionResult> {
@@ -204,11 +282,28 @@ export async function inspectPatchablePptx(
   }
 }
 
+/**
+ * Write a successful deckjsx PPTX render result to disk.
+ *
+ * This is the stable Node.js file-output API for `@deckjsx/node`. It is intentionally result-based:
+ * callers pass the full `deck.render(...)` result, and expected render or filesystem failures are
+ * returned as `WriteResult` diagnostics rather than thrown.
+ *
+ * The function accepts only render results with a PPTX artifact. Failed renders or non-PPTX
+ * artifacts return a failed `WriteResult`. When an existing PPTX contains deckjsx patch metadata,
+ * `write()` may update patchable package parts in place; otherwise it writes or atomically replaces
+ * the destination file.
+ *
+ * @param render - Result returned by `deck.render(...)`.
+ * @param outputPath - Destination `.pptx` path.
+ * @returns Write status, byte counts, patched part paths, and diagnostics.
+ */
 export async function write(render: RenderResult, outputPath: string): Promise<WriteResult> {
   const writeToken = getArtifactWriteToken(render);
-  const finishWrite = (result: WriteResult): WriteResult => {
-    recordArtifactWrite(writeToken, { path: outputPath, result });
-    return result;
+  const finishWrite = (result: WriteResultInput): WriteResult => {
+    const finished = { ...result, ok: result.status !== "failed" };
+    recordArtifactWrite(writeToken, { path: outputPath, result: finished });
+    return finished;
   };
 
   if (!render.ok) {

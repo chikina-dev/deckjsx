@@ -1,5 +1,5 @@
 import type { TextStyleIR } from "../layout/projected";
-import type { JsxNode } from "../authoring/index";
+import type { JsxNode } from "../authoring/jsx-types";
 import { POINTS_PER_INCH } from "../types";
 import {
   DEFAULT_FONT_SIZE_PT,
@@ -7,11 +7,16 @@ import {
   parsePointValue,
   type LengthResolutionContext,
 } from "./length";
-import type { TextStyle, TextTabStopAuthoring } from "./types";
+import type { DeckPointLength, TextStyle, TextTabStopAuthoring } from "./types";
 
 type TextDecorationResolution = {
   underline?: boolean;
   strike?: boolean;
+};
+
+export type ResolvedLineHeight = {
+  readonly lineSpacing?: number;
+  readonly lineSpacingMultiple?: number;
 };
 
 export function parseTextDecoration(value?: string): TextDecorationResolution {
@@ -43,7 +48,7 @@ export function parseTextDecoration(value?: string): TextDecorationResolution {
 export function resolveLineHeight(
   lineHeight: TextStyle["lineHeight"] | undefined,
   context?: LengthResolutionContext,
-): Pick<TextStyle, "lineSpacing" | "lineSpacingMultiple"> {
+): ResolvedLineHeight {
   if (lineHeight === undefined || lineHeight === "normal" || isCssWideKeyword(lineHeight)) {
     return {};
   }
@@ -60,7 +65,7 @@ export function resolveLineHeight(
 }
 
 export function resolveCharacterSpacing(
-  charSpacing: TextStyle["charSpacing"] | TextStyle["letterSpacing"] | undefined,
+  charSpacing: TextStyle["letterSpacing"] | undefined,
   context?: LengthResolutionContext,
 ): number | undefined {
   if (charSpacing === undefined || isCssWideKeyword(charSpacing)) {
@@ -71,19 +76,14 @@ export function resolveCharacterSpacing(
     return 0;
   }
 
-  return parsePointValue(charSpacing, 0, context);
+  return parsePointValue(charSpacing as DeckPointLength, 0, context);
 }
 
 export function resolveTextWrap(
-  wrap: TextStyle["wrap"] | undefined,
   whiteSpace: TextStyle["whiteSpace"] | undefined,
   wordBreak: TextStyle["wordBreak"] | undefined,
   overflowWrap: TextStyle["overflowWrap"] | undefined,
 ): boolean | undefined {
-  if (wrap !== undefined) {
-    return wrap;
-  }
-
   if (wordBreak === "break-all" || wordBreak === "break-word") {
     return true;
   }

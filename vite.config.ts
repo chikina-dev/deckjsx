@@ -10,6 +10,10 @@ export default defineConfig({
   resolve: {
     alias: [
       {
+        find: /^@\//,
+        replacement: new URL("./", import.meta.url).pathname,
+      },
+      {
         find: "deckjsx/jsx-dev-runtime",
         replacement: new URL("./src/jsx-dev-runtime.ts", import.meta.url).pathname,
       },
@@ -26,8 +30,12 @@ export default defineConfig({
         replacement: new URL("./src/integration.ts", import.meta.url).pathname,
       },
       {
+        find: "deckjsx/style",
+        replacement: new URL("./src/style/public.ts", import.meta.url).pathname,
+      },
+      {
         find: "deckjsx/adapter",
-        replacement: new URL("./src/adapter.ts", import.meta.url).pathname,
+        replacement: new URL("./src/adapter/index.ts", import.meta.url).pathname,
       },
       {
         find: "deckjsx",
@@ -44,7 +52,9 @@ export default defineConfig({
   pack: {
     entry: [
       "src/index.ts",
-      "src/adapter.ts",
+      "src/authoring/options/public.ts",
+      "src/style/public.ts",
+      "src/adapter/index.ts",
       "src/inspect.ts",
       "src/integration.ts",
       "src/jsx-runtime.ts",
@@ -56,13 +66,13 @@ export default defineConfig({
     exports: false,
   },
   lint: {
-    ignorePatterns: [".deckjsx/**", "plugins/**", "sample/**"],
+    ignorePatterns: [".deckjsx/**", "plugins/**", "sample/**", "tests/types/perf/**"],
     options: {
       typeAware: true,
       typeCheck: true,
     },
   },
   fmt: {
-    ignorePatterns: [".deckjsx/**", "plugins/**", "sample/**"],
+    ignorePatterns: [".deckjsx/**", "plugins/**", "sample/**", "tests/types/perf/**"],
   },
 });

@@ -9,8 +9,9 @@ describe("stack layout flex basics", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 2,
             display: "flex",
@@ -25,7 +26,9 @@ describe("stack layout flex basics", () => {
     ));
 
     expect(
-      H.summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+      H.summarizeNodes(
+        H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children,
+      ),
     ).toEqual([
       {
         kind: "group",
@@ -70,8 +73,9 @@ describe("stack layout flex basics", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 2,
             display: "flex",
@@ -87,7 +91,9 @@ describe("stack layout flex basics", () => {
     ));
 
     expect(
-      H.summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+      H.summarizeNodes(
+        H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children,
+      ),
     ).toEqual([
       {
         kind: "group",
@@ -131,8 +137,9 @@ describe("stack layout flex basics", () => {
     deck.slide({ name: "Flex percentage spacing" }, () => (
       <div
         style={{
-          x: 1,
-          y: 1,
+          position: "absolute",
+          left: 1,
+          top: 1,
           width: 6,
           height: 2,
           display: "flex",
@@ -146,7 +153,9 @@ describe("stack layout flex basics", () => {
     ));
 
     expect(
-      H.summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+      H.summarizeNodes(
+        H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children,
+      ),
     ).toEqual([
       {
         kind: "group",
@@ -191,12 +200,13 @@ describe("stack layout flex basics", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 5,
             height: 3,
-            layout: "stack",
-            direction: "vertical",
+            display: "flex",
+            flexDirection: "column",
             gap: 0.25,
             padding: 0.5,
           }}
@@ -208,7 +218,9 @@ describe("stack layout flex basics", () => {
     ));
 
     expect(
-      H.summarizeNodes((await deck.project()).projection!.slides[0].payload.drawing.children),
+      H.summarizeNodes(
+        H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children,
+      ),
     ).toEqual([
       {
         kind: "group",
