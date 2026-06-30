@@ -8,23 +8,40 @@ import {
 
 export type { DeckjsxDevDiagnostic } from "./dev-diagnostics";
 
+/** Write record captured from a deckjsx render cycle during Node dev output tracking. */
 export type DeckjsxDevWriteRecord = {
+  /** Output path reported by the writer integration. */
   readonly path: string;
+  /** Whether the output belongs to the configured `out`/`outputs` set. */
   readonly tracked: boolean;
+  /** Writer-specific result payload. */
   readonly result: object;
 };
 
+/** Normalized output paths used by `@deckjsx/node/dev`. */
 export type NormalizedDevOutputPaths = {
+  /** Primary output path. */
   readonly out: string;
+  /** Primary plus additional output paths. */
   readonly outputs: readonly string[];
 };
 
+/** Classification of writes produced by one dev compilation cycle. */
 export type ClassifiedDevWrites = {
+  /** Write records observed during the cycle. */
   readonly records: readonly DeckjsxDevWriteRecord[];
+  /** Output slot indexes retained from earlier cycles. */
   readonly retainedSlots: readonly number[];
+  /** Diagnostics for missing, unexpected, or failed tracked writes. */
   readonly diagnostics: readonly DeckjsxDevDiagnostic[];
 };
 
+/**
+ * Plan for whether a dev compilation can update the configured artifacts.
+ *
+ * `ready` means all required tracked outputs are present. `blocked` means the compilation produced
+ * diagnostics that should prevent the host from treating artifacts as updated.
+ */
 export type DeckjsxDevArtifactPlan = {
   readonly status: "ready" | "blocked";
   readonly writes: readonly DeckjsxDevWriteRecord[];

@@ -9,6 +9,7 @@ describe("style value units", () => {
       <>
         <div
           style={{
+            position: "absolute",
             left: "1rem",
             top: "2rem",
             width: "10vw",
@@ -18,6 +19,7 @@ describe("style value units", () => {
         />
         <p
           style={{
+            position: "absolute",
             left: "5vw",
             top: "10vh",
             width: "10em",
@@ -78,12 +80,13 @@ describe("style value units", () => {
       <>
         <div
           style={{
-            x: 0,
-            y: 0,
+            position: "absolute",
+            left: 0,
+            top: 0,
             width: "100vw",
             height: "100vh",
-            layout: "stack",
-            direction: "vertical",
+            display: "flex",
+            flexDirection: "column",
             padding: ["10vh", "10vw", 0, "10vw"],
             gap: "5vh",
           }}
@@ -123,8 +126,9 @@ describe("style value units", () => {
       <>
         <div
           style={{
-            x: 0,
-            y: 0,
+            position: "absolute",
+            left: 0,
+            top: 0,
             width: "100vw",
             height: "100vh",
             display: "grid",

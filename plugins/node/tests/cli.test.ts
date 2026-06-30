@@ -1,7 +1,7 @@
 import { styleText } from "node:util";
 import { describe, expect, test, vi } from "vite-plus/test";
-import type { DeckjsxNodeCliDiagnostic } from "../src/cli.ts";
-import type { DeckjsxDevCompilationResult } from "../src/dev-compilation.ts";
+import type { DeckjsxNodeCliDiagnostic } from "@/src/cli.ts";
+import type { DeckjsxDevCompilationResult } from "@/src/dev-compilation.ts";
 import type { IncrementalArtifactSession } from "deckjsx/integration";
 import {
   completionContextFromInspectionState,
@@ -14,7 +14,7 @@ import {
   parseDeckjsxNodeCliArgs,
   renderInteractiveResponse,
   runDeckjsxDevCompilerHost,
-} from "../src/cli.ts";
+} from "@/src/cli.ts";
 
 function asCompilationResult(value: unknown): DeckjsxDevCompilationResult {
   return value as DeckjsxDevCompilationResult;

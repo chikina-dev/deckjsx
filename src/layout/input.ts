@@ -27,7 +27,7 @@ import type {
   StyleEntityId,
 } from "../graph";
 import type { ResolvedStyleMap } from "../style/resolve";
-import type { StyleDeclarationValue } from "../style/types";
+import type { StyleDeclarationValue } from "../style/declaration";
 import type { SlideTemplateSet, TemplateAreaKind } from "../templates";
 import type { ProjectedLayoutOrigin, SizeIR } from "./projected";
 
@@ -181,7 +181,42 @@ function sourceKeyForOrigin(source: SemanticNode["origin"]["source"]): string {
   return !source || source.kind === "root" ? "root" : source.sourceIdentity;
 }
 
-function propsWithTemplateAreaFrame<TProps extends object>(
+function mergeTemplateStyle<TProps extends object>(
+  props: Partial<TProps>,
+  templateStyle: Readonly<Record<string, StyleDeclarationValue>> | undefined,
+  resolved: ReturnType<ResolvedStyleMap["get"]>,
+): Partial<TProps> {
+  if (!templateStyle) {
+    return props;
+  }
+
+  const next: Record<string, StyleDeclarationValue> = {
+    ...(props as Record<string, StyleDeclarationValue>),
+  };
+  Object.entries(templateStyle).forEach(([key, value]) => {
+    if (resolved?.properties[key]?.source.layer !== "style" && next[key] === undefined) {
+      next[key] = value;
+    }
+  });
+  return next as Partial<TProps>;
+}
+
+function propsWithSlideTemplateStyle<TProps extends object>(
+  resolvedStyles: ResolvedStyleMap,
+  node: SemanticNode,
+  templates: SlideTemplateSet | undefined,
+): Partial<TProps> {
+  const props = resolvedPropsFor<TProps>(node, resolvedStyles);
+  const ref = node.kind === "slide" ? node.templateRef : undefined;
+  const templateStyle = ref ? templates?.[ref.name]?.style : undefined;
+  return mergeTemplateStyle(
+    props,
+    templateStyle as Readonly<Record<string, StyleDeclarationValue>> | undefined,
+    resolvedStyles.get(node.id),
+  );
+}
+
+function propsWithTemplateAreaPlacement<TProps extends object>(
   resolvedStyles: ResolvedStyleMap,
   node: SemanticNode,
   templates: SlideTemplateSet | undefined,
@@ -192,27 +227,17 @@ function propsWithTemplateAreaFrame<TProps extends object>(
     return props;
   }
 
-  const frame = templates?.[ref.template]?.areas?.[ref.area]?.frame;
-  if (!frame) {
+  const area = templates?.[ref.template]?.areas?.[ref.area];
+  if (!area) {
     return props;
   }
 
   const resolved = resolvedStyles.get(node.id);
-  const frameProps: Record<string, StyleDeclarationValue> = {};
-  if (resolved?.properties.x?.source.layer !== "style") {
-    frameProps.x = frame.x;
-  }
-  if (resolved?.properties.y?.source.layer !== "style") {
-    frameProps.y = frame.y;
-  }
-  if (resolved?.properties.width?.source.layer !== "style") {
-    frameProps.width = frame.width;
-  }
-  if (resolved?.properties.height?.source.layer !== "style") {
-    frameProps.height = frame.height;
-  }
-
-  return { ...props, ...frameProps } as Partial<TProps>;
+  return mergeTemplateStyle(
+    props,
+    area.style as Readonly<Record<string, StyleDeclarationValue>> | undefined,
+    resolved,
+  );
 }
 
 function templateAreaKindFor(
@@ -425,7 +450,7 @@ function tableFromGraph(
 ): LayoutInputTable {
   return {
     kind: "table",
-    props: propsWithTemplateAreaFrame<TableNormalizationInput>(resolvedStyles, node, templates),
+    props: propsWithTemplateAreaPlacement<TableNormalizationInput>(resolvedStyles, node, templates),
     sections: node.children.flatMap((childId): LayoutInputTableSection[] => {
       const child = graph.nodes.get(childId);
       return child?.kind === "tableSection"
@@ -445,12 +470,12 @@ function layoutInputNodeFromGraph(
 ): LayoutInputSlide | LayoutInputContentNode | undefined {
   switch (node.kind) {
     case "slide": {
-      const props = propsWithTemplateAreaFrame<SlideNormalizationInput>(
+      const slideTemplates = graph.templates.get(sourceKeyForOrigin(node.origin.source));
+      const props = propsWithSlideTemplateStyle<SlideNormalizationInput>(
         resolvedStyles,
         node,
-        templates,
+        slideTemplates,
       );
-      const slideTemplates = graph.templates.get(sourceKeyForOrigin(node.origin.source));
       return {
         kind: "slide",
         props: { ...props, name: node.name },
@@ -465,7 +490,7 @@ function layoutInputNodeFromGraph(
       };
     }
     case "container": {
-      const props = propsWithTemplateAreaFrame<ViewNormalizationInput>(
+      const props = propsWithTemplateAreaPlacement<ViewNormalizationInput>(
         resolvedStyles,
         node,
         templates,
@@ -486,7 +511,7 @@ function layoutInputNodeFromGraph(
     case "table":
       return tableFromGraph(graph, resolvedStyles, node, assetProbeArtifacts, templates);
     case "text": {
-      const props = propsWithTemplateAreaFrame<TextNormalizationInput>(
+      const props = propsWithTemplateAreaPlacement<TextNormalizationInput>(
         resolvedStyles,
         node,
         templates,
@@ -499,7 +524,7 @@ function layoutInputNodeFromGraph(
       };
     }
     case "image": {
-      const props = propsWithTemplateAreaFrame<ImageNormalizationInput>(
+      const props = propsWithTemplateAreaPlacement<ImageNormalizationInput>(
         resolvedStyles,
         node,
         templates,
@@ -517,7 +542,7 @@ function layoutInputNodeFromGraph(
       };
     }
     case "video": {
-      const props = propsWithTemplateAreaFrame<VideoNormalizationInput>(
+      const props = propsWithTemplateAreaPlacement<VideoNormalizationInput>(
         resolvedStyles,
         node,
         templates,
@@ -543,7 +568,7 @@ function layoutInputNodeFromGraph(
       };
     }
     case "shape": {
-      const props = propsWithTemplateAreaFrame<ShapeNormalizationInput>(
+      const props = propsWithTemplateAreaPlacement<ShapeNormalizationInput>(
         resolvedStyles,
         node,
         templates,

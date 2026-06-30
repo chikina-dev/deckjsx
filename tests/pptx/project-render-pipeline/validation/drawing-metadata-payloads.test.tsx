@@ -5,7 +5,9 @@ describe("project/render validation drawing metadata payloads", () => {
   test("project rejects non-object unsupported semantic records and empty fallback lists", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Malformed unsupported semantic" }, () => (
-      <p style={{ x: 1, y: 1, width: 2, height: 0.5, opacity: 0.4 }}>Faded</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 2, height: 0.5, opacity: 0.4 }}>
+        Faded
+      </p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -82,7 +84,8 @@ describe("project/render validation drawing metadata payloads", () => {
       layout: { width: 10, height: 5.625, unit: "in" },
       templates: {
         report: {
-          areas: { title: { kind: "title", frame: { x: 0.5, y: 0.5, width: 8, height: 1 } } },
+          style: { display: "grid", gridTemplateAreas: ['"title"'], padding: 0.5 },
+          areas: { title: { kind: "title", style: { gridArea: "title" } } },
         },
       },
     });
@@ -271,7 +274,7 @@ describe("project/render validation drawing metadata payloads", () => {
   test("project validates drawing node package part ownership before render", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Broken drawing ownership" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>ownership</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>ownership</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -324,8 +327,8 @@ describe("project/render validation drawing metadata payloads", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Broken root drawing order" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 2, height: 0.5 }}>One</p>
-        <p style={{ x: 1, y: 2, width: 2, height: 0.5 }}>Two</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 2, height: 0.5 }}>One</p>
+        <p style={{ position: "absolute", left: 1, top: 2, width: 2, height: 0.5 }}>Two</p>
       </>
     ));
 

@@ -10,67 +10,163 @@ const deck = new Deck({
 deck.useStyles(
   new StyleSheet({
     classes: {
-      slide: {
-        backgroundColor: "#F8FAFC",
-        color: "#111827",
-        fontSize: 18,
+      shell: {
+        target: "main.shell",
+        style: {
+          width: "100%",
+          height: "100%",
+          padding: 0.58,
+          display: "grid",
+          gridTemplateRows: "0.78in 1fr",
+          rowGap: 0.32,
+        },
+      },
+      header: {
+        target: "header.header",
+        style: {
+          display: "grid",
+          gridTemplateRows: "0.18in 0.48in",
+          rowGap: 0.06,
+        },
       },
       title: {
-        target: "p.title",
-        style: { color: "#0F172A", fontSize: 34, fontWeight: 700 },
+        target: "h1.title",
+        style: { color: "#0F172A", fontSize: 34, fontWeight: 700, height: 0.48 },
       },
       eyebrow: {
         target: "p.eyebrow",
-        style: { color: "#0F766E", fontSize: 11, fontWeight: 700, letterSpacing: 0 },
+        style: { color: "#0F766E", fontSize: 11, fontWeight: 700, letterSpacing: 0, height: 0.18 },
+      },
+      dashboard: {
+        target: "section.dashboard",
+        style: {
+          display: "grid",
+          gridTemplateColumns: "2fr 1fr",
+          columnGap: 0.36,
+        },
+      },
+      stack: {
+        target: "section.stack",
+        style: {
+          display: "grid",
+          gridTemplateRows: "1.3in 1.38in",
+          rowGap: 0.3,
+        },
+      },
+      metricGrid: {
+        target: "section.metricGrid",
+        style: {
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          columnGap: 0.28,
+        },
+      },
+      commandGrid: {
+        target: "section.commandGrid",
+        style: {
+          display: "grid",
+          gridTemplateColumns: ["1fr", "1fr", "1fr"],
+          columnGap: 0.22,
+          rowGap: 0.22,
+        },
+      },
+      cardRow: {
+        target: "section.cardRow",
+        style: {
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          columnGap: 0.42,
+        },
       },
       card: {
-        target: "div.card",
+        target: ["div.card", "aside.card"],
         style: {
           backgroundColor: "#FFFFFF",
           border: "1pt solid #CBD5E1",
           borderRadius: 8,
+          padding: 0.22,
+          display: "grid",
+          rowGap: 0.12,
         },
       },
       selected: {
-        target: ".selected",
+        target: "div.selected",
         style: {
           backgroundColor: "#ECFDF5",
           border: "1.5pt solid #0F766E",
         },
       },
+      metricCard: {
+        target: "div.metricCard",
+        style: {
+          height: 1.3,
+          gridTemplateRows: ["0.2in", "0.44in", "0.24in"],
+        },
+      },
       metricLabel: {
-        target: ".metricLabel",
-        style: { color: "#475569", fontSize: 12 },
+        target: "p.metricLabel",
+        style: { color: "#475569", fontSize: 12, height: 0.2 },
       },
       metricValue: {
-        target: ".metricValue",
-        style: { color: "#0F172A", fontSize: 30, fontWeight: 700 },
+        target: "p.metricValue",
+        style: { color: "#0F172A", fontSize: 30, fontWeight: 700, height: 0.44 },
       },
       positive: {
-        target: ".positive",
+        target: "p.positive",
         style: { color: "#047857", fontWeight: 700 },
       },
       warning: {
-        target: ".warning",
+        target: "p.warning",
         style: { color: "#B45309", fontWeight: 700 },
       },
       muted: {
-        target: ".muted",
+        target: "p.muted",
         style: { color: "#64748B", fontSize: 12 },
       },
+      command: {
+        target: "div.command",
+        style: {
+          height: 0.58,
+          gridTemplateRows: "0.2in 0.18in",
+          rowGap: 0.05,
+        },
+      },
+      commandName: {
+        target: "p.commandName",
+        style: { color: "#0369A1", fontSize: 13, height: 0.2 },
+      },
       pill: {
-        target: ".pill",
+        target: "p.pill",
         style: {
           backgroundColor: "#E0F2FE",
           color: "#075985",
           fontSize: 11,
           fontWeight: 700,
           borderRadius: 6,
+          padding: "0.05in 0.1in",
+        },
+      },
+      statusPanel: {
+        target: "aside.statusPanel",
+        style: {
+          gridTemplateRows: ["0.28in", "0.34in", "1fr", "0.22in"],
+          height: 2.8,
+        },
+      },
+      inspectorCard: {
+        target: "div.inspectorCard",
+        style: {
+          height: 2.95,
+          gridTemplateRows: ["0.18in", "0.44in", "1fr", "0.28in"],
         },
       },
     },
   }),
 );
+
+const slideStyle = {
+  backgroundColor: "#F8FAFC",
+} as const;
 
 type MetricCardProps = {
   readonly label: string;
@@ -87,14 +183,10 @@ type CommandChipProps = {
 
 function MetricCard({ label, value, delta, tone, selected = false }: MetricCardProps) {
   return (
-    <div className={["card", { selected }]} style={{ width: 2.45, height: 1.35, padding: 0.18 }}>
-      <p className="metricLabel" style={{ x: 0.18, y: 0.16, width: 2.05, height: 0.22 }}>
-        {label}
-      </p>
-      <p className="metricValue" style={{ x: 0.18, y: 0.43, width: 2.05, height: 0.48 }}>
-        {value}
-      </p>
-      <p className={tone} style={{ x: 0.18, y: 0.98, width: 2.05, height: 0.24, fontSize: 12 }}>
+    <div className={["card", "metricCard", { selected }]}>
+      <p className="metricLabel">{label}</p>
+      <p className="metricValue">{value}</p>
+      <p className={tone} style={{ fontSize: 12, height: 0.24 }}>
         {delta}
       </p>
     </div>
@@ -103,126 +195,127 @@ function MetricCard({ label, value, delta, tone, selected = false }: MetricCardP
 
 function CommandChip({ command, note }: CommandChipProps) {
   return (
-    <div className="card" style={{ width: 2.05, height: 0.58, padding: 0.12 }}>
-      <p style={{ x: 0.12, y: 0.08, width: 1.8, height: 0.2, fontSize: 13, color: "#0369A1" }}>
-        {command}
-      </p>
-      <p className="muted" style={{ x: 0.12, y: 0.31, width: 1.8, height: 0.18 }}>
-        {note}
-      </p>
+    <div className="card command">
+      <p className="commandName">{command}</p>
+      <p className="muted">{note}</p>
     </div>
   );
 }
 
 function Header({ title, section }: { readonly title: string; readonly section: string }) {
   return (
-    <>
-      <p className="eyebrow" style={{ x: 0.58, y: 0.38, width: 3.5, height: 0.22 }}>
-        {section}
-      </p>
-      <p className="title" style={{ x: 0.58, y: 0.66, width: 7.8, height: 0.5 }}>
-        {title}
-      </p>
-    </>
+    <header className="header">
+      <p className="eyebrow">{section}</p>
+      <h1 className="title">{title}</h1>
+    </header>
   );
 }
 
 function StatusPanel() {
   return (
-    <div className="card" style={{ x: 6.35, y: 1.28, width: 2.95, height: 2.48, padding: 0.22 }}>
-      <p className="pill" style={{ x: 0.22, y: 0.2, width: 1.1, height: 0.28 }}>
-        LIVE DEV
-      </p>
-      <p style={{ x: 0.22, y: 0.66, width: 2.42, height: 0.34, fontSize: 20, fontWeight: 700 }}>
-        Update this file
-      </p>
-      <p className="muted" style={{ x: 0.22, y: 1.06, width: 2.36, height: 0.78 }}>
+    <aside className="card statusPanel">
+      <p className="pill">LIVE DEV</p>
+      <h2 style={{ height: 0.34, fontSize: 20, fontWeight: 700 }}>Update this file</h2>
+      <p className="muted">
         Change a metric, className, or command chip and watch the dev console redraw without losing
         the prompt.
       </p>
-      <p style={{ x: 0.22, y: 2.06, width: 2.36, height: 0.22, fontSize: 12, color: "#0F766E" }}>
-        sample revision 2026-06-21
+      <p style={{ height: 0.22, fontSize: 12, color: "#0F766E" }}>
+        sample revision 2026-06-28
+      </p>
+    </aside>
+  );
+}
+
+function InspectorCard({
+  eyebrow,
+  title,
+  body,
+  footer,
+  tone,
+  selected = false,
+}: {
+  readonly eyebrow: string;
+  readonly title: string;
+  readonly body: string;
+  readonly footer: string;
+  readonly tone: "positive" | "warning";
+  readonly selected?: boolean;
+}) {
+  return (
+    <div className={["card", "inspectorCard", { selected }]}>
+      <p className="eyebrow">{eyebrow}</p>
+      <h2 style={{ height: 0.44, fontSize: 24, fontWeight: 700 }}>{title}</h2>
+      <p className="muted">{body}</p>
+      <p className={tone} style={{ height: 0.28, fontSize: 14 }}>
+        {footer}
       </p>
     </div>
   );
 }
 
-deck.slide({ name: "Interactive Console", className: "slide" }, () => (
-  <>
+deck.slide({ name: "Interactive Console", style: slideStyle }, () => (
+  <main className="shell">
     <Header section="NODE DEV SAMPLE" title="Interactive console playground" />
-    <div style={{ x: 0.58, y: 1.42, width: 2.45, height: 1.35 }}>
-      <MetricCard
-        label="Compilation"
-        value="1.4s"
-        delta="+ prompt survives reload"
+    <section className="dashboard">
+      <section className="stack">
+        <section className="metricGrid">
+          <MetricCard
+            label="Compilation"
+            value="1.4s"
+            delta="+ prompt survives reload"
+            tone="positive"
+            selected
+          />
+          <MetricCard label="Outputs" value="1 pptx" delta="patched in place" tone="positive" />
+        </section>
+        <section className="commandGrid">
+          <CommandChip command="status" note="compiler state" />
+          <CommandChip command="component tree" note="component map" />
+          <CommandChip command="style $0 color" note="cascade trace" />
+          <CommandChip command="props inspect $0" note="component props" />
+          <CommandChip command="projection" note="retained output" />
+          <CommandChip command="history changes" note="last patch" />
+        </section>
+      </section>
+      <StatusPanel />
+    </section>
+  </main>
+));
+
+deck.slide({ name: "Cascade And Components", style: slideStyle }, () => (
+  <main className="shell">
+    <Header section="INSPECTOR TARGETS" title="Cascade and component signals" />
+    <section className="cardRow">
+      <InspectorCard
+        eyebrow="SELECTABLE CARD"
+        title="Style trace target"
+        body="The selected class overrides the base card background and border. The nested text inherits defaults, then applies class and inline values."
+        footer="Try selection, style, and props commands here."
         tone="positive"
         selected
       />
-    </div>
-    <div style={{ x: 3.18, y: 1.42, width: 2.45, height: 1.35 }}>
-      <MetricCard label="Outputs" value="1 pptx" delta="patched in place" tone="positive" />
-    </div>
-    <div style={{ x: 0.58, y: 3.0, width: 2.05, height: 0.58 }}>
-      <CommandChip command="status" note="compiler state" />
-    </div>
-    <div style={{ x: 2.78, y: 3.0, width: 2.05, height: 0.58 }}>
-      <CommandChip command="component tree" note="component map" />
-    </div>
-    <div style={{ x: 4.98, y: 3.0, width: 2.05, height: 0.58 }}>
-      <CommandChip command="style $0 color" note="cascade trace" />
-    </div>
-    <div style={{ x: 0.58, y: 3.82, width: 2.05, height: 0.58 }}>
-      <CommandChip command="props inspect $0" note="component props" />
-    </div>
-    <div style={{ x: 2.78, y: 3.82, width: 2.05, height: 0.58 }}>
-      <CommandChip command="projection" note="retained output" />
-    </div>
-    <div style={{ x: 4.98, y: 3.82, width: 2.05, height: 0.58 }}>
-      <CommandChip command="history changes" note="last patch" />
-    </div>
-    <StatusPanel />
-  </>
+      <InspectorCard
+        eyebrow="DIAGNOSTIC SURFACE"
+        title="Reload target"
+        body="Editing this text should show a concise Vite-like dev line and keep interactive input on the prompt row."
+        footer="Change this line to test reload."
+        tone="warning"
+      />
+    </section>
+  </main>
 ));
 
-deck.slide({ name: "Cascade And Components", className: "slide" }, () => (
-  <>
-    <Header section="INSPECTOR TARGETS" title="Cascade and component signals" />
-    <div
-      className="card selected"
-      style={{ x: 0.58, y: 1.4, width: 4.05, height: 2.95, padding: 0.28 }}
-    >
-      <p className="eyebrow" style={{ x: 0.28, y: 0.22, width: 2.1, height: 0.22 }}>
-        SELECTABLE CARD
-      </p>
-      <p style={{ x: 0.28, y: 0.62, width: 3.35, height: 0.44, fontSize: 24, fontWeight: 700 }}>
-        Style trace target
-      </p>
-      <p className="muted" style={{ x: 0.28, y: 1.22, width: 3.35, height: 0.66 }}>
-        The selected class overrides the base card background and border. The nested text inherits
-        defaults, then applies class and inline values.
-      </p>
-      <p className="positive" style={{ x: 0.28, y: 2.32, width: 3.35, height: 0.28, fontSize: 14 }}>
-        Try selection, style, and props commands here.
-      </p>
-    </div>
-    <div className="card" style={{ x: 5.05, y: 1.4, width: 4.05, height: 2.95, padding: 0.28 }}>
-      <p className="eyebrow" style={{ x: 0.28, y: 0.22, width: 2.1, height: 0.22 }}>
-        DIAGNOSTIC SURFACE
-      </p>
-      <p style={{ x: 0.28, y: 0.62, width: 3.35, height: 0.44, fontSize: 24, fontWeight: 700 }}>
-        Reload target
-      </p>
-      <p className="muted" style={{ x: 0.28, y: 1.22, width: 3.35, height: 0.66 }}>
-        Editing this text should show a concise Vite-like dev line and keep interactive input on the
-        prompt row.
-      </p>
-      <p className="warning" style={{ x: 0.28, y: 2.32, width: 3.35, height: 0.28, fontSize: 14 }}>
-        Change this line to test reload.
-      </p>
-    </div>
-  </>
-));
+const rendered = await deck.render(pptx());
 
-const output = await write(await deck.render(pptx()), "output-tsx.pptx");
+if (!rendered.ok) {
+  throw new Error(rendered.diagnostics.items.map((item) => item.message).join("\n"));
+}
+
+const output = await write(rendered, "output-tsx.pptx");
+
+if (!output.ok) {
+  throw new Error(output.diagnostics.map((item) => item.message).join("\n"));
+}
 
 console.log(`Wrote ${output.path} (${output.status})`);

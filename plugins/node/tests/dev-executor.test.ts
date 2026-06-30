@@ -2,7 +2,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vite-plus/test";
-import { bundleDeckjsxEntry, isDeckjsxRuntimeExternalId } from "../src/dev-executor.ts";
+import { bundleDeckjsxEntry, isDeckjsxRuntimeExternalId } from "@/src/dev-executor.ts";
 
 describe("@deckjsx/node dev executor", () => {
   test("externalizes deckjsx runtime packages and node builtins", () => {

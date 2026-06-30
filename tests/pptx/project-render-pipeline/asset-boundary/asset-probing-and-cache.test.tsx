@@ -23,7 +23,10 @@ describe("project/render asset probing and cache", () => {
     });
 
     deck.slide({ name: "Probe sensitive" }, () => (
-      <img src="./chart.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        src="./chart.png"
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     const first = await H.projectSource({
@@ -81,7 +84,10 @@ describe("project/render asset probing and cache", () => {
 
     deck.slide({ name: "Assets" }, () => (
       <>
-        <img src="/public/chart.png" style={{ x: 1, y: 1, width: 2, height: 1 }} />
+        <img
+          src="/public/chart.png"
+          style={{ position: "absolute", left: 1, top: 1, width: 2, height: 1 }}
+        />
       </>
     ));
 
@@ -142,8 +148,14 @@ describe("project/render asset probing and cache", () => {
 
     deck.slide({ name: "Shared assets" }, () => (
       <>
-        <img src="/public/shared.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
-        <img src="/public/shared.png" style={{ x: 2, y: 1, width: 1, height: 1 }} />
+        <img
+          src="/public/shared.png"
+          style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+        />
+        <img
+          src="/public/shared.png"
+          style={{ position: "absolute", left: 2, top: 1, width: 1, height: 1 }}
+        />
       </>
     ));
 
@@ -193,7 +205,10 @@ describe("project/render asset probing and cache", () => {
 
     deck.slide({ name: "Hashed media reuse" }, () => (
       <>
-        <img src="/public/hashed-media.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+        <img
+          src="/public/hashed-media.png"
+          style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+        />
       </>
     ));
 

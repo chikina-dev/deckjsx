@@ -1,6 +1,6 @@
-import { createDiagnostics } from "../../diagnostics";
-import type { PptxPackageBuildArtifact, PptxPackageBuildReason } from "../../pipeline-artifacts";
-import type { PackagePartId, PptxPackagePart } from "../../projection/pptx/model";
+import { createDiagnostics } from "@/src/diagnostics";
+import type { PptxPackageBuildArtifact, PptxPackageBuildReason } from "@/src/pipeline/artifacts";
+import type { PackagePartId, PptxPackagePart } from "@/src/projection/pptx/model";
 import { packagePartOrderKey } from "./package-part";
 
 const PPTX_WRITER_FINGERPRINT = "deckjsx:pptx-writer:0.8-bootstrap";

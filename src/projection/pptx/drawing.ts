@@ -1,4 +1,4 @@
-import type { BackgroundLayerIR } from "../../layout/projected";
+import type { BackgroundLayerIR } from "@/src/layout/projected";
 import type {
   PptxDrawingNode,
   PptxElement,

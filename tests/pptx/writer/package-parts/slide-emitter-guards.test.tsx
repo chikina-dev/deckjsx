@@ -9,9 +9,27 @@ describe("direct pptx writer slide emitter guards", () => {
       <>
         <img
           data={H.SAMPLE_SVG_DATA_URI}
-          style={{ x: 1, y: 1, width: 1, height: 1, href: "https://example.test/image" }}
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 1,
+            height: 1,
+            href: "https://example.test/image",
+          }}
         />
-        <p style={{ x: 3, y: 1, width: 2, height: 0.5, href: "https://example.test/text" }}>Link</p>
+        <p
+          style={{
+            position: "absolute",
+            left: 3,
+            top: 1,
+            width: 2,
+            height: 0.5,
+            href: "https://example.test/text",
+          }}
+        >
+          Link
+        </p>
       </>
     ));
 
@@ -238,8 +256,9 @@ describe("direct pptx writer slide emitter guards", () => {
     deck.slide({ name: "Background relationship validation" }, () => (
       <div
         style={{
-          x: 1,
-          y: 1,
+          position: "absolute",
+          left: 1,
+          top: 1,
           width: 2,
           height: 1,
           background: `url("${H.SAMPLE_SVG_DATA_URI}")`,
@@ -325,7 +344,16 @@ describe("direct pptx writer slide emitter guards", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Background layer frame validation" }, () => (
-      <div style={{ x: 1, y: 1, width: 2, height: 1, backgroundColor: "#2563EB" }} />
+      <div
+        style={{
+          position: "absolute",
+          left: 1,
+          top: 1,
+          width: 2,
+          height: 1,
+          backgroundColor: "#2563EB",
+        }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;
@@ -365,7 +393,16 @@ describe("direct pptx writer slide emitter guards", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Generated stroke validation" }, () => (
-      <div style={{ x: 1, y: 1, width: 2, height: 1, borderTop: "1pt solid #111111" }} />
+      <div
+        style={{
+          position: "absolute",
+          left: 1,
+          top: 1,
+          width: 2,
+          height: 1,
+          borderTop: "1pt solid #111111",
+        }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;
@@ -393,7 +430,16 @@ describe("direct pptx writer slide emitter guards", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Generated stroke geometry validation" }, () => (
-      <div style={{ x: 1, y: 1, width: 2, height: 1, borderTop: "1pt solid #111111" }} />
+      <div
+        style={{
+          position: "absolute",
+          left: 1,
+          top: 1,
+          width: 2,
+          height: 1,
+          borderTop: "1pt solid #111111",
+        }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;
@@ -434,7 +480,14 @@ describe("direct pptx writer slide emitter guards", () => {
     deck.slide({ name: " geometry validation" }, () => (
       <shape
         shape="ellipse"
-        style={{ x: 1, y: 1, width: 2, height: 1, backgroundColor: "#111111" }}
+        style={{
+          position: "absolute",
+          left: 1,
+          top: 1,
+          width: 2,
+          height: 1,
+          backgroundColor: "#111111",
+        }}
       />
     ));
 
@@ -499,7 +552,7 @@ describe("direct pptx writer slide emitter guards", () => {
     imageDeck.slide({ name: " metadata required" }, () => (
       <img
         data={H.WIDE_SVG_DATA_URI}
-        style={{ x: 1, y: 1, width: 2, height: 2, objectFit: "contain" }}
+        style={{ position: "absolute", left: 1, top: 1, width: 2, height: 2, objectFit: "contain" }}
       />
     ));
 
@@ -515,8 +568,9 @@ describe("direct pptx writer slide emitter guards", () => {
     backgroundDeck.slide({ name: "Background metadata required" }, () => (
       <div
         style={{
-          x: 1,
-          y: 1,
+          position: "absolute",
+          left: 1,
+          top: 1,
           width: 4,
           height: 2,
           background: `url("${H.WIDE_SVG_DATA_URI}")`,

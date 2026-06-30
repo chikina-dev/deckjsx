@@ -1,14 +1,20 @@
 import type { ClassNameValue } from "../authoring/props";
 import type { TemplateAreaRef } from "../templates";
+import type { ProjectedImageFit } from "./image-fit";
 import type {
   CssAlignContent,
   CssAlignSelf,
+  CssColor,
   CssFlexDirection,
+  CssGridTemplate,
   CssJustifyContent,
+  CssLetterSpacing,
   CssJustifySelf,
   DeckLength,
   ImageFit,
   ImageStyle,
+  NonNegativeDeckLength,
+  CssPaint,
   ShapeStyle,
   SlideStyle,
   StackAxis,
@@ -22,7 +28,7 @@ import type {
 } from "../style/types";
 import { resolveGridContainerAuthoring } from "./grid";
 import { resolveBoxSpacing, resolveInset } from "./spacing";
-import { normalizeOpacityAsTransparency, parseBackgroundShorthand } from "../style/background";
+import { parseBackgroundShorthand } from "../style/background";
 import { parseLength, type LengthResolutionContext } from "../style/length";
 import {
   parseBorderShorthand,
@@ -43,6 +49,10 @@ type AreaStructuralInput = {
   readonly area?: TemplateAreaRef;
 };
 
+function firstGridTemplateValue(...values: readonly unknown[]): CssGridTemplate | undefined {
+  return values.find((value) => value !== undefined) as CssGridTemplate | undefined;
+}
+
 type ImageStructuralInput = AreaStructuralInput & {
   readonly src?: string;
   readonly data?: string;
@@ -55,18 +65,74 @@ type VideoStructuralInput = AreaStructuralInput & {
   readonly posterData?: string;
 };
 
-type ShapeKind = "rect" | "ellipse" | "line";
+type ShapeKind = "rect" | "ellipse" | "line" | "roundRect";
+
+function asCssColor(value: string | undefined): CssColor | undefined {
+  return value as CssColor | undefined;
+}
+
+function asCssPaint(value: string | undefined): CssPaint | undefined {
+  return value as CssPaint | undefined;
+}
+
+function authoredOrParsedCssColor(
+  authored: CssColor | undefined,
+  parsed: string | undefined,
+): CssColor | undefined {
+  if (authored !== undefined) {
+    return authored;
+  }
+
+  return asCssColor(parsed);
+}
+
+function firstCssColor(...values: readonly unknown[]): CssColor | undefined {
+  return values.find((value) => value !== undefined) as CssColor | undefined;
+}
+
+function firstCssPaint(...values: readonly unknown[]): CssPaint | undefined {
+  return values.find((value) => value !== undefined) as CssPaint | undefined;
+}
 
 type ShapeStructuralInput = AreaStructuralInput & {
   readonly shape?: ShapeKind;
 };
 
-export type NormalizedSlideProps = SlideStructuralInput & SlideStyle;
-export type NormalizedViewProps = AreaStructuralInput & ViewStyle;
-export type NormalizedTextProps = AreaStructuralInput & TextStyle;
-export type NormalizedImageProps = ImageStructuralInput & ImageStyle;
-export type NormalizedVideoProps = VideoStructuralInput & VideoStyle;
-export type NormalizedShapeProps = AreaStructuralInput & ShapeStyle & { readonly shape: ShapeKind };
+export type InternalLayoutMode = "block" | "stack" | "grid";
+export type NormalizedSlideProps = SlideStructuralInput &
+  SlideStyle & {
+    readonly direction?: StackAxis;
+    readonly layout?: InternalLayoutMode;
+  };
+export type NormalizedViewProps = AreaStructuralInput &
+  ViewStyle & {
+    readonly direction?: StackAxis;
+    readonly layout?: InternalLayoutMode;
+  };
+export type NormalizedTextProps = AreaStructuralInput &
+  TextStyle & {
+    readonly italic?: boolean;
+    readonly underline?: boolean;
+    readonly strike?: boolean;
+    readonly charSpacing?: CssLetterSpacing;
+    readonly wrap?: boolean;
+  };
+export type NormalizedImageProps = ImageStructuralInput &
+  ImageStyle & {
+    readonly fit?: ProjectedImageFit;
+    readonly rounding?: boolean;
+  };
+export type NormalizedVideoProps = VideoStructuralInput &
+  VideoStyle & {
+    readonly fit?: ProjectedImageFit;
+    readonly rounding?: boolean;
+  };
+export type NormalizedShapeProps = AreaStructuralInput &
+  ShapeStyle & {
+    readonly shape: ShapeKind;
+    readonly borderTransparency?: number;
+    readonly radius?: DeckLength;
+  };
 export type NormalizedTableProps = AreaStructuralInput & TableStyle;
 export type NormalizedTableSectionProps = TableSectionStyle;
 export type NormalizedTableRowProps = TableRowStyle;
@@ -110,14 +176,9 @@ export type TableCellNormalizationInput = TableCellStyle & {
 };
 
 function resolveFlexDirection(
-  direction: StackAxis | undefined,
   flexDirection: CssFlexDirection | undefined,
   display: ViewStyle["display"],
 ): StackAxis | undefined {
-  if (direction) {
-    return direction;
-  }
-
   if (flexDirection === "row") {
     return "horizontal";
   }
@@ -134,14 +195,9 @@ function resolveFlexDirection(
 }
 
 function resolveLayout(
-  layout: ViewStyle["layout"],
   display: ViewStyle["display"],
   position: ViewStyle["position"],
-): ViewStyle["layout"] {
-  if (layout) {
-    return layout;
-  }
-
+): InternalLayoutMode | undefined {
   if (display === "flex") {
     return "stack";
   }
@@ -151,18 +207,18 @@ function resolveLayout(
   }
 
   if (position === "absolute" || display === "block") {
-    return "absolute";
+    return "block";
   }
 
   return undefined;
 }
 
 function resolveGap(
-  gap: DeckLength | undefined,
-  rowGap: DeckLength | undefined,
-  columnGap: DeckLength | undefined,
+  gap: NonNegativeDeckLength | undefined,
+  rowGap: NonNegativeDeckLength | undefined,
+  columnGap: NonNegativeDeckLength | undefined,
   direction: StackAxis | undefined,
-) {
+): NonNegativeDeckLength | undefined {
   if (gap !== undefined) {
     return gap;
   }
@@ -178,7 +234,7 @@ function resolveGap(
   return rowGap ?? columnGap;
 }
 
-function normalizeImageFit(value: ImageFit | undefined): ImageFit | undefined {
+function normalizeImageFit(value: ImageFit | undefined): ProjectedImageFit | undefined {
   if (value === "fill") {
     return "stretch";
   }
@@ -306,17 +362,18 @@ export function normalizeViewProps(props: ViewNormalizationInput): NormalizedVie
   authored.display = resolved.display ?? gridContainerAuthoring.display;
   authored.gridTemplateAreas =
     resolved.gridTemplateAreas ?? gridContainerAuthoring.gridTemplateAreas;
-  authored.gridTemplateRows = resolved.gridTemplateRows ?? gridContainerAuthoring.gridTemplateRows;
-  authored.gridTemplateColumns =
-    resolved.gridTemplateColumns ?? gridContainerAuthoring.gridTemplateColumns;
+  authored.gridTemplateRows = firstGridTemplateValue(
+    resolved.gridTemplateRows,
+    gridContainerAuthoring.gridTemplateRows,
+  );
+  authored.gridTemplateColumns = firstGridTemplateValue(
+    resolved.gridTemplateColumns,
+    gridContainerAuthoring.gridTemplateColumns,
+  );
   authored.gridAutoColumns = resolved.gridAutoColumns ?? gridContainerAuthoring.gridAutoColumns;
   authored.gridAutoRows = resolved.gridAutoRows ?? gridContainerAuthoring.gridAutoRows;
   authored.gridAutoFlow = resolved.gridAutoFlow ?? gridContainerAuthoring.gridAutoFlow;
-  const direction = resolveFlexDirection(
-    authored.direction,
-    authored.flexDirection,
-    authored.display,
-  );
+  const direction = resolveFlexDirection(authored.flexDirection, authored.display);
   const inset = resolveInset(
     authored.inset,
     authored.top,
@@ -332,16 +389,16 @@ export function normalizeViewProps(props: ViewNormalizationInput): NormalizedVie
     bottom: inset?.bottom ?? authored.bottom,
     left: inset?.left ?? authored.left,
     direction,
-    layout: resolveLayout(authored.layout, authored.display, authored.position),
+    layout: resolveLayout(authored.display, authored.position),
     gap: resolveGap(authored.gap, authored.rowGap, authored.columnGap, direction),
-    backgroundColor: authored.backgroundColor ?? background.backgroundColor,
-    borderColor: authored.borderColor ?? border.borderColor,
+    backgroundColor: authoredOrParsedCssColor(authored.backgroundColor, background.backgroundColor),
+    borderColor: firstCssColor(authored.borderColor, border.borderColor),
     borderWidth: authored.borderWidth ?? border.borderWidth,
     borderStyle: authored.borderStyle ?? border.borderStyle,
-    borderTopColor: authored.borderTopColor ?? borderTop.color,
-    borderRightColor: authored.borderRightColor ?? borderRight.color,
-    borderBottomColor: authored.borderBottomColor ?? borderBottom.color,
-    borderLeftColor: authored.borderLeftColor ?? borderLeft.color,
+    borderTopColor: firstCssColor(authored.borderTopColor, borderTop.color),
+    borderRightColor: firstCssColor(authored.borderRightColor, borderRight.color),
+    borderBottomColor: firstCssColor(authored.borderBottomColor, borderBottom.color),
+    borderLeftColor: firstCssColor(authored.borderLeftColor, borderLeft.color),
     borderTopWidth: authored.borderTopWidth ?? borderTop.width,
     borderRightWidth: authored.borderRightWidth ?? borderRight.width,
     borderBottomWidth: authored.borderBottomWidth ?? borderBottom.width,
@@ -350,7 +407,7 @@ export function normalizeViewProps(props: ViewNormalizationInput): NormalizedVie
     borderRightStyle: authored.borderRightStyle ?? borderRight.style,
     borderBottomStyle: authored.borderBottomStyle ?? borderBottom.style,
     borderLeftStyle: authored.borderLeftStyle ?? borderLeft.style,
-    outlineColor: authored.outlineColor ?? outline.outlineColor,
+    outlineColor: firstCssColor(authored.outlineColor, outline.outlineColor),
     outlineWidth: authored.outlineWidth ?? outline.outlineWidth,
     outlineStyle: authored.outlineStyle ?? outline.outlineStyle,
     padding: resolveBoxSpacing(
@@ -421,19 +478,18 @@ export function normalizeTextProps(props: TextNormalizationInput): NormalizedTex
     right: inset?.right ?? resolved.right,
     bottom: inset?.bottom ?? resolved.bottom,
     left: inset?.left ?? resolved.left,
-    italic: resolved.italic ?? (resolved.fontStyle === "italic" ? true : undefined),
-    underline: resolved.underline ?? decoration.underline,
-    strike: resolved.strike ?? decoration.strike,
-    charSpacing:
-      resolved.charSpacing ?? (resolved.letterSpacing === "normal" ? 0 : resolved.letterSpacing),
-    backgroundColor: resolved.backgroundColor ?? background.backgroundColor,
-    borderColor: resolved.borderColor ?? border.borderColor,
+    italic: resolved.fontStyle === "italic" ? true : undefined,
+    underline: decoration.underline,
+    strike: decoration.strike,
+    charSpacing: resolved.letterSpacing === "normal" ? 0 : resolved.letterSpacing,
+    backgroundColor: firstCssColor(resolved.backgroundColor, background.backgroundColor),
+    borderColor: firstCssColor(resolved.borderColor, border.borderColor),
     borderWidth: resolved.borderWidth ?? border.borderWidth,
     borderStyle: resolved.borderStyle ?? border.borderStyle,
-    borderTopColor: resolved.borderTopColor ?? borderTop.color,
-    borderRightColor: resolved.borderRightColor ?? borderRight.color,
-    borderBottomColor: resolved.borderBottomColor ?? borderBottom.color,
-    borderLeftColor: resolved.borderLeftColor ?? borderLeft.color,
+    borderTopColor: firstCssColor(resolved.borderTopColor, borderTop.color),
+    borderRightColor: firstCssColor(resolved.borderRightColor, borderRight.color),
+    borderBottomColor: firstCssColor(resolved.borderBottomColor, borderBottom.color),
+    borderLeftColor: firstCssColor(resolved.borderLeftColor, borderLeft.color),
     borderTopWidth: resolved.borderTopWidth ?? borderTop.width,
     borderRightWidth: resolved.borderRightWidth ?? borderRight.width,
     borderBottomWidth: resolved.borderBottomWidth ?? borderBottom.width,
@@ -442,15 +498,10 @@ export function normalizeTextProps(props: TextNormalizationInput): NormalizedTex
     borderRightStyle: resolved.borderRightStyle ?? borderRight.style,
     borderBottomStyle: resolved.borderBottomStyle ?? borderBottom.style,
     borderLeftStyle: resolved.borderLeftStyle ?? borderLeft.style,
-    outlineColor: resolved.outlineColor ?? outline.outlineColor,
+    outlineColor: firstCssColor(resolved.outlineColor, outline.outlineColor),
     outlineWidth: resolved.outlineWidth ?? outline.outlineWidth,
     outlineStyle: resolved.outlineStyle ?? outline.outlineStyle,
-    wrap: resolveTextWrap(
-      resolved.wrap,
-      resolved.whiteSpace,
-      resolved.wordBreak,
-      resolved.overflowWrap,
-    ),
+    wrap: resolveTextWrap(resolved.whiteSpace, resolved.wordBreak, resolved.overflowWrap),
     padding: resolveBoxSpacing(
       resolved.padding,
       resolved.paddingTop,
@@ -491,14 +542,13 @@ export function normalizeImageProps(
     right: inset?.right ?? resolved.right,
     bottom: inset?.bottom ?? resolved.bottom,
     left: inset?.left ?? resolved.left,
-    fit: normalizeImageFit(resolved.fit ?? resolved.objectFit),
+    fit: normalizeImageFit(resolved.objectFit),
     objectPosition: resolved.objectPosition,
     crop: resolved.crop,
     rounding:
-      resolved.rounding ??
-      (resolved.borderRadius !== undefined
+      resolved.borderRadius !== undefined
         ? parseLength(resolved.borderRadius, 0, 0, context) > 0
-        : undefined),
+        : undefined,
     margin: resolveBoxSpacing(
       resolved.margin,
       resolved.marginTop,
@@ -532,13 +582,12 @@ export function normalizeVideoProps(
     right: inset?.right ?? resolved.right,
     bottom: inset?.bottom ?? resolved.bottom,
     left: inset?.left ?? resolved.left,
-    fit: normalizeImageFit(resolved.fit ?? resolved.objectFit),
+    fit: normalizeImageFit(resolved.objectFit),
     objectPosition: resolved.objectPosition,
     rounding:
-      resolved.rounding ??
-      (resolved.borderRadius !== undefined
+      resolved.borderRadius !== undefined
         ? parseLength(resolved.borderRadius, 0, 0, context) > 0
-        : undefined),
+        : undefined,
     margin: resolveBoxSpacing(
       resolved.margin,
       resolved.marginTop,
@@ -556,10 +605,33 @@ export function normalizeSlideProps(props: SlideNormalizationInput): NormalizedS
     ...style,
   };
   const background = parseBackgroundShorthand(resolved.background);
+  const gridContainerAuthoring = resolveGridContainerAuthoring(resolved);
+  const authored: NormalizedSlideProps = {
+    ...gridContainerAuthoring,
+    ...resolved,
+  };
+  authored.display = resolved.display ?? gridContainerAuthoring.display;
+  authored.gridTemplateAreas =
+    resolved.gridTemplateAreas ?? gridContainerAuthoring.gridTemplateAreas;
+  authored.gridTemplateRows = firstGridTemplateValue(
+    resolved.gridTemplateRows,
+    gridContainerAuthoring.gridTemplateRows,
+  );
+  authored.gridTemplateColumns = firstGridTemplateValue(
+    resolved.gridTemplateColumns,
+    gridContainerAuthoring.gridTemplateColumns,
+  );
+  authored.gridAutoColumns = resolved.gridAutoColumns ?? gridContainerAuthoring.gridAutoColumns;
+  authored.gridAutoRows = resolved.gridAutoRows ?? gridContainerAuthoring.gridAutoRows;
+  authored.gridAutoFlow = resolved.gridAutoFlow ?? gridContainerAuthoring.gridAutoFlow;
+  const direction = resolveFlexDirection(authored.flexDirection, authored.display);
 
   return {
-    ...resolved,
-    backgroundColor: resolved.backgroundColor ?? background.backgroundColor,
+    ...authored,
+    direction,
+    layout: resolveLayout(authored.display, undefined),
+    gap: resolveGap(authored.gap, authored.rowGap, authored.columnGap, direction),
+    backgroundColor: firstCssColor(authored.backgroundColor, background.backgroundColor),
   };
 }
 
@@ -592,23 +664,21 @@ export function normalizeShapeProps(props: ShapeNormalizationInput): NormalizedS
     right: inset?.right ?? resolved.right,
     bottom: inset?.bottom ?? resolved.bottom,
     left: inset?.left ?? resolved.left,
-    backgroundColor: resolved.backgroundColor ?? background.backgroundColor,
-    fill:
-      resolved.fill ??
-      resolved.backgroundColor ??
-      resolved.backgroundImage ??
-      background.backgroundColor,
-    fillTransparency: resolved.fillTransparency ?? resolved.backgroundTransparency,
-    borderColor: resolved.borderColor ?? stroke.strokeColor ?? border.borderColor,
-    borderWidth:
-      resolved.borderWidth ?? resolved.strokeWidth ?? stroke.strokeWidth ?? border.borderWidth,
+    backgroundColor: firstCssColor(resolved.backgroundColor, background.backgroundColor),
+    fill: firstCssPaint(
+      resolved.fill,
+      resolved.backgroundColor,
+      resolved.backgroundImage,
+      asCssPaint(background.backgroundColor),
+    ),
+    borderColor: firstCssColor(resolved.borderColor, stroke.strokeColor, border.borderColor),
+    borderWidth: resolved.borderWidth ?? stroke.strokeWidth ?? border.borderWidth,
     borderStyle: resolved.borderStyle ?? stroke.strokeStyle ?? border.borderStyle,
-    borderTransparency:
-      resolved.borderTransparency ?? normalizeOpacityAsTransparency(resolved.strokeOpacity),
-    borderTopColor: resolved.borderTopColor ?? borderTop.color,
-    borderRightColor: resolved.borderRightColor ?? borderRight.color,
-    borderBottomColor: resolved.borderBottomColor ?? borderBottom.color,
-    borderLeftColor: resolved.borderLeftColor ?? borderLeft.color,
+    borderTransparency: resolved.borderTransparency,
+    borderTopColor: firstCssColor(resolved.borderTopColor, borderTop.color),
+    borderRightColor: firstCssColor(resolved.borderRightColor, borderRight.color),
+    borderBottomColor: firstCssColor(resolved.borderBottomColor, borderBottom.color),
+    borderLeftColor: firstCssColor(resolved.borderLeftColor, borderLeft.color),
     borderTopWidth: resolved.borderTopWidth ?? borderTop.width,
     borderRightWidth: resolved.borderRightWidth ?? borderRight.width,
     borderBottomWidth: resolved.borderBottomWidth ?? borderBottom.width,
@@ -617,10 +687,10 @@ export function normalizeShapeProps(props: ShapeNormalizationInput): NormalizedS
     borderRightStyle: resolved.borderRightStyle ?? borderRight.style,
     borderBottomStyle: resolved.borderBottomStyle ?? borderBottom.style,
     borderLeftStyle: resolved.borderLeftStyle ?? borderLeft.style,
-    outlineColor: resolved.outlineColor ?? outline.outlineColor,
+    outlineColor: firstCssColor(resolved.outlineColor, outline.outlineColor),
     outlineWidth: resolved.outlineWidth ?? outline.outlineWidth,
     outlineStyle: resolved.outlineStyle ?? outline.outlineStyle,
-    radius: resolved.radius ?? resolved.borderRadius,
+    radius: resolved.borderRadius,
     margin: resolveBoxSpacing(
       resolved.margin,
       resolved.marginTop,

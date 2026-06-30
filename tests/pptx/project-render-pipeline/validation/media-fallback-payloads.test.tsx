@@ -5,7 +5,16 @@ describe("project/render validation media and fallback payloads", () => {
   test("project validates drawing element id uniqueness across generated strokes", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Duplicate generated element id" }, () => (
-      <div style={{ x: 0.5, y: 0.5, width: 4, height: 2, outline: "2pt solid #cc5500" }} />
+      <div
+        style={{
+          position: "absolute",
+          left: 0.5,
+          top: 0.5,
+          width: 4,
+          height: 2,
+          outline: "2pt solid #cc5500",
+        }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;
@@ -63,7 +72,10 @@ describe("project/render validation media and fallback payloads", () => {
   test("project validates media payload element references against drawing ids", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Orphan media element" }, () => (
-      <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        data={H.SAMPLE_SVG_DATA_URI}
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;
@@ -131,7 +143,10 @@ describe("project/render validation media and fallback payloads", () => {
       },
     });
     deck.slide({ name: "Orphan media asset" }, () => (
-      <img src="/public/chart.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        src="/public/chart.png"
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     const projection = (
@@ -197,7 +212,9 @@ describe("project/render validation media and fallback payloads", () => {
   test("project validates drawing unsupported semantic fallback payloads", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Broken unsupported fallback" }, () => (
-      <p style={{ x: 1, y: 1, width: 2, height: 0.5, opacity: 0.4 }}>Faded</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 2, height: 0.5, opacity: 0.4 }}>
+        Faded
+      </p>
     ));
 
     const projection = (await deck.project()).projection!;

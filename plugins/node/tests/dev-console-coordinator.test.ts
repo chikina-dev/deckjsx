@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vite-plus/test";
-import { createDevConsoleCoordinator } from "../src/dev-console/coordinator.ts";
-import { runInteractiveDevCommandLoop } from "../src/interactive/repl.ts";
-import { interactivePromptLinesFromKeys } from "../src/interactive/repl.ts";
-import type { InteractiveDevSession } from "../src/interactive/session.ts";
-import type { InteractivePromptKey } from "../src/interactive/repl.ts";
+import { createDevConsoleCoordinator } from "@/src/dev-console/coordinator.ts";
+import { runInteractiveDevCommandLoop } from "@/src/interactive/repl.ts";
+import { interactivePromptLinesFromKeys } from "@/src/interactive/repl.ts";
+import type { InteractiveDevSession } from "@/src/interactive/session.ts";
+import type { InteractivePromptKey } from "@/src/interactive/repl.ts";
 
 describe("@deckjsx/node dev console coordinator", () => {
   test("redraws the active prompt after dev and inspector output", () => {

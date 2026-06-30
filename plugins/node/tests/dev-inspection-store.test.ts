@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { createNodeDevInspectionStore } from "../src/dev-inspection-store.ts";
+import { createNodeDevInspectionStore } from "@/src/dev-inspection-store.ts";
 
 describe("@deckjsx/node dev inspection store", () => {
   class WidgetConfig {

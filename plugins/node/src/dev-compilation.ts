@@ -34,29 +34,46 @@ type RenderExecutionContextWithNodeDevObservers = RenderExecutionContext & {
   readonly [AUTHORING_RUNTIME_OBSERVERS]?: readonly NodeDevAuthoringRuntimeObserver[];
 };
 
+/** Status of one `@deckjsx/node/dev` compilation cycle. */
 export type DeckjsxDevCompilationStatus =
   | "artifactUpdated"
   | "bundleFailed"
   | "entryFailed"
   | "outputBlocked";
 
+/**
+ * Result of one `@deckjsx/node/dev` compilation cycle.
+ *
+ * Successful cycles update the artifact plan and tracked outputs. Failed cycles keep diagnostics
+ * structured by phase so CLIs and editor integrations can render actionable feedback.
+ */
 export type DeckjsxDevCompilationResult =
   | {
+      /** The deck rendered and all tracked output writes were accepted. */
       readonly ok: true;
       readonly status: "artifactUpdated";
+      /** Monotonic compilation number from the compiler instance. */
       readonly compilation: number;
+      /** Executable bundled source snapshot used for this cycle. */
       readonly sourceSnapshot: DeckjsxDevExecutableSourceSnapshot;
+      /** Ready artifact plan for the successful output update. */
       readonly artifactPlan: DeckjsxDevArtifactPlan & { readonly status: "ready" };
+      /** Module graph and watch-file summary used for future invalidation. */
       readonly graph: DevModuleGraphSnapshot;
+      /** Write records reported by the render integration. */
       readonly writes: readonly DeckjsxDevWriteRecord[];
+      /** Output slots retained from a previous cycle. */
       readonly retainedSlots: readonly number[];
+      /** Non-fatal diagnostics emitted during the cycle. */
       readonly diagnostics: readonly DeckjsxDevDiagnostic[];
     }
   | {
+      /** The deck rendered, but the requested tracked outputs could not all be updated. */
       readonly ok: false;
       readonly status: "outputBlocked";
       readonly compilation: number;
       readonly sourceSnapshot: DeckjsxDevExecutableSourceSnapshot;
+      /** Blocked artifact plan explaining the output conflict. */
       readonly artifactPlan: DeckjsxDevArtifactPlan & { readonly status: "blocked" };
       readonly graph: DevModuleGraphSnapshot;
       readonly writes: readonly DeckjsxDevWriteRecord[];
@@ -64,6 +81,7 @@ export type DeckjsxDevCompilationResult =
       readonly diagnostics: readonly DeckjsxDevDiagnostic[];
     }
   | {
+      /** Bundling failed before the entry module could run. */
       readonly ok: false;
       readonly status: "bundleFailed";
       readonly compilation: number;
@@ -71,6 +89,7 @@ export type DeckjsxDevCompilationResult =
       readonly diagnostics: readonly DeckjsxDevDiagnostic[];
     }
   | {
+      /** The bundled entry executed but failed before producing a usable render result. */
       readonly ok: false;
       readonly status: "entryFailed";
       readonly compilation: number;

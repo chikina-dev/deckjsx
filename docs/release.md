@@ -35,11 +35,11 @@ Trusted Publishing uses GitHub Actions OIDC, so no `NPM_TOKEN` secret is needed.
    - `npm run --prefix .github/compat/pptxgenjs compare`
    - `vp pack`
    - for `@deckjsx/node`: `(cd plugins/node && npm pack)`
-   - the temporary fresh-install smoke in [Pre-publish temporary install smoke](#pre-publish-temporary-install-smoke)
+   - `bun run smoke:tarball`
 3. Push the change to `main`.
 4. Run the `Release` workflow from GitHub Actions with the package selector and matching package version:
    - `deckjsx`: `v0.9.3`
-   - `@deckjsx/node`: `v0.1.4`
+   - `@deckjsx/node`: `v0.1.5`
 
 The workflow validates that the selected package version matches the requested version, derives the
 GitHub release tag for the selected package, checks and packs
@@ -72,6 +72,10 @@ commands such as `status`, `projection`, and `exit` in this smoke. Do not use
 `npm install deckjsx @deckjsx/node` for this gate:
 that verifies the registry after publishing, which is too late. Use `npm pack` output from the
 release candidate.
+
+Run `bun run smoke:tarball` for the maintained automated version of this gate. It packs the root
+package and `@deckjsx/node`, installs those tarballs into a temporary project, runs interactive
+`deckjsx dev`, and checks the generated PPTX output.
 
 Create a temporary project and install the packed packages:
 
@@ -127,7 +131,9 @@ function validSource({ label, outputPath, secondOutputPath, secondLabel }) {
     ? `
 const componentDeck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 componentDeck.slide({ name: "Component" }, () => (
-  <p style={{ x: 1, y: 1, width: 7, height: 0.8, fontSize: 24 }}>${secondLabel}</p>
+  <main style={{ padding: 1 }}>
+    <p style={{ width: "100%", height: 0.8, fontSize: 24 }}>${secondLabel}</p>
+  </main>
 ));
 await write(await componentDeck.render(pptx()), "${secondOutputPath}");
 `
@@ -140,9 +146,11 @@ import { pptx } from "deckjsx/adapter";
 const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
 deck.slide({ name: "Deep TSX smoke" }, () => (
-  <p style={{ x: 1, y: 1, width: 7, height: 0.8, fontSize: 28 }}>
-    ${label}
-  </p>
+  <main style={{ padding: 1 }}>
+    <p style={{ width: "100%", height: 0.8, fontSize: 28 }}>
+      ${label}
+    </p>
+  </main>
 ));
 
 await write(await deck.render(pptx()), "${outputPath}");
@@ -158,7 +166,7 @@ import { pptx } from "deckjsx/adapter";
 const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
 deck.slide({ name: "Broken" }, () => (
-  <p style={{ x: 1, y: }}>
+  <p style={{ color: }}>
     BROKEN_TSX_${runId}
   </p>
 ));
@@ -245,7 +253,7 @@ async function scenarioLiveUpdateErrorRecovery() {
 
     await writeFile(entry, invalidSource(output));
     await waitFor("error[deckjsx.node.dev.bundleFailed]", () => logs.stderr);
-    await waitFor(`${entry}:9:24`, () => logs.stderr);
+    await waitFor(`${entry}:9:`, () => logs.stderr);
     const errorXml = slideXml(output);
     if (!errorXml.includes(second) || errorXml.includes(`BROKEN_TSX_${runId}`)) {
       throw new Error("failed build should leave previous PPTX content intact");

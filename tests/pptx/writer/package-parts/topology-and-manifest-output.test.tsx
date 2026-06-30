@@ -6,7 +6,7 @@ describe("direct pptx writer topology and manifest output", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Build metadata validation" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Metadata</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Metadata</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -42,17 +42,40 @@ describe("direct pptx writer topology and manifest output", () => {
 
     deck.slide({ name: "Topology 1" }, () => (
       <>
-        <p style={{ x: 0.7, y: 0.6, width: 3, height: 0.5, href: "https://example.com/docs" }}>
+        <p
+          style={{
+            position: "absolute",
+            left: 0.7,
+            top: 0.6,
+            width: 3,
+            height: 0.5,
+            href: "https://example.com/docs",
+          }}
+        >
           Docs
         </p>
-        <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1.4, width: 1, height: 1 }} />
-        <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 2.3, y: 1.4, width: 1, height: 1 }} />
+        <img
+          data={H.SAMPLE_SVG_DATA_URI}
+          style={{ position: "absolute", left: 1, top: 1.4, width: 1, height: 1 }}
+        />
+        <img
+          data={H.SAMPLE_SVG_DATA_URI}
+          style={{ position: "absolute", left: 2.3, top: 1.4, width: 1, height: 1 }}
+        />
       </>
     ));
     deck.slide({ name: "Topology 2" }, () => (
       <shape
         shape="rect"
-        style={{ x: 1, y: 1, width: 2, height: 1, fill: "#2563EB", stroke: "#F97316" }}
+        style={{
+          position: "absolute",
+          left: 1,
+          top: 1,
+          width: 2,
+          height: 1,
+          fill: "#2563EB",
+          stroke: "#F97316",
+        }}
       />
     ));
 
@@ -146,7 +169,9 @@ describe("direct pptx writer topology and manifest output", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Manifest payloads" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Manifest payloads</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
+        Manifest payloads
+      </p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -214,7 +239,9 @@ describe("direct pptx writer topology and manifest output", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Manifest payload validation" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Manifest payloads</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
+        Manifest payloads
+      </p>
     ));
 
     const projection = (await deck.project()).projection!;

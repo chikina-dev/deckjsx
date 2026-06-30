@@ -1,17 +1,17 @@
-import { Deck, type ProjectOptions } from "../src/index.ts";
-import type { AssetLoader } from "../src/assets.ts";
+import { Deck, type DataUriString, type ProjectOptions } from "@/src/index.ts";
+import type { AssetLoader } from "@/src/assets.ts";
 import {
   PipelineArtifactCollection,
   type PptxPackageBuildArtifact,
-} from "../src/pipeline-artifacts.ts";
-import { projectSource, renderSource } from "../src/pipeline-runner.ts";
-import type { PackagePartId } from "../src/projection/pptx/model.ts";
+} from "@/src/pipeline/artifacts.ts";
+import { projectSource, renderSource } from "@/src/pipeline/runner.ts";
+import type { PackagePartId } from "@/src/projection/pptx/model.ts";
 import {
   renderPptxPackage as renderPptxPackageBase,
   type PptxWriterContext,
   type PptxWriterOptions,
-} from "../src/writers/pptx.ts";
-import { createPptxZipBytesFromEntries, type PptxZipEntry } from "../src/writers/pptx/zip.ts";
+} from "@/src/writers/pptx.ts";
+import { createPptxZipBytesFromEntries, type PptxZipEntry } from "@/src/writers/pptx/zip.ts";
 
 type BenchmarkPptxWriterResult = Awaited<ReturnType<typeof renderPptxPackageBase>> & {
   readonly buildArtifacts?: readonly PptxPackageBuildArtifact[];
@@ -82,15 +82,24 @@ type Options = { readonly iterations: number; readonly json: boolean; readonly s
 
 const tinySvgDataUri = `data:image/svg+xml;base64,${btoa(
   '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40"><rect width="80" height="40" fill="#2563EB"/><circle cx="24" cy="20" r="12" fill="#F97316"/></svg>',
-)}`;
+)}` as DataUriString;
 
 const templateSet = {
   report: {
+    style: {
+      display: "grid",
+      gridTemplateAreas: ['"title title"', '"body aside"', '"footer footer"'],
+      gridTemplateColumns: "2fr 0.85fr",
+      gridTemplateRows: ["0.55in", "1fr", "0.3in"],
+      columnGap: 0.25,
+      rowGap: 0.2,
+      padding: "0.35in 0.7in",
+    },
     areas: {
-      title: { frame: { x: 0.6, y: 0.35, width: 8.8, height: 0.55 } },
-      body: { frame: { x: 0.7, y: 1.05, width: 5.8, height: 3.8 } },
-      aside: { frame: { x: 6.75, y: 1.05, width: 2.45, height: 3.8 } },
-      footer: { frame: { x: 0.7, y: 5.0, width: 8.2, height: 0.3 } },
+      title: { style: { gridArea: "title" } },
+      body: { style: { gridArea: "body" } },
+      aside: { style: { gridArea: "aside" } },
+      footer: { style: { gridArea: "footer" } },
     },
   },
 } as const;
@@ -202,8 +211,9 @@ const fixtures: readonly BenchmarkFixture[] = [
             {Array.from({ length: 24 }, (_, index) => (
               <p
                 style={{
-                  x: 0.5 + (index % 3) * 3,
-                  y: 0.35 + Math.floor(index / 3) * 0.55,
+                  position: "absolute",
+                  left: 0.5 + (index % 3) * 3,
+                  top: 0.35 + Math.floor(index / 3) * 0.55,
                   width: 2.6,
                   height: 0.35,
                   fontSize: 11 + (index % 4),
@@ -241,8 +251,9 @@ const fixtures: readonly BenchmarkFixture[] = [
               <img
                 data={tinySvgDataUri}
                 style={{
-                  x: 0.5 + (index % 4) * 2.2,
-                  y: 0.5 + Math.floor(index / 4) * 1.45,
+                  position: "absolute",
+                  left: 0.5 + (index % 4) * 2.2,
+                  top: 0.5 + Math.floor(index / 4) * 1.45,
                   width: 1.6,
                   height: 0.9,
                   objectFit: index % 2 === 0 ? "contain" : "cover",
@@ -279,6 +290,7 @@ const fixtures: readonly BenchmarkFixture[] = [
             <div
               area={template.body}
               style={{
+                position: "absolute",
                 display: "grid",
                 gridTemplateColumns: "1fr 1fr",
                 gap: 0.18,
@@ -296,7 +308,7 @@ const fixtures: readonly BenchmarkFixture[] = [
               <p style={{ fontSize: 30, color: "#0369A1" }}>{92 + slide}%</p>
             </div>
             <p area={template.footer} style={{ fontSize: 9, color: "#64748B" }}>
-              Template area frames and layout anchors
+              Template area flow and layout anchors
             </p>
           </>
         ));
@@ -323,8 +335,9 @@ const fixtures: readonly BenchmarkFixture[] = [
           <>
             <div
               style={{
-                x: 0.35,
-                y: 0.35,
+                position: "absolute",
+                left: 0.35,
+                top: 0.35,
                 width: 9.1,
                 height: 4.8,
                 background: "linear-gradient(135deg, #DBEAFE 0%, #F8FAFC 100%)",
@@ -336,8 +349,9 @@ const fixtures: readonly BenchmarkFixture[] = [
                 <shape
                   shape={index % 3 === 0 ? "ellipse" : "rect"}
                   style={{
-                    x: 0.35 + (index % 4) * 2.1,
-                    y: 0.45 + Math.floor(index / 4) * 1.1,
+                    position: "absolute",
+                    left: 0.35 + (index % 4) * 2.1,
+                    top: 0.45 + Math.floor(index / 4) * 1.1,
                     width: 1.45,
                     height: 0.65,
                     fill: index % 2 === 0 ? "#F97316" : "#16A34A",
@@ -347,7 +361,16 @@ const fixtures: readonly BenchmarkFixture[] = [
                   }}
                 />
               ))}
-              <p style={{ x: 0.55, y: 3.95, width: 6.8, height: 0.45, fontSize: 18 }}>
+              <p
+                style={{
+                  position: "absolute",
+                  left: 0.55,
+                  top: 3.95,
+                  width: 6.8,
+                  height: 0.45,
+                  fontSize: 18,
+                }}
+              >
                 Mixed CSS-like paint, z-index, gradients, shadows, and text
               </p>
             </div>

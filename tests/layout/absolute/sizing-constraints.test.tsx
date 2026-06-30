@@ -7,9 +7,16 @@ describe("absolute layout sizing constraints", () => {
 
     deck.slide({ name: "Inset and constraints" }, () => (
       <>
-        <div style={{ inset: [1, 2, "144px", "96px"], backgroundColor: "#EEEEEE" }} />
+        <div
+          style={{
+            position: "absolute",
+            inset: [1, 2, "144px", "96px"],
+            backgroundColor: "#EEEEEE",
+          }}
+        />
         <p
           style={{
+            position: "absolute",
             left: "48px",
             top: "48px",
             width: "96px",
@@ -23,8 +30,9 @@ describe("absolute layout sizing constraints", () => {
         </p>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 6,
             height: 3,
             display: "flex",
@@ -39,7 +47,7 @@ describe("absolute layout sizing constraints", () => {
       </>
     ));
 
-    const ir = (await deck.project()).projection!;
+    const ir = H.expectPptxProjection(await deck.project());
 
     expect(H.summarizeNodes(ir.slides[0].payload.drawing.children)).toEqual([
       {

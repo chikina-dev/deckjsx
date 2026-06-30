@@ -9,7 +9,14 @@ describe("project/render media asset diagnostics", () => {
         <video
           data={H.dataUriFromBytes("video/mp4", new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112]))}
           posterData={H.dataUriFromBytes("image/png", H.pngHeaderBytes(2, 1))}
-          style={{ x: 1, y: 1, width: 4, height: 2.25, objectFit: "contain" }}
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 4,
+            height: 2.25,
+            objectFit: "contain",
+          }}
         />
       </>
     ));
@@ -51,7 +58,9 @@ describe("project/render media asset diagnostics", () => {
   test("defined projection reports valid model-owned unsupported semantic records as warnings", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Defined unsupported semantic" }, () => (
-      <p style={{ x: 1, y: 1, width: 2, height: 0.5 }}>Defined fallback</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 2, height: 0.5 }}>
+        Defined fallback
+      </p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -121,7 +130,9 @@ describe("project/render media asset diagnostics", () => {
   test("project inspection summary exposes top-level clipping metadata", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Summary clip" }, () => (
-      <p style={{ x: 1, y: 1, width: 2, height: 0.5 }}>Clipped summary</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 2, height: 0.5 }}>
+        Clipped summary
+      </p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -207,7 +218,10 @@ describe("project/render media asset diagnostics", () => {
       },
     });
     deck.slide({ name: "Terminal failure" }, () => (
-      <img src="/public/terminal.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        src="/public/terminal.png"
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     const project = await H.projectSource({
@@ -244,7 +258,7 @@ describe("project/render media asset diagnostics", () => {
     deck.slide({ name: "Inspect assets" }, () => (
       <img
         src="./inspect.png"
-        style={{ x: 1, y: 1, width: 1, height: 1 }}
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
         {...H.mediaSourceOrigins({
           src: {
             importer: "/project/src/deck.tsx",

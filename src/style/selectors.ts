@@ -1,10 +1,11 @@
 import { isAuthoredTag } from "../authoring/tags";
+import type { AuthoredTag } from "../authoring/tags";
 import type { GraphNodeId, SemanticAuthorGraph, SemanticNode } from "../graph";
 
 export type Specificity = readonly [ids: number, classes: number, tags: number];
 
 type SelectorPart = {
-  readonly tag?: string;
+  readonly tag?: AuthoredTag;
   readonly classes: readonly string[];
 };
 
@@ -155,10 +156,11 @@ function parseSelectorPart(
   }
 
   const tagMatch = value.match(/^[a-z][a-z0-9-]*/);
-  const tag = tagMatch?.[0];
-  if (tag !== undefined && !isAuthoredTag(tag)) {
+  const tagText = tagMatch?.[0];
+  if (tagText !== undefined && !isAuthoredTag(tagText)) {
     return undefined;
   }
+  const tag = tagText;
 
   const rest = tag ? value.slice(tag.length) : value;
 

@@ -1,16 +1,19 @@
 import type {
   DeckJsxIntrinsicElements,
-  DeckJsxElement,
   IntrinsicDivProps,
   IntrinsicImgProps,
   IntrinsicPProps,
   IntrinsicShapeProps,
   IntrinsicSpanProps,
+  IntrinsicTableCellProps,
+  IntrinsicTableProps,
+  IntrinsicTableRowProps,
+  IntrinsicTableSectionProps,
   IntrinsicTextTag,
   IntrinsicVideoProps,
   IntrinsicViewTag,
-  JsxNode,
-} from "./authoring/index";
+} from "./authoring/intrinsic";
+import type { DeckJsxElement, DeckJsxElementValue, JsxNode } from "./authoring/jsx-types";
 import type { JsxKey, SourceSpan } from "./authoring/tree";
 import { createElementWithMetadata } from "./jsx";
 import type { JsxComponentProps, JsxDevSource } from "./jsx-runtime";
@@ -27,21 +30,32 @@ function sourceSpanFromDevSource(source: JsxDevSource | undefined): SourceSpan |
     return undefined;
   }
 
-  if (
-    source.fileName === undefined &&
-    source.lineNumber === undefined &&
-    source.columnNumber === undefined
-  ) {
+  const file = typeof source.fileName === "string" ? source.fileName : undefined;
+  const line = validSourcePosition(source.lineNumber) ? source.lineNumber : undefined;
+  const column = validSourcePosition(source.columnNumber) ? source.columnNumber : undefined;
+
+  if (file === undefined && line === undefined && column === undefined) {
     return undefined;
   }
 
   return {
-    file: source.fileName,
-    line: source.lineNumber,
-    column: source.columnNumber,
+    ...(file === undefined ? {} : { file }),
+    ...(line === undefined ? {} : { line }),
+    ...(column === undefined ? {} : { column }),
   };
 }
 
+function validSourcePosition(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1;
+}
+
+/**
+ * Development JSX runtime entry point.
+ *
+ * `jsxDEV` accepts the same public authoring props, children, and style contracts as `jsx`, then
+ * attaches optional source metadata from the JSX transform for diagnostics and inspection. Source
+ * metadata does not change layout, style resolution, or projection output.
+ */
 export function jsxDEV<P extends JsxComponentProps, R extends DeckJsxElement>(
   type: JsxComponent<P, R>,
   props: JsxProps<P> | null,
@@ -49,51 +63,79 @@ export function jsxDEV<P extends JsxComponentProps, R extends DeckJsxElement>(
   _isStaticChildren?: boolean,
   source?: JsxDevSource,
 ): R;
-export function jsxDEV(
-  type: IntrinsicViewTag,
+export function jsxDEV<const TTag extends IntrinsicViewTag>(
+  type: TTag,
   props: JsxProps<IntrinsicDivProps> | null,
   key?: JsxKey,
   _isStaticChildren?: boolean,
   source?: JsxDevSource,
-): DeckJsxElement;
-export function jsxDEV(
-  type: IntrinsicTextTag,
+): DeckJsxElement<TTag>;
+export function jsxDEV<const TTag extends IntrinsicTextTag>(
+  type: TTag,
   props: JsxProps<IntrinsicPProps> | null,
   key?: JsxKey,
   _isStaticChildren?: boolean,
   source?: JsxDevSource,
-): DeckJsxElement;
+): DeckJsxElement<TTag>;
 export function jsxDEV(
   type: "span",
   props: JsxProps<IntrinsicSpanProps> | null,
   key?: JsxKey,
   _isStaticChildren?: boolean,
   source?: JsxDevSource,
-): DeckJsxElement;
+): DeckJsxElement<"span">;
 export function jsxDEV(
   type: "img",
   props: IntrinsicImgProps,
   key?: JsxKey,
   _isStaticChildren?: boolean,
   source?: JsxDevSource,
-): DeckJsxElement;
+): DeckJsxElement<"img">;
 export function jsxDEV(
   type: "video",
   props: IntrinsicVideoProps,
   key?: JsxKey,
   _isStaticChildren?: boolean,
   source?: JsxDevSource,
-): DeckJsxElement;
+): DeckJsxElement<"video">;
 export function jsxDEV(
   type: "shape",
   props: IntrinsicShapeProps,
   key?: JsxKey,
   _isStaticChildren?: boolean,
   source?: JsxDevSource,
-): DeckJsxElement;
+): DeckJsxElement<"shape">;
+export function jsxDEV(
+  type: "table",
+  props: JsxProps<IntrinsicTableProps> | null,
+  key?: JsxKey,
+  _isStaticChildren?: boolean,
+  source?: JsxDevSource,
+): DeckJsxElement<"table">;
+export function jsxDEV<const TTag extends "thead" | "tbody" | "tfoot">(
+  type: TTag,
+  props: JsxProps<IntrinsicTableSectionProps> | null,
+  key?: JsxKey,
+  _isStaticChildren?: boolean,
+  source?: JsxDevSource,
+): DeckJsxElement<TTag>;
+export function jsxDEV(
+  type: "tr",
+  props: JsxProps<IntrinsicTableRowProps> | null,
+  key?: JsxKey,
+  _isStaticChildren?: boolean,
+  source?: JsxDevSource,
+): DeckJsxElement<"tr">;
+export function jsxDEV<const TTag extends "th" | "td">(
+  type: TTag,
+  props: JsxProps<IntrinsicTableCellProps> | null,
+  key?: JsxKey,
+  _isStaticChildren?: boolean,
+  source?: JsxDevSource,
+): DeckJsxElement<TTag>;
 export function jsxDEV(
   type: string,
-  props: JsxComponentProps | null,
+  props: never,
   key?: JsxKey,
   _isStaticChildren?: boolean,
   source?: JsxDevSource,
@@ -105,11 +147,16 @@ export function jsxDEV(
   _isStaticChildren?: boolean,
   source?: JsxDevSource,
 ): DeckJsxElement {
-  return createElementWithMetadata(type, props, key, sourceSpanFromDevSource(source));
+  return createElementWithMetadata(
+    type,
+    props,
+    key,
+    sourceSpanFromDevSource(source),
+  ) as unknown as DeckJsxElement;
 }
 
 export namespace JSX {
-  export type Element = DeckJsxElement;
+  export type Element = DeckJsxElementValue;
 
   export interface ElementChildrenAttribute {
     children: {};

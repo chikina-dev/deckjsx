@@ -5,7 +5,10 @@ describe("project/render validation media support payloads", () => {
   test("project validates media payloads before render", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Broken media payload" }, () => (
-      <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        data={H.SAMPLE_SVG_DATA_URI}
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;
@@ -89,7 +92,10 @@ describe("project/render validation media support payloads", () => {
   test("project requires media payload source aliases before render", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Missing media sources" }, () => (
-      <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        data={H.SAMPLE_SVG_DATA_URI}
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;
@@ -150,7 +156,7 @@ describe("project/render validation media support payloads", () => {
     imageDeck.slide({ name: "Missing image dimensions" }, () => (
       <img
         data={H.SAMPLE_SVG_DATA_URI}
-        style={{ x: 1, y: 1, width: 2, height: 1, objectFit: "contain" }}
+        style={{ position: "absolute", left: 1, top: 1, width: 2, height: 1, objectFit: "contain" }}
       />
     ));
     const imageProjection = (await imageDeck.project()).projection!;
@@ -177,8 +183,9 @@ describe("project/render validation media support payloads", () => {
     backgroundDeck.slide({ name: "Missing background dimensions" }, () => (
       <div
         style={{
-          x: 1,
-          y: 1,
+          position: "absolute",
+          left: 1,
+          top: 1,
           width: 4,
           height: 2,
           background: `url("${H.SAMPLE_SVG_DATA_URI}")`,
@@ -210,7 +217,10 @@ describe("project/render validation media support payloads", () => {
   test("project validates media payload cross-field consistency before render", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Inconsistent media payload" }, () => (
-      <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        data={H.SAMPLE_SVG_DATA_URI}
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;

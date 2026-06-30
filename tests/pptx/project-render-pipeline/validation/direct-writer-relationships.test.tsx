@@ -5,7 +5,7 @@ describe("project/render validation direct writer relationships", () => {
   test("direct writer validates package part relationship metadata shape", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Invalid part relationships" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>relationships</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>relationships</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -74,7 +74,7 @@ describe("project/render validation direct writer relationships", () => {
   test("direct writer validates internal relationship target paths are canonical package paths", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Invalid relationship target path" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>target path</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>target path</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -131,7 +131,7 @@ describe("project/render validation direct writer relationships", () => {
   test("direct writer validates projected relationship targets match target paths", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Mismatched relationship target" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>target</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>target</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -188,7 +188,7 @@ describe("project/render validation direct writer relationships", () => {
   test("direct writer validates relationship target part identities stay in the pptx namespace", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Invalid relationship target identity" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>target id</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>target id</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -255,7 +255,7 @@ describe("project/render validation direct writer relationships", () => {
   test("direct writer validates package relationship type targets", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Invalid relationship targets" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>targets</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>targets</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -373,7 +373,7 @@ describe("project/render validation direct writer relationships", () => {
   test("direct writer validates relationship metadata and payload stay synchronized", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Relationship payload mismatch" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>mismatch</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>mismatch</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -424,7 +424,10 @@ describe("project/render validation direct writer relationships", () => {
   test("direct writer validates owner relationships and relationship parts stay synchronized", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Owner relationship mismatch" }, () => (
-      <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        data={H.SAMPLE_SVG_DATA_URI}
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;
@@ -471,7 +474,10 @@ describe("project/render validation direct writer relationships", () => {
   test("direct writer rejects missing owner relationship metadata when a relationship part exists", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Missing owner relationships" }, () => (
-      <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        data={H.SAMPLE_SVG_DATA_URI}
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;
@@ -514,7 +520,10 @@ describe("project/render validation direct writer relationships", () => {
   test("direct writer validates relationship part categories match their owner family", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Relationship categories" }, () => (
-      <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        data={H.SAMPLE_SVG_DATA_URI}
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;

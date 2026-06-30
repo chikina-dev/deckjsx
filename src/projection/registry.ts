@@ -1,7 +1,7 @@
-import type { DeckOptions } from "../authoring/index";
+import type { DeckOptions } from "../authoring/options";
 import { createDiagnostics, type Diagnostics } from "../diagnostics";
 import type { AssetEntity, SemanticAuthorGraph } from "../graph";
-import type { ProjectionFormat } from "../pipeline";
+import type { ProjectionFormat } from "../pipeline/public";
 import type { ResolvedStyleMap } from "../style/resolve";
 import { summarizePptxPackage } from "./pptx/inspect";
 import { projectGraphToPartialPptxPackage, projectGraphToPptxPackage } from "./pptx/project";

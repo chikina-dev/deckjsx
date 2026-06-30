@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import * as H from "../../helpers.tsx";
+import * as H from "@/tests/pptx/project-render-pipeline/helpers.tsx";
 
 describe("project/render validation package model indexes", () => {
   test("project validates duplicate package paths and relationship target path mismatches", async () => {
@@ -61,7 +61,7 @@ describe("project/render validation package model indexes", () => {
   test("project validates package model size and slides index before render", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Broken package model" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Package model</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Package model</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -112,7 +112,7 @@ describe("project/render validation package model indexes", () => {
   test("project rejects duplicate package model slide index entries before render", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Duplicate slide index" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Slide index</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Slide index</p>
     ));
 
     const projection = (await deck.project()).projection!;

@@ -5,7 +5,7 @@ describe("project/render validation text and paint payloads", () => {
   test("project validates text drawing style payloads before render", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Broken text style" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}> style</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}> style</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -111,11 +111,19 @@ describe("project/render validation text and paint payloads", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Broken drawing paint" }, () => (
       <>
-        <div style={{ x: 0.5, y: 0.5, width: 4, height: 2 }}>
-          <p style={{ x: 0.25, y: 0.25, width: 2, height: 0.5 }}>Paint</p>
+        <div style={{ position: "absolute", left: 0.5, top: 0.5, width: 4, height: 2 }}>
+          <p style={{ position: "absolute", left: 0.25, top: 0.25, width: 2, height: 0.5 }}>
+            Paint
+          </p>
         </div>
-        <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 5, y: 0.5, width: 1, height: 1 }} />
-        <shape shape="rect" style={{ x: 6.5, y: 0.5, width: 1, height: 1 }} />
+        <img
+          data={H.SAMPLE_SVG_DATA_URI}
+          style={{ position: "absolute", left: 5, top: 0.5, width: 1, height: 1 }}
+        />
+        <shape
+          shape="rect"
+          style={{ position: "absolute", left: 6.5, top: 0.5, width: 1, height: 1 }}
+        />
       </>
     ));
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
-import { createNodeDevInspectionPlugin } from "../src/dev-inspection-plugin.ts";
-import { createNodeDevInspectionStore } from "../src/dev-inspection-store.ts";
+import { createNodeDevInspectionPlugin } from "@/src/dev-inspection-plugin.ts";
+import { createNodeDevInspectionStore } from "@/src/dev-inspection-store.ts";
 
 describe("@deckjsx/node dev inspection plugin", () => {
   test("records component frames from afterGraph provenance", () => {

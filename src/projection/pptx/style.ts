@@ -11,19 +11,19 @@ import {
   type TextNormalizationInput,
   type VideoNormalizationInput,
   type ViewNormalizationInput,
-} from "../../layout/normalization";
-import { createDiagnostics, diagnostic, type Diagnostics } from "../../diagnostics";
-import type { SemanticAuthorGraph, SemanticNode } from "../../graph";
-import type { Frame } from "../../layout/frame";
-import type { EdgeStrokeIR, StrokeIR } from "../../layout/projected";
-import { unsupportedCssWideKeywordSemantic, unsupportedSemantic } from "../../layout/unsupported";
+} from "@/src/layout/normalization";
+import { createDiagnostics, diagnostic, type Diagnostics } from "@/src/diagnostics";
+import type { SemanticAuthorGraph, SemanticNode } from "@/src/graph";
+import type { Frame } from "@/src/layout/frame";
+import type { EdgeStrokeIR, StrokeIR } from "@/src/layout/projected";
+import { unsupportedCssWideKeywordSemantic, unsupportedSemantic } from "@/src/layout/unsupported";
 import type {
   PptxPackageModel,
   PptxUnsupportedSemantic,
   PptxUnsupportedSemanticFeature,
 } from "./model";
 import { walkElements } from "./drawing";
-import { resolveBackgroundLayers } from "../../style/background";
+import { resolveBackgroundLayers } from "@/src/style/background";
 import {
   IMAGE_STYLE_KEYS,
   SHAPE_STYLE_KEYS,
@@ -31,33 +31,30 @@ import {
   TEXT_STYLE_KEYS,
   VIDEO_STYLE_KEYS,
   VIEW_STYLE_KEYS,
-  type BorderStyle,
-  type DeckLength,
-  type StyleDeclaration,
-  type StyleDeclarationValue,
-} from "../../style/types";
-import { hasCssWideKeywordToken } from "../../style/defaulting";
+} from "@/src/style/keysets";
+import { type BorderStyle, type BorderWidthValue } from "@/src/style/types";
+import type { StyleDeclaration, StyleDeclarationValue } from "@/src/style/declaration";
+import { hasCssWideKeywordToken } from "@/src/style/defaulting";
 import type {
   ResolvedStyle,
   ResolvedStyleDeclaration,
   ResolvedStyleMap,
-} from "../../style/resolve";
-import { hasShadowSpreadRadius, parseShadowShorthand } from "../../style/shadow";
+} from "@/src/style/resolve";
+import { hasShadowSpreadRadius, parseShadowShorthand } from "@/src/style/shadow";
 import {
   parseOutlineShorthand,
   parseStrokeLineCap,
   parseStrokeLineJoin,
   resolveNodeStrokes,
   toStroke,
-} from "../../style/stroke";
-import { parseTransformOrigin, parseTransformShorthand } from "../../style/transform";
-import { EMU_PER_INCH } from "../../types";
+} from "@/src/style/stroke";
+import { parseTransformOrigin, parseTransformShorthand } from "@/src/style/transform";
+import { EMU_PER_INCH } from "@/src/types";
 
 const SLIDE_STYLE_KEYS = [
   "background",
   "backgroundImage",
   "backgroundColor",
-  "backgroundTransparency",
   "backgroundPosition",
   "backgroundSize",
   "backgroundRepeat",
@@ -243,9 +240,8 @@ export function parseShadowSafely(input: { property: string; value: string | und
 type PptxStrokeProjectionProps = {
   readonly border?: string;
   readonly borderColor?: string;
-  readonly borderWidth?: DeckLength;
+  readonly borderWidth?: BorderWidthValue;
   readonly borderStyle?: BorderStyle;
-  readonly borderTransparency?: number;
   readonly borderTop?: string;
   readonly borderRight?: string;
   readonly borderBottom?: string;
@@ -254,20 +250,19 @@ type PptxStrokeProjectionProps = {
   readonly borderRightColor?: string;
   readonly borderBottomColor?: string;
   readonly borderLeftColor?: string;
-  readonly borderTopWidth?: DeckLength;
-  readonly borderRightWidth?: DeckLength;
-  readonly borderBottomWidth?: DeckLength;
-  readonly borderLeftWidth?: DeckLength;
+  readonly borderTopWidth?: BorderWidthValue;
+  readonly borderRightWidth?: BorderWidthValue;
+  readonly borderBottomWidth?: BorderWidthValue;
+  readonly borderLeftWidth?: BorderWidthValue;
   readonly borderTopStyle?: BorderStyle;
   readonly borderRightStyle?: BorderStyle;
   readonly borderBottomStyle?: BorderStyle;
   readonly borderLeftStyle?: BorderStyle;
   readonly outline?: string;
   readonly outlineColor?: string;
-  readonly outlineWidth?: DeckLength;
+  readonly outlineWidth?: BorderWidthValue;
   readonly outlineStyle?: BorderStyle;
   readonly stroke?: string;
-  readonly strokeWidth?: DeckLength;
   readonly strokeDasharray?: string;
   readonly strokeLinecap?: string;
   readonly strokeLinejoin?: string;
@@ -302,7 +297,6 @@ function strokeFallbackInput(props: PptxStrokeProjectionProps): {
     "strokeLinecap",
     "strokeLinejoin",
     "stroke",
-    "strokeWidth",
   ]);
   if (strokeInput) {
     return { feature: "stroke", ...strokeInput };
@@ -371,7 +365,7 @@ function hasAuthoredStrokeInput(props: PptxStrokeProjectionProps): boolean {
   );
 }
 
-function isExplicitNone(value: StyleDeclarationValue | undefined): boolean {
+function isExplicitNone(value: StyleDeclarationValue): boolean {
   return typeof value === "string" && value.trim().toLowerCase() === "none";
 }
 
@@ -396,7 +390,6 @@ function unsupportedStrokeCssWideKeywordSemantics(
     "borderRightWidth",
     "borderBottomWidth",
     "borderLeftWidth",
-    "strokeWidth",
   ];
 
   for (const property of properties) {
@@ -797,7 +790,7 @@ function unsupportedSemanticsForGraphNode(
         const backgroundInput = backgroundInputFor(resolved, props);
         const background = resolveBackgroundLayersSafely(
           { property: backgroundInput?.property ?? "background", value: backgroundInput?.value },
-          props.backgroundTransparency,
+          undefined,
           { widthEmu: frame.widthEmu, heightEmu: frame.heightEmu },
           frame,
           { borderBox: frame, paddingBox: frame, contentBox: frame },
@@ -825,7 +818,7 @@ function unsupportedSemanticsForGraphNode(
         const backgroundInput = backgroundInputFor(resolved, props);
         const background = resolveBackgroundLayersSafely(
           { property: backgroundInput?.property ?? "background", value: backgroundInput?.value },
-          props.backgroundTransparency,
+          undefined,
           { widthEmu: frame.widthEmu, heightEmu: frame.heightEmu },
           frame,
           { borderBox: frame, paddingBox: frame, contentBox: frame },
@@ -835,6 +828,8 @@ function unsupportedSemanticsForGraphNode(
           props.backgroundOrigin,
           props.backgroundClip,
         );
+        const shadowValue: string | undefined =
+          (props.textShadow as string | undefined) ?? (props.boxShadow as string | undefined);
         return [
           ...unsupportedTransformSemantics(props),
           ...unsupportedCompositingSemantics(props),
@@ -842,7 +837,7 @@ function unsupportedSemanticsForGraphNode(
           ...outline.unsupportedSemantics,
           ...parseShadowSafely({
             property: props.textShadow !== undefined ? "textShadow" : "boxShadow",
-            value: props.textShadow ?? props.boxShadow,
+            value: shadowValue,
           }).unsupportedSemantics,
           ...(background.unsupportedSemantics ?? []),
         ];
@@ -874,7 +869,7 @@ function unsupportedSemanticsForGraphNode(
         const fillInput = shapeFillInputFor(resolved, props);
         const fill = resolveBackgroundLayersSafely(
           { property: fillInput?.property ?? "fill", value: fillInput?.value },
-          props.fillTransparency,
+          undefined,
           { widthEmu: frame.widthEmu, heightEmu: frame.heightEmu },
           frame,
           { borderBox: frame, paddingBox: frame, contentBox: frame },
@@ -899,7 +894,7 @@ function unsupportedSemanticsForGraphNode(
         const backgroundInput = backgroundInputFor(resolved, props);
         const background = resolveBackgroundLayersSafely(
           { property: backgroundInput?.property ?? "background", value: backgroundInput?.value },
-          props.backgroundTransparency,
+          undefined,
           { widthEmu: frame.widthEmu, heightEmu: frame.heightEmu },
           frame,
           { borderBox: frame, paddingBox: frame, contentBox: frame },

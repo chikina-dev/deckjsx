@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck } from "../../src/index.ts";
-import type { ContentJsxChild, TextJsxChild } from "../../src/index.ts";
+import { Deck } from "@/src/index.ts";
+import type { ContentJsxChild, TextJsxChild } from "@/src/index.ts";
+import { jsx } from "@/src/jsx-runtime.ts";
+import { expectPptxProjection } from "../helpers.ts";
 
 function values<T>(map: ReadonlyMap<PropertyKey, T>): T[] {
   return [...map.values()];
@@ -10,7 +12,7 @@ describe("composition", () => {
   test("compile wraps slide factory content in slide declarations", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
-    deck.slide(() => "slide text");
+    deck.slide(() => <p>slide text</p>);
 
     const result = deck.compile();
 
@@ -101,6 +103,63 @@ describe("composition", () => {
     });
   });
 
+  test("the same child Deck can be mounted more than once with independent contexts", async () => {
+    const child = new Deck<{ label: string }>({ layout: { width: 10, height: 5.625, unit: "in" } });
+    child.slide(({ context, composition }) => (
+      <p>
+        {context.label}:{composition.sourceKey}:{composition.slideIndex}/{composition.totalSlides}:
+        {composition.deckSlideIndex}/{composition.deckTotalSlides}
+      </p>
+    ));
+
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide(() => <p>root</p>);
+    deck.mount("north", child, { label: "North" });
+    deck.mount("south", child, { label: "South" });
+
+    const graph = deck.compile().graph!;
+    const runs = values(graph.nodes).filter((node) => node.kind === "textRun");
+    const allText = runs.map((node) => node.text).join("");
+    const northRun = runs.find((node) => node.text.includes("North"));
+    const southRun = runs.find((node) => node.text.includes("South"));
+
+    expect(allText).toContain("North:north:0/1:1/3");
+    expect(allText).toContain("South:south:0/1:2/3");
+    expect(northRun?.origin.source).toEqual({
+      kind: "mounted",
+      sourceKey: "north",
+      sourceIdentity: "north",
+    });
+    expect(southRun?.origin.source).toEqual({
+      kind: "mounted",
+      sourceKey: "south",
+      sourceIdentity: "south",
+    });
+  });
+
+  test("the same child Deck can be mounted through multiple BoundSources", async () => {
+    const child = new Deck<{ label: string }>({ layout: { width: 10, height: 5.625, unit: "in" } });
+    child.slide(({ context, composition }) => (
+      <p>
+        {context.label}:{composition.sourceKey}:{composition.slideIndex}/{composition.totalSlides}:
+        {composition.deckSlideIndex}/{composition.deckTotalSlides}
+      </p>
+    ));
+
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.mount("north", child.withSource({ label: "North" }));
+    deck.mount("south", child.withSource({ label: "South" }));
+
+    const graph = deck.compile().graph!;
+    const allText = values(graph.nodes)
+      .filter((node) => node.kind === "textRun")
+      .map((node) => node.text)
+      .join("");
+
+    expect(allText).toContain("North:north:0/1:0/2");
+    expect(allText).toContain("South:south:0/1:1/2");
+  });
+
   test("composition diagnostics prevent graph construction in inspect mode", async () => {
     const child = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     child.slide({ name: "Child" }, () => <></>);
@@ -117,6 +176,13 @@ describe("composition", () => {
       "E_COMPOSITION_DUPLICATE_SOURCE_KEY",
       "E_COMPOSITION_INVALID_SOURCE_KEY",
     ]);
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        code: "E_COMPOSITION_INVALID_SOURCE_KEY",
+        title: "source key is not part of the public authoring API",
+        message: expect.stringContaining("public authoring API"),
+      }),
+    );
     expect(result.ok).toBe(false);
   });
 
@@ -138,10 +204,342 @@ describe("composition", () => {
     mapperFailures.mount("async", child, () => Promise.resolve({ value: "later" }) as never);
 
     expect(cycle.compile().diagnostics.items[0]).toMatchObject({ code: "E_COMPOSITION_CYCLE" });
-    expect(mapperFailures.compile().diagnostics.items.map((item) => item.code)).toEqual([
+    const mapperDiagnostics = mapperFailures.compile().diagnostics.items;
+    expect(mapperDiagnostics.map((item) => item.code)).toEqual([
       "E_COMPOSITION_CONTEXT_MAPPER_FAILED",
       "E_COMPOSITION_CONTEXT_MAPPER_ASYNC",
     ]);
+    expect(mapperDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "E_COMPOSITION_CONTEXT_MAPPER_ASYNC",
+          title: "source context mapper return value is not part of the public authoring API",
+          message: expect.stringContaining("public authoring API"),
+        }),
+      ]),
+    );
+  });
+
+  test("composition reports slide factory failures as diagnostics", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Broken" }, () => {
+      throw new Error("bad child");
+    });
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.items).toEqual([
+      expect.objectContaining({
+        code: "E_COMPOSITION_SLIDE_FACTORY_FAILED",
+        message: "bad child",
+      }),
+    ]);
+  });
+
+  test("composition reports JSX runtime authoring value failures as public API diagnostics", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide(() => (
+      <>
+        <div style={(<p>not style</p>) as never} />
+      </>
+    ));
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.items).toEqual([
+      expect.objectContaining({
+        code: "E_COMPOSITION_INVALID_AUTHORING_PROP_VALUE",
+        title: "authoring prop value is not part of the public authoring API",
+        message: expect.stringContaining('JSX prop "style"'),
+      }),
+    ]);
+  });
+
+  test("composition reports non-plain JSX prop values as public API diagnostics", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide(() => (
+      <>
+        <div style={new Date("2026-06-28T00:00:00.000Z") as never} />
+      </>
+    ));
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.items).toEqual([
+      expect.objectContaining({
+        code: "E_COMPOSITION_INVALID_AUTHORING_PROP_VALUE",
+        title: "authoring prop value is not part of the public authoring API",
+        message: expect.stringContaining('JSX prop "style"'),
+      }),
+    ]);
+  });
+
+  test("composition reports JSX runtime child failures as public API diagnostics", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide(() => <p>{{ value: "not text" } as never}</p>);
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.items).toEqual([
+      expect.objectContaining({
+        code: "E_COMPOSITION_INVALID_AUTHORING_CHILD",
+        title: "authoring child is not part of the public authoring API",
+        message: expect.stringContaining("JSX children"),
+      }),
+    ]);
+  });
+
+  test("composition reports non-finite numeric JSX children as public API diagnostics", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide(() => <p>{Number.NaN as never}</p>);
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.items).toEqual([
+      expect.objectContaining({
+        code: "E_COMPOSITION_INVALID_AUTHORING_CHILD",
+        title: "authoring child is not part of the public authoring API",
+        message: expect.stringContaining("finite"),
+      }),
+    ]);
+  });
+
+  test("composition reports cyclic JSX child arrays as public API diagnostics", async () => {
+    const children: unknown[] = [];
+    children.push(children);
+
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide(() => jsx("p", { children } as never));
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.items).toEqual([
+      expect.objectContaining({
+        code: "E_COMPOSITION_INVALID_AUTHORING_CHILD",
+        title: "authoring child is not part of the public authoring API",
+        message: expect.stringContaining("cyclic"),
+      }),
+    ]);
+  });
+
+  test("composition reports non-public JSX intrinsic tags as public API diagnostics", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide(() => jsx("button" as never, { children: "bad" } as never));
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.items).toEqual([
+      expect.objectContaining({
+        code: "E_COMPOSITION_NON_PUBLIC_AUTHORING_TAG",
+        title: "JSX intrinsic tag is not part of the public authoring API",
+        message: expect.stringMatching(
+          /<button> is not part of the public deckjsx JSX authoring API/,
+        ),
+      }),
+    ]);
+  });
+
+  test("composition reports invalid JSX element types as public API diagnostics", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide(() => jsx(null as never, null as never));
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.items).toEqual([
+      expect.objectContaining({
+        code: "E_COMPOSITION_INVALID_AUTHORING_ELEMENT_TYPE",
+        title: "JSX element type is not part of the public authoring API",
+        message: expect.stringContaining("function component"),
+      }),
+    ]);
+  });
+
+  test("composition reports invalid JSX props objects as public API diagnostics", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide(() => jsx("p", 123 as never));
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.items).toEqual([
+      expect.objectContaining({
+        code: "E_COMPOSITION_INVALID_AUTHORING_PROPS",
+        title: "JSX props are not part of the public authoring API",
+        message: expect.stringContaining("plain object or null"),
+      }),
+    ]);
+  });
+
+  test("composition reports JSX array props as invalid props objects", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide(() => jsx("p", [] as never));
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.items).toEqual([
+      expect.objectContaining({
+        code: "E_COMPOSITION_INVALID_AUTHORING_PROPS",
+        title: "JSX props are not part of the public authoring API",
+        message: expect.stringContaining("plain object or null"),
+      }),
+    ]);
+  });
+
+  test("composition reports non-plain JSX props objects as invalid props objects", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide(() => jsx("p", new Date("2026-06-28T00:00:00.000Z") as never));
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.items).toEqual([
+      expect.objectContaining({
+        code: "E_COMPOSITION_INVALID_AUTHORING_PROPS",
+        title: "JSX props are not part of the public authoring API",
+        message: expect.stringContaining("plain object or null"),
+      }),
+    ]);
+  });
+
+  test("composition reports invalid JSX keys as public API diagnostics", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide(() => jsx("p", { children: "keyed" }, { id: "bad" } as never));
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.items).toEqual([
+      expect.objectContaining({
+        code: "E_COMPOSITION_INVALID_AUTHORING_KEY",
+        title: "JSX key is not part of the public authoring API",
+        message: expect.stringContaining("string, number, or bigint"),
+      }),
+    ]);
+  });
+
+  test("composition reports non-finite numeric JSX keys as public API diagnostics", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide(() => jsx("p", { children: "keyed" }, Number.NaN as never));
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.items).toEqual([
+      expect.objectContaining({
+        code: "E_COMPOSITION_INVALID_AUTHORING_KEY",
+        title: "JSX key is not part of the public authoring API",
+        message: expect.stringContaining("finite"),
+      }),
+    ]);
+  });
+
+  test("composition reports invalid JSX component returns as public API diagnostics", async () => {
+    function BadComponent() {
+      return "not an element" as never;
+    }
+
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide(() => jsx(BadComponent as never, {} as never));
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.items).toEqual([
+      expect.objectContaining({
+        code: "E_COMPOSITION_INVALID_AUTHORING_COMPONENT_RETURN",
+        title: "JSX component return is not part of the public authoring API",
+        message: expect.stringContaining("Function components"),
+      }),
+    ]);
+  });
+
+  test("composition reports slide declaration inputs outside the public authoring API", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide(null as never, () => <p>invalid options</p>);
+    deck.slide({ name: "Not a function" }, "plain text" as never);
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "E_COMPOSITION_INVALID_SLIDE_OPTIONS",
+          title: "slide declaration options are not part of the public authoring API",
+          message: "deck.slide() options must be an object in the public authoring API.",
+        }),
+        expect.objectContaining({
+          code: "E_COMPOSITION_INVALID_SLIDE_FACTORY",
+          title: "slide factory is not part of the public authoring API",
+          message: "deck.slide() factory must be a function.",
+        }),
+      ]),
+    );
+  });
+
+  test("composition reports invalid slide option values instead of throwing", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ style: (<p>not style</p>) as never }, () => <p>ok</p>);
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.items).toEqual([
+      expect.objectContaining({
+        code: "E_COMPOSITION_INVALID_SLIDE_OPTION_VALUE",
+        title: "slide option value is not part of the public authoring API",
+        message: expect.stringContaining('slide option "style"'),
+      }),
+    ]);
+  });
+
+  test("composition reports mount inputs outside the public authoring API", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.mount(123 as never, new Deck({ layout: { width: 10, height: 5.625, unit: "in" } }));
+    deck.mount("not-a-source", null as never);
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "E_COMPOSITION_INVALID_SOURCE_KEY",
+          message: "Source Key must be a string in the public authoring API.",
+        }),
+        expect.objectContaining({
+          code: "E_COMPOSITION_INVALID_MOUNT_SOURCE",
+          title: "mounted source is not part of the public authoring API",
+          message: "deck.mount() child must be a Deck or BoundSource.",
+        }),
+      ]),
+    );
   });
 
   test("source slot origin keeps caller source while identity includes slot field", async () => {
@@ -245,7 +643,7 @@ describe("composition", () => {
 
     const project = await deck.project();
     expect(project.ok).toBe(true);
-    expect(project.projection?.slides).toHaveLength(1);
+    expect(expectPptxProjection(project).slides).toHaveLength(1);
 
     const render = await deck.render();
     expect(render.ok).toBe(true);

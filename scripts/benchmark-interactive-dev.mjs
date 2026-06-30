@@ -8,7 +8,7 @@ async function* interactiveLines() {
   yield "exit";
 }
 
-export async function runInteractiveDevBenchmark(options = {}) {
+async function runInteractiveDevBenchmark(options = {}) {
   const iterations = options.iterations ?? 3;
   const runs = [];
 
@@ -122,7 +122,7 @@ async function writeBenchmarkEntry(cwd) {
       'import { jsx } from "deckjsx/jsx-runtime";',
       "module.exports = (async () => {",
       '  const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });',
-      '  deck.slide({ name: "Interactive benchmark" }, () => jsx("p", { style: { x: 1, y: 1, width: 5, height: 0.5 }, children: "interactive benchmark" }));',
+      '  deck.slide({ name: "Interactive benchmark" }, () => jsx("main", { style: { width: 9, height: 4.5, display: "flex", flexDirection: "column", gap: 0.15, padding: 0.5 }, children: jsx("p", { style: { width: 5, height: 0.5 }, children: "interactive benchmark" }) }));',
       "  const render = await deck.render(pptx());",
       "  if (!render.ok || !render.artifact) throw new Error('render failed');",
       '  await writeFile("output.pptx", render.artifact.bytes);',

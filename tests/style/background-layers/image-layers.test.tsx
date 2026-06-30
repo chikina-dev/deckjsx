@@ -16,8 +16,9 @@ describe("background image layers", () => {
         <>
           <div
             style={{
-              x: 1,
-              y: 1,
+              position: "absolute",
+              left: 1,
+              top: 1,
               width: 2,
               height: 1,
               background: `url("${H.SAMPLE_SVG_DATA_URI}") repeat-x left top / contain`,
@@ -176,8 +177,9 @@ describe("background image layers", () => {
         <>
           <div
             style={{
-              x: 1,
-              y: 1,
+              position: "absolute",
+              left: 1,
+              top: 1,
               width: 2,
               height: 2,
               background: `url("${H.WIDE_SVG_DATA_URI}")`,
@@ -267,8 +269,9 @@ describe("background image layers", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 2,
             background: `url("${H.WIDE_SVG_DATA_URI}")`,
@@ -279,8 +282,9 @@ describe("background image layers", () => {
         />
         <div
           style={{
-            x: 4,
-            y: 1,
+            position: "absolute",
+            left: 4,
+            top: 1,
             width: 2,
             height: 1,
             background: `url("${H.SAMPLE_SVG_DATA_URI}")`,
@@ -357,8 +361,9 @@ describe("background image layers", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 2,
             background: `url("${H.WIDE_SVG_DATA_URI}")`,
@@ -368,8 +373,9 @@ describe("background image layers", () => {
         />
         <div
           style={{
-            x: 1,
-            y: 3.5,
+            position: "absolute",
+            left: 1,
+            top: 3.5,
             width: 4,
             height: 1.5,
             background: `url("${H.WIDE_SVG_DATA_URI}")`,
@@ -447,8 +453,9 @@ describe("background image layers", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 2,
             background: `url("${H.WIDE_SVG_DATA_URI}")`,
@@ -458,8 +465,9 @@ describe("background image layers", () => {
         />
         <div
           style={{
-            x: 1,
-            y: 3.5,
+            position: "absolute",
+            left: 1,
+            top: 3.5,
             width: 4,
             height: 1.5,
             background: `url("${H.WIDE_SVG_DATA_URI}")`,
@@ -535,8 +543,9 @@ describe("background image layers", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 2,
             borderWidth: 0.25,

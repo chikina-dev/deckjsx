@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck } from "../../src/index.ts";
-import { buildSemanticAuthorGraph } from "../../src/graph/index.ts";
-import { jsxDEV } from "../../src/jsx-dev-runtime.ts";
+import { Deck } from "@/src/index.ts";
+import { buildSemanticAuthorGraph } from "@/src/graph/index.ts";
+import { jsxDEV } from "@/src/jsx-dev-runtime.ts";
 
 function values<T>(map: ReadonlyMap<PropertyKey, T>): T[] {
   return [...map.values()];
@@ -13,7 +13,7 @@ describe("Semantic Author Graph", () => {
 
     deck.slide({ name: "Graph" }, () => (
       <>
-        <main style={{ x: 1, y: 1, width: 8, height: 4 }}>
+        <main style={{ position: "absolute", left: 1, top: 1, width: 8, height: 4 }}>
           <h1 style={{ fontSize: 28 }}>
             Sales <span style={{ color: "red" }}>grew</span>
           </h1>
@@ -83,12 +83,58 @@ describe("Semantic Author Graph", () => {
     });
   });
 
+  test("compile omits malformed JSX dev source metadata from semantic origins", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Malformed source metadata" }, () =>
+      jsxDEV("p", { children: "Revenue" }, undefined, false, {
+        fileName: 123,
+        lineNumber: Number.NaN,
+        columnNumber: Infinity,
+      } as never),
+    );
+
+    const result = deck.compile();
+    const graph = result.graph!;
+    const metric = values(graph.nodes).find(
+      (node) => node.kind === "text" && node.authoredTag === "p",
+    );
+
+    expect(result.ok).toBe(true);
+    expect(metric?.origin.sourceSpan).toBeUndefined();
+  });
+
+  test("compile preserves only valid JSX dev source metadata fields", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Partial source metadata" }, () =>
+      jsxDEV("p", { children: "Revenue" }, undefined, false, {
+        fileName: "/project/src/slides/Overview.tsx",
+        lineNumber: 0,
+        columnNumber: 2.5,
+      }),
+    );
+
+    const graph = deck.compile().graph!;
+    const metric = values(graph.nodes).find(
+      (node) => node.kind === "text" && node.authoredTag === "p",
+    );
+
+    expect(metric?.origin.sourceSpan).toStrictEqual({
+      file: "/project/src/slides/Overview.tsx",
+    });
+  });
+
   test("compile represents video nodes with separate video and poster assets", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Video" }, () => (
       <>
-        <video src="demo.mp4" poster="demo.png" style={{ x: 1, y: 1, width: 4, height: 2.25 }} />
+        <video
+          src="demo.mp4"
+          poster="demo.png"
+          style={{ position: "absolute", left: 1, top: 1, width: 4, height: 2.25 }}
+        />
       </>
     ));
 
@@ -112,6 +158,24 @@ describe("Semantic Author Graph", () => {
     });
   });
 
+  test("compile records media type metadata from parsed image data URIs", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Image data URI metadata" }, () => (
+      <img data={"data:image/svg+xml,%3Csvg%3E" as never} />
+    ));
+
+    const result = deck.compile();
+    const imageAsset = values(result.graph?.assets ?? new Map()).find(
+      (asset) => asset.kind === "image" && asset.source.kind === "data",
+    );
+
+    expect(result.ok).toBe(true);
+    expect(imageAsset).toMatchObject({
+      metadata: { mediaType: "image/svg+xml" },
+    });
+  });
+
   test("compile rejects remote video src URLs before asset loading", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
@@ -120,7 +184,7 @@ describe("Semantic Author Graph", () => {
         <video
           src="http://127.0.0.1:8080/secret.mp4"
           poster="demo.png"
-          style={{ x: 1, y: 1, width: 4, height: 2.25 }}
+          style={{ position: "absolute", left: 1, top: 1, width: 4, height: 2.25 }}
         />
       </>
     ));
@@ -132,8 +196,8 @@ describe("Semantic Author Graph", () => {
       expect.objectContaining({
         severity: "error",
         code: "E_COMPILE_VIDEO_SOURCE_INVALID",
-        title: "remote video src is not supported",
-        message: expect.stringContaining("must be a local path"),
+        title: "video src prop is invalid",
+        message: expect.stringContaining("not part of the public authoring API"),
       }),
     );
     expect(values(result.graph?.assets ?? new Map()).some((asset) => asset.kind === "video")).toBe(
@@ -146,7 +210,10 @@ describe("Semantic Author Graph", () => {
 
     deck.slide({ name: "Video" }, () => (
       <>
-        <video src="demo.mp4" style={{ x: 1, y: 1, width: 4, height: 2.25 }} />
+        <video
+          src="demo.mp4"
+          style={{ position: "absolute", left: 1, top: 1, width: 4, height: 2.25 }}
+        />
       </>
     ));
 
@@ -158,6 +225,44 @@ describe("Semantic Author Graph", () => {
         severity: "warning",
         code: "W_COMPILE_VIDEO_POSTER_MISSING",
       }),
+    );
+  });
+
+  test("compile rejects leaf media and shape children", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Invalid leaf children" }, () => (
+      <>
+        <shape shape="rect" children={"hidden label" as never} />
+        <img src="logo.png" children={"hidden alt" as never} />
+        <video src="demo.mp4" poster="demo.png" children={"hidden caption" as never} />
+      </>
+    ));
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: "error",
+          code: "E_SEMANTIC_STRUCTURE",
+          title: "shape cannot have children",
+          message: "Shape nodes are leaf nodes.",
+        }),
+        expect.objectContaining({
+          severity: "error",
+          code: "E_SEMANTIC_STRUCTURE",
+          title: "image cannot have children",
+          message: "Image nodes are leaf nodes.",
+        }),
+        expect.objectContaining({
+          severity: "error",
+          code: "E_SEMANTIC_STRUCTURE",
+          title: "video cannot have children",
+          message: "Video nodes are leaf nodes.",
+        }),
+      ]),
     );
   });
 
@@ -179,7 +284,8 @@ describe("Semantic Author Graph", () => {
     expect(result.diagnostics.items[0]).toMatchObject({
       severity: "error",
       code: "E_SEMANTIC_STRUCTURE",
-      title: "span cannot appear here",
+      title: "inline span is not part of the public authoring API here",
+      message: expect.stringContaining("public authoring API"),
     });
     expect(result.ok).toBe(false);
   });

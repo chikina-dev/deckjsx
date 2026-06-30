@@ -1,21 +1,21 @@
-import { pptx, type WriterAdapter } from "../../../src/adapter.ts";
-import { createDiagnostics, type Diagnostic } from "../../../src/diagnostics/index.ts";
-import { Deck, StyleSheet, Theme, type RenderInspectionSummary } from "../../../src/index.ts";
-import { isPptxMediaPart, isPptxSlidePart, isPptxSupportPart } from "../../../src/inspect.ts";
+import { pptx, type WriterAdapter } from "@/src/adapter/index.ts";
+import { createDiagnostics, type Diagnostic } from "@/src/diagnostics/index.ts";
+import { StyleSheet, Theme, type DataUriString, type RenderResult } from "@/src/index.ts";
+import { isPptxMediaPart, isPptxSlidePart, isPptxSupportPart } from "@/src/inspect.ts";
 import {
   assetSourceCacheKey,
   PipelineArtifactCollection,
   type PptxPackageBuildArtifact,
-} from "../../../src/pipeline-artifacts.ts";
-import { mediaSourceOrigins } from "../../../src/integration.ts";
-import { compileSource, projectSource, renderSource } from "../../../src/pipeline-runner.ts";
-import { withPackagePartFingerprints } from "../../../src/projection/pptx/fingerprint.ts";
+} from "@/src/pipeline/artifacts.ts";
+import { mediaSourceOrigins } from "@/src/integration.ts";
+import { compileSource, projectSource, renderSource } from "@/src/pipeline/runner.ts";
+import { withPackagePartFingerprints } from "@/src/projection/pptx/fingerprint.ts";
 import {
   renderPptxPackage as renderPptxPackageBase,
   type PptxWriterContext,
   type PptxWriterOptions,
-} from "../../../src/writers/pptx.ts";
-import type { AssetLoadResult, AssetLoader, AssetProbeResult } from "../../../src/assets.ts";
+} from "@/src/writers/pptx.ts";
+import type { AssetLoadResult, AssetLoader, AssetProbeResult } from "@/src/assets.ts";
 import type {
   AssetEntityId,
   GraphNodeId,
@@ -33,13 +33,14 @@ import type {
   PptxSupportPartPayload,
   PptxThemePartPayload,
   SemanticAuthorGraph,
-} from "../../../src/inspect.ts";
+} from "@/src/inspect.ts";
 import {
   expectPptxPart,
   expectPptxPartByPath,
+  Deck,
   SAMPLE_SVG_DATA_URI,
   unzipSync,
-} from "../../helpers.ts";
+} from "@/tests/helpers.ts";
 export function testAssetLoader(input: {
   readonly resolverIdentity: string;
   readonly probe?: AssetLoaderProbe;
@@ -72,6 +73,7 @@ export type AssetLoaderProbe = (
 export type AssetLoaderLoad = (
   context: AssetLoaderContextForTest,
 ) => Promise<AssetLoadResult | undefined>;
+export type RenderInspectionSummary = NonNullable<RenderResult["summary"]>;
 export function diagnosticCodeCount(items: readonly Diagnostic[], code: string): number {
   return items.filter((item) => item.code === code).length;
 }
@@ -186,12 +188,12 @@ export function pngHeaderBytes(width: number, height: number): Uint8Array {
     0,
   ]);
 }
-export function dataUriFromBytes(mediaType: string, bytes: Uint8Array): string {
+export function dataUriFromBytes(mediaType: string, bytes: Uint8Array): DataUriString {
   let binary = "";
   bytes.forEach((byte) => {
     binary += String.fromCharCode(byte);
   });
-  return `data:${mediaType};base64,${btoa(binary)}`;
+  return `data:${mediaType};base64,${btoa(binary)}` as DataUriString;
 }
 export function withFreshPackageFingerprints(projection: PptxPackageModel): PptxPackageModel {
   const parts = withPackagePartFingerprints(projection.parts);
@@ -269,7 +271,6 @@ export type {
   PptxThemePartPayload,
   PptxWriterContext,
   PptxWriterOptions,
-  RenderInspectionSummary,
   SemanticAuthorGraph,
   WriterAdapter,
 };

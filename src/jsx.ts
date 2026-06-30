@@ -3,6 +3,10 @@ import {
   createAuthorFragment,
   type AuthorElementPropValue,
   type AuthorElementProps,
+  type AuthorTableCellElementNode,
+  type AuthorTableElementNode,
+  type AuthorTableRowElementNode,
+  type AuthorTableSectionElementNode,
   type AuthorTreeChild,
   type AuthorTreeNode,
   type JsxKey,
@@ -29,8 +33,8 @@ import {
   type IntrinsicTextTag,
   type IntrinsicViewTag,
 } from "./authoring/tags";
+import type { DeckJsxElement, JsxNode } from "./authoring/jsx-types";
 import type {
-  DeckJsxElement,
   IntrinsicDivProps,
   IntrinsicImgProps,
   IntrinsicPProps,
@@ -41,9 +45,10 @@ import type {
   IntrinsicTableRowProps,
   IntrinsicTableSectionProps,
   IntrinsicVideoProps,
-  JsxNode,
-  ShapeNodeProps,
+} from "./authoring/intrinsic";
+import type {
   ImageNodeProps,
+  ShapeNodeProps,
   TableCellNodeProps,
   TableNodeProps,
   TableRowNodeProps,
@@ -52,7 +57,7 @@ import type {
   TextRunNodeProps,
   VideoNodeProps,
   ViewNodeProps,
-} from "./authoring/index";
+} from "./authoring/props";
 
 type ComponentProps = {
   children?: AuthorTreeChild;
@@ -64,6 +69,37 @@ type RuntimeProps = Readonly<Record<string, AuthorElementPropValue | AuthorTreeC
 };
 type ElementChildren<P> = P extends { children?: infer Child } ? Child : never;
 type ElementChildArgs<P> = P extends { children?: never } ? [] : ElementChildren<P>[];
+interface StrictTableElementChildArray extends ReadonlyArray<StrictTableElementChild> {}
+type StrictTableElementChild =
+  | AuthorTableSectionElementNode
+  | AuthorTableRowElementNode
+  | boolean
+  | null
+  | undefined
+  | StrictTableElementChildArray;
+interface StrictTableSectionElementChildArray extends ReadonlyArray<StrictTableSectionElementChild> {}
+type StrictTableSectionElementChild =
+  | AuthorTableRowElementNode
+  | boolean
+  | null
+  | undefined
+  | StrictTableSectionElementChildArray;
+interface StrictTableRowElementChildArray extends ReadonlyArray<StrictTableRowElementChild> {}
+type StrictTableRowElementChild =
+  | AuthorTableCellElementNode
+  | boolean
+  | null
+  | undefined
+  | StrictTableRowElementChildArray;
+type StrictCreateElementTableProps = Omit<IntrinsicTableProps, "children"> & {
+  children?: StrictTableElementChild;
+};
+type StrictCreateElementTableSectionProps = Omit<IntrinsicTableSectionProps, "children"> & {
+  children?: StrictTableSectionElementChild;
+};
+type StrictCreateElementTableRowProps = Omit<IntrinsicTableRowProps, "children"> & {
+  children?: StrictTableRowElementChild;
+};
 
 let activeComponentStack: readonly ComponentFrame[] = [];
 
@@ -138,6 +174,39 @@ function mergeComponentProvenance(
   return stack.length > 0 ? { stack } : undefined;
 }
 
+function propsObjectForRuntime(props: unknown): RuntimeProps {
+  if (props === null || props === undefined) {
+    return {};
+  }
+
+  if (!isRecord(props) || Array.isArray(props)) {
+    throw new Error("JSX props must be a plain object or null.");
+  }
+
+  const prototype = Object.getPrototypeOf(props);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new Error("JSX props must be a plain object or null.");
+  }
+
+  return props;
+}
+
+function keyForRuntime(key: JsxKey | undefined): JsxKey | undefined {
+  if (key === undefined || typeof key === "string" || typeof key === "bigint") {
+    return key;
+  }
+
+  if (typeof key === "number") {
+    if (Number.isFinite(key)) {
+      return key;
+    }
+
+    throw new Error("JSX numeric key must be finite.");
+  }
+
+  throw new Error("JSX key must be a string, number, or bigint.");
+}
+
 function intrinsicElement(
   type:
     | IntrinsicViewTag
@@ -152,6 +221,7 @@ function intrinsicElement(
   key?: JsxKey,
   sourceSpan?: SourceSpan,
 ): AuthorTreeNode {
+  const runtimeKey = keyForRuntime(key);
   if (isIntrinsicViewTag(type)) {
     const authored = splitProps<ViewNodeProps>(propsObject, children);
     return createAuthorElement({
@@ -159,7 +229,7 @@ function intrinsicElement(
       props: authored.props,
       children: authored.children,
       ...authorMetadata({
-        key,
+        key: runtimeKey,
         sourceSpan,
         mediaSourceOrigins: authored.mediaSourceOrigins,
         componentProvenance: authored.componentProvenance,
@@ -174,7 +244,7 @@ function intrinsicElement(
       props: authored.props,
       children: authored.children,
       ...authorMetadata({
-        key,
+        key: runtimeKey,
         sourceSpan,
         mediaSourceOrigins: authored.mediaSourceOrigins,
         componentProvenance: authored.componentProvenance,
@@ -189,7 +259,7 @@ function intrinsicElement(
       props: authored.props,
       children: authored.children,
       ...authorMetadata({
-        key,
+        key: runtimeKey,
         sourceSpan,
         mediaSourceOrigins: authored.mediaSourceOrigins,
         componentProvenance: authored.componentProvenance,
@@ -204,7 +274,7 @@ function intrinsicElement(
       props: authored.props,
       children: authored.children,
       ...authorMetadata({
-        key,
+        key: runtimeKey,
         sourceSpan,
         mediaSourceOrigins: authored.mediaSourceOrigins,
         componentProvenance: authored.componentProvenance,
@@ -219,7 +289,7 @@ function intrinsicElement(
       props: authored.props,
       children: authored.children,
       ...authorMetadata({
-        key,
+        key: runtimeKey,
         sourceSpan,
         mediaSourceOrigins: authored.mediaSourceOrigins,
         componentProvenance: authored.componentProvenance,
@@ -234,7 +304,7 @@ function intrinsicElement(
       props: authored.props,
       children: authored.children,
       ...authorMetadata({
-        key,
+        key: runtimeKey,
         sourceSpan,
         mediaSourceOrigins: authored.mediaSourceOrigins,
         componentProvenance: authored.componentProvenance,
@@ -249,7 +319,7 @@ function intrinsicElement(
       props: authored.props,
       children: authored.children,
       ...authorMetadata({
-        key,
+        key: runtimeKey,
         sourceSpan,
         mediaSourceOrigins: authored.mediaSourceOrigins,
         componentProvenance: authored.componentProvenance,
@@ -264,7 +334,7 @@ function intrinsicElement(
       props: authored.props,
       children: authored.children,
       ...authorMetadata({
-        key,
+        key: runtimeKey,
         sourceSpan,
         mediaSourceOrigins: authored.mediaSourceOrigins,
         componentProvenance: authored.componentProvenance,
@@ -279,7 +349,7 @@ function intrinsicElement(
       props: authored.props,
       children: authored.children,
       ...authorMetadata({
-        key,
+        key: runtimeKey,
         sourceSpan,
         mediaSourceOrigins: authored.mediaSourceOrigins,
         componentProvenance: authored.componentProvenance,
@@ -293,7 +363,7 @@ function intrinsicElement(
     props: authored.props,
     children: authored.children,
     ...authorMetadata({
-      key,
+      key: runtimeKey,
       sourceSpan,
       mediaSourceOrigins: authored.mediaSourceOrigins,
       componentProvenance: authored.componentProvenance,
@@ -328,25 +398,27 @@ export function createElement(
 export function createElement(
   type: "table",
   props:
-    | (Omit<IntrinsicTableProps, "children"> & Partial<Pick<IntrinsicTableProps, "children">>)
+    | (Omit<StrictCreateElementTableProps, "children"> &
+        Partial<Pick<StrictCreateElementTableProps, "children">>)
     | null,
-  ...children: ElementChildArgs<IntrinsicTableProps>
-): AuthorTreeNode;
+  ...children: ElementChildArgs<StrictCreateElementTableProps>
+): AuthorTableElementNode;
 export function createElement(
   type: "thead" | "tbody" | "tfoot",
   props:
-    | (Omit<IntrinsicTableSectionProps, "children"> &
-        Partial<Pick<IntrinsicTableSectionProps, "children">>)
+    | (Omit<StrictCreateElementTableSectionProps, "children"> &
+        Partial<Pick<StrictCreateElementTableSectionProps, "children">>)
     | null,
-  ...children: ElementChildArgs<IntrinsicTableSectionProps>
-): AuthorTreeNode;
+  ...children: ElementChildArgs<StrictCreateElementTableSectionProps>
+): AuthorTableSectionElementNode;
 export function createElement(
   type: "tr",
   props:
-    | (Omit<IntrinsicTableRowProps, "children"> & Partial<Pick<IntrinsicTableRowProps, "children">>)
+    | (Omit<StrictCreateElementTableRowProps, "children"> &
+        Partial<Pick<StrictCreateElementTableRowProps, "children">>)
     | null,
-  ...children: ElementChildArgs<IntrinsicTableRowProps>
-): AuthorTreeNode;
+  ...children: ElementChildArgs<StrictCreateElementTableRowProps>
+): AuthorTableRowElementNode;
 export function createElement(
   type: "th" | "td",
   props:
@@ -354,7 +426,7 @@ export function createElement(
         Partial<Pick<IntrinsicTableCellProps, "children">>)
     | null,
   ...children: ElementChildArgs<IntrinsicTableCellProps>
-): AuthorTreeNode;
+): AuthorTableCellElementNode;
 export function createElement(type: "img", props: IntrinsicImgProps): AuthorTreeNode;
 export function createElement(type: "video", props: IntrinsicVideoProps): AuthorTreeNode;
 export function createElement(type: "shape", props: IntrinsicShapeProps): AuthorTreeNode;
@@ -380,6 +452,7 @@ export function createElementWithMetadata(
   sourceSpan?: SourceSpan,
   children: AuthorTreeChild[] = [],
 ): AuthorTreeNode {
+  const runtimeKey = keyForRuntime(key);
   if (typeof type === "string") {
     if (
       isIntrinsicViewTag(type) ||
@@ -390,11 +463,11 @@ export function createElementWithMetadata(
       type === "span" ||
       type === "video"
     ) {
-      return intrinsicElement(type, isRecord(props) ? props : {}, children, key, sourceSpan);
+      return intrinsicElement(type, propsObjectForRuntime(props), children, runtimeKey, sourceSpan);
     }
 
     if (!isAuthoredTag(type)) {
-      throw new Error(`Intrinsic element is not supported: <${type}>.`);
+      throw new Error(`Intrinsic element is not part of the public authoring API: <${type}>.`);
     }
   }
 
@@ -403,26 +476,26 @@ export function createElementWithMetadata(
   }
 
   if (type === Fragment) {
-    const propsObject = isRecord(props) ? props : {};
+    const propsObject = propsObjectForRuntime(props);
     const rawChildren = collectChildren(propsObject, children);
     return createAuthorFragment({
       children: rawChildren === undefined ? [] : [rawChildren],
-      ...(key !== undefined ? { key } : {}),
+      ...(runtimeKey !== undefined ? { key: runtimeKey } : {}),
       ...(sourceSpan ? { sourceSpan } : {}),
     });
   }
 
-  const propsObject = isRecord(props) ? props : {};
+  const propsObject = propsObjectForRuntime(props);
   const rawChildren = collectChildren(propsObject, children);
   const nextProps: ComponentProps = {
     ...propsObject,
     children: rawChildren,
   };
   const injectedComponentProvenance = propsObject[AUTHORING_METADATA]?.componentProvenance;
-  const componentFrame = componentFrameFor(type, key, sourceSpan);
+  const componentFrame = componentFrameFor(type, runtimeKey, sourceSpan);
   const observerStack = componentStackForInvocation({
     type,
-    key,
+    key: runtimeKey,
     sourceSpan,
     injectedComponentProvenance,
   });
@@ -447,7 +520,7 @@ export function createElementWithMetadata(
     throw new Error("Function components must return a deckjsx author tree node.");
   }
 
-  if (key === undefined && !injectedComponentProvenance) {
+  if (runtimeKey === undefined && !injectedComponentProvenance) {
     return result;
   }
 
@@ -458,7 +531,7 @@ export function createElementWithMetadata(
     );
     return {
       ...result,
-      ...(key !== undefined ? { key } : {}),
+      ...(runtimeKey !== undefined ? { key: runtimeKey } : {}),
       ...(componentProvenance ? { componentProvenance } : {}),
     };
   }
@@ -484,5 +557,5 @@ function componentStackForInvocation(input: {
 export function Fragment(props: { children?: JsxNode }): DeckJsxElement {
   return createAuthorFragment({
     children: props.children === undefined ? [] : authorTreeChildrenFromUnknown([props.children]),
-  });
+  }) as unknown as DeckJsxElement;
 }

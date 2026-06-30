@@ -1,7 +1,7 @@
-import type { GraphNodeId, SemanticAuthorGraph, SemanticNode } from "../../graph";
-import type { ResolvedStyleMap } from "../../style/resolve";
-import type { StyleDeclarationValue } from "../../style/types";
-import { createDiagnostics, diagnostic, type Diagnostics } from "../../diagnostics";
+import type { GraphNodeId, SemanticAuthorGraph, SemanticNode } from "@/src/graph";
+import type { ResolvedStyleMap } from "@/src/style/resolve";
+import type { StyleDeclarationValue } from "@/src/style/declaration";
+import { createDiagnostics, diagnostic, type Diagnostics } from "@/src/diagnostics";
 import type {
   PackagePartId,
   PptxThemeConcreteDrawingPropertyMapping,
@@ -302,7 +302,6 @@ const THEME_LAYOUT_INPUT_PROPERTIES = new Set([
   "justifyContent",
   "justifyItems",
   "justifySelf",
-  "layout",
   "left",
   "margin",
   "marginBottom",
@@ -327,8 +326,6 @@ const THEME_LAYOUT_INPUT_PROPERTIES = new Set([
   "rowGap",
   "top",
   "width",
-  "x",
-  "y",
 ]);
 
 const THEME_DRAWING_METADATA_PROPERTIES = new Set([
@@ -375,6 +372,16 @@ function themeDefaultStyleDecision(input: {
       reason:
         unprojectedReason ??
         "The Theme Default is preserved through unsupported semantic fallback data rather than projected as a PPTX concrete drawing property.",
+    };
+  }
+
+  if (input.property === "layout" || input.property === "x" || input.property === "y") {
+    return {
+      ...base,
+      decision: "preserveUnsupportedSemantic",
+      projectedAs: "unsupportedSemanticFallback",
+      reason:
+        "The Theme Default uses a property that is not part of the public authoring style API, so PPTX theme projection preserves it as an unprojected mapping instead of treating it as layout input.",
     };
   }
 

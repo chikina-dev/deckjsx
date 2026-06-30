@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, EMU_PER_INCH } from "../../src/index.ts";
-import { summarizeNodes } from "../helpers.ts";
+import { EMU_PER_INCH } from "@/src/index.ts";
+import { Deck, summarizeNodes } from "../helpers.ts";
 
 describe("style-aliases", () => {
   test("render supports css aliases and px units", async () => {
@@ -10,6 +10,7 @@ describe("style-aliases", () => {
       <>
         <div
           style={{
+            position: "absolute",
             left: "96px",
             top: "96px",
             width: "480px",
@@ -86,30 +87,16 @@ describe("style-aliases", () => {
     });
   });
 
-  test("render keeps key css aliases equivalent to deck-native props", async () => {
+  test("render keeps supported css aliases equivalent to canonical props", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Alias parity" }, () => (
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
-            width: 3,
-            height: 1.5,
-            layout: "stack",
-            direction: "horizontal",
-            gap: 0.25,
-            padding: 0.25,
-          }}
-        >
-          <p style={{ width: 1, height: 0.5, fontSize: 18 }}>A</p>
-          <p style={{ width: 1, height: 0.5, fontSize: 18 }}>B</p>
-        </div>
-        <div
-          style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 3,
             height: 1.5,
             display: "flex",
@@ -121,21 +108,32 @@ describe("style-aliases", () => {
           <p style={{ width: 1, height: 0.5, fontSize: 18 }}>A</p>
           <p style={{ width: 1, height: 0.5, fontSize: 18 }}>B</p>
         </div>
-        <div style={{ x: 5, y: 1, width: 3, height: 2, layout: "absolute" }}>
-          <p style={{ x: 0.25, y: 0.5, width: 1, height: 0.5, fontSize: 18 }}>Box</p>
-        </div>
-        <div style={{ x: 5, y: 1, width: 3, height: 2, display: "block" }}>
-          <p style={{ x: 0.25, y: 0.5, width: 1, height: 0.5, fontSize: 18 }}>Box</p>
+        <div
+          style={{ position: "absolute", left: 5, top: 1, width: 3, height: 2, display: "block" }}
+        >
+          <p
+            style={{
+              position: "absolute",
+              left: 0.25,
+              top: 0.5,
+              width: 1,
+              height: 0.5,
+              fontSize: 18,
+            }}
+          >
+            Box
+          </p>
         </div>
         <p
           style={{
-            x: 1,
-            y: 3.25,
+            position: "absolute",
+            left: 1,
+            top: 3.25,
             width: 2.5,
             height: 0.75,
-            italic: true,
-            charSpacing: 1.5,
-            lineSpacingMultiple: 1.4,
+            fontStyle: "italic",
+            letterSpacing: 1.5,
+            lineHeight: 1.4,
             fontSize: 18,
           }}
         >
@@ -143,6 +141,7 @@ describe("style-aliases", () => {
         </p>
         <p
           style={{
+            position: "absolute",
             left: 1,
             top: 3.25,
             width: 2.5,
@@ -157,20 +156,34 @@ describe("style-aliases", () => {
         </p>
         <img
           src="/tmp/native-fit.png"
-          style={{ x: 4, y: 3.25, width: 1, height: 1, fit: "cover" }}
+          style={{
+            position: "absolute",
+            left: 4,
+            top: 3.25,
+            width: 1,
+            height: 1,
+            objectFit: "cover",
+          }}
         />
         <img
           src="/tmp/alias-fit.png"
-          style={{ x: 4, y: 3.25, width: 1, height: 1, objectFit: "cover" }}
+          style={{
+            position: "absolute",
+            left: 4,
+            top: 3.25,
+            width: 1,
+            height: 1,
+            objectFit: "cover",
+          }}
         />
       </>
     ));
 
     const nodes = (await deck.project()).projection!.slides[0].payload.drawing.children;
-    const [nativeStack, aliasStack, nativeAbsolute, aliasAbsolute] = nodes.slice(0, 4);
+    const [flexStack, blockBox] = nodes.slice(0, 2);
 
-    expect(summarizeNodes([nativeStack])).toEqual(summarizeNodes([aliasStack]));
-    expect(summarizeNodes([nativeAbsolute])).toEqual(summarizeNodes([aliasAbsolute]));
+    expect(flexStack?.kind).toBe("group");
+    expect(blockBox?.kind).toBe("group");
 
     const [nativeText, aliasText] = nodes.filter(
       (node): node is Extract<(typeof nodes)[number], { kind: "text" }> => node.kind === "text",
@@ -194,6 +207,7 @@ describe("style-aliases", () => {
       <>
         <div
           style={{
+            position: "absolute",
             right: "96px",
             bottom: "48px",
             width: "192px",
@@ -203,8 +217,9 @@ describe("style-aliases", () => {
         />
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 6,
             height: 2,
             display: "flex",

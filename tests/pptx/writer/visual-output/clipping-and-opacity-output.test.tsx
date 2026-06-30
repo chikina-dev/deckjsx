@@ -7,15 +7,31 @@ describe("direct pptx writer clipping and opacity output", () => {
 
     deck.slide({ name: "Visual controls" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 2, height: 0.5, zIndex: 10 }}>Front</p>
-        <p style={{ x: 1, y: 1.6, width: 2, height: 0.5, zIndex: -1 }}>Back</p>
-        <p style={{ x: 1, y: 2.2, width: 2, height: 0.5, zIndex: 1 }}>Middle</p>
-        <p style={{ x: 1, y: 2.8, width: 2, height: 0.5, visibility: "hidden", zIndex: 100 }}>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 2, height: 0.5, zIndex: 10 }}>
+          Front
+        </p>
+        <p style={{ position: "absolute", left: 1, top: 1.6, width: 2, height: 0.5, zIndex: -1 }}>
+          Back
+        </p>
+        <p style={{ position: "absolute", left: 1, top: 2.2, width: 2, height: 0.5, zIndex: 1 }}>
+          Middle
+        </p>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 2.8,
+            width: 2,
+            height: 0.5,
+            visibility: "hidden",
+            zIndex: 100,
+          }}
+        >
           Hidden
         </p>
         <img
           data={H.SAMPLE_SVG_DATA_URI}
-          style={{ x: 4, y: 1, width: 1.5, height: 1.5, opacity: 0.25 }}
+          style={{ position: "absolute", left: 4, top: 1, width: 1.5, height: 1.5, opacity: 0.25 }}
         />
       </>
     ));
@@ -45,16 +61,39 @@ describe("direct pptx writer clipping and opacity output", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 3,
             height: 2,
             overflow: "hidden",
             backgroundColor: "#E5E7EB",
           }}
         >
-          <p style={{ x: 0.5, y: 0.5, width: 4, height: 0.75, fontSize: 18 }}>Clip me</p>
-          <p style={{ x: 3.5, y: 0.5, width: 1, height: 0.5, fontSize: 18 }}>Drop me</p>
+          <p
+            style={{
+              position: "absolute",
+              left: 0.5,
+              top: 0.5,
+              width: 4,
+              height: 0.75,
+              fontSize: 18,
+            }}
+          >
+            Clip me
+          </p>
+          <p
+            style={{
+              position: "absolute",
+              left: 3.5,
+              top: 0.5,
+              width: 1,
+              height: 0.5,
+              fontSize: 18,
+            }}
+          >
+            Drop me
+          </p>
         </div>
       </>
     ));
@@ -76,8 +115,9 @@ describe("direct pptx writer clipping and opacity output", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 2,
             overflow: "hidden",
@@ -86,7 +126,14 @@ describe("direct pptx writer clipping and opacity output", () => {
         >
           <img
             data={H.WIDE_SVG_DATA_URI}
-            style={{ x: -0.5, y: 0.5, width: 3, height: 1, fit: "stretch" }}
+            style={{
+              position: "absolute",
+              left: -0.5,
+              top: 0.5,
+              width: 3,
+              height: 1,
+              objectFit: "fill",
+            }}
           />
         </div>
       </>
@@ -106,15 +153,50 @@ describe("direct pptx writer clipping and opacity output", () => {
 
     deck.slide({ name: "Opacity cascade" }, () => (
       <>
-        <div style={{ x: 1, y: 1, width: 6, height: 3, opacity: 0.5, backgroundColor: "#E5E7EB" }}>
-          <p style={{ x: 0.5, y: 0.5, width: 2, height: 0.75, color: "#FF0000" }}>Half text</p>
+        <div
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 6,
+            height: 3,
+            opacity: 0.5,
+            backgroundColor: "#E5E7EB",
+          }}
+        >
+          <p
+            style={{
+              position: "absolute",
+              left: 0.5,
+              top: 0.5,
+              width: 2,
+              height: 0.75,
+              color: "#FF0000",
+            }}
+          >
+            Half text
+          </p>
           <img
             data={H.SAMPLE_SVG_DATA_URI}
-            style={{ x: 3, y: 0.5, width: 1.5, height: 1.5, opacity: 0.5 }}
+            style={{
+              position: "absolute",
+              left: 3,
+              top: 0.5,
+              width: 1.5,
+              height: 1.5,
+              opacity: 0.5,
+            }}
           />
           <shape
             shape="rect"
-            style={{ x: 0.5, y: 1.75, width: 1.5, height: 0.75, fill: "#2563EB" }}
+            style={{
+              position: "absolute",
+              left: 0.5,
+              top: 1.75,
+              width: 1.5,
+              height: 0.75,
+              fill: "#2563EB",
+            }}
           />
         </div>
       </>

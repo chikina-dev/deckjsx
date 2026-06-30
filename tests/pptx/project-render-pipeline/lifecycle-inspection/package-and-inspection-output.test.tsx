@@ -121,8 +121,9 @@ describe("project/render package and inspection output", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
             background: `url("${H.SAMPLE_SVG_DATA_URI}")`,
@@ -131,8 +132,9 @@ describe("project/render package and inspection output", () => {
         />
         <p
           style={{
-            x: 1,
-            y: 2,
+            position: "absolute",
+            left: 1,
+            top: 2,
             width: 2,
             height: 0.5,
             borderTop: "1pt solid #111111",
@@ -235,7 +237,7 @@ describe("project/render package and inspection output", () => {
   test("project can skip inspection summary while preserving projection result shape", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "No project summary" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Projected</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Projected</p>
     ));
 
     const project = await deck.project({ inspection: "none" });
@@ -249,8 +251,18 @@ describe("project/render package and inspection output", () => {
   test("project derives detailed composed paint order only when requested", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Detailed inspection" }, () => (
-      <div style={{ x: 1, y: 1, width: 4, height: 2, zIndex: 2 }}>
-        <p style={{ x: 0.25, y: 0.25, width: 2, height: 0.5, fontSize: 18, zIndex: 3 }}>
+      <div style={{ position: "absolute", left: 1, top: 1, width: 4, height: 2, zIndex: 2 }}>
+        <p
+          style={{
+            position: "absolute",
+            left: 0.25,
+            top: 0.25,
+            width: 2,
+            height: 0.5,
+            fontSize: 18,
+            zIndex: 3,
+          }}
+        >
           Nested detail
         </p>
       </div>
@@ -305,7 +317,7 @@ describe("project/render package and inspection output", () => {
   test("render can skip inspection summary while preserving artifact result shape", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "No render summary" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Rendered</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Rendered</p>
     ));
 
     const render = await deck.render({ inspection: "none" });
@@ -320,8 +332,19 @@ describe("project/render package and inspection output", () => {
   test("render details do not eagerly expose project-derived inspection views", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Render detail boundary" }, () => (
-      <div style={{ x: 1, y: 1, width: 3, height: 2, zIndex: 5 }}>
-        <p style={{ x: 0.25, y: 0.25, width: 2, height: 0.5, fontSize: 18 }}>Rendered detail</p>
+      <div style={{ position: "absolute", left: 1, top: 1, width: 3, height: 2, zIndex: 5 }}>
+        <p
+          style={{
+            position: "absolute",
+            left: 0.25,
+            top: 0.25,
+            width: 2,
+            height: 0.5,
+            fontSize: 18,
+          }}
+        >
+          Rendered detail
+        </p>
       </div>
     ));
 

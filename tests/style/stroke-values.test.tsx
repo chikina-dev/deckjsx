@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck } from "../../src/index.ts";
+import { Deck } from "../helpers.ts";
 
 describe("stroke-values", () => {
   test("render supports border shorthand and css color functions", async () => {
@@ -9,8 +9,9 @@ describe("stroke-values", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 2,
             backgroundColor: "rgba(255, 0, 0, 0.25)",
@@ -19,8 +20,9 @@ describe("stroke-values", () => {
         >
           <p
             style={{
-              x: 0.5,
-              y: 0.5,
+              position: "absolute",
+              left: 0.5,
+              top: 0.5,
               width: 2,
               height: 0.5,
               fontSize: 18,
@@ -33,8 +35,9 @@ describe("stroke-values", () => {
           <shape
             shape="rect"
             style={{
-              x: 2.75,
-              y: 0.5,
+              position: "absolute",
+              left: 2.75,
+              top: 0.5,
               width: 0.75,
               height: 0.75,
               fill: "hsla(120, 100%, 25%, 0.4)",
@@ -85,13 +88,13 @@ describe("stroke-values", () => {
         <shape
           shape="rect"
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 1.5,
             height: 0.75,
             fill: "#F97316",
-            stroke: "dodgerblue",
-            strokeWidth: "3pt",
+            stroke: "3pt solid dodgerblue",
             strokeDasharray: "1 4",
           }}
         />
@@ -109,7 +112,7 @@ describe("stroke-values", () => {
     expect(shape.stroke).toEqual({
       color: "1E90FF",
       dashType: "sysDot",
-      style: undefined,
+      style: "solid",
       transparency: undefined,
       widthPt: 3,
     });
@@ -123,13 +126,13 @@ describe("stroke-values", () => {
         <shape
           shape="rect"
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 1.5,
             height: 0.75,
             fill: "#F97316",
-            stroke: "1.5pt dashed #2563EB",
-            strokeWidth: "2pt",
+            stroke: "2pt dashed #2563EB",
           }}
         />
       </>
@@ -155,7 +158,7 @@ describe("stroke-values", () => {
     });
   });
 
-  test("render reports css-wide stroke width fallback", async () => {
+  test("render rejects css-wide border width authoring", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "CSS-wide stroke width" }, () => (
@@ -163,52 +166,29 @@ describe("stroke-values", () => {
         shape="rect"
         style={
           {
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 1.5,
             height: 0.75,
             fill: "#F97316",
             stroke: "#2563EB",
-            strokeWidth: "initial",
+            borderWidth: "initial",
           } as never
         }
       />
     ));
 
     const result = await deck.project();
-    const shape = result.projection!.slides[0]?.payload.drawing.children[0];
 
-    expect(result.ok).toBe(true);
-    expect(shape?.kind).toBe("shape");
-    if (!shape || shape.kind !== "shape") {
-      throw new Error("Expected shape element.");
-    }
-    expect(shape.stroke).toEqual({
-      color: "2563EB",
-      style: undefined,
-      transparency: undefined,
-      widthPt: 1,
-    });
-    expect(shape.unsupportedSemantics).toContainEqual(
-      expect.objectContaining({
-        feature: "layout",
-        property: "strokeWidth",
-        value: "initial",
-        fallback: expect.objectContaining({
-          strategy: "preserveAuthoredValueOnly",
-          missing: expect.arrayContaining(["cssWideKeywordCascade"]),
-        }),
-      }),
-    );
+    expect(result.ok).toBe(false);
     expect(result.diagnostics.items).toContainEqual(
       expect.objectContaining({
-        code: "W_PROJECT_UNSUPPORTED_PPTX_SEMANTIC",
-        severity: "warning",
-        notes: expect.arrayContaining([
-          "feature=layout",
-          "property=strokeWidth",
-          "fallbackMissing=cssWideKeywordCascade",
-        ]),
+        code: "E_COMPILE_INVALID_STYLE_VALUE",
+        severity: "error",
+        message: expect.stringContaining(
+          "borderWidth value is not part of the public authoring API",
+        ),
       }),
     );
   });
@@ -221,8 +201,9 @@ describe("stroke-values", () => {
         <shape
           shape="rect"
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 1.5,
             height: 0.75,
             fill: "#F97316",
@@ -260,13 +241,13 @@ describe("stroke-values", () => {
         <shape
           shape="rect"
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 1.5,
             height: 0.75,
             fill: "#F97316",
-            stroke: "dodgerblue",
-            strokeWidth: "3pt",
+            stroke: "3pt solid dodgerblue",
             strokeLinecap: "square",
             strokeLinejoin: "bevel",
           }}
@@ -285,7 +266,7 @@ describe("stroke-values", () => {
       color: "1E90FF",
       lineCap: "square",
       lineJoin: "bevel",
-      style: undefined,
+      style: "solid",
       transparency: undefined,
       widthPt: 3,
     });

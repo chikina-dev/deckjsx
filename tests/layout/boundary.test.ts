@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
-import { EMU_PER_INCH } from "../../src/index.ts";
-import { frameFromProps } from "../../src/layout/absolute.ts";
+import { EMU_PER_INCH } from "@/src/index.ts";
+import { frameFromProps } from "@/src/layout/absolute.ts";
 import {
   advanceGridAutoPlacementCursor,
   markGridItem,
@@ -8,13 +8,13 @@ import {
   resolveGridTemplateTracks,
   resolveGridTrackContentMinimums,
   resolveGridTracksWithContentMinimums,
-} from "../../src/layout/grid.ts";
+} from "@/src/layout/grid.ts";
 import {
   buildStackLines,
   resolveFlexMainAllocations,
   type StackEntry,
   type StackMetrics,
-} from "../../src/layout/stack.ts";
+} from "@/src/layout/stack.ts";
 
 type StackTestChild = {
   id: string;

@@ -45,7 +45,7 @@ describe("project/render validation render boundaries", () => {
         <video
           data={H.dataUriFromBytes("video/webm", new Uint8Array([26, 69, 223, 163]))}
           posterData={H.dataUriFromBytes("image/png", H.pngHeaderBytes(2, 1))}
-          style={{ x: 1, y: 1, width: 4, height: 2.25 }}
+          style={{ position: "absolute", left: 1, top: 1, width: 4, height: 2.25 }}
         />
       </>
     ));
@@ -118,7 +118,7 @@ describe("project/render validation render boundaries", () => {
   test("render validation requires projected text body root values", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Missing text body values" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}> body values</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}> body values</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -182,7 +182,18 @@ describe("project/render validation render boundaries", () => {
   test("render validation requires projected underline style for underlined text", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Missing underline style" }, () => (
-      <p style={{ x: 1, y: 1, width: 2, height: 0.5, underline: true }}>Underlined</p>
+      <p
+        style={{
+          position: "absolute",
+          left: 1,
+          top: 1,
+          width: 2,
+          height: 0.5,
+          textDecorationLine: "underline",
+        }}
+      >
+        Underlined
+      </p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -235,7 +246,15 @@ describe("project/render validation render boundaries", () => {
     deck.slide({ name: "Missing stroke dash type" }, () => (
       <shape
         shape="rect"
-        style={{ x: 1, y: 1, width: 2, height: 1, fill: "#F8FAFC", stroke: "1pt dashed #2563EB" }}
+        style={{
+          position: "absolute",
+          left: 1,
+          top: 1,
+          width: 2,
+          height: 1,
+          fill: "#F8FAFC",
+          stroke: "1pt dashed #2563EB",
+        }}
       />
     ));
 
@@ -287,7 +306,15 @@ describe("project/render validation render boundaries", () => {
     deck.slide({ name: "Negative stroke width" }, () => (
       <shape
         shape="rect"
-        style={{ x: 1, y: 1, width: 2, height: 1, fill: "#F8FAFC", stroke: "1pt solid #2563EB" }}
+        style={{
+          position: "absolute",
+          left: 1,
+          top: 1,
+          width: 2,
+          height: 1,
+          fill: "#F8FAFC",
+          stroke: "1pt solid #2563EB",
+        }}
       />
     ));
 
@@ -338,8 +365,9 @@ describe("project/render validation render boundaries", () => {
       <shape
         shape="rect"
         style={{
-          x: 1,
-          y: 1,
+          position: "absolute",
+          left: 1,
+          top: 1,
           width: 2,
           height: 1,
           fill: "linear-gradient(90deg, #2563EB 0%, #F97316 100%)",
@@ -399,7 +427,16 @@ describe("project/render validation render boundaries", () => {
   test("render validation requires projected shadow opacity", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Missing shadow opacity" }, () => (
-      <div style={{ x: 1, y: 1, width: 2, height: 1, boxShadow: "3px 3px 6px rebeccapurple" }} />
+      <div
+        style={{
+          position: "absolute",
+          left: 1,
+          top: 1,
+          width: 2,
+          height: 1,
+          boxShadow: "3px 3px 6px #663399",
+        }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;
@@ -448,7 +485,16 @@ describe("project/render validation render boundaries", () => {
   test("render validation requires projected shadow geometry", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Missing shadow geometry" }, () => (
-      <div style={{ x: 1, y: 1, width: 2, height: 1, boxShadow: "3px 3px 6px rebeccapurple" }} />
+      <div
+        style={{
+          position: "absolute",
+          left: 1,
+          top: 1,
+          width: 2,
+          height: 1,
+          boxShadow: "3px 3px 6px #663399",
+        }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;
@@ -508,10 +554,10 @@ describe("project/render validation render boundaries", () => {
   test("project rejects duplicate presentation slide ids across referenced slide parts", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Duplicate slide id 1" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>One</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>One</p>
     ));
     deck.slide({ name: "Duplicate slide id 2" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Two</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Two</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -555,7 +601,10 @@ describe("project/render validation render boundaries", () => {
       },
     });
     deck.slide({ name: "Unhandled context" }, () => (
-      <img src="./local.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        src="./local.png"
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     const project = await H.projectSource({

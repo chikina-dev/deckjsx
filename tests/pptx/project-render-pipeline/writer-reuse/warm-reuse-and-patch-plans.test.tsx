@@ -6,7 +6,7 @@ describe("project/render writer warm reuse and patch plans", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Warm path" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 2, height: 0.5 }}>warm</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 2, height: 0.5 }}>warm</p>
       </>
     ));
 
@@ -79,7 +79,7 @@ describe("project/render writer warm reuse and patch plans", () => {
   test("render emits patchable package metadata for node runtime writers", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Patchable" }, () => (
-      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>patchable</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>patchable</p>
     ));
 
     const render = await deck.render({ inspection: "none" });
@@ -176,7 +176,7 @@ describe("project/render writer warm reuse and patch plans", () => {
   test("render patch plan reports warm package part reuse without persisting reuse state", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Patch reuse" }, () => (
-      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>patch reuse</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>patch reuse</p>
     ));
 
     const cold = await deck.render({ inspection: "none" });
@@ -203,7 +203,7 @@ describe("project/render writer warm reuse and patch plans", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Original" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 2, height: 0.5 }}>same bytes</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 2, height: 0.5 }}>same bytes</p>
       </>
     ));
 
@@ -262,7 +262,9 @@ describe("project/render writer warm reuse and patch plans", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Relationship dependency" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>relationship dependency</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>
+          relationship dependency
+        </p>
       </>
     ));
 
@@ -348,7 +350,7 @@ describe("project/render writer warm reuse and patch plans", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Emitter fingerprint" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 2, height: 0.5 }}>emitter</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 2, height: 0.5 }}>emitter</p>
       </>
     ));
 

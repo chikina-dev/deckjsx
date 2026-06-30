@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { RenderExecutionContext } from "./render-execution";
-import type { RenderResult } from "./pipeline-runner";
-import { PipelineArtifactCollection } from "./pipeline-artifacts";
+import type { RenderResult } from "./pipeline/runner";
+import { PipelineArtifactCollection } from "./pipeline/artifacts";
 import type { SourceInvalidation } from "./plugin";
 import type { GraphNodeId } from "./graph";
 

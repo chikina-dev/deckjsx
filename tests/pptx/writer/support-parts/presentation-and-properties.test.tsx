@@ -5,7 +5,9 @@ describe("direct pptx writer presentation and properties", () => {
   test("support XML emitters reject malformed presentation and property payloads", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Support property validation" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Support properties</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
+        Support properties
+      </p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -68,7 +70,7 @@ describe("direct pptx writer presentation and properties", () => {
   test("presentation XML emitter requires a structured presentation payload", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Presentation support part" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Presentation</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Presentation</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -85,7 +87,7 @@ describe("direct pptx writer presentation and properties", () => {
   test("presentation XML emitter rejects missing projected size values", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Presentation size validation" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Size</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Size</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -116,10 +118,10 @@ describe("direct pptx writer presentation and properties", () => {
     });
 
     deck.slide({ name: "Doc props 1" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>One</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>One</p>
     ));
     deck.slide({ name: "Doc props 2" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Two</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Two</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -186,10 +188,10 @@ describe("direct pptx writer presentation and properties", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Presentation payload 1" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>One</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>One</p>
     ));
     deck.slide({ name: "Presentation payload 2" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Two</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Two</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -268,7 +270,9 @@ describe("direct pptx writer presentation and properties", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Support property payload" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Support properties</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
+        Support properties
+      </p>
     ));
 
     const projection = (await deck.project()).projection!;

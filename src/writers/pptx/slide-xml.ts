@@ -1,5 +1,5 @@
-import type { PptxPackageModel, PptxSlidePart } from "../../projection/pptx/model";
-import type { FillIR } from "../../layout/projected";
+import type { PptxPackageModel, PptxSlidePart } from "@/src/projection/pptx/model";
+import type { FillIR } from "@/src/layout/projected";
 import { writeBackgroundLayerElements } from "./drawing-layer-xml";
 import { writeFill } from "./drawing-xml";
 import { createSlideImageRenderContext } from "./picture-xml";

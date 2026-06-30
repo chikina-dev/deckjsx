@@ -9,8 +9,9 @@ describe("background gradient layers", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 2,
             borderWidth: 0.25,
@@ -53,8 +54,9 @@ describe("background gradient layers", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 2,
             borderWidth: 0.25,
@@ -94,8 +96,9 @@ describe("background gradient layers", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 2,
             borderWidth: 0.25,
@@ -136,8 +139,9 @@ describe("background gradient layers", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 2,
             borderWidth: 0.25,
@@ -192,8 +196,9 @@ describe("background gradient layers", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 2,
             borderWidth: 0.25,
@@ -240,8 +245,9 @@ describe("background gradient layers", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 2,
             borderWidth: 0.25,

@@ -1,4 +1,4 @@
-import { Deck, EMU_PER_INCH } from "../../../src/index.ts";
-import { summarizeNodes } from "../../helpers.ts";
+import { EMU_PER_INCH } from "@/src/index.ts";
+import { Deck, expectPptxProjection, summarizeNodes } from "@/tests/helpers.ts";
 
-export { Deck, EMU_PER_INCH, summarizeNodes };
+export { Deck, EMU_PER_INCH, expectPptxProjection, summarizeNodes };

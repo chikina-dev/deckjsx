@@ -2,7 +2,7 @@ import type { AuthoredTag, SectioningTag } from "../authoring/tags";
 import type { JsxKey, SourceSpan } from "../authoring/tree";
 import type { ComponentProvenance } from "../authoring-metadata";
 import type { MediaSourceOrigin } from "../media-source-origin";
-import type { StyleDeclaration } from "../style/types";
+import type { StyleDeclaration } from "../style/declaration";
 
 export type Brand<T, B extends string> = T & { readonly __brand: B };
 export type GraphNodeId = Brand<string, "GraphNodeId">;
@@ -121,7 +121,7 @@ export type SemanticVideoNode = BaseSemanticNode & {
 
 export type SemanticShapeNode = BaseSemanticNode & {
   readonly kind: "shape";
-  readonly shape: "rect" | "ellipse" | "line";
+  readonly shape: "rect" | "ellipse" | "line" | "roundRect";
 };
 
 export type SemanticTableNode = BaseSemanticNode & {

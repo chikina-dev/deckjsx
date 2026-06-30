@@ -9,7 +9,15 @@ describe("project/render source diagnostics and assets", () => {
         classes: {
           title: {
             target: "p.title",
-            style: { x: 1, y: 1, width: 4, height: 0.5, color: "red", fontSize: 28 },
+            style: {
+              position: "absolute",
+              left: 1,
+              top: 1,
+              width: 4,
+              height: 0.5,
+              color: "red",
+              fontSize: 28,
+            },
           },
         },
       }),
@@ -69,7 +77,10 @@ describe("project/render source diagnostics and assets", () => {
 
     deck.slide({ name: "Loaded asset" }, () => (
       <>
-        <img src="/public/chart.png" style={{ x: 1, y: 1, width: 2, height: 1 }} />
+        <img
+          src="/public/chart.png"
+          style={{ position: "absolute", left: 1, top: 1, width: 2, height: 1 }}
+        />
       </>
     ));
 

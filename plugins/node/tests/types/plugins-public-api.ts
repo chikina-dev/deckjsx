@@ -37,6 +37,7 @@ const writeDiagnostic = {
 void writeDiagnostic;
 
 const writeResult = {
+  ok: true,
   path: "/project/out.pptx",
   status: "patched",
   strategy: "in-place",
@@ -63,6 +64,7 @@ deckWithNodeAssets.plugin(nodeAssetsExtension);
 declare const renderResult: RenderResult;
 const writePromise = write(renderResult, "/project/out.pptx");
 void (writePromise satisfies Promise<WriteResult>);
+writeResult.ok satisfies boolean;
 
 const compilerOptions = {
   entry: "main.tsx",

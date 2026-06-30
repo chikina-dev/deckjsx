@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { expect } from "vite-plus/test";
-import { Deck, Theme } from "../../../src/index.ts";
-import { isPptxSlidePart, isPptxSupportPart } from "../../../src/inspect.ts";
+import { Theme } from "@/src/index.ts";
+import { isPptxSlidePart, isPptxSupportPart } from "@/src/inspect.ts";
 import type {
   PptxBackgroundLayer,
   PptxContentTypesPayload,
@@ -14,10 +14,10 @@ import type {
   PptxSlidePart,
   PptxSupportPartPayload,
   PptxThemePartPayload,
-} from "../../../src/inspect.ts";
-import { withPackagePartFingerprints } from "../../../src/projection/pptx/fingerprint.ts";
-import { expectedAssemblyEntryForPart } from "../../../src/writers/pptx/assembly.ts";
-import { buildArtifactForPart } from "../../../src/writers/pptx/build.ts";
+} from "@/src/inspect.ts";
+import { withPackagePartFingerprints } from "@/src/projection/pptx/fingerprint.ts";
+import { expectedAssemblyEntryForPart } from "@/src/writers/pptx/assembly.ts";
+import { buildArtifactForPart } from "@/src/writers/pptx/build.ts";
 import {
   writeColor,
   writeFill,
@@ -25,28 +25,26 @@ import {
   writeShadow,
   writeShapeProperties,
   writeTransform,
-} from "../../../src/writers/pptx/drawing-xml.ts";
-import { emitPartBytes } from "../../../src/writers/pptx/emit.ts";
-import { mediaPartPayload } from "../../../src/writers/pptx/media.ts";
-import { relationshipsBytes } from "../../../src/writers/pptx/package-xml.ts";
-import { slideBytes } from "../../../src/writers/pptx/slide-xml.ts";
-import { writeTextBody } from "../../../src/writers/pptx/text-xml.ts";
-import {
-  createCollectingPptxZipSink,
-  createTeePptxZipSink,
-} from "../../../src/writers/pptx/sinks.ts";
+} from "@/src/writers/pptx/drawing-xml.ts";
+import { emitPartBytes } from "@/src/writers/pptx/emit.ts";
+import { mediaPartPayload } from "@/src/writers/pptx/media.ts";
+import { relationshipsBytes } from "@/src/writers/pptx/package-xml.ts";
+import { slideBytes } from "@/src/writers/pptx/slide-xml.ts";
+import { writeTextBody } from "@/src/writers/pptx/text-xml.ts";
+import { createCollectingPptxZipSink, createTeePptxZipSink } from "@/src/writers/pptx/sinks.ts";
 import {
   createPptxZipBytesFromEntries,
   writePptxZipEntriesToSink,
-} from "../../../src/writers/pptx/zip.ts";
-import { XmlChunkWriter } from "../../../src/writers/pptx/xml-writer.ts";
+} from "@/src/writers/pptx/zip.ts";
+import { XmlChunkWriter } from "@/src/writers/pptx/xml-writer.ts";
 import {
   SAMPLE_SVG_DATA_URI,
+  Deck,
   strFromU8,
   unzipSync,
   type Unzipped,
   WIDE_SVG_DATA_URI,
-} from "../../helpers.ts";
+} from "@/tests/helpers.ts";
 export function malformedBackgroundLayer(
   layer: Partial<PptxBackgroundLayer> & {
     readonly kind: "solid";

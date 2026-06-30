@@ -1,15 +1,16 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, StyleSheet } from "../../src/index.ts";
-import { buildLayoutInputSnapshot } from "../../src/layout/input.ts";
-import { resolveProjectedLayout } from "../../src/layout/resolve.ts";
+import { StyleSheet } from "@/src/index.ts";
+import { buildLayoutInputSnapshot } from "@/src/layout/input.ts";
+import { resolveProjectedLayout } from "@/src/layout/resolve.ts";
+import * as H from "../helpers.ts";
 
 describe("layout input snapshot", () => {
   test("materializes resolved container styles and probed image metadata", async () => {
-    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.useStyles(
       new StyleSheet({
         classes: {
-          card: { style: { backgroundColor: "#EEF2FF", padding: 0.25 } },
+          card: { target: "div.card", style: { backgroundColor: "#EEF2FF", padding: 0.25 } },
           title: { target: "p.title", style: { color: "#111827", fontSize: 24 } },
         },
       }),
@@ -17,10 +18,16 @@ describe("layout input snapshot", () => {
 
     deck.slide({ name: "Snapshot", className: "card" }, () => (
       <>
-        <div className="card" style={{ x: 1, y: 1, width: 4, height: 2 }}>
+        <div
+          className="card"
+          style={{ position: "absolute", left: 1, top: 1, width: 4, height: 2 }}
+        >
           <p className="title">Revenue</p>
         </div>
-        <img src="chart.png" style={{ x: 6, y: 1, width: 2, height: 1 }} />
+        <img
+          src="chart.png"
+          style={{ position: "absolute", left: 6, top: 1, width: 2, height: 1 }}
+        />
       </>
     ));
 
@@ -57,8 +64,9 @@ describe("layout input snapshot", () => {
     expect(snapshot.size).toEqual({ widthEmu: 9144000, heightEmu: 5143500 });
     expect(snapshot.slides[0]?.children[0]?.kind).toBe("view");
     expect(snapshot.slides[0]?.children[0]?.props).toMatchObject({
-      x: 1,
-      y: 1,
+      left: 1,
+      top: 1,
+      position: "absolute",
       width: 4,
       height: 2,
       backgroundColor: "#EEF2FF",
@@ -75,11 +83,20 @@ describe("layout input snapshot", () => {
   });
 
   test("preserves table-specific structure through layout input and projected layout", async () => {
-    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Table" }, () => (
       <>
-        <table style={{ x: 1, y: 1, width: 6, height: 2, tableLayout: "fixed" }}>
+        <table
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 6,
+            height: 2,
+            tableLayout: "fixed",
+          }}
+        >
           <thead>
             <tr style={{ height: 0.4 }}>
               <th style={{ width: 3 }}>Metric</th>
@@ -111,7 +128,14 @@ describe("layout input snapshot", () => {
 
     expect(tableInput).toMatchObject({
       kind: "table",
-      props: { x: 1, y: 1, width: 6, height: 2, tableLayout: "fixed" },
+      props: {
+        position: "absolute",
+        left: 1,
+        top: 1,
+        width: 6,
+        height: 2,
+        tableLayout: "fixed",
+      },
       sections: [
         {
           kind: "tableSection",
@@ -153,11 +177,20 @@ describe("layout input snapshot", () => {
   });
 
   test("projected table layout skips columns occupied by row spans", async () => {
-    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Row span" }, () => (
       <>
-        <table style={{ x: 1, y: 1, width: 6, height: 2, tableLayout: "fixed" }}>
+        <table
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 6,
+            height: 2,
+            tableLayout: "fixed",
+          }}
+        >
           <tbody>
             <tr>
               <td rowspan={2}>Region</td>

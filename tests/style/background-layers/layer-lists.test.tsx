@@ -9,8 +9,9 @@ describe("background layer lists", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 2,
             borderWidth: 0.25,
@@ -87,8 +88,9 @@ describe("background layer lists", () => {
         <>
           <div
             style={{
-              x: 1,
-              y: 1,
+              position: "absolute",
+              left: 1,
+              top: 1,
               width: 2,
               height: 1,
               background:
@@ -97,8 +99,9 @@ describe("background layer lists", () => {
           />
           <p
             style={{
-              x: 1,
-              y: 2.5,
+              position: "absolute",
+              left: 1,
+              top: 2.5,
               width: 3,
               height: 0.75,
               fontSize: 18,
@@ -111,8 +114,9 @@ describe("background layer lists", () => {
           <shape
             shape="rect"
             style={{
-              x: 5,
-              y: 1,
+              position: "absolute",
+              left: 5,
+              top: 1,
               width: 2,
               height: 1.5,
               background: "linear-gradient(30deg, #EF4444 0%, #F59E0B 100%), #222222",

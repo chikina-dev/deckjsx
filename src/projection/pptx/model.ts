@@ -1,12 +1,12 @@
-import type { DeckOptions } from "../../authoring/index";
+import type { DeckOptions } from "@/src/authoring/options";
 import type {
   AssetProbeResult,
   AssetResolutionHashSource,
   AssetResolutionProvenanceKind,
   AssetSource,
-} from "../../assets";
-import type { Diagnostics } from "../../diagnostics";
-import type { ComponentProvenance } from "../../authoring-metadata";
+} from "@/src/assets";
+import type { Diagnostics } from "@/src/diagnostics";
+import type { ComponentProvenance } from "@/src/authoring-metadata";
 import type {
   AssetEntity,
   Brand,
@@ -14,7 +14,7 @@ import type {
   SemanticNode,
   SourceOrigin,
   StyleEntityId,
-} from "../../graph";
+} from "@/src/graph";
 import type {
   BackgroundImageLayerIR,
   EdgeStrokeIR,
@@ -34,10 +34,11 @@ import type {
   TextRunIR,
   TextStyleIR,
   ProjectedLayoutTableSection,
-} from "../../layout/projected";
-import type { ProjectionFormat } from "../../pipeline";
-import type { CssVisibility, StyleDeclarationValue } from "../../style/types";
-import type { TemplateAreaKind } from "../../templates";
+} from "@/src/layout/projected";
+import type { ProjectionFormat } from "@/src/pipeline/contract";
+import type { StyleDeclarationValue } from "@/src/style/declaration";
+import type { CssVisibility } from "@/src/style/types";
+import type { TemplateAreaKind } from "@/src/templates";
 
 export type PackagePartId = Brand<string, "PackagePartId">;
 export type PptxElementId = Brand<string, "PptxElementId">;
@@ -207,7 +208,7 @@ export type PptxVideoElement = PptxBaseElement & {
 
 export type PptxShapeElement = PptxBaseElement & {
   readonly kind: "shape";
-  readonly shape: "rect" | "ellipse" | "line";
+  readonly shape: "rect" | "ellipse" | "line" | "roundRect";
   readonly fill?: FillIR;
   readonly backgroundLayers?: readonly PptxBackgroundLayer[];
   readonly stroke?: StrokeIR;
@@ -639,6 +640,7 @@ export type PptxSlideLayoutPartPayload = {
     readonly sourceKey: string;
     readonly name: string;
   };
+  readonly templateFlowStyle?: Readonly<Record<string, unknown>>;
   readonly layoutAnchors?: readonly PptxSlideLayoutAnchor[];
 };
 
@@ -646,7 +648,7 @@ export type PptxSlideLayoutAnchor = {
   readonly template: string;
   readonly area: string;
   readonly kind: TemplateAreaKind;
-  readonly frame: FrameIR;
+  readonly frame?: FrameIR;
   readonly placeholderStrategy: "none";
 };
 

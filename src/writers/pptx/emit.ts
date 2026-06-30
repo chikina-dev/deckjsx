@@ -2,13 +2,13 @@ import type {
   PptxPackageModel,
   PptxPackagePartCandidate,
   PptxSlidePart,
-} from "../../projection/pptx/model";
+} from "@/src/projection/pptx/model";
 import {
   isPptxContentTypesPart,
   isPptxRelationshipsPart,
   isPptxSlidePart,
   isPptxSupportPart,
-} from "../../projection/pptx/model";
+} from "@/src/projection/pptx/model";
 import {
   contentTypesBytes,
   contentTypesXml,

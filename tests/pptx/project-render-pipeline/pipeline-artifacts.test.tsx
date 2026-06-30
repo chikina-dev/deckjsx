@@ -27,7 +27,7 @@ describe("project/render pipeline artifacts", () => {
   test("pipeline artifact invalidation clears stale package part build artifacts", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Build artifact lifecycle" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>lifecycle</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>lifecycle</p>
     ));
     const graph = deck.compile().graph!;
     const projection = (await deck.project()).projection!;
@@ -91,7 +91,7 @@ describe("project/render pipeline artifacts", () => {
     const artifacts = new H.PipelineArtifactCollection();
 
     deck.slide({ name: "Snapshot" }, () => (
-      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{title}</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>{title}</p>
     ));
 
     const first = await H.projectSource({
@@ -154,10 +154,12 @@ describe("project/render pipeline artifacts", () => {
       const artifacts = new H.PipelineArtifactCollection();
 
       deck.slide({ name: "Edited" }, () => (
-        <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{firstSlideText}</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>
+          {firstSlideText}
+        </p>
       ));
       deck.slide({ name: "Stable" }, () => (
-        <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>unchanged</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>unchanged</p>
       ));
 
       const project = await H.projectSource({
@@ -214,10 +216,10 @@ describe("project/render pipeline artifacts", () => {
     const artifacts = new H.PipelineArtifactCollection();
 
     deck.slide({ name: "Edited" }, () => (
-      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{editedText}</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>{editedText}</p>
     ));
     deck.slide({ name: "Stable" }, () => (
-      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>unchanged</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>unchanged</p>
     ));
 
     const first = await H.projectSource({
@@ -273,7 +275,7 @@ describe("project/render pipeline artifacts", () => {
     const artifacts = new H.PipelineArtifactCollection();
 
     deck.slide({ name: "Initial incremental" }, () => (
-      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>initial</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>initial</p>
     ));
 
     const project = await H.projectSource({
@@ -302,10 +304,10 @@ describe("project/render pipeline artifacts", () => {
     const artifacts = new H.PipelineArtifactCollection();
 
     deck.slide({ name: "Edited" }, () => (
-      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{editedText}</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>{editedText}</p>
     ));
     deck.slide({ name: "Stable" }, () => (
-      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>unchanged</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>unchanged</p>
     ));
 
     const first = await H.projectSource({
@@ -366,7 +368,9 @@ describe("project/render pipeline artifacts", () => {
     const artifacts = new H.PipelineArtifactCollection();
 
     deck.slide({ name: "Layout sensitive" }, () => (
-      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>unchanged graph</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>
+        unchanged graph
+      </p>
     ));
 
     const first = await H.projectSource({
@@ -401,10 +405,13 @@ describe("project/render pipeline artifacts", () => {
     const artifacts = new H.PipelineArtifactCollection();
 
     deck.slide({ name: "Edited" }, () => (
-      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{editedText}</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>{editedText}</p>
     ));
     deck.slide({ name: "Stable media" }, () => (
-      <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        data={H.SAMPLE_SVG_DATA_URI}
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     const first = await H.projectSource({
@@ -444,12 +451,18 @@ describe("project/render pipeline artifacts", () => {
 
     deck.slide({ name: "Edited media" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{editedText}</p>
-        <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 2, width: 1, height: 1 }} />
+        <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>{editedText}</p>
+        <img
+          data={H.SAMPLE_SVG_DATA_URI}
+          style={{ position: "absolute", left: 1, top: 2, width: 1, height: 1 }}
+        />
       </>
     ));
     deck.slide({ name: "Stable media" }, () => (
-      <img data={stableImage} style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        data={stableImage}
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
 
     const first = await H.projectSource({
@@ -496,10 +509,10 @@ describe("project/render pipeline artifacts", () => {
     const artifacts = new H.PipelineArtifactCollection();
 
     deck.slide({ name: "Edited" }, () => (
-      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{editedText}</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>{editedText}</p>
     ));
     deck.slide({ name: "Stable" }, () => (
-      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>unchanged</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>unchanged</p>
     ));
 
     const firstProject = await H.projectSource({
@@ -607,7 +620,9 @@ describe("project/render pipeline artifacts", () => {
     parent.slide({ name: "Root" }, () => <></>);
     child.slide({ name: "Child" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Mounted source</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
+          Mounted source
+        </p>
       </>
     ));
     parent.mount("child", child);
@@ -637,13 +652,77 @@ describe("project/render pipeline artifacts", () => {
     expect(artifacts.projection?.partsBySourceKey.get("child")?.length).toBeGreaterThan(0);
   });
 
+  test("root Deck projection does not reuse stale artifacts after a mounted child Deck changes", async () => {
+    const parent = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const child = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    child.slide(() => (
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>before</p>
+    ));
+    parent.mount("child", child);
+
+    const before = await parent.project();
+    expect(before.projection?.slides).toHaveLength(1);
+    expect(before.projection?.slides[0]?.payload.drawing.children[0]).toMatchObject({
+      kind: "text",
+      content: { text: "before" },
+    });
+
+    child.slide(() => (
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>after</p>
+    ));
+
+    const after = await parent.project();
+    expect(after.projection?.slides).toHaveLength(2);
+    expect(
+      after.projection?.slides.map((slide) =>
+        slide.payload.drawing.children[0]?.kind === "text"
+          ? slide.payload.drawing.children[0].content.text
+          : "",
+      ),
+    ).toEqual(["before", "after"]);
+  });
+
+  test("root Deck projection does not reuse stale artifacts after a mounted BoundSource Deck changes", async () => {
+    const parent = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const child = new H.Deck<{ label: string }>({
+      layout: { width: 10, height: 5.625, unit: "in" },
+    });
+
+    child.slide(({ context }) => (
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
+        {context.label}:before
+      </p>
+    ));
+    parent.mount("child", child.withSource({ label: "bound" }));
+
+    const before = await parent.project();
+    expect(before.projection?.slides).toHaveLength(1);
+
+    child.slide(({ context }) => (
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
+        {context.label}:after
+      </p>
+    ));
+
+    const after = await parent.project();
+    expect(after.projection?.slides).toHaveLength(2);
+    expect(
+      after.projection?.slides.map((slide) =>
+        slide.payload.drawing.children[0]?.kind === "text"
+          ? slide.payload.drawing.children[0].content.text
+          : "",
+      ),
+    ).toEqual(["bound:before", "bound:after"]);
+  });
+
   test("projection artifacts expose package dependency snapshots", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     const artifacts = new H.PipelineArtifactCollection();
     deck.slide({ name: "Package dependencies" }, () => (
       <img
         data={H.dataUriFromBytes("image/png", H.pngHeaderBytes(2, 1))}
-        style={{ x: 1, y: 1, width: 2, height: 1, objectFit: "stretch" }}
+        style={{ position: "absolute", left: 1, top: 1, width: 2, height: 1, objectFit: "fill" }}
       />
     ));
 

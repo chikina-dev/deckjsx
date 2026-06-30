@@ -5,7 +5,7 @@ describe("project/render validation drawing core payloads", () => {
   test("direct writer validates drawing origin metadata shape", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Invalid drawing origin" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>origin</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>origin</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -81,8 +81,11 @@ describe("project/render validation drawing core payloads", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Invalid drawing payload" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>payload</p>
-        <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1, width: 2, height: 1 }} />
+        <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>payload</p>
+        <img
+          data={H.SAMPLE_SVG_DATA_URI}
+          style={{ position: "absolute", left: 1, top: 1, width: 2, height: 1 }}
+        />
       </>
     ));
 
@@ -190,7 +193,7 @@ describe("project/render validation drawing core payloads", () => {
   test("direct writer diagnoses malformed table sections without throwing", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Malformed table" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>table</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>table</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -242,15 +245,19 @@ describe("project/render validation drawing core payloads", () => {
       <>
         <div
           style={{
-            x: 0,
-            y: 0,
+            position: "absolute",
+            left: 0,
+            top: 0,
             width: 2,
             height: 1,
             background: `url("${H.SAMPLE_SVG_DATA_URI}")`,
             backgroundRepeat: "no-repeat",
           }}
         />
-        <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 3, y: 0, width: 1, height: 1 }} />
+        <img
+          data={H.SAMPLE_SVG_DATA_URI}
+          style={{ position: "absolute", left: 3, top: 0, width: 1, height: 1 }}
+        />
       </>
     ));
 
@@ -315,8 +322,8 @@ describe("project/render validation drawing core payloads", () => {
   test("direct writer validates malformed group drawing children before recursion", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Invalid group payload" }, () => (
-      <div style={{ x: 1, y: 1, width: 2, height: 1 }}>
-        <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>group child</p>
+      <div style={{ position: "absolute", left: 1, top: 1, width: 2, height: 1 }}>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>group child</p>
       </div>
     ));
 
@@ -360,7 +367,10 @@ describe("project/render validation drawing core payloads", () => {
   test("direct writer validates projected image crop ratios before source-rect emission", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Invalid crop payload" }, () => (
-      <img data={H.SAMPLE_SVG_DATA_URI} style={{ x: 1, y: 1, width: 2, height: 1 }} />
+      <img
+        data={H.SAMPLE_SVG_DATA_URI}
+        style={{ position: "absolute", left: 1, top: 1, width: 2, height: 1 }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;
@@ -412,7 +422,9 @@ describe("project/render validation drawing core payloads", () => {
   test("direct writer validates malformed drawing fill before part emission", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Emitter failure" }, () => (
-      <p style={{ x: 1, y: 1, width: 2, height: 0.5 }}>emitter failure</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 2, height: 0.5 }}>
+        emitter failure
+      </p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -468,8 +480,9 @@ describe("project/render validation drawing core payloads", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 3,
             height: 2,
             background:

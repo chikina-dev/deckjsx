@@ -6,8 +6,18 @@ describe("project/render clipped fallbacks", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Nested unsupported semantics" }, () => (
       <>
-        <div style={{ x: 1, y: 1, width: 4, height: 2, zIndex: 7 }}>
-          <p style={{ x: 0.25, y: 0.25, width: 2, height: 0.5, zIndex: 2, filter: "blur(3px)" }}>
+        <div style={{ position: "absolute", left: 1, top: 1, width: 4, height: 2, zIndex: 7 }}>
+          <p
+            style={{
+              position: "absolute",
+              left: 0.25,
+              top: 0.25,
+              width: 2,
+              height: 0.5,
+              zIndex: 2,
+              filter: "blur(3px)",
+            }}
+          >
             Child fallback
           </p>
         </div>
@@ -45,8 +55,19 @@ describe("project/render clipped fallbacks", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Clipped transform" }, () => (
       <>
-        <div style={{ x: 1, y: 1, width: 2, height: 1, overflow: "hidden" }}>
-          <p style={{ x: 1.6, y: 0.2, width: 1, height: 0.4, transform: "rotate(15deg)" }}>
+        <div
+          style={{ position: "absolute", left: 1, top: 1, width: 2, height: 1, overflow: "hidden" }}
+        >
+          <p
+            style={{
+              position: "absolute",
+              left: 1.6,
+              top: 0.2,
+              width: 1,
+              height: 0.4,
+              transform: "rotate(15deg)",
+            }}
+          >
             Clipped transform
           </p>
         </div>
@@ -112,17 +133,20 @@ describe("project/render clipped fallbacks", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Clipped image transform" }, () => (
       <>
-        <div style={{ x: 1, y: 1, width: 2, height: 1, overflow: "hidden" }}>
+        <div
+          style={{ position: "absolute", left: 1, top: 1, width: 2, height: 1, overflow: "hidden" }}
+        >
           <img
             data={image}
             style={{
-              x: 0.5,
-              y: 0,
+              position: "absolute",
+              left: 0.5,
+              top: 0,
               width: 2,
               height: 1,
               objectFit: "cover",
               crop: { left: "10%", right: "5%" },
-              rotation: 12,
+              transform: "rotate(12deg)",
             }}
           />
         </div>
@@ -188,7 +212,17 @@ describe("project/render clipped fallbacks", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Filtered unsupported paint" }, () => (
       <>
-        <p style={{ display: "none", transform: "warp(12deg)", x: 1, y: 1, width: 2, height: 1 }}>
+        <p
+          style={{
+            position: "absolute",
+            display: "none",
+            filter: "blur(3px)",
+            left: 1,
+            top: 1,
+            width: 2,
+            height: 1,
+          }}
+        >
           Hidden transform
         </p>
       </>
@@ -215,8 +249,8 @@ describe("project/render clipped fallbacks", () => {
         notes: expect.arrayContaining([
           `graphNodeId=${hiddenId}`,
           "nodeKind=text",
-          "feature=transform",
-          "property=transform",
+          "feature=filter",
+          "property=filter",
         ]),
       }),
     );

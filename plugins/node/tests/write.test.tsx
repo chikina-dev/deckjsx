@@ -13,21 +13,17 @@ import path from "node:path";
 import { unzipSync, zipSync } from "fflate";
 import { pptx, type WriterAdapter } from "deckjsx/adapter";
 import { describe, expect, test, vi } from "vite-plus/test";
-import { Deck } from "deckjsx";
+import { Deck, StyleSheet, type TextStyle } from "deckjsx";
 import {
   createIncrementalArtifactSession,
   integrationContextId,
   runIncrementalArtifactCycle,
   type AssetLoader,
+  type DeckPlugin,
 } from "deckjsx/integration";
 import type { PptxPackageModel } from "deckjsx/inspect";
-import {
-  createNodeFileAssetLoader,
-  inspectPatchablePptx,
-  nodeAssets,
-  write,
-} from "../src/index.ts";
-import { withDeckjsxDevAssetObserver } from "../src/dev-asset-observer.ts";
+import { createNodeFileAssetLoader, inspectPatchablePptx, nodeAssets, write } from "@/src/index.ts";
+import { withDeckjsxDevAssetObserver } from "@/src/dev-asset-observer.ts";
 
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
@@ -79,14 +75,68 @@ async function fileExists(filePath: string): Promise<boolean> {
 
 async function renderDeck(text: string) {
   const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-  deck.slide({ name: "Write" }, () => <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>{text}</p>);
+  deck.slide({ name: "Write" }, () => (
+    <main
+      style={{
+        width: 9,
+        height: 4.5,
+        display: "flex",
+        flexDirection: "column",
+        gap: 0.15,
+        padding: 0.5,
+      }}
+    >
+      <p style={{ width: 3, height: 0.5 }}>{text}</p>
+    </main>
+  ));
   return deck.render({ inspection: "none" });
 }
 
-async function renderHyperlinkDeck(url: string) {
+async function renderComposedStyledDeck(childColor: "#0000FF" | "#00AA00") {
+  const parent = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+  const child = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+  parent.useStyles(
+    new StyleSheet({
+      classes: { note: { target: "p.note", style: { color: "#FF0000" } } },
+    }),
+  );
+  child.useStyles(
+    new StyleSheet({
+      classes: { note: { target: "p.note", style: { color: childColor } } },
+    }),
+  );
+
+  parent.slide({ name: "Parent" }, () => (
+    <p className="note" style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.6 }}>
+      Parent note
+    </p>
+  ));
+  child.slide({ name: "Child" }, () => (
+    <p className="note" style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.6 }}>
+      Child note
+    </p>
+  ));
+  parent.mount("child", child);
+
+  return parent.render(pptx({ inspection: "none" }));
+}
+
+async function renderHyperlinkDeck(url: NonNullable<TextStyle["href"]>) {
   const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
   deck.slide({ name: "Hyperlink" }, () => (
-    <p style={{ x: 1, y: 1, width: 3, height: 0.5, href: url }}>Link</p>
+    <main
+      style={{
+        width: 9,
+        height: 4.5,
+        display: "flex",
+        flexDirection: "column",
+        gap: 0.15,
+        padding: 0.5,
+      }}
+    >
+      <p style={{ width: 3, height: 0.5, href: url }}>Link</p>
+    </main>
   ));
   return deck.render({ inspection: "none" });
 }
@@ -105,7 +155,18 @@ async function renderWithoutArtifact() {
   } satisfies WriterAdapter<PptxPackageModel, "pptx">;
 
   deck.slide({ name: "Missing artifact" }, () => (
-    <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>missing</p>
+    <main
+      style={{
+        width: 9,
+        height: 4.5,
+        display: "flex",
+        flexDirection: "column",
+        gap: 0.15,
+        padding: 0.5,
+      }}
+    >
+      <p style={{ width: 3, height: 0.5 }}>missing</p>
+    </main>
   ));
   return deck.render(adapter);
 }
@@ -132,7 +193,18 @@ async function renderUnsupportedArtifact() {
   } satisfies WriterAdapter<PptxPackageModel, "pdf">;
 
   deck.slide({ name: "Unsupported artifact" }, () => (
-    <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>unsupported</p>
+    <main
+      style={{
+        width: 9,
+        height: 4.5,
+        display: "flex",
+        flexDirection: "column",
+        gap: 0.15,
+        padding: 0.5,
+      }}
+    >
+      <p style={{ width: 3, height: 0.5 }}>unsupported</p>
+    </main>
   ));
   return deck.render(adapter);
 }
@@ -167,7 +239,18 @@ async function renderErroredArtifact() {
   } satisfies WriterAdapter<PptxPackageModel, "pptx">;
 
   deck.slide({ name: "Errored artifact" }, () => (
-    <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>errored</p>
+    <main
+      style={{
+        width: 9,
+        height: 4.5,
+        display: "flex",
+        flexDirection: "column",
+        gap: 0.15,
+        padding: 0.5,
+      }}
+    >
+      <p style={{ width: 3, height: 0.5 }}>errored</p>
+    </main>
   ));
   return deck.render(adapter);
 }
@@ -260,9 +343,13 @@ async function renderMediaDeck(bytes: Uint8Array) {
     },
   } satisfies AssetLoader;
   deck.slide({ name: "Media" }, () => (
-    <img src="./media.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+    <main
+      style={{ width: 9, height: 4.5, display: "grid", gridTemplateColumns: "1fr", padding: 0.5 }}
+    >
+      <img src="./media.png" style={{ width: 1, height: 1 }} />
+    </main>
   ));
-  deck.plugin({
+  const plugin = {
     kind: "deckjsx.plugin",
     id: "test:node-media-extension",
     name: "test:node-media-extension",
@@ -271,7 +358,8 @@ async function renderMediaDeck(bytes: Uint8Array) {
       assetLoaders: [loader],
       mediaSourceOrigin: { importer: "/project/src/deck.tsx" },
     },
-  });
+  } satisfies DeckPlugin;
+  deck.plugin(plugin);
   return deck.render(pptx({ inspection: "none" }));
 }
 
@@ -283,7 +371,11 @@ test("nodeAssets resolves local media through the deck lifecycle", async () => {
   const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
   deck.plugin(nodeAssets({ root }));
   deck.slide({ name: "Node assets" }, () => (
-    <img src="media.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+    <main
+      style={{ width: 9, height: 4.5, display: "grid", gridTemplateColumns: "1fr", padding: 0.5 }}
+    >
+      <img src="media.png" style={{ width: 1, height: 1 }} />
+    </main>
   ));
 
   const result = await deck.render(pptx({ inspection: "none" }));
@@ -356,14 +448,21 @@ async function renderDeckWithOptionalMedia(includeMedia: boolean) {
   } satisfies AssetLoader;
 
   deck.slide({ name: "Optional media" }, () => (
-    <>
-      <p style={{ x: 1, y: 1, width: 3, height: 0.5 }}>optional media</p>
-      {includeMedia ? (
-        <img src="./optional.png" style={{ x: 1, y: 2, width: 1, height: 1 }} />
-      ) : undefined}
-    </>
+    <main
+      style={{
+        width: 9,
+        height: 4.5,
+        display: "flex",
+        flexDirection: "column",
+        gap: 0.2,
+        padding: 0.5,
+      }}
+    >
+      <p style={{ width: 3, height: 0.5 }}>optional media</p>
+      {includeMedia ? <img src="./optional.png" style={{ width: 1, height: 1 }} /> : undefined}
+    </main>
   ));
-  deck.plugin({
+  const plugin = {
     kind: "deckjsx.plugin",
     id: "test:node-optional-media-extension",
     name: "test:node-optional-media-extension",
@@ -372,7 +471,8 @@ async function renderDeckWithOptionalMedia(includeMedia: boolean) {
       assetLoaders: [loader],
       mediaSourceOrigin: { importer: "/project/src/deck.tsx" },
     },
-  });
+  } satisfies DeckPlugin;
+  deck.plugin(plugin);
   return deck.render(pptx({ inspection: "none" }));
 }
 
@@ -535,6 +635,7 @@ describe("@deckjsx/node write", () => {
 
     expect(result).toEqual(
       expect.objectContaining({
+        ok: true,
         path: outputPath,
         status: "created",
         strategy: "write-file",
@@ -544,6 +645,52 @@ describe("@deckjsx/node write", () => {
     expect(slideXml).toContain("created");
     expect(await fileExists(lockPathFor(outputPath))).toBe(false);
     expect(await fileExists(blockedOutputScopedLockPath)).toBe(true);
+  });
+
+  test("writes composed multi-Deck output with source-local styles", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-write-"));
+    const outputPath = path.join(directory, "composed-styles.pptx");
+
+    const result = await write(await renderComposedStyledDeck("#0000FF"), outputPath);
+    const zip = unzipSync(await readFile(outputPath));
+    const parentSlideXml = textDecoder.decode(zip["ppt/slides/slide1.xml"]);
+    const childSlideXml = textDecoder.decode(zip["ppt/slides/slide2.xml"]);
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: true,
+        path: outputPath,
+        status: "created",
+      }),
+    );
+    expect(parentSlideXml).toContain("Parent note");
+    expect(parentSlideXml).toContain('<a:srgbClr val="FF0000"/>');
+    expect(childSlideXml).toContain("Child note");
+    expect(childSlideXml).toContain('<a:srgbClr val="0000FF"/>');
+    expect(childSlideXml).not.toContain('<a:srgbClr val="FF0000"/>');
+  });
+
+  test("writes mounted child Deck media resolved by nodeAssets", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-write-"));
+    const outputPath = path.join(directory, "mounted-child-media.pptx");
+    const mediaBytes = pngHeaderBytes(3, 2, 0x44);
+    await writeFile(path.join(directory, "child.png"), mediaBytes);
+
+    const parent = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const child = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    parent.plugin(nodeAssets({ root: directory }));
+    child.slide({ name: "Child media" }, () => (
+      <img src="child.png" style={{ position: "absolute", left: 1, top: 1, width: 2, height: 1 }} />
+    ));
+    parent.mount("child", child);
+
+    const result = await write(await parent.render(pptx({ inspection: "none" })), outputPath);
+    const zip = unzipSync(await readFile(outputPath));
+    const slideXml = textDecoder.decode(zip["ppt/slides/slide1.xml"]);
+
+    expect(result).toEqual(expect.objectContaining({ ok: true, status: "created" }));
+    expect(slideXml).toContain('r:embed="rId2"');
+    expect(Array.from(zip["ppt/media/media1.png"] ?? [])).toEqual(Array.from(mediaBytes));
   });
 
   test("records successful incremental artifact writes through the render token", async () => {
@@ -574,6 +721,38 @@ describe("@deckjsx/node write", () => {
     ]);
   });
 
+  test("incremental writes update composed child Deck style output", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-write-"));
+    const outputPath = path.join(directory, "session-composed-styles.pptx");
+    const session = createIncrementalArtifactSession();
+    let first: Awaited<ReturnType<typeof write>> | undefined;
+    let second: Awaited<ReturnType<typeof write>> | undefined;
+
+    await runIncrementalArtifactCycle(session, {}, async () => {
+      first = await write(await renderComposedStyledDeck("#0000FF"), outputPath);
+    });
+    await runIncrementalArtifactCycle(
+      session,
+      { sourceInvalidation: { changedSourceIds: ["/project/src/deck.tsx"] } },
+      async () => {
+        second = await write(await renderComposedStyledDeck("#00AA00"), outputPath);
+      },
+    );
+
+    const zip = unzipSync(await readFile(outputPath));
+    const childSlideXml = textDecoder.decode(zip["ppt/slides/slide2.xml"]);
+
+    expect(first).toEqual(expect.objectContaining({ ok: true, status: "created" }));
+    expect(second).toEqual(expect.objectContaining({ ok: true }));
+    expect(session.snapshot().writes.map((writeRecord) => writeRecord.path)).toEqual([
+      outputPath,
+      outputPath,
+    ]);
+    expect(childSlideXml).toContain("Child note");
+    expect(childSlideXml).toContain('<a:srgbClr val="00AA00"/>');
+    expect(childSlideXml).not.toContain('<a:srgbClr val="0000FF"/>');
+  });
+
   test("returns result-first diagnostics without touching the target when render has no artifact", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-write-"));
     const outputPath = path.join(directory, "missing-artifact.pptx");
@@ -585,6 +764,7 @@ describe("@deckjsx/node write", () => {
 
     expect(result).toEqual(
       expect.objectContaining({
+        ok: false,
         path: outputPath,
         status: "failed",
         strategy: "write-file",

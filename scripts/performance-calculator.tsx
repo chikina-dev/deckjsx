@@ -2,17 +2,17 @@ import { pathToFileURL } from "node:url";
 import {
   createIncrementalArtifactSession,
   runIncrementalArtifactCycle,
-} from "../src/incremental-artifact-session.ts";
-import { Deck } from "../src/index.ts";
-import { PipelineArtifactCollection } from "../src/pipeline-artifacts.ts";
-import { compileSource, projectSource, renderSource } from "../src/pipeline-runner.ts";
+} from "@/src/incremental-artifact-session.ts";
+import { Deck } from "@/src/index.ts";
+import { PipelineArtifactCollection } from "@/src/pipeline/artifacts.ts";
+import { compileSource, projectSource, renderSource } from "@/src/pipeline/runner.ts";
 
-export type MetricRun = {
+type MetricRun = {
   readonly name: string;
   readonly valueMs: number;
 };
 
-export type MetricSummary = {
+type MetricSummary = {
   readonly name: string;
   readonly samples: readonly number[];
   readonly averageMs: number;
@@ -22,12 +22,6 @@ export type MetricSummary = {
 };
 
 type FixtureName = "minimal" | "text-heavy";
-
-type Options = {
-  readonly fixture: FixtureName | "all";
-  readonly iterations: number;
-  readonly json: boolean;
-};
 
 type Fixture = {
   readonly name: FixtureName;
@@ -44,7 +38,9 @@ const fixtures: readonly Fixture[] = [
     createDeck(options) {
       const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
       deck.slide({ name: "Minimal" }, () => (
-        <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>{options?.editedText?.() ?? "hello"}</p>
+        <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
+          {options?.editedText?.() ?? "hello"}
+        </p>
       ));
       return deck;
     },
@@ -59,12 +55,13 @@ const fixtures: readonly Fixture[] = [
             {Array.from({ length: 24 }, (_, index) => (
               <p
                 style={{
+                  position: "absolute",
                   color: index % 2 === 0 ? "#111827" : "#2563EB",
                   fontSize: 11 + (index % 4),
                   height: 0.35,
                   width: 2.6,
-                  x: 0.5 + (index % 3) * 3,
-                  y: 0.35 + Math.floor(index / 3) * 0.55,
+                  left: 0.5 + (index % 3) * 3,
+                  top: 0.35 + Math.floor(index / 3) * 0.55,
                 }}
               >
                 {slide === 0 && index === 0
@@ -80,6 +77,8 @@ const fixtures: readonly Fixture[] = [
   },
 ];
 
+const ITERATIONS = 3;
+
 function average(values: readonly number[]): number {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
@@ -90,7 +89,7 @@ function percentile(values: readonly number[], percentileValue: number): number 
   return sorted[index] ?? 0;
 }
 
-export function metricSummary(name: string, samples: readonly number[]): MetricSummary {
+function metricSummary(name: string, samples: readonly number[]): MetricSummary {
   if (samples.length === 0) {
     throw new Error(`Metric ${name} has no samples.`);
   }
@@ -105,7 +104,7 @@ export function metricSummary(name: string, samples: readonly number[]): MetricS
   };
 }
 
-export function summarizeMetricRuns(runs: readonly MetricRun[]): readonly MetricSummary[] {
+function summarizeMetricRuns(runs: readonly MetricRun[]): readonly MetricSummary[] {
   const byName = new Map<string, number[]>();
   for (const run of runs) {
     const samples = byName.get(run.name) ?? [];
@@ -231,54 +230,14 @@ async function collectFixtureRuns(
   return runs;
 }
 
-function parseOptions(args: readonly string[]): Options {
-  let fixture: Options["fixture"] = "all";
-  let iterations = 3;
-  let json = false;
-
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    const next = args[index + 1];
-
-    if (arg === "--fixture" && next) {
-      if (!["all", ...fixtures.map((item) => item.name)].includes(next)) {
-        throw new Error(`Unknown fixture: ${next}`);
-      }
-      fixture = next as Options["fixture"];
-      index += 1;
-      continue;
-    }
-    if (arg === "--iterations" && next) {
-      iterations = Number.parseInt(next, 10);
-      index += 1;
-      continue;
-    }
-    if (arg === "--json") {
-      json = true;
-      continue;
-    }
-    throw new Error(`Unknown argument: ${arg}`);
-  }
-
-  if (!Number.isInteger(iterations) || iterations <= 0) {
-    throw new Error("--iterations must be a positive integer.");
-  }
-
-  return { fixture, iterations, json };
-}
-
-async function run(options: Options) {
-  const selected =
-    options.fixture === "all"
-      ? fixtures
-      : fixtures.filter((fixture) => fixture.name === options.fixture);
+async function run() {
   const results = [];
 
-  for (const fixture of selected) {
-    const runs = await collectFixtureRuns(fixture, options.iterations);
+  for (const fixture of fixtures) {
+    const runs = await collectFixtureRuns(fixture, ITERATIONS);
     results.push({
       fixture: fixture.name,
-      iterations: options.iterations,
+      iterations: ITERATIONS,
       metrics: summarizeMetricRuns(runs),
     });
   }
@@ -304,12 +263,10 @@ function printText(result: Awaited<ReturnType<typeof run>>): void {
 }
 
 async function main(): Promise<void> {
-  const options = parseOptions(process.argv.slice(2));
-  const result = await run(options);
-  if (options.json) {
-    console.log(JSON.stringify(result, null, 2));
-    return;
+  if (process.argv.length > 2) {
+    throw new Error("performance-calculator does not accept CLI options.");
   }
+  const result = await run();
   printText(result);
 }
 

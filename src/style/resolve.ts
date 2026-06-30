@@ -1,4 +1,4 @@
-import { createDiagnostics, type Diagnostic, type Diagnostics } from "../diagnostics";
+import { createDiagnostics, diagnostic, type Diagnostic, type Diagnostics } from "../diagnostics";
 import type { ComposedAuthorRoot } from "../composition/types";
 import type {
   GraphNodeId,
@@ -15,9 +15,9 @@ import {
   type StyleClassRegistry,
 } from "./style-class-registry";
 import type { SelectorContext } from "./selectors";
-import type { StyleSheet } from "./stylesheet";
-import { themeDiagnostics, themeInput, type Theme } from "./theme";
-import type { StyleDeclaration, StyleDeclarationValue } from "./types";
+import type { StyleSheetValue } from "./stylesheet/public";
+import { isTheme, themeDiagnostics, themeInput } from "./theme/runtime";
+import type { StyleDeclaration, StyleDeclarationValue } from "./declaration";
 
 export type ResolvedStyleDeclaration = StyleDeclaration;
 export type ResolvedStyleValue = StyleDeclarationValue;
@@ -38,12 +38,12 @@ export type ResolvedStyleSource =
   | { readonly layer: "style" };
 
 export type ResolvedStyleProperty = {
-  readonly value: ResolvedStyleValue | undefined;
+  readonly value: ResolvedStyleValue;
   readonly source: ResolvedStyleSource;
 };
 
 export type ResolvedStylePropertyTraceCandidate = {
-  readonly value: ResolvedStyleValue | undefined;
+  readonly value: ResolvedStyleValue;
   readonly source: ResolvedStyleSource;
   readonly applied: boolean;
 };
@@ -73,8 +73,8 @@ function sourceKeyFor(source: SourceOrigin | undefined): string {
 
 function classesBySource(
   roots: readonly ComposedAuthorRoot[],
-): ReadonlyMap<string, readonly StyleSheet[]> {
-  const stylesheets = new Map<string, readonly StyleSheet[]>();
+): ReadonlyMap<string, readonly StyleSheetValue[]> {
+  const stylesheets = new Map<string, readonly StyleSheetValue[]>();
 
   roots.forEach((root) => {
     const key = sourceKeyFor(root.source);
@@ -86,15 +86,15 @@ function classesBySource(
   return stylesheets;
 }
 
-function themesBySource(roots: readonly ComposedAuthorRoot[]): ReadonlyMap<string, Theme> {
-  const themes = new Map<string, Theme>();
+function themesBySource(roots: readonly ComposedAuthorRoot[]): ReadonlyMap<string, unknown> {
+  const themes = new Map<string, unknown>();
 
   roots.forEach((root) => {
-    if (!root.theme) {
+    if (!Object.hasOwn(root, "theme")) {
       return;
     }
 
-    themes.set(sourceKeyFor(root.source), root.theme);
+    themes.set(sourceKeyFor(root.source), (root as { readonly theme?: unknown }).theme);
   });
 
   return themes;
@@ -106,7 +106,7 @@ function applyProperties(
   properties: Record<string, ResolvedStyleProperty>,
   traceCandidates: Record<string, ResolvedStyleProperty[]>,
 ): void {
-  Object.entries<StyleDeclarationValue | undefined>(style).forEach(([key, value]) => {
+  Object.entries<StyleDeclarationValue>(style).forEach(([key, value]) => {
     const property = { value, source };
     properties[key] = property;
     traceCandidates[key] = [...(traceCandidates[key] ?? []), property];
@@ -114,21 +114,17 @@ function applyProperties(
 }
 
 const INHERITED_STYLE_KEYS = new Set<keyof StyleDeclaration>([
-  "charSpacing",
   "color",
   "direction",
   "fontFamily",
   "fontSize",
   "fontStyle",
   "fontWeight",
-  "italic",
   "letterSpacing",
   "lineHeight",
   "overflowWrap",
-  "strike",
   "textAlign",
   "textTransform",
-  "underline",
   "whiteSpace",
   "wordBreak",
   "writingMode",
@@ -178,7 +174,7 @@ function resolvedStyleFor(
   node: SemanticNode,
   entity: StyleEntity | undefined,
   registry: StyleClassRegistry,
-  theme: Theme | undefined,
+  theme: unknown,
   context: SelectorContext,
   inherited: { parentId?: GraphNodeId; style?: ResolvedStyle },
   diagnostics: Diagnostic[],
@@ -194,8 +190,11 @@ function resolvedStyleFor(
 
   applyInheritedProperties(inherited.parentId, inherited.style, properties, traceCandidates);
 
-  const themeDefaults = node.authoredTag && theme ? themeInput(theme).defaults : undefined;
-  const themeDefault = node.authoredTag ? themeDefaults?.[node.authoredTag] : undefined;
+  const themeDefaults = node.authoredTag && isTheme(theme) ? themeInput(theme).defaults : undefined;
+  const themeDefault =
+    node.authoredTag && isRecord(themeDefaults)
+      ? (themeDefaults[node.authoredTag] as StyleDeclaration | undefined)
+      : undefined;
   if (node.authoredTag && themeDefault) {
     applyProperties(
       themeDefault,
@@ -271,7 +270,29 @@ function isStyleCapableNode(node: SemanticNode): boolean {
   return node.kind !== "document";
 }
 
-function sourceThemeDiagnostics(sourceKey: string, theme: Theme): readonly Diagnostic[] {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function sourceThemeDiagnostics(sourceKey: string, theme: unknown): readonly Diagnostic[] {
+  if (!isTheme(theme)) {
+    return [
+      diagnostic({
+        severity: "error",
+        code: "E_THEME_INVALID",
+        title: "deck theme is not part of the public authoring API",
+        message: "Deck theme must be a Theme object in the public authoring API.",
+        labels: [
+          {
+            path: `source:${sourceKey} > theme`,
+            message: "Deck theme must be a Theme object in the public authoring API.",
+          },
+        ],
+        help: ["Pass theme: new Theme({ defaults: { ... } }) or omit theme."],
+      }),
+    ];
+  }
+
   return themeDiagnostics(theme).map((item) => ({
     ...item,
     labels: item.labels.map((label) => ({

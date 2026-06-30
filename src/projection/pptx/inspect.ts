@@ -1,6 +1,6 @@
-import type { Diagnostics } from "../../diagnostics";
-import type { AssetEntityId, GraphNodeId, SemanticAuthorGraph, SemanticNode } from "../../graph";
-import type { ResolvedStyleDeclaration, ResolvedStyleMap } from "../../style/resolve";
+import type { Diagnostics } from "@/src/diagnostics";
+import type { AssetEntityId, GraphNodeId, SemanticAuthorGraph, SemanticNode } from "@/src/graph";
+import type { ResolvedStyleDeclaration, ResolvedStyleMap } from "@/src/style/resolve";
 import { walkElements } from "./drawing";
 import { isContentTypesPayload, isInspectableThemePayload, isRecord } from "./package-candidates";
 import { packageDependencyEdges, relationshipTargets } from "./package-parts";

@@ -1,6 +1,6 @@
 interface:
   display_name: "deckjsx Slides"
-  short_description: "Create clean-data-flow HTML-like JSX PPTX decks with deckjsx."
-  default_prompt: "Use $deckjsx-slides to create a polished PPTX deck with deckjsx's current HTML-like JSX authoring surface and a clean component-graph/data-graph flow."
+  short_description: "Create idiomatic deckjsx decks with templates, components, Theme, and StyleSheet."
+  default_prompt: "Use $deckjsx-slides to create a polished PPTX deck with deckjsx's HTML-like JSX authoring surface, data/component separation, templates, Theme, StyleSheet classes, and no coordinate-helper layout."
 policy:
   allow_implicit_invocation: true

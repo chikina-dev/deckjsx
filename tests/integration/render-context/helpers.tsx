@@ -1,9 +1,8 @@
-import { pptx, type WriterAdapter, type WriterRenderContext } from "../../../src/adapter.ts";
-import { createDiagnostics } from "../../../src/diagnostics/index.ts";
-import { Deck } from "../../../src/index.ts";
-import type { PptxPackageModel } from "../../../src/inspect.ts";
-import { claimIncrementalArtifactRenderSlot } from "../../../src/incremental-artifact-session.ts";
-import { ROOT_SOURCE_ARTIFACT_KEY } from "../../../src/pipeline-artifacts.ts";
+import { pptx, type WriterAdapter, type WriterRenderContext } from "@/src/adapter/index.ts";
+import { createDiagnostics } from "@/src/diagnostics/index.ts";
+import type { PptxPackageModel } from "@/src/inspect.ts";
+import { claimIncrementalArtifactRenderSlot } from "@/src/incremental-artifact-session.ts";
+import { ROOT_SOURCE_ARTIFACT_KEY } from "@/src/pipeline/artifacts.ts";
 import {
   integrationContextId,
   mediaSourceOrigins,
@@ -18,8 +17,8 @@ import {
   type IncrementalArtifactCycle,
   type IncrementalArtifactSession,
   type IncrementalArtifactWriteRecord,
-} from "../../../src/integration.ts";
-import { unzipSync } from "../../helpers.ts";
+} from "@/src/integration.ts";
+import { Deck, expectPptxProjection, unzipSync } from "@/tests/helpers.ts";
 export const textDecoder = new TextDecoder();
 export const pngBytes = new Uint8Array([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
@@ -57,6 +56,7 @@ export {
   runIncrementalArtifactCycle,
   unzipSync,
   withRenderExecutionContext,
+  expectPptxProjection,
 };
 export type {
   ArtifactWriteToken,

@@ -1276,7 +1276,7 @@ function resolveBackgroundImageSizing(
     };
   }
 
-  if (trimmed === "stretch" || trimmed === "100% 100%") {
+  if (trimmed === "100% 100%") {
     return {
       fit: "stretch",
     };

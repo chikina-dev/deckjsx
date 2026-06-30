@@ -19,13 +19,16 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "paths": {
+      "@/*": ["./*"],
+      "@deckjsx/node": ["./plugins/node/src/index.ts"],
       "deckjsx": ["./src/index.ts"],
-      "deckjsx/adapter": ["./src/adapter.ts"],
+      "deckjsx/adapter": ["./src/adapter/index.ts"],
       "deckjsx/inspect": ["./src/inspect.ts"],
       "deckjsx/integration": ["./src/integration.ts"],
+      "deckjsx/style": ["./src/style/public.ts"],
       "deckjsx/jsx-dev-runtime": ["./src/jsx-dev-runtime.ts"],
       "deckjsx/jsx-runtime": ["./src/jsx-runtime.ts"]
     }
   },
-  "exclude": [".github", "dist", "plugins", "sample"]
+  "exclude": [".github", "dist", "plugins", "sample", "tests/types/perf"]
 }

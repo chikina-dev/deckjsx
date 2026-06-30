@@ -1,10 +1,10 @@
-import { Deck, EMU_PER_INCH } from "../../../src/index.ts";
+import { EMU_PER_INCH } from "@/src/index.ts";
 import type {
   ProjectInspectionBackgroundLayerSummary,
   PptxBackgroundLayer,
   PptxPaintOrderInput,
-} from "../../../src/inspect.ts";
-import { SAMPLE_SVG_DATA_URI, WIDE_SVG_DATA_URI } from "../../helpers.ts";
+} from "@/src/inspect.ts";
+import { Deck, SAMPLE_SVG_DATA_URI, WIDE_SVG_DATA_URI } from "@/tests/helpers.ts";
 export type BackgroundLayerExpectation =
   | PptxBackgroundLayer
   | ProjectInspectionBackgroundLayerSummary;

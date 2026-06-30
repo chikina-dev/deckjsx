@@ -9,8 +9,9 @@ describe("grid auto tracks and content minimums", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 8,
             height: 5,
             display: "grid",
@@ -40,7 +41,7 @@ describe("grid auto tracks and content minimums", () => {
       </>
     ));
 
-    const ir = (await deck.project()).projection!;
+    const ir = H.expectPptxProjection(await deck.project());
 
     expect(H.summarizeNodes(ir.slides[0].payload.drawing.children)).toEqual([
       {
@@ -104,8 +105,9 @@ describe("grid auto tracks and content minimums", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 6,
             height: 2,
             display: "grid",
@@ -119,7 +121,7 @@ describe("grid auto tracks and content minimums", () => {
       </>
     ));
 
-    const ir = (await deck.project()).projection!;
+    const ir = H.expectPptxProjection(await deck.project());
 
     expect(H.summarizeNodes(ir.slides[0].payload.drawing.children)).toEqual([
       {
@@ -163,8 +165,9 @@ describe("grid auto tracks and content minimums", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 7,
             height: 2,
             display: "grid",
@@ -181,7 +184,7 @@ describe("grid auto tracks and content minimums", () => {
       </>
     ));
 
-    const ir = (await deck.project()).projection!;
+    const ir = H.expectPptxProjection(await deck.project());
 
     expect(H.summarizeNodes(ir.slides[0].payload.drawing.children)).toEqual([
       {
@@ -235,12 +238,13 @@ describe("grid auto tracks and content minimums", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 6,
             height: 2,
             display: "grid",
-            gridTemplateColumns: "minmax(auto, 1fr) minmax(auto, 1fr) 1fr",
+            gridTemplateColumns: ["minmax(auto, 1fr)", "minmax(auto, 1fr)", "1fr"],
             gridTemplateRows: "1fr",
           }}
         >
@@ -252,7 +256,7 @@ describe("grid auto tracks and content minimums", () => {
       </>
     ));
 
-    const ir = (await deck.project()).projection!;
+    const ir = H.expectPptxProjection(await deck.project());
 
     expect(H.summarizeNodes(ir.slides[0].payload.drawing.children)).toEqual([
       {
@@ -289,14 +293,15 @@ describe("grid auto tracks and content minimums", () => {
     ]);
   });
 
-  test("render records unsupported css grid line placement values", async () => {
+  test("render rejects unsupported css grid line placement values", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Unsupported grid line placement" }, () => (
       <div
         style={{
-          x: 1,
-          y: 1,
+          position: "absolute",
+          left: 1,
+          top: 1,
           width: 4,
           height: 2,
           display: "grid",
@@ -317,32 +322,23 @@ describe("grid auto tracks and content minimums", () => {
     ));
 
     const project = await deck.project();
-    const [group] = project.projection!.slides[0].payload.drawing.children;
-    const [text] = group?.kind === "group" ? group.children : [];
 
-    expect(project.ok).toBe(true);
-    expect(text?.unsupportedSemantics).toContainEqual(
-      expect.objectContaining({
-        feature: "layout",
-        property: "gridRowStart",
-        value: "-1",
-      }),
-    );
-    expect(text?.unsupportedSemantics).toContainEqual(
-      expect.objectContaining({
-        feature: "layout",
-        property: "gridColumn",
-        value: "content-start / content-end",
-        fallback: expect.objectContaining({
-          strategy: "preserveAuthoredValueOnly",
-          missing: expect.arrayContaining(["cssGridNamedOrNegativeLineResolution"]),
-        }),
-      }),
-    );
-    expect(project.summary?.unsupportedSemantics).toEqual(
+    expect(project.ok).toBe(false);
+    expect(project.projection).toBeUndefined();
+    expect(project.diagnostics.items).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ feature: "layout", property: "gridRowStart" }),
-        expect.objectContaining({ feature: "layout", property: "gridColumn" }),
+        expect.objectContaining({
+          code: "E_COMPILE_INVALID_STYLE_VALUE",
+          message: expect.stringContaining(
+            "gridRowStart value is not part of the public authoring API",
+          ),
+        }),
+        expect.objectContaining({
+          code: "E_COMPILE_INVALID_STYLE_VALUE",
+          message: expect.stringContaining(
+            "gridColumn value is not part of the public authoring API",
+          ),
+        }),
       ]),
     );
   });

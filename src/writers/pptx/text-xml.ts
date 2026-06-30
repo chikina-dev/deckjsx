@@ -1,5 +1,5 @@
-import type { TextRunIR, TextStyleIR, TextTabStopIR } from "../../layout/projected";
-import { EMU_PER_INCH } from "../../types";
+import type { TextRunIR, TextStyleIR, TextTabStopIR } from "@/src/layout/projected";
+import { EMU_PER_INCH } from "@/src/types";
 import { pointToEmu, writeColor, writeHyperlink } from "./drawing-xml";
 import { XmlChunkWriter } from "./xml-writer";
 

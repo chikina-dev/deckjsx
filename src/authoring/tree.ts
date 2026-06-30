@@ -16,8 +16,20 @@ import type {
 import type { MediaSourceOriginByField } from "../media-source-origin";
 import type { ComponentProvenance } from "../authoring-metadata";
 
+/**
+ * JSX key value accepted by deckjsx authoring.
+ *
+ * Keys are authoring metadata used for diagnostics, inspection, and incremental identity. They are
+ * not rendered into PPTX content.
+ */
 export type JsxKey = string | number | bigint;
 
+/**
+ * Source location attached by the development JSX runtime.
+ *
+ * Source spans are optional diagnostic metadata. They describe where an authored element came from
+ * and are not part of layout, style resolution, or projection semantics.
+ */
 export type SourceSpan = {
   readonly file?: string;
   readonly line?: number;
@@ -141,9 +153,15 @@ export type AuthorTreeChild =
   | readonly AuthorTreeChild[];
 
 const MAX_AUTHOR_ELEMENT_PROP_DEPTH = 1024;
+const MAX_AUTHOR_TREE_CHILD_DEPTH = 1024;
 
 function isRecord(value: unknown): value is Record<PropertyKey, AuthorElementPropValue> {
   return typeof value === "object" && value !== null;
+}
+
+function isPlainRecord(value: object): boolean {
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 function isAuthorElementPropValueWithSeen(
@@ -176,7 +194,8 @@ function isAuthorElementPropValueWithSeen(
   seen.add(value);
   const valid = Array.isArray(value)
     ? value.every((item) => isAuthorElementPropValueWithSeen(item, seen, depth + 1))
-    : Object.values(value).every((item) => isAuthorElementPropValueWithSeen(item, seen, depth + 1));
+    : isPlainRecord(value) &&
+      Object.values(value).every((item) => isAuthorElementPropValueWithSeen(item, seen, depth + 1));
   seen.delete(value);
   return valid;
 }
@@ -201,6 +220,10 @@ export function authorElementPropsFromEntries<
 }
 
 export function createAuthorText(value: string | number, sourceSpan?: SourceSpan): AuthorTextLeaf {
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    throw new Error("JSX numeric children must be finite.");
+  }
+
   return {
     $$typeof: "deckjsx.author-tree",
     kind: "text",
@@ -480,16 +503,34 @@ export function isAuthorTreeNode(value: unknown): value is AuthorTreeNode {
   return isRecord(value) && value.$$typeof === "deckjsx.author-tree";
 }
 
-export function isAuthorTreeChild(value: unknown): value is AuthorTreeChild {
+function isAuthorTreeChildWithSeen(
+  value: unknown,
+  seen: WeakSet<readonly unknown[]>,
+  depth: number,
+): value is AuthorTreeChild {
+  if (Array.isArray(value)) {
+    if (seen.has(value) || depth >= MAX_AUTHOR_TREE_CHILD_DEPTH) {
+      return false;
+    }
+
+    seen.add(value);
+    const valid = value.every((child) => isAuthorTreeChildWithSeen(child, seen, depth + 1));
+    seen.delete(value);
+    return valid;
+  }
+
   return (
     value === null ||
     value === undefined ||
     typeof value === "boolean" ||
     typeof value === "string" ||
     typeof value === "number" ||
-    isAuthorTreeNode(value) ||
-    (Array.isArray(value) && value.every(isAuthorTreeChild))
+    isAuthorTreeNode(value)
   );
+}
+
+export function isAuthorTreeChild(value: unknown): value is AuthorTreeChild {
+  return isAuthorTreeChildWithSeen(value, new WeakSet(), 0);
 }
 
 export function authorTreeChildrenFromUnknown(children: readonly unknown[]): AuthorTreeChild[] {
@@ -502,8 +543,21 @@ export function authorTreeChildrenFromUnknown(children: readonly unknown[]): Aut
   });
 }
 
-export function normalizeAuthorChildren(children: readonly AuthorTreeChild[]): AuthorTreeNode[] {
-  return children.flatMap((child): AuthorTreeNode[] => {
+function normalizeAuthorChildrenWithSeen(
+  children: readonly AuthorTreeChild[],
+  seen: WeakSet<readonly AuthorTreeChild[]>,
+  depth: number,
+): AuthorTreeNode[] {
+  if (seen.has(children)) {
+    throw new Error("JSX child arrays must not be cyclic.");
+  }
+
+  if (depth >= MAX_AUTHOR_TREE_CHILD_DEPTH) {
+    throw new Error("JSX child arrays are too deeply nested.");
+  }
+
+  seen.add(children);
+  const normalized = children.flatMap((child): AuthorTreeNode[] => {
     if (child === null || child === undefined || typeof child === "boolean") {
       return [];
     }
@@ -513,7 +567,7 @@ export function normalizeAuthorChildren(children: readonly AuthorTreeChild[]): A
     }
 
     if (Array.isArray(child)) {
-      return normalizeAuthorChildren(child);
+      return normalizeAuthorChildrenWithSeen(child, seen, depth + 1);
     }
 
     if (isAuthorTreeNode(child)) {
@@ -522,6 +576,12 @@ export function normalizeAuthorChildren(children: readonly AuthorTreeChild[]): A
 
     throw new Error("JSX children must be deckjsx author tree nodes or primitive text values.");
   });
+  seen.delete(children);
+  return normalized;
+}
+
+export function normalizeAuthorChildren(children: readonly AuthorTreeChild[]): AuthorTreeNode[] {
+  return normalizeAuthorChildrenWithSeen(children, new WeakSet(), 0);
 }
 
 export function collectChildren(

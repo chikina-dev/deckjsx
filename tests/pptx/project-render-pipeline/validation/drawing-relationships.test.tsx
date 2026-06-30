@@ -5,7 +5,7 @@ describe("project/render validation drawing relationships", () => {
   test("project validates relationship types are known tokens or relationship URIs", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Invalid relationship type" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Relationships</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Relationships</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -73,7 +73,7 @@ describe("project/render validation drawing relationships", () => {
   test("project validates relationships part owners before render", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Orphan relationships" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Relationships</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Relationships</p>
     ));
 
     const projection = (await deck.project()).projection!;
@@ -125,11 +125,18 @@ describe("project/render validation drawing relationships", () => {
       <>
         <img
           data={H.dataUriFromBytes("image/png", H.pngHeaderBytes(2, 1))}
-          style={{ x: 1, y: 1, width: 1, height: 1, objectFit: "stretch" }}
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 1,
+            height: 1,
+            objectFit: "fill",
+          }}
         />
         <img
           data={H.dataUriFromBytes("image/png", H.pngHeaderBytes(2, 1))}
-          style={{ x: 2, y: 1, width: 1, height: 1 }}
+          style={{ position: "absolute", left: 2, top: 1, width: 1, height: 1 }}
         />
       </>
     ));
@@ -212,8 +219,9 @@ describe("project/render validation drawing relationships", () => {
     deck.slide({ name: "Broken background image relationship" }, () => (
       <div
         style={{
-          x: 1,
-          y: 1,
+          position: "absolute",
+          left: 1,
+          top: 1,
           width: 2,
           height: 1,
           background: "url(data:image/png;base64,iVBORw0KGgo=)",
@@ -265,8 +273,30 @@ describe("project/render validation drawing relationships", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Broken hyperlink relationships" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 2, height: 0.5, href: "https://example.test/one" }}>One</p>
-        <p style={{ x: 1, y: 2, width: 2, height: 0.5, href: "https://example.test/two" }}>Two</p>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 2,
+            height: 0.5,
+            href: "https://example.test/one",
+          }}
+        >
+          One
+        </p>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 2,
+            width: 2,
+            height: 0.5,
+            href: "https://example.test/two",
+          }}
+        >
+          Two
+        </p>
       </>
     ));
 

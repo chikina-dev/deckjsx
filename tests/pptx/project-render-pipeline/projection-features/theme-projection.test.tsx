@@ -8,7 +8,9 @@ describe("project/render theme projection features", () => {
       theme: new H.Theme({ defaults: { p: { color: "#334155", filter: "blur(2px)" } } }),
     });
     deck.slide({ name: "Theme unsupported default" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Filtered default</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
+        Filtered default
+      </p>
     ));
 
     const project = await deck.project();
@@ -94,8 +96,9 @@ describe("project/render theme projection features", () => {
             display: "none",
             filter: "blur(2px)",
             whiteSpace: "pre",
+            position: "absolute",
             width: 4,
-            x: 1,
+            left: 1,
             zIndex: 5,
           },
         },
@@ -137,7 +140,7 @@ describe("project/render theme projection features", () => {
           projectedAs: "layoutInput",
         }),
         expect.objectContaining({
-          property: "x",
+          property: "left",
           decision: "projectLayoutInput",
           projectedAs: "layoutInput",
         }),
@@ -167,7 +170,9 @@ describe("project/render theme projection features", () => {
       }),
     });
     deck.slide({ name: "Theme reference choices" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Theme reference</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
+        Theme reference
+      </p>
     ));
 
     const project = await deck.project();
@@ -223,7 +228,7 @@ describe("project/render theme projection features", () => {
       }),
     });
     deck.slide({ name: "Theme detail" }, () => (
-      <p style={{ x: 1, y: 1, width: 4, height: 0.5 }}>Theme detail</p>
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>Theme detail</p>
     ));
 
     const summaryProject = await deck.project();

@@ -7,11 +7,21 @@ describe("absolute layout aspect ratio and images", () => {
 
     deck.slide({ name: "Aspect ratio" }, () => (
       <>
-        <div style={{ x: 1, y: 1, width: 2, aspectRatio: "16 / 9", backgroundColor: "#EEEEEE" }} />
         <div
           style={{
-            x: 1,
-            y: 3,
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 2,
+            aspectRatio: "16 / 9",
+            backgroundColor: "#EEEEEE",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 3,
             width: 6,
             height: 2,
             display: "flex",
@@ -26,7 +36,7 @@ describe("absolute layout aspect ratio and images", () => {
       </>
     ));
 
-    const ir = (await deck.project()).projection!;
+    const ir = H.expectPptxProjection(await deck.project());
 
     expect(H.summarizeNodes(ir.slides[0].payload.drawing.children)).toEqual([
       {
@@ -77,10 +87,19 @@ describe("absolute layout aspect ratio and images", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Auto aspect ratio" }, () => (
-      <div style={{ x: 1, y: 1, width: 2, aspectRatio: "auto", backgroundColor: "#EEEEEE" }} />
+      <div
+        style={{
+          position: "absolute",
+          left: 1,
+          top: 1,
+          width: 2,
+          aspectRatio: "auto",
+          backgroundColor: "#EEEEEE",
+        }}
+      />
     ));
 
-    const [node] = (await deck.project()).projection!.slides[0].payload.drawing.children;
+    const [node] = H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children;
 
     expect(node?.kind).toBe("group");
     expect(node?.frame).toEqual({
@@ -107,19 +126,22 @@ describe("absolute layout aspect ratio and images", () => {
 
     deck.slide({ name: "Natural image aspect ratio" }, () => (
       <>
-        <img src="/wide.png" style={{ x: 1, y: 1, width: 3 }} />
-        <img src="/wide.png" style={{ x: 5, y: 1, height: 1 }} />
-        <img src="/wide.png" style={{ x: 1, y: 3, width: 2, aspectRatio: 1 }} />
+        <img src="/wide.png" style={{ position: "absolute", left: 1, top: 1, width: 3 }} />
+        <img src="/wide.png" style={{ position: "absolute", left: 5, top: 1, height: 1 }} />
+        <img
+          src="/wide.png"
+          style={{ position: "absolute", left: 1, top: 3, width: 2, aspectRatio: 1 }}
+        />
       </>
     ));
 
-    const ir = (
+    const ir = H.expectPptxProjection(
       await H.projectSource({
         source: deck,
         options: deck.options,
         assetLoaders: [loader],
-      })
-    ).projection!;
+      }),
+    );
 
     expect(H.summarizeNodes(ir.slides[0].payload.drawing.children)).toEqual([
       {
@@ -159,8 +181,9 @@ describe("absolute layout aspect ratio and images", () => {
       <>
         <div
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 1,
             boxSizing: "content-box",
@@ -172,8 +195,9 @@ describe("absolute layout aspect ratio and images", () => {
         </div>
         <div
           style={{
-            x: 1,
-            y: 3,
+            position: "absolute",
+            left: 1,
+            top: 3,
             width: 6,
             height: 2,
             display: "flex",
@@ -197,7 +221,7 @@ describe("absolute layout aspect ratio and images", () => {
       </>
     ));
 
-    const ir = (await deck.project()).projection!;
+    const ir = H.expectPptxProjection(await deck.project());
 
     expect(H.summarizeNodes(ir.slides[0].payload.drawing.children)).toEqual([
       {
@@ -212,8 +236,8 @@ describe("absolute layout aspect ratio and images", () => {
           {
             kind: "text",
             frame: {
-              xEmu: 1 * H.EMU_PER_INCH,
-              yEmu: 1 * H.EMU_PER_INCH,
+              xEmu: 1.5 * H.EMU_PER_INCH,
+              yEmu: 1.25 * H.EMU_PER_INCH,
               widthEmu: 1 * H.EMU_PER_INCH,
               heightEmu: 0.5 * H.EMU_PER_INCH,
             },

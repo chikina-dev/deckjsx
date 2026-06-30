@@ -12,6 +12,7 @@ import {
   parsePlaceContent,
   parsePlaceItems,
   parsePlaceSelf,
+  type InternalLayoutMode,
   type NormalizedImageProps,
   type NormalizedShapeProps,
   type NormalizedTableCellProps,
@@ -58,19 +59,20 @@ import type {
   TextRunIR,
   TextStyleIR,
 } from "./projected";
-import type { DeckOptions } from "../authoring/index";
+import type { DeckOptions } from "../authoring/options";
 import type {
+  BorderWidthValue,
   CssAlignContent,
   CssAlignSelf,
   CssJustifySelf,
+  DeckPointLength,
   DeckLength,
   BorderStyle,
   ImageStyle,
-  StackAlignment,
   StackAxis,
-  StyleDeclarationValue,
   ViewStyle,
 } from "../style/types";
+import type { StyleDeclarationValue } from "../style/declaration";
 import {
   advanceGridAutoPlacementCursor,
   markGridItem,
@@ -104,7 +106,6 @@ import {
   type StackMetrics,
 } from "./stack";
 import {
-  normalizeTransparency,
   parseObjectPosition,
   resolveBackgroundBoxFrames,
   resolveBackgroundLayers,
@@ -153,6 +154,30 @@ type IdGenerator = {
 
 export type ProjectedLayoutResolutionOptions = {
   readonly origins?: WeakMap<object, ProjectedLayoutOrigin>;
+};
+
+type StackLayoutOptions = Pick<
+  ViewStyle,
+  | "display"
+  | "gap"
+  | "rowGap"
+  | "columnGap"
+  | "gridTemplateAreas"
+  | "padding"
+  | "alignItems"
+  | "justifyContent"
+  | "alignContent"
+  | "flexWrap"
+  | "gridTemplateColumns"
+  | "gridTemplateRows"
+  | "gridAutoColumns"
+  | "gridAutoRows"
+  | "gridAutoFlow"
+  | "justifyItems"
+  | "placeItems"
+  | "placeContent"
+> & {
+  readonly direction?: StackAxis;
 };
 
 type LayoutChildNode =
@@ -242,9 +267,8 @@ function parseShadowShorthandOrIgnore(input: { property: string; value?: string 
 type StrokeProjectionProps = {
   readonly border?: string;
   readonly borderColor?: string;
-  readonly borderWidth?: DeckLength;
+  readonly borderWidth?: BorderWidthValue;
   readonly borderStyle?: BorderStyle;
-  readonly borderTransparency?: number;
   readonly borderTop?: string;
   readonly borderRight?: string;
   readonly borderBottom?: string;
@@ -253,20 +277,19 @@ type StrokeProjectionProps = {
   readonly borderRightColor?: string;
   readonly borderBottomColor?: string;
   readonly borderLeftColor?: string;
-  readonly borderTopWidth?: DeckLength;
-  readonly borderRightWidth?: DeckLength;
-  readonly borderBottomWidth?: DeckLength;
-  readonly borderLeftWidth?: DeckLength;
+  readonly borderTopWidth?: BorderWidthValue;
+  readonly borderRightWidth?: BorderWidthValue;
+  readonly borderBottomWidth?: BorderWidthValue;
+  readonly borderLeftWidth?: BorderWidthValue;
   readonly borderTopStyle?: BorderStyle;
   readonly borderRightStyle?: BorderStyle;
   readonly borderBottomStyle?: BorderStyle;
   readonly borderLeftStyle?: BorderStyle;
   readonly outline?: string;
   readonly outlineColor?: string;
-  readonly outlineWidth?: DeckLength;
+  readonly outlineWidth?: BorderWidthValue;
   readonly outlineStyle?: BorderStyle;
   readonly stroke?: string;
-  readonly strokeWidth?: DeckLength;
   readonly strokeDasharray?: string;
   readonly strokeLinecap?: string;
   readonly strokeLinejoin?: string;
@@ -301,7 +324,6 @@ function strokeFallbackInput(props: StrokeProjectionProps): {
     "strokeLinecap",
     "strokeLinejoin",
     "stroke",
-    "strokeWidth",
   ]);
   if (strokeInput) {
     return { feature: "stroke", ...strokeInput };
@@ -370,7 +392,7 @@ function hasAuthoredStrokeInput(props: StrokeProjectionProps): boolean {
   );
 }
 
-function isExplicitNone(value: StyleDeclarationValue | undefined): boolean {
+function isExplicitNone(value: StyleDeclarationValue): boolean {
   return typeof value === "string" && value.trim().toLowerCase() === "none";
 }
 
@@ -649,8 +671,6 @@ type CssLayoutDiagnosticsProps = {
   readonly top?: unknown;
   readonly right?: unknown;
   readonly bottom?: unknown;
-  readonly x?: unknown;
-  readonly y?: unknown;
   readonly width?: unknown;
   readonly height?: unknown;
   readonly minWidth?: unknown;
@@ -841,8 +861,6 @@ function unsupportedCssLayoutValueSemantics(
     "right",
     "bottom",
     "left",
-    "x",
-    "y",
     "width",
     "height",
     "minWidth",
@@ -875,7 +893,6 @@ function unsupportedCssLayoutValueSemantics(
     "borderBottomWidth",
     "borderLeftWidth",
     "outlineWidth",
-    "strokeWidth",
   ];
   for (const property of cssWideKeywordChecks) {
     if (!hasCssWideKeywordToken(props[property])) {
@@ -1033,8 +1050,6 @@ function unsupportedCssLayoutValueSemantics(
     "right",
     "bottom",
     "left",
-    "x",
-    "y",
   ];
   for (const property of insetChecks) {
     if (!hasAutoToken(props[property])) {
@@ -1567,7 +1582,9 @@ function unsupportedObjectPositionSemantics(input: {
   return unsupported ? [unsupported] : [];
 }
 
-function parseCropValue(value: number | `${number}%` | undefined): number {
+function parseCropValue(
+  value: NonNullable<ImageStyle["crop"]>[keyof NonNullable<ImageStyle["crop"]>],
+): number {
   if (value === undefined) {
     return 0;
   }
@@ -1638,7 +1655,7 @@ function sortNodesForPaint(nodes: ReadonlyArray<ProjectedLayoutNode>): Projected
 }
 
 function resolveAlignContentOffset(
-  alignContent: StackAlignment | CssAlignContent | undefined,
+  alignContent: CssAlignContent | undefined,
   availableEmu: number,
   usedEmu: number,
   lineCount: number,
@@ -2354,21 +2371,7 @@ function compileGridChildren(
 
 function hasExplicitFrameInput(child: LayoutChildNode): boolean {
   const { props } = child;
-  const relativePosition = props.position === "relative";
-  return (
-    props.position === "absolute" ||
-    props.area !== undefined ||
-    (!relativePosition &&
-      (hasAuthoredLength(props.x) ||
-        hasAuthoredLength(props.y) ||
-        (hasCssWideKeywordToken(props.inset) === false && props.inset !== undefined) ||
-        hasAuthoredLength(props.left) ||
-        hasAuthoredLength(props.top) ||
-        hasAuthoredLength(props.right) ||
-        hasAuthoredLength(props.bottom))) ||
-    hasAuthoredLength(props.width) ||
-    hasAuthoredLength(props.height)
-  );
+  return props.position === "absolute" || child.origin?.templateAreaRef !== undefined;
 }
 
 function compileBlockFlowChildren(
@@ -2479,29 +2482,8 @@ function compileChildren(
   children: ReadonlyArray<LayoutInputContentNode>,
   parentFrame: Frame,
   idGenerator: IdGenerator,
-  layout: ViewStyle["layout"],
-  options: Pick<
-    ViewStyle,
-    | "direction"
-    | "display"
-    | "gap"
-    | "rowGap"
-    | "columnGap"
-    | "gridTemplateAreas"
-    | "padding"
-    | "alignItems"
-    | "justifyContent"
-    | "alignContent"
-    | "flexWrap"
-    | "gridTemplateColumns"
-    | "gridTemplateRows"
-    | "gridAutoColumns"
-    | "gridAutoRows"
-    | "gridAutoFlow"
-    | "justifyItems"
-    | "placeItems"
-    | "placeContent"
-  >,
+  layout: InternalLayoutMode | undefined,
+  options: StackLayoutOptions,
   clipRect?: ClipRect,
   context?: LengthResolutionContext,
   resolutionOptions?: ProjectedLayoutResolutionOptions,
@@ -2793,7 +2775,7 @@ function compileGroupNode(
   );
   const backgroundFill = resolveBackgroundLayersOrEmpty(
     backgroundInput(props),
-    props.backgroundTransparency,
+    undefined,
     {
       widthEmu: visibleFrame.widthEmu,
       heightEmu: visibleFrame.heightEmu,
@@ -3167,7 +3149,7 @@ function compileTableNode(
             const cellEdgeStrokes = tableCellEdgeStrokesFromResolvedStrokes(cellStrokes);
             const cellBackground = resolveBackgroundLayersOrEmpty(
               backgroundInput(cell.props),
-              cell.props.backgroundTransparency,
+              undefined,
               {
                 widthEmu: cellFrame.widthEmu,
                 heightEmu: cellFrame.heightEmu,
@@ -3214,7 +3196,7 @@ function compileTableNode(
                 cell.source.children,
                 cellFrame,
                 idGenerator,
-                "absolute",
+                "block",
                 {},
                 clipRect,
                 context,
@@ -3264,8 +3246,8 @@ function textStyleFromProps(
     textAlign: props.textAlign,
     verticalAlign: props.verticalAlign,
     paddingPt: parseSpacingInPoints(props.padding, textLengthContext),
-    lineSpacing: props.lineSpacing ?? lineHeight.lineSpacing,
-    lineSpacingMultiple: props.lineSpacingMultiple ?? lineHeight.lineSpacingMultiple,
+    lineSpacing: lineHeight.lineSpacing,
+    lineSpacingMultiple: lineHeight.lineSpacingMultiple,
     paragraphSpacingBefore:
       props.paragraphSpacingBefore === undefined
         ? undefined
@@ -3276,7 +3258,9 @@ function textStyleFromProps(
         : parsePointValue(props.paragraphSpacingAfter, 0, textLengthContext),
     ...(props.textIndent === undefined
       ? {}
-      : { textIndentPt: parsePointValue(props.textIndent, 0, textLengthContext) }),
+      : {
+          textIndentPt: parsePointValue(props.textIndent as DeckPointLength, 0, textLengthContext),
+        }),
     ...(tabStops ? { tabStops } : {}),
     charSpacing: resolveCharacterSpacing(props.charSpacing, textLengthContext),
     ...(list ? { list } : {}),
@@ -3377,10 +3361,9 @@ function textFramePropsWithFallback(
   const hasAuthoredRight = authoredLengthOrUndefined(props.right) !== undefined;
   const hasAuthoredTop = authoredLengthOrUndefined(props.top) !== undefined;
   const hasAuthoredBottom = authoredLengthOrUndefined(props.bottom) !== undefined;
-  const hasAuthoredX = authoredLengthOrUndefined(props.x) !== undefined;
 
   if (placement?.widthEmu === undefined && !hasAuthoredWidth && !hasAuthoredInset) {
-    if (!hasAuthoredRight && (hasAuthoredX || hasAuthoredLeft)) {
+    if (!hasAuthoredRight && hasAuthoredLeft) {
       resolved = { ...resolved, right: 0 };
     } else if (!hasAuthoredLeft && hasAuthoredRight) {
       resolved = { ...resolved, left: 0 };
@@ -3469,9 +3452,11 @@ function compileTextNode(
   const frameProps = textFramePropsWithFallback(props, placement, textLengthContext);
   const resolved = frameFromProps(frameProps, parentFrame, placement, textLengthContext);
   const strokes = resolveNodeStrokesOrFallback(props, textLengthContext);
+  const shadowValue: string | undefined =
+    (props.textShadow as string | undefined) ?? (props.boxShadow as string | undefined);
   const shadow = parseShadowShorthandOrIgnore({
     property: props.textShadow !== undefined ? "textShadow" : "boxShadow",
-    value: props.textShadow ?? props.boxShadow,
+    value: shadowValue,
   });
   const outline = outlineStrokeOrFallback(props, textLengthContext);
   const hyperlink = props.href
@@ -3504,7 +3489,7 @@ function compileTextNode(
   );
   const backgroundFill = resolveBackgroundLayersOrEmpty(
     backgroundInput(props),
-    props.backgroundTransparency,
+    undefined,
     {
       widthEmu: visibleFrame.widthEmu,
       heightEmu: visibleFrame.heightEmu,
@@ -3658,7 +3643,6 @@ function compileImageNode(
     fit,
     ...(objectPosition ? { objectPosition } : {}),
     ...(crop ? { crop } : {}),
-    transparency: normalizeTransparency(props.transparency),
     rounding: props.rounding,
     ...(shadow.shadow ? { shadow: shadow.shadow } : {}),
     ...(hyperlink ? { hyperlink } : {}),
@@ -3699,9 +3683,11 @@ function videoPropsWithFallbackFrame(
 
   const aspectRatio = parseAspectRatio(props.aspectRatio) ?? DEFAULT_VIDEO_ASPECT_RATIO;
   const fallbackWidthIn = parentFrame.widthEmu / EMU_PER_INCH / 2;
+  const fallbackAspectRatio: NormalizedVideoProps["aspectRatio"] =
+    props.aspectRatio ?? DEFAULT_VIDEO_ASPECT_RATIO;
   const fallbackProps = {
     ...props,
-    aspectRatio: props.aspectRatio ?? `${DEFAULT_VIDEO_ASPECT_RATIO}`,
+    aspectRatio: fallbackAspectRatio,
     ...(missingWidth && missingHeight ? { width: fallbackWidthIn } : {}),
   };
 
@@ -3817,7 +3803,6 @@ function compileVideoNode(
     ...(unsupportedSemantics.length ? { unsupportedSemantics } : {}),
     fit,
     ...(objectPosition ? { objectPosition } : {}),
-    transparency: normalizeTransparency(props.transparency),
     rounding: props.rounding,
     ...(shadow.shadow ? { shadow: shadow.shadow } : {}),
     source: videoSourceFromProps(props),
@@ -3864,7 +3849,7 @@ function compileShapeNode(
   );
   const shapeFill = resolveBackgroundLayersOrEmpty(
     shapeFillInput(props),
-    props.fillTransparency,
+    undefined,
     {
       widthEmu: visibleFrame.widthEmu,
       heightEmu: visibleFrame.heightEmu,
@@ -3973,7 +3958,7 @@ function compileSlide(
   const backgroundBoxFrames = resolveBackgroundBoxFrames(slideFrame);
   const backgroundFill = resolveBackgroundLayersOrEmpty(
     backgroundInput(slideProps),
-    slideProps.backgroundTransparency,
+    undefined,
     {
       widthEmu: slideFrame.widthEmu,
       heightEmu: slideFrame.heightEmu,
@@ -3986,21 +3971,30 @@ function compileSlide(
     slideProps.backgroundOrigin,
     slideProps.backgroundClip,
   );
-  const children = root.children
-    .map(
-      (child, siblingOrder): LayoutChildNode =>
-        layoutChildFromNode(child, siblingOrder, lengthContext),
-    )
-    .filter((child) => child.props.display !== "none");
-  const nodes = compileAbsoluteChildren(
-    children,
+  const nodes = compileChildren(
+    root.children,
     slideFrame,
     idGenerator,
+    slideProps.layout,
     {
-      padding: undefined,
-      gap: undefined,
-      rowGap: undefined,
-      columnGap: undefined,
+      display: slideProps.display,
+      gap: slideProps.gap,
+      rowGap: slideProps.rowGap,
+      columnGap: slideProps.columnGap,
+      padding: slideProps.padding,
+      alignItems: slideProps.alignItems,
+      justifyContent: slideProps.justifyContent,
+      alignContent: slideProps.alignContent,
+      flexWrap: slideProps.flexWrap,
+      gridTemplateAreas: slideProps.gridTemplateAreas,
+      gridTemplateColumns: slideProps.gridTemplateColumns,
+      gridTemplateRows: slideProps.gridTemplateRows,
+      gridAutoColumns: slideProps.gridAutoColumns,
+      gridAutoRows: slideProps.gridAutoRows,
+      gridAutoFlow: slideProps.gridAutoFlow,
+      justifyItems: slideProps.justifyItems,
+      placeItems: slideProps.placeItems,
+      placeContent: slideProps.placeContent,
     },
     undefined,
     lengthContext,

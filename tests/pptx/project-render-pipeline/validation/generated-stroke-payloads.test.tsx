@@ -6,7 +6,15 @@ describe("project/render validation generated stroke payloads", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Generated stroke order" }, () => (
       <div
-        style={{ x: 0.5, y: 0.5, width: 4, height: 2, borderTop: "2pt solid #ff0000", zIndex: 4 }}
+        style={{
+          position: "absolute",
+          left: 0.5,
+          top: 0.5,
+          width: 4,
+          height: 2,
+          borderTop: "2pt solid #ff0000",
+          zIndex: 4,
+        }}
       />
     ));
 
@@ -77,8 +85,9 @@ describe("project/render validation generated stroke payloads", () => {
     deck.slide({ name: "Missing generated strokes" }, () => (
       <div
         style={{
-          x: 0.5,
-          y: 0.5,
+          position: "absolute",
+          left: 0.5,
+          top: 0.5,
           width: 4,
           height: 2,
           borderTop: "2pt solid #ff0000",
@@ -139,8 +148,9 @@ describe("project/render validation generated stroke payloads", () => {
     deck.slide({ name: "Partially missing generated strokes" }, () => (
       <div
         style={{
-          x: 0.5,
-          y: 0.5,
+          position: "absolute",
+          left: 0.5,
+          top: 0.5,
           width: 4,
           height: 2,
           borderTop: "2pt solid #ff0000",
@@ -213,8 +223,9 @@ describe("project/render validation generated stroke payloads", () => {
     deck.slide({ name: "Stale generated stroke payloads" }, () => (
       <div
         style={{
-          x: 0.5,
-          y: 0.5,
+          position: "absolute",
+          left: 0.5,
+          top: 0.5,
           width: 4,
           height: 2,
           borderTop: "2pt solid #ff0000",
@@ -303,8 +314,9 @@ describe("project/render validation generated stroke payloads", () => {
     deck.slide({ name: "Stale generated stroke identity" }, () => (
       <div
         style={{
-          x: 0.5,
-          y: 0.5,
+          position: "absolute",
+          left: 0.5,
+          top: 0.5,
           width: 4,
           height: 2,
           borderTop: "2pt solid #ff0000",
@@ -369,8 +381,9 @@ describe("project/render validation generated stroke payloads", () => {
     deck.slide({ name: "Stale generated shape id" }, () => (
       <div
         style={{
-          x: 0.5,
-          y: 0.5,
+          position: "absolute",
+          left: 0.5,
+          top: 0.5,
           width: 4,
           height: 2,
           borderTop: "2pt solid #ff0000",
@@ -436,7 +449,16 @@ describe("project/render validation generated stroke payloads", () => {
   test("project validates generated stroke shape object ids stay derivable in writer-safe range", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Overflow generated shape id" }, () => (
-      <div style={{ x: 0.5, y: 0.5, width: 4, height: 2, borderTop: "2pt solid #ff0000" }} />
+      <div
+        style={{
+          position: "absolute",
+          left: 0.5,
+          top: 0.5,
+          width: 4,
+          height: 2,
+          borderTop: "2pt solid #ff0000",
+        }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;
@@ -492,7 +514,16 @@ describe("project/render validation generated stroke payloads", () => {
   test("project validates serialized shape object id uniqueness across generated strokes", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Duplicate generated shape id" }, () => (
-      <div style={{ x: 0.5, y: 0.5, width: 4, height: 2, outline: "2pt solid #00aa66" }} />
+      <div
+        style={{
+          position: "absolute",
+          left: 0.5,
+          top: 0.5,
+          width: 4,
+          height: 2,
+          outline: "2pt solid #00aa66",
+        }}
+      />
     ));
 
     const projection = (await deck.project()).projection!;

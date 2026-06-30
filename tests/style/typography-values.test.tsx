@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck, EMU_PER_INCH } from "../../src/index.ts";
+import { EMU_PER_INCH } from "@/src/index.ts";
+import { Deck } from "../helpers.ts";
 import { SAMPLE_SVG_DATA_URI, summarizeNodes } from "../helpers.ts";
 
 describe("typography-values", () => {
@@ -10,8 +11,9 @@ describe("typography-values", () => {
       <>
         <p
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 3,
             height: 0.75,
             direction: "rtl",
@@ -21,13 +23,29 @@ describe("typography-values", () => {
         >
           RTL link
         </p>
-        <p style={{ x: 1, y: 2, width: 3, height: 0.75, superscript: true }}>Super</p>
-        <p style={{ x: 1, y: 3, width: 3, height: 0.75, subscript: true }}>Sub</p>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 2,
+            width: 3,
+            height: 0.75,
+            superscript: true,
+          }}
+        >
+          Super
+        </p>
+        <p
+          style={{ position: "absolute", left: 1, top: 3, width: 3, height: 0.75, subscript: true }}
+        >
+          Sub
+        </p>
         <img
           data={SAMPLE_SVG_DATA_URI}
           style={{
-            x: 5,
-            y: 1,
+            position: "absolute",
+            left: 5,
+            top: 1,
             width: 1.5,
             height: 1.5,
             href: "https://example.com/image",
@@ -37,8 +55,9 @@ describe("typography-values", () => {
         <shape
           shape="rect"
           style={{
-            x: 5,
-            y: 3,
+            position: "absolute",
+            left: 5,
+            top: 3,
             width: 2,
             height: 1,
             fill: "#2563EB",
@@ -105,11 +124,23 @@ describe("typography-values", () => {
 
     deck.slide({ name: "Lists" }, () => (
       <>
-        <p style={{ x: 1, y: 0.25, width: 3, height: 0.5, listStyleType: "disc" }}>Disc item</p>
         <p
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 0.25,
+            width: 3,
+            height: 0.5,
+            listStyleType: "disc",
+          }}
+        >
+          Disc item
+        </p>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 3,
             height: 0.75,
             listStyleType: "circle",
@@ -119,7 +150,15 @@ describe("typography-values", () => {
           Bullet item
         </p>
         <p
-          style={{ x: 1, y: 2, width: 3, height: 0.75, listStyleType: "upper-roman", listStart: 3 }}
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 2,
+            width: 3,
+            height: 0.75,
+            listStyleType: "upper-roman",
+            listStart: 3,
+          }}
         >
           Number item
         </p>
@@ -154,8 +193,9 @@ describe("typography-values", () => {
       <>
         <p
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 2,
             height: 2,
             writingMode: "vertical-rl",
@@ -201,8 +241,9 @@ describe("typography-values", () => {
       <>
         <p
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 4,
             height: 1,
             tabStops: [
@@ -237,7 +278,11 @@ describe("typography-values", () => {
 
     deck.slide({ name: " indent" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 4, height: 1, textIndent: "24px" }}>Indented</p>
+        <p
+          style={{ position: "absolute", left: 1, top: 1, width: 4, height: 1, textIndent: "24px" }}
+        >
+          Indented
+        </p>
       </>
     ));
 
@@ -259,8 +304,9 @@ describe("typography-values", () => {
       <>
         <p
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 3,
             height: 0.5,
             fontSize: 18,
@@ -272,8 +318,9 @@ describe("typography-values", () => {
         </p>
         <p
           style={{
-            x: 1,
-            y: 2,
+            position: "absolute",
+            left: 1,
+            top: 2,
             width: 3,
             height: 0.5,
             fontSize: 18,
@@ -323,34 +370,34 @@ describe("typography-values", () => {
     expect(second.style.strike).toBe(true);
   });
 
-  test("render treats numeric lineHeight as lineSpacingMultiple and supports decoration reset", async () => {
+  test("render treats numeric lineHeight as lineSpacingMultiple and resolves textDecoration none", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Line height semantics" }, () => (
       <>
         <p
           style={{
-            x: 1,
-            y: 1,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 3,
             height: 0.5,
             fontSize: 18,
             lineHeight: 1.6,
-            textDecoration: "none",
-            underline: true,
+            textDecorationLine: "underline",
           }}
         >
           Numeric line height
         </p>
         <p
           style={{
-            x: 1,
-            y: 2,
+            position: "absolute",
+            left: 1,
+            top: 2,
             width: 3,
             height: 0.5,
             fontSize: 18,
             lineHeight: "28px",
-            strike: true,
             textDecorationLine: "none",
           }}
         >
@@ -368,37 +415,57 @@ describe("typography-values", () => {
     expect(first.style.lineSpacingMultiple).toBe(1.6);
     expect(first.style.underline).toBe(true);
     expect(first.style.underlineStyle).toBe("sng");
-    expect(first.style.strike).toBe(false);
+    expect(first.style.strike).toBeUndefined();
 
     expect(second.style.lineSpacing).toBe(21);
     expect(second.style.lineSpacingMultiple).toBeUndefined();
     expect(second.style.underline).toBe(false);
-    expect(second.style.strike).toBe(true);
+    expect(second.style.strike).toBe(false);
   });
 
-  test("render supports whiteSpace as a wrap alias", async () => {
+  test("render resolves whiteSpace to the projected wrap flag", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "White space" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 3, height: 0.5, fontSize: 18, whiteSpace: "nowrap" }}>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: 3,
+            height: 0.5,
+            fontSize: 18,
+            whiteSpace: "nowrap",
+          }}
+        >
           No wrap
-        </p>
-        <p style={{ x: 1, y: 2, width: 3, height: 0.5, fontSize: 18, whiteSpace: "normal" }}>
-          Wrap
         </p>
         <p
           style={{
-            x: 1,
-            y: 3,
+            position: "absolute",
+            left: 1,
+            top: 2,
             width: 3,
             height: 0.5,
             fontSize: 18,
             whiteSpace: "normal",
-            wrap: false,
           }}
         >
-          Override
+          Wrap
+        </p>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 3,
+            width: 3,
+            height: 0.5,
+            fontSize: 18,
+            whiteSpace: "pre",
+          }}
+        >
+          Preformatted
         </p>
       </>
     ));
@@ -412,29 +479,49 @@ describe("typography-values", () => {
     expect(texts[2].style.wrap).toBe(false);
   });
 
-  test("render supports wordBreak and overflowWrap as simplified wrap aliases", async () => {
+  test("render resolves wordBreak and overflowWrap to the projected wrap flag", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Word break" }, () => (
       <>
-        <p style={{ x: 1, y: 1, width: 3, height: 0.5, fontSize: 18, wordBreak: "break-all" }}>
-          Break all
-        </p>
-        <p style={{ x: 1, y: 2, width: 3, height: 0.5, fontSize: 18, overflowWrap: "anywhere" }}>
-          Anywhere
-        </p>
         <p
           style={{
-            x: 1,
-            y: 3,
+            position: "absolute",
+            left: 1,
+            top: 1,
             width: 3,
             height: 0.5,
             fontSize: 18,
             wordBreak: "break-all",
-            wrap: false,
           }}
         >
-          Override
+          Break all
+        </p>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 2,
+            width: 3,
+            height: 0.5,
+            fontSize: 18,
+            overflowWrap: "anywhere",
+          }}
+        >
+          Anywhere
+        </p>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 3,
+            width: 3,
+            height: 0.5,
+            fontSize: 18,
+            whiteSpace: "nowrap",
+          }}
+        >
+          No wrap
         </p>
       </>
     ));

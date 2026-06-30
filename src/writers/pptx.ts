@@ -4,7 +4,7 @@ import type {
   OutputFormat,
   RenderInspectionSummary,
   RenderedArtifact,
-} from "../pipeline";
+} from "../pipeline/public";
 import {
   PATCH_MANIFEST_PATH,
   PATCH_MANIFEST_VERSION,
@@ -13,7 +13,7 @@ import {
   type RenderPatchPlan,
   type RenderPatchPlanPart,
 } from "../patchable-pptx";
-import type { AssetArtifact, PptxPackageBuildArtifact } from "../pipeline-artifacts";
+import type { AssetArtifact, PptxPackageBuildArtifact } from "../pipeline/artifacts";
 import type {
   PackagePartId,
   PptxMediaPartPayload,

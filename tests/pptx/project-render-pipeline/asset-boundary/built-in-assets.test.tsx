@@ -8,7 +8,10 @@ describe("project/render built-in asset boundary", () => {
 
     deck.slide({ name: "Built-in image dimensions" }, () => (
       <>
-        <img data={pngDataUri} style={{ x: 1, y: 1, width: 2, height: 1 }} />
+        <img
+          data={pngDataUri}
+          style={{ position: "absolute", left: 1, top: 1, width: 2, height: 1 }}
+        />
       </>
     ));
 
@@ -47,7 +50,14 @@ describe("project/render built-in asset boundary", () => {
         <>
           <img
             src="https://cdn.example.test/chart.png"
-            style={{ x: 1, y: 1, width: 2, height: 1, objectFit: "stretch" }}
+            style={{
+              position: "absolute",
+              left: 1,
+              top: 1,
+              width: 2,
+              height: 1,
+              objectFit: "fill",
+            }}
           />
         </>
       ));
@@ -96,7 +106,7 @@ describe("project/render built-in asset boundary", () => {
       deck.slide({ name: "Inspect URL asset" }, () => (
         <img
           src="https://cdn.example.test/inspect.png"
-          style={{ x: 1, y: 1, width: 2, height: 1 }}
+          style={{ position: "absolute", left: 1, top: 1, width: 2, height: 1 }}
         />
       ));
 
@@ -124,7 +134,10 @@ describe("project/render built-in asset boundary", () => {
   test("project inspection summarizes asset source identity without raw media source payloads", async () => {
     const child = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     child.slide({ name: "Child asset" }, () => (
-      <img src="./child.png" style={{ x: 1, y: 1, width: 1, height: 1 }} />
+      <img
+        src="./child.png"
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
     ));
     const parent = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     parent.mount("child-source", child);
@@ -178,7 +191,7 @@ describe("project/render built-in asset boundary", () => {
       deck.slide({ name: "Missing fetch URL asset" }, () => (
         <img
           src="https://cdn.example.test/missing-fetch.png"
-          style={{ x: 1, y: 1, width: 2, height: 1 }}
+          style={{ position: "absolute", left: 1, top: 1, width: 2, height: 1 }}
         />
       ));
 

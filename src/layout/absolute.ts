@@ -98,8 +98,6 @@ function specifiedLength(value: DeckLength | undefined): DeckLength | undefined 
 
 export function frameFromProps(
   props: {
-    x?: DeckLength;
-    y?: DeckLength;
     inset?: Spacing;
     left?: DeckLength;
     top?: DeckLength;
@@ -116,12 +114,9 @@ export function frameFromProps(
     maxHeight?: DeckLength;
     position?: CssPosition;
     opacity?: number;
-    rotation?: number;
     transform?: string;
     transformOrigin?: string;
     zIndex?: number;
-    flipH?: boolean;
-    flipV?: boolean;
   },
   parent: Frame,
   placement?: Placement,
@@ -130,16 +125,17 @@ export function frameFromProps(
   const transform = parseTransformShorthandOrIgnore(props.transform);
   const resolvedInset = resolveInset(props.inset, props.top, props.right, props.bottom, props.left);
   const isRelativePosition = props.position === "relative";
-  const relativeLeft = nonAutoLength(props.x ?? resolvedInset?.left);
-  const relativeTop = nonAutoLength(props.y ?? resolvedInset?.top);
+  const canUseAbsoluteInset = props.position === "absolute" || placement === undefined;
+  const relativeLeft = nonAutoLength(resolvedInset?.left);
+  const relativeTop = nonAutoLength(resolvedInset?.top);
   const relativeRight = nonAutoLength(resolvedInset?.right);
   const relativeBottom = nonAutoLength(resolvedInset?.bottom);
   const specifiedWidth = specifiedLength(props.width);
   const specifiedHeight = specifiedLength(props.height);
-  const resolvedX = isRelativePosition ? undefined : relativeLeft;
-  const resolvedY = isRelativePosition ? undefined : relativeTop;
-  const resolvedRight = isRelativePosition ? undefined : relativeRight;
-  const resolvedBottom = isRelativePosition ? undefined : relativeBottom;
+  const resolvedX = canUseAbsoluteInset && !isRelativePosition ? relativeLeft : undefined;
+  const resolvedY = canUseAbsoluteInset && !isRelativePosition ? relativeTop : undefined;
+  const resolvedRight = canUseAbsoluteInset && !isRelativePosition ? relativeRight : undefined;
+  const resolvedBottom = canUseAbsoluteInset && !isRelativePosition ? relativeBottom : undefined;
   const aspectRatio = parseAspectRatio(props.aspectRatio);
   const padding = parseSpacing(props.padding, context, parent.widthEmu);
   const boxSizing = props.boxSizing ?? "border-box";
@@ -419,9 +415,9 @@ export function frameFromProps(
     widthEmu: transformedWidth,
     heightEmu: transformedHeight,
     opacity: props.opacity,
-    rotation: props.rotation ?? (transformRotation !== 0 ? transformRotation : undefined),
+    rotation: transformRotation !== 0 ? transformRotation : undefined,
     zIndex: props.zIndex,
-    flipH: props.flipH ?? (transformFlipH ? true : undefined),
-    flipV: props.flipV ?? (transformFlipV ? true : undefined),
+    flipH: transformFlipH ? true : undefined,
+    flipV: transformFlipV ? true : undefined,
   };
 }

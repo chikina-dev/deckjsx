@@ -10,7 +10,7 @@ describe("project/render stage result shapes", () => {
 
     deck.slide({ name: "Pipeline" }, () => (
       <>
-        <div style={{ x: 1, y: 1, width: 4, height: 2 }}>
+        <div style={{ position: "absolute", left: 1, top: 1, width: 4, height: 2 }}>
           <p style={{ width: "100%", height: 0.5, fontSize: 24 }}>Hello pipeline</p>
         </div>
       </>
@@ -85,14 +85,21 @@ describe("project/render stage result shapes", () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Invalid" }, () => (
       <>
-        <div style={{ x: "1qu" as never, y: 1, width: 2, height: 1 }} />
+        <div style={{ position: "absolute", left: "1qu" as never, top: 1, width: 2, height: 1 }} />
       </>
     ));
 
     const project = await deck.project();
     expect(project.ok).toBe(false);
-    expect(project.projection).toBeDefined();
-    expect(project.stages.project.artifact).toBe("partial");
+    expect(project.projection).toBeUndefined();
+    expect(project.stages.project.artifact).toBe("missing");
+    expect(project.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        code: "E_COMPILE_INVALID_STYLE_VALUE",
+        severity: "error",
+        message: expect.stringContaining("left value is not part of the public authoring API"),
+      }),
+    );
 
     const render = await deck.render();
     expect(render.ok).toBe(false);

@@ -19,10 +19,12 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "paths": {
+      "@/scripts/*": ["../../scripts/*"],
+      "@/*": ["./*"],
       "@deckjsx/node": ["./src/index.ts"],
       "@deckjsx/node/dev": ["./src/dev.ts"],
       "deckjsx": ["../../dist/index.d.mts"],
-      "deckjsx/adapter": ["../../dist/adapter.d.mts"],
+      "deckjsx/adapter": ["../../dist/adapter/index.d.mts"],
       "deckjsx/inspect": ["../../dist/inspect.d.mts"],
       "deckjsx/integration": ["../../dist/integration.d.mts"],
       "deckjsx/jsx-dev-runtime": ["../../dist/jsx-dev-runtime.d.mts"],

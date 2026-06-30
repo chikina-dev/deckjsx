@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { Deck } from "../../src/index.ts";
+import { Deck } from "@/src/index.ts";
 
 function values<T>(map: ReadonlyMap<PropertyKey, T>): T[] {
   return [...map.values()];
@@ -87,6 +87,40 @@ describe("Semantic Author Graph tables", () => {
       origin: { kind: "implicit", reason: "table-row-shorthand" },
       sectionKind: "body",
     });
+  });
+
+  test("compile treats fragments inside tables as transparent table children", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Fragmented table" }, () => (
+      <>
+        <table>
+          <>
+            <tr>
+              <td>A</td>
+            </tr>
+          </>
+          <tbody>
+            <>
+              <tr>
+                <td>B</td>
+              </tr>
+            </>
+          </tbody>
+        </table>
+      </>
+    ));
+
+    const result = deck.compile();
+    const sections = values(result.graph!.nodes).filter((node) => node.kind === "tableSection");
+    const rows = values(result.graph!.nodes).filter((node) => node.kind === "tableRow");
+
+    expect(result.ok).toBe(true);
+    expect(sections.map((node) => (node.kind === "tableSection" ? node.sectionKind : ""))).toEqual([
+      "body",
+      "body",
+    ]);
+    expect(rows).toHaveLength(2);
   });
 
   test("compile rejects malformed table hierarchy as semantic structure errors", async () => {

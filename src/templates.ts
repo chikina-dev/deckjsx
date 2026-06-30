@@ -1,7 +1,14 @@
 import type { Diagnostic } from "./diagnostics";
 import { diagnostic } from "./diagnostics";
-import { isDeckLengthString } from "./style/length";
-import type { DeckLength } from "./style/types";
+import type { AuthorElementPropValue } from "./authoring/tree";
+import { SLIDE_FLOW_STYLE_KEYS } from "./style/keysets";
+import type {
+  CssAlignSelf,
+  CssGridAreaAuthoringString,
+  CssJustifySelf,
+  ViewStyle,
+} from "./style/types";
+import { validateSupportedStyleDeclaration } from "./style/authoring-validation";
 
 const TEMPLATE_AREA_REF = Symbol("deckjsx.templateAreaRef");
 
@@ -17,23 +24,62 @@ const TEMPLATE_AREA_KINDS = [
 
 export type TemplateAreaKind = (typeof TEMPLATE_AREA_KINDS)[number];
 
-/** The concrete frame used by a Template Area before output projection. */
-export type TemplateFrame = {
-  readonly x: DeckLength;
-  readonly y: DeckLength;
-  readonly width: DeckLength;
-  readonly height: DeckLength;
+/**
+ * Flow style accepted on a Slide Template root.
+ *
+ * This is the normal authoring path for reusable slide regions. It mirrors the public view layout
+ * subset so template children can participate in grid, flex, and block flow without fixed
+ * coordinates.
+ */
+export type SlideTemplateStyle = Pick<
+  ViewStyle,
+  | "display"
+  | "gap"
+  | "rowGap"
+  | "columnGap"
+  | "padding"
+  | "alignItems"
+  | "justifyContent"
+  | "alignContent"
+  | "flexWrap"
+  | "gridTemplateAreas"
+  | "gridTemplateColumns"
+  | "gridTemplateRows"
+  | "gridAutoColumns"
+  | "gridAutoRows"
+  | "gridAutoFlow"
+  | "justifyItems"
+  | "placeItems"
+  | "placeContent"
+>;
+
+/**
+ * Flow placement style accepted by a named area inside a Slide Template.
+ *
+ * The area style is applied to elements that use `area={template.name}` unless the element provides
+ * its own inline style for the same property.
+ */
+export type TemplateAreaStyle = {
+  readonly gridArea?: CssGridAreaAuthoringString;
+  readonly alignSelf?: CssAlignSelf;
+  readonly justifySelf?: CssJustifySelf;
 };
 
-/** A named placement area inside a Slide Template. */
+/**
+ * A named placement area inside a Slide Template.
+ *
+ * Areas define flow placement through `style`; fixed Template Area frames are intentionally not
+ * part of the public authoring API.
+ */
 export type TemplateArea = {
-  readonly frame: TemplateFrame;
+  readonly style?: TemplateAreaStyle;
   readonly kind?: TemplateAreaKind;
 };
 
-/** A reusable Deck-owned slide structure made of named Template Areas. */
+/** A reusable Deck-owned slide structure made of named Template Areas and optional root flow style. */
 export type SlideTemplate = {
   readonly areas: Readonly<Record<string, TemplateArea>>;
+  readonly style?: SlideTemplateStyle;
 };
 
 /** The Deck-local set of Slide Templates available to `deck.slide({ template })`. */
@@ -176,10 +222,10 @@ export function templateRefValue(value: TemplateAreaRef): {
  *
  * @param templates - Deck-local Slide Template set to validate.
  * @param path - Diagnostic path prefix used in labels.
- * @returns Diagnostics for malformed templates, areas, frames, or reserved names.
+ * @returns Diagnostics for malformed template sets, template areas, style objects, or reserved names.
  */
 export function validateSlideTemplates(
-  templates: SlideTemplateSet | undefined,
+  templates: unknown,
   path = "templates",
 ): readonly Diagnostic[] {
   if (templates === undefined) {
@@ -187,7 +233,14 @@ export function validateSlideTemplates(
   }
 
   if (!isRecord(templates)) {
-    return [templateDiagnostic("E_TEMPLATE_SET_INVALID", "invalid slide templates", path)];
+    return [
+      templateDiagnostic(
+        "E_TEMPLATE_SET_INVALID",
+        "slide templates are not part of the public authoring API",
+        path,
+        "Slide Template definitions must be an object keyed by template names in the public authoring API.",
+      ),
+    ];
   }
 
   const diagnostics: Diagnostic[] = [];
@@ -197,9 +250,9 @@ export function validateSlideTemplates(
       diagnostics.push(
         templateDiagnostic(
           "E_TEMPLATE_RESERVED_NAME",
-          "reserved slide template name",
+          "slide template name is not part of the public authoring API",
           templatePath,
-          `Slide Template name "${templateName}" is invalid.`,
+          `Slide Template name "${templateName}" is not part of the public authoring API.`,
           ['Template names must not be empty or start with deckjsx-reserved "$".'],
         ),
       );
@@ -207,17 +260,25 @@ export function validateSlideTemplates(
 
     if (!isRecord(template)) {
       diagnostics.push(
-        templateDiagnostic("E_TEMPLATE_INVALID", "invalid slide template", templatePath),
+        templateDiagnostic(
+          "E_TEMPLATE_INVALID",
+          "slide template is not part of the public authoring API",
+          templatePath,
+          "Slide Template definitions must be objects in the public authoring API.",
+        ),
       );
       return;
     }
+
+    diagnostics.push(...validateTemplateStyle(template.style, `${templatePath}.style`));
 
     if (!isRecord(template.areas)) {
       diagnostics.push(
         templateDiagnostic(
           "E_TEMPLATE_AREAS_INVALID",
-          "invalid template areas",
+          "template areas are not part of the public authoring API",
           `${templatePath}.areas`,
+          "Slide Template areas must be an object keyed by area names in the public authoring API.",
         ),
       );
       return;
@@ -229,16 +290,23 @@ export function validateSlideTemplates(
         diagnostics.push(
           templateDiagnostic(
             "E_TEMPLATE_AREA_RESERVED_NAME",
-            "reserved template area name",
+            "template area name is not part of the public authoring API",
             areaPath,
-            `Template Area name "${areaName}" is invalid.`,
+            `Template Area name "${areaName}" is not part of the public authoring API.`,
             ['Template Area names must not be empty or start with deckjsx-reserved "$".'],
           ),
         );
       }
 
       if (!isRecord(area)) {
-        diagnostics.push(templateDiagnostic("E_TEMPLATE_AREA_INVALID", "invalid area", areaPath));
+        diagnostics.push(
+          templateDiagnostic(
+            "E_TEMPLATE_AREA_INVALID",
+            "template area is not part of the public authoring API",
+            areaPath,
+            "Template Area definitions must be objects in the public authoring API.",
+          ),
+        );
         return;
       }
 
@@ -246,50 +314,139 @@ export function validateSlideTemplates(
         diagnostics.push(
           templateDiagnostic(
             "E_TEMPLATE_AREA_KIND_INVALID",
-            "invalid template area kind",
+            "template area kind is not part of the public authoring API",
             `${areaPath}.kind`,
-            `Template Area kind must be one of: ${TEMPLATE_AREA_KINDS.join(", ")}.`,
+            `Template Area kind is not part of the public authoring API. Use one of: ${TEMPLATE_AREA_KINDS.join(", ")}.`,
           ),
         );
       }
 
-      diagnostics.push(...validateFrame(area.frame, `${areaPath}.frame`));
+      const hasStyle = area.style !== undefined;
+      if ("frame" in area) {
+        diagnostics.push(
+          templateDiagnostic(
+            "E_TEMPLATE_AREA_FRAME_NON_PUBLIC",
+            "template area frame is not part of the public authoring API",
+            `${areaPath}.frame`,
+            "Template Area frame is not part of the public authoring API.",
+            [
+              "Use Slide Template grid or flex flow plus Template Area style.gridArea, alignSelf, and justifySelf.",
+            ],
+          ),
+        );
+      }
+      if (!hasStyle) {
+        diagnostics.push(
+          templateDiagnostic(
+            "E_TEMPLATE_AREA_PLACEMENT_MISSING",
+            "template area placement is missing",
+            areaPath,
+            "Template Area must define a public template-area style.",
+          ),
+        );
+      }
+      diagnostics.push(...validateTemplateAreaStyle(area.style, `${areaPath}.style`));
     });
   });
 
   return diagnostics;
 }
 
-function validateFrame(value: unknown, path: string): readonly Diagnostic[] {
-  if (!isRecord(value)) {
-    return [templateDiagnostic("E_TEMPLATE_AREA_FRAME_INVALID", "invalid area frame", path)];
+function validateTemplateStyle(value: unknown, path: string): readonly Diagnostic[] {
+  if (value === undefined) {
+    return [];
   }
-
+  if (!isRecord(value)) {
+    return [
+      templateDiagnostic(
+        "E_TEMPLATE_STYLE_INVALID",
+        "slide template style is not part of the public authoring API",
+        path,
+        "Slide Template style must be an object when provided in the public authoring API.",
+      ),
+    ];
+  }
+  const supportedKeys = new Set<string>(SLIDE_FLOW_STYLE_KEYS);
   const diagnostics: Diagnostic[] = [];
-  (["x", "y", "width", "height"] as const).forEach((key) => {
-    if (!validLength(value[key])) {
+  for (const key of Object.keys(value)) {
+    if (!supportedKeys.has(key)) {
       diagnostics.push(
         templateDiagnostic(
-          "E_TEMPLATE_AREA_FRAME_INCOMPLETE",
-          "template area frame is incomplete",
+          "E_TEMPLATE_STYLE_NON_PUBLIC_PROP",
+          "slide template style property is not part of the public authoring API",
           `${path}.${key}`,
-          `Template Area frame must define a valid ${key} value.`,
+          `Slide Template style property ${key} is not part of the public authoring API.`,
+          [
+            "Use flow layout keys such as display, gridTemplateAreas, grid tracks, gap, padding, and alignment.",
+          ],
         ),
       );
     }
-  });
+  }
+
+  const publicStyle = Object.fromEntries(
+    Object.entries(value).filter(([key]) => supportedKeys.has(key)),
+  ) as Readonly<Record<string, AuthorElementPropValue>>;
+
+  diagnostics.push(
+    ...validateSupportedStyleDeclaration({
+      path,
+      tag: "div",
+      style: publicStyle,
+    }),
+  );
+
+  return diagnostics;
+}
+
+function validateTemplateAreaStyle(value: unknown, path: string): readonly Diagnostic[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (!isRecord(value)) {
+    return [
+      templateDiagnostic(
+        "E_TEMPLATE_AREA_STYLE_INVALID",
+        "template area style is not part of the public authoring API",
+        path,
+        "Template Area style must be an object when provided in the public authoring API.",
+      ),
+    ];
+  }
+
+  const supportedKeys = new Set(["gridArea", "alignSelf", "justifySelf"]);
+  const diagnostics: Diagnostic[] = [];
+  for (const key of Object.keys(value)) {
+    if (!supportedKeys.has(key)) {
+      diagnostics.push(
+        templateDiagnostic(
+          "E_TEMPLATE_AREA_STYLE_NON_PUBLIC_PROP",
+          "template area style property is not part of the public authoring API",
+          `${path}.${key}`,
+          `Template Area style property ${key} is not part of the public authoring API.`,
+          ["Use gridArea, alignSelf, or justifySelf for flow placement inside a Slide Template."],
+        ),
+      );
+    }
+  }
+
+  const publicStyle = Object.fromEntries(
+    Object.entries(value).filter(([key]) => supportedKeys.has(key)),
+  ) as Readonly<Record<string, AuthorElementPropValue>>;
+
+  diagnostics.push(
+    ...validateSupportedStyleDeclaration({
+      path,
+      tag: "div",
+      style: publicStyle,
+    }),
+  );
+
   return diagnostics;
 }
 
 function invalidName(value: string): boolean {
   return value.trim().length === 0 || value.startsWith("$");
-}
-
-function validLength(value: unknown): boolean {
-  return (
-    (typeof value === "number" && Number.isFinite(value)) ||
-    (typeof value === "string" && isDeckLengthString(value))
-  );
 }
 
 export function isTemplateAreaKind(value: unknown): value is TemplateAreaKind {

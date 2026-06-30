@@ -1,4 +1,9 @@
-import type { DeckLength, Spacing } from "../style/types";
+import type {
+  DeckLength,
+  NonNegativeDeckLength,
+  NonNegativeSpacing,
+  Spacing,
+} from "../style/types";
 import { EMU_PER_INCH, POINTS_PER_INCH } from "../types";
 import { authoredLengthOrUndefined } from "../style/defaulting";
 import { parseLength, type LengthResolutionContext } from "../style/length";
@@ -58,7 +63,7 @@ function expandSpacingTokens(value: string): readonly [string, string, string, s
 }
 
 export function parseSpacing(
-  value: Spacing | undefined,
+  value: Spacing | NonNegativeSpacing | undefined,
   context?: LengthResolutionContext,
   percentageBaseEmu = 0,
 ): [number, number, number, number] {
@@ -106,7 +111,7 @@ function parseLengthOrAuto(
 }
 
 export function parseSpacingAllowAuto(
-  value: Spacing | undefined,
+  value: Spacing | NonNegativeSpacing | undefined,
   context?: LengthResolutionContext,
   percentageBaseEmu = 0,
   autoFallbackEmu = 0,
@@ -146,7 +151,7 @@ export function parseSpacingAllowAuto(
 }
 
 function expandRawSpacing(
-  value: Spacing | undefined,
+  value: Spacing | NonNegativeSpacing | undefined,
 ): [
   DeckLength | undefined,
   DeckLength | undefined,
@@ -175,12 +180,26 @@ function expandRawSpacing(
 }
 
 export function resolveBoxSpacing(
+  value: NonNegativeSpacing | undefined,
+  top?: NonNegativeDeckLength,
+  right?: NonNegativeDeckLength,
+  bottom?: NonNegativeDeckLength,
+  left?: NonNegativeDeckLength,
+): NonNegativeSpacing | undefined;
+export function resolveBoxSpacing(
   value: Spacing | undefined,
   top?: DeckLength,
   right?: DeckLength,
   bottom?: DeckLength,
   left?: DeckLength,
-): Spacing | undefined {
+): Spacing | undefined;
+export function resolveBoxSpacing(
+  value: Spacing | NonNegativeSpacing | undefined,
+  top?: DeckLength | NonNegativeDeckLength,
+  right?: DeckLength | NonNegativeDeckLength,
+  bottom?: DeckLength | NonNegativeDeckLength,
+  left?: DeckLength | NonNegativeDeckLength,
+): Spacing | NonNegativeSpacing | undefined {
   if (
     value === undefined &&
     top === undefined &&

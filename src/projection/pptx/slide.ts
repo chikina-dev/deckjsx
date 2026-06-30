@@ -3,7 +3,7 @@ import {
   normalizeShapeProps,
   normalizeTextProps,
   normalizeViewProps,
-} from "../../layout/normalization";
+} from "@/src/layout/normalization";
 import type {
   AssetEntity,
   GraphNodeId,
@@ -15,9 +15,9 @@ import type {
   SemanticSlideNode,
   SemanticTextNode,
   SourceOrigin,
-} from "../../graph";
-import { frameFromProps } from "../../layout/absolute";
-import type { Frame } from "../../layout/frame";
+} from "@/src/graph";
+import { frameFromProps } from "@/src/layout/absolute";
+import type { Frame } from "@/src/layout/frame";
 import type {
   BackgroundLayerIR,
   EdgeStrokeIR,
@@ -31,15 +31,21 @@ import type {
   StrokeIR,
   TextRunIR,
   TextStyleIR,
-} from "../../layout/projected";
-import { normalizeProjectedImageFit, unsupportedObjectFitSemantics } from "../../layout/image-fit";
-import { parseSpacing, parseSpacingInPoints } from "../../layout/spacing";
-import { resolveBackgroundBoxFrames } from "../../style/background";
-import { normalizeColor } from "../../style/color";
-import { parseLength, parsePointValue, type LengthResolutionContext } from "../../style/length";
-import type { ResolvedStyleMap } from "../../style/resolve";
-import type { DeckLength, ImageCropAuthoring, ImageCropValue, TextStyle } from "../../style/types";
-import type { SlideTemplateSet, TemplateAreaKind } from "../../templates";
+} from "@/src/layout/projected";
+import { normalizeProjectedImageFit, unsupportedObjectFitSemantics } from "@/src/layout/image-fit";
+import { parseSpacing, parseSpacingInPoints } from "@/src/layout/spacing";
+import { resolveBackgroundBoxFrames } from "@/src/style/background";
+import { normalizeColor } from "@/src/style/color";
+import { parseLength, parsePointValue, type LengthResolutionContext } from "@/src/style/length";
+import type { ResolvedStyleMap } from "@/src/style/resolve";
+import type {
+  DeckLength,
+  DeckPointLength,
+  ImageCropAuthoring,
+  ImageCropValue,
+  TextStyle,
+} from "@/src/style/types";
+import type { SlideTemplateSet, TemplateAreaKind } from "@/src/templates";
 import {
   getTextLengthContext,
   resolveCharacterSpacing,
@@ -48,7 +54,7 @@ import {
   resolveTabStops,
   resolveTextDirection,
   resolveUnderlineStyle,
-} from "../../style/typography";
+} from "@/src/style/typography";
 import { comparePptxElementsByPaintOrder, drawingFromElements } from "./drawing";
 import {
   elementIdentity,
@@ -306,8 +312,8 @@ function textStyleFromProps(
     textAlign: props.textAlign,
     verticalAlign: props.verticalAlign ?? DEFAULT_TEXT_VERTICAL_ALIGN,
     paddingPt: parseSpacingInPoints(props.padding, textLengthContext),
-    lineSpacing: props.lineSpacing ?? lineHeight.lineSpacing,
-    lineSpacingMultiple: props.lineSpacingMultiple ?? lineHeight.lineSpacingMultiple,
+    lineSpacing: lineHeight.lineSpacing,
+    lineSpacingMultiple: lineHeight.lineSpacingMultiple,
     paragraphSpacingBefore:
       props.paragraphSpacingBefore === undefined
         ? undefined
@@ -318,7 +324,9 @@ function textStyleFromProps(
         : parsePointValue(props.paragraphSpacingAfter, 0, textLengthContext),
     ...(props.textIndent === undefined
       ? {}
-      : { textIndentPt: parsePointValue(props.textIndent, 0, textLengthContext) }),
+      : {
+          textIndentPt: parsePointValue(props.textIndent as DeckPointLength, 0, textLengthContext),
+        }),
     ...(tabStops ? { tabStops } : {}),
     charSpacing: resolveCharacterSpacing(props.charSpacing, textLengthContext),
     ...(list ? { list } : {}),
@@ -661,7 +669,7 @@ function compileContainer(
   const backgroundInput = backgroundInputFor(resolved, props);
   const backgroundFill = resolveBackgroundLayersSafely(
     { property: backgroundInput?.property ?? "background", value: backgroundInput?.value },
-    props.backgroundTransparency,
+    undefined,
     {
       widthEmu: frame.widthEmu,
       heightEmu: frame.heightEmu,
@@ -741,9 +749,11 @@ function compileText(
   const frame = childFrame(props, parentFrame, textLengthContext);
   const siblingOrder = indexPath.at(-1) ?? 0;
   const strokes = resolveNodeStrokesSafely(props, textLengthContext);
+  const shadowValue: string | undefined =
+    (props.textShadow as string | undefined) ?? (props.boxShadow as string | undefined);
   const shadowResult = parseShadowSafely({
     property: props.textShadow !== undefined ? "textShadow" : "boxShadow",
-    value: props.textShadow ?? props.boxShadow,
+    value: shadowValue,
   });
   const outlineResult = outlineStrokeSafely(props, textLengthContext);
   const generatedStrokes = generatedStrokeLayers({
@@ -767,7 +777,7 @@ function compileText(
   const backgroundInput = backgroundInputFor(resolved, props);
   const backgroundFill = resolveBackgroundLayersSafely(
     { property: backgroundInput?.property ?? "background", value: backgroundInput?.value },
-    props.backgroundTransparency,
+    undefined,
     {
       widthEmu: frame.widthEmu,
       heightEmu: frame.heightEmu,
@@ -887,7 +897,6 @@ function compileImage(
     fit,
     objectPosition: parseObjectPositionValue(props.objectPosition, frame),
     ...(parseImageCrop(props.crop) ? { crop: parseImageCrop(props.crop) } : {}),
-    transparency: props.transparency,
     rounding: props.rounding,
     ...(shadowResult.shadow ? { shadow: shadowResult.shadow } : {}),
     ...(hyperlink ? { hyperlink } : {}),
@@ -938,7 +947,7 @@ function compileShape(
   const fillInput = shapeFillInputFor(resolved, props);
   const shapeFill = resolveBackgroundLayersSafely(
     { property: fillInput?.property ?? "fill", value: fillInput?.value },
-    props.fillTransparency,
+    undefined,
     {
       widthEmu: frame.widthEmu,
       heightEmu: frame.heightEmu,
