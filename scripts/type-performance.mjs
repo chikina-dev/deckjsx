@@ -164,6 +164,9 @@ function formatTypePerformanceProgress(profile, index, total) {
 }
 
 function pathsForGeneratedProject(profile) {
+  if (profile === "authoring-root-import" || profile === "authoring-surface") {
+    return PUBLISHED_DECKJSX_STYLE_PATHS;
+  }
   if (profile === "node-authoring-consumer") {
     return NODE_AUTHORING_CONSUMER_PATHS;
   }
