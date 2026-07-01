@@ -1567,6 +1567,7 @@ export async function renderSource<
   renderInput?: RenderOptions | WriterAdapter;
   definedGraph?: DefinedGraphInput;
   definedProjection?: DefinedProjectionInput;
+  definedProjectionOrigin?: "cache" | "explicit";
   artifacts?: PipelineArtifactCollection;
   assetLoaders?: readonly AssetLoader[];
 }): Promise<RenderResult> {
@@ -1645,23 +1646,27 @@ export async function renderSource<
     input.definedGraph,
     currentCompositionRevision,
   );
+  const explicitDefinedProjection =
+    input.definedProjectionOrigin === "cache" ? undefined : input.definedProjection;
   const projectResult = await projectSource({
     source: input.source,
     options: input.options,
     projectionFormat: adapter.projectionFormat,
     definedGraph: sourceInvalidated ? artifacts.graph : (incrementalGraph ?? inputGraph),
-    definedProjection: sourceInvalidated
-      ? projectionInputFormatMatches(artifacts.projection, adapter.projectionFormat)
-        ? artifacts.projection
-        : undefined
-      : incrementalGraph
-        ? projectionInputFormatMatches(
-            incrementalSlot?.artifacts.projection,
-            adapter.projectionFormat,
-          )
-          ? incrementalSlot?.artifacts.projection
+    definedProjection:
+      explicitDefinedProjection ??
+      (sourceInvalidated
+        ? projectionInputFormatMatches(artifacts.projection, adapter.projectionFormat)
+          ? artifacts.projection
           : undefined
-        : input.definedProjection,
+        : incrementalGraph
+          ? projectionInputFormatMatches(
+              incrementalSlot?.artifacts.projection,
+              adapter.projectionFormat,
+            )
+            ? incrementalSlot?.artifacts.projection
+            : undefined
+          : undefined),
     artifacts,
     assetLoaders: execution.assetLoaders,
     mediaSourceOrigin: execution.mediaSourceOrigin,

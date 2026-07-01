@@ -86,6 +86,7 @@ type ProjectSourceInput<
   readonly projectOptions?: ProjectOptions;
   readonly definedGraph?: DefinedGraphInput;
   readonly definedProjection?: DefinedProjectionInput;
+  readonly definedProjectionOrigin?: "cache" | "explicit";
   readonly artifacts?: DeckPipelineArtifacts;
 };
 type RenderSourceInput<
@@ -97,6 +98,7 @@ type RenderSourceInput<
   readonly renderInput?: RenderOptions | WriterAdapter;
   readonly definedGraph?: DefinedGraphInput;
   readonly definedProjection?: DefinedProjectionInput;
+  readonly definedProjectionOrigin?: "cache" | "explicit";
   readonly artifacts?: DeckPipelineArtifacts;
 };
 type PipelineRunnerModule = {
@@ -554,6 +556,7 @@ export class Deck<
         projectOptions: options,
         definedGraph: this.#definedGraph ?? artifactGraph,
         definedProjection: this.#definedProjection ?? artifactProjection,
+        definedProjectionOrigin: this.#definedProjection ? "explicit" : "cache",
         artifacts,
       });
     });
@@ -583,6 +586,7 @@ export class Deck<
         renderInput,
         definedGraph: this.#definedGraph ?? artifactGraph,
         definedProjection: this.#definedProjection ?? artifactProjection,
+        definedProjectionOrigin: this.#definedProjection ? "explicit" : "cache",
         artifacts,
       });
     });
