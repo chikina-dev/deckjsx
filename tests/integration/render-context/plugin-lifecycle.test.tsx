@@ -225,6 +225,39 @@ describe("deckjsx integration plugin lifecycle", () => {
     );
   });
 
+  test("project lifecycle hooks reject malformed pdf projection page updates", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin({
+      kind: "deckjsx.plugin",
+      id: "test:malformed-pdf-project-transform",
+      name: "test:malformed-pdf-project-transform",
+      hooks: {
+        afterProject(context) {
+          const projection = context.projection as unknown as PdfPageModel;
+          return {
+            projection: {
+              ...projection,
+              pages: [{}],
+            } as unknown as PdfPageModel,
+          };
+        },
+      },
+    });
+    deck.slide({ name: "Malformed PDF Slide" }, () => (
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>
+        malformed pdf project update
+      </p>
+    ));
+
+    const project = await deck.project({ format: "pdf", inspection: "none" });
+
+    expect(project.ok).toBe(false);
+    expect(project.diagnostics.items).toContainEqual(
+      expect.objectContaining({ code: "E_PLUGIN_HOOK_INVALID_UPDATE_VALUE" }),
+    );
+    expect(project.diagnostics.items.map((item) => item.code)).not.toContain("E_PROJECT_FAILED");
+  });
+
   test("render lifecycle hooks run around prototype writer adapter methods", async () => {
     const events: string[] = [];
     class PrototypeWriter implements H.WriterAdapter<H.PptxPackageModel, "pptx"> {

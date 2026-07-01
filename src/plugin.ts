@@ -734,7 +734,85 @@ function isPptxPackageModelValue(value: unknown): value is PptxPackageModel {
 }
 
 function isProjectedDocumentModelValue(value: unknown): value is ProjectedDocumentModel {
-  return isPptxPackageModelValue(value) || isPdfPageModel(value);
+  return isPptxPackageModelValue(value) || isPdfPageModelValue(value);
+}
+
+function isPdfPageModelValue(value: unknown): boolean {
+  return (
+    isPdfPageModel(value) &&
+    value.pages.every(isPdfPageValue) &&
+    isPdfResourceDictionaryValue(value.resources) &&
+    value.fallbacks.every(
+      (fallback) =>
+        isRecord(fallback) &&
+        typeof fallback.code === "string" &&
+        typeof fallback.message === "string" &&
+        (fallback.pageId === undefined || typeof fallback.pageId === "string"),
+    )
+  );
+}
+
+function isPdfPageValue(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.index === "number" &&
+    isPdfRectangleValue(value.mediaBox) &&
+    isRecord(value.resources) &&
+    Array.isArray(value.resources.fonts) &&
+    value.resources.fonts.every((fontId) => typeof fontId === "string") &&
+    Array.isArray(value.resources.images) &&
+    value.resources.images.every((imageId) => typeof imageId === "string") &&
+    Array.isArray(value.content)
+  );
+}
+
+function isPdfRectangleValue(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.x === "number" &&
+    typeof value.y === "number" &&
+    typeof value.width === "number" &&
+    typeof value.height === "number" &&
+    Number.isFinite(value.x) &&
+    Number.isFinite(value.y) &&
+    Number.isFinite(value.width) &&
+    Number.isFinite(value.height) &&
+    value.width > 0 &&
+    value.height > 0
+  );
+}
+
+function isPdfResourceDictionaryValue(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.fonts) &&
+    value.fonts.every(isPdfFontResourceValue) &&
+    Array.isArray(value.images) &&
+    value.images.every(isPdfImageResourceValue)
+  );
+}
+
+function isPdfFontResourceValue(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    (value.family === undefined || typeof value.family === "string") &&
+    (value.data === undefined || value.data instanceof Uint8Array)
+  );
+}
+
+function isPdfImageResourceValue(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    (value.name === undefined || typeof value.name === "string") &&
+    (value.mediaType === undefined || typeof value.mediaType === "string") &&
+    (value.width === undefined || typeof value.width === "number") &&
+    (value.height === undefined || typeof value.height === "number") &&
+    (value.data === undefined || value.data instanceof Uint8Array)
+  );
 }
 
 function isRenderedArtifact(value: unknown): value is RenderedArtifact {
