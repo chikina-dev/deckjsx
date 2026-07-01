@@ -906,6 +906,14 @@ function projectionFormatFor(options: unknown): ProjectionFormat {
   return isRecord(output) && output.format === "pdf" ? "pdf" : "pptx";
 }
 
+function projectionInputMatchesFormat(
+  input: DefinedProjectionInput | undefined,
+  format: ProjectionFormat,
+): input is DefinedProjectionInput {
+  const projection = input?.projection;
+  return isRecord(projection) && projection.format === format;
+}
+
 function isRenderInputObject(
   value: RenderOptions | WriterAdapter | undefined,
 ): value is RenderOptions | WriterAdapter {
@@ -1231,7 +1239,7 @@ export async function projectSource<
     };
   }
 
-  if (input.definedProjection) {
+  if (projectionInputMatchesFormat(input.definedProjection, projectionFormat)) {
     const definedProjection = input.definedProjection.projection as PptxPackageModelCandidate;
     const definedProjectionShapeDiagnostics =
       input.definedProjection.diagnostics.items.length > 0
