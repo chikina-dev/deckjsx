@@ -127,11 +127,12 @@ function renderBenchmarkDeck(runtime, text) {
 
 async function loadBenchmarkRuntime() {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const nodeRuntimeEntry = await resolveNodeRuntimeEntry(root);
   const [deckjsx, adapter, jsxRuntime, nodeRuntime] = await Promise.all([
     import(pathToFileURL(path.join(root, "dist/index.mjs")).href),
     import(pathToFileURL(path.join(root, "dist/adapter/index.mjs")).href),
     import(pathToFileURL(path.join(root, "dist/jsx-runtime.mjs")).href),
-    import(pathToFileURL(path.join(root, "sample/node_modules/@deckjsx/node/dist/index.mjs")).href),
+    import(pathToFileURL(nodeRuntimeEntry).href),
   ]);
   return {
     Deck: deckjsx.Deck,
@@ -140,6 +141,40 @@ async function loadBenchmarkRuntime() {
     pptx: adapter.pptx,
     write: nodeRuntime.write,
   };
+}
+
+async function resolveNodeRuntimeEntry(root) {
+  const candidates = [
+    {
+      path: path.join(root, "plugins/node/dist/index.mjs"),
+      setup: "Build @deckjsx/node with `cd plugins/node && ../../node_modules/.bin/vp pack`.",
+    },
+    {
+      path: path.join(root, "sample/node_modules/@deckjsx/node/dist/index.mjs"),
+      setup: "Install sample dependencies with `npm install --prefix sample`.",
+    },
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      const file = await stat(candidate.path);
+      if (file.isFile()) {
+        return candidate.path;
+      }
+    } catch {
+      // Try the next runtime entry candidate.
+    }
+  }
+
+  throw new Error(
+    [
+      "Unable to load @deckjsx/node benchmark runtime.",
+      "Expected one of:",
+      ...candidates.map((candidate) => `- ${candidate.path}`),
+      "Setup:",
+      ...candidates.map((candidate) => `- ${candidate.setup}`),
+    ].join("\n"),
+  );
 }
 
 function assertRenderOk(render, label) {
