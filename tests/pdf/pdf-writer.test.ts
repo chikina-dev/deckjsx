@@ -97,4 +97,76 @@ describe("PDF writer", () => {
       "E_PDF_MODEL_PAGE_MISSING_FONT_RESOURCE",
     );
   });
+
+  test("rejects text operations without a page-local font", async () => {
+    const model = onePageModel("Implicit font");
+    const result = await renderPdfPageModel(
+      {
+        ...model,
+        pages: [
+          {
+            ...model.pages[0],
+            resources: { fonts: [], images: [] },
+            content: [{ op: "text", text: "Implicit font", x: 72, y: 96, fontSize: 12 }],
+          },
+        ],
+      },
+      { inspection: "none" },
+    );
+
+    expect(result.artifact).toBeUndefined();
+    expect(result.diagnostics.items.map((item) => item.code)).toContain(
+      "E_PDF_MODEL_TEXT_MISSING_FONT_RESOURCE",
+    );
+  });
+
+  test("rejects duplicate page font resource names", async () => {
+    const model = onePageModel("Duplicate font names");
+    const secondFontId = pdfResourceId("font", "Helvetica Duplicate");
+    const result = await renderPdfPageModel(
+      {
+        ...model,
+        pages: [
+          {
+            ...model.pages[0],
+            resources: { fonts: [model.pages[0].resources.fonts[0], secondFontId], images: [] },
+          },
+        ],
+        resources: {
+          fonts: [model.resources.fonts[0], { id: secondFontId, name: "F1", family: "Helvetica" }],
+          images: [],
+        },
+      },
+      { inspection: "none" },
+    );
+
+    expect(result.artifact).toBeUndefined();
+    expect(result.diagnostics.items.map((item) => item.code)).toContain(
+      "E_PDF_MODEL_DUPLICATE_PAGE_FONT_RESOURCE_NAME",
+    );
+  });
+
+  test("rejects unsupported image operations", async () => {
+    const imageId = pdfResourceId("image", "Chart");
+    const model = onePageModel("Image");
+    const result = await renderPdfPageModel(
+      {
+        ...model,
+        pages: [
+          {
+            ...model.pages[0],
+            resources: { fonts: [], images: [imageId] },
+            content: [{ op: "image", imageId, box: { x: 72, y: 96, width: 240, height: 120 } }],
+          },
+        ],
+        resources: { fonts: [], images: [{ id: imageId }] },
+      },
+      { inspection: "none" },
+    );
+
+    expect(result.artifact).toBeUndefined();
+    expect(result.diagnostics.items.map((item) => item.code)).toContain(
+      "E_PDF_MODEL_UNSUPPORTED_IMAGE_OPERATION",
+    );
+  });
 });

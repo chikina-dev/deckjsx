@@ -131,9 +131,11 @@ function missingPageResourceDiagnostic(input: {
   readonly code: string;
   readonly title: string;
   readonly pageIndex: number;
-  readonly resourceId: PdfResourceId;
+  readonly resourceId?: PdfResourceId;
   readonly path: string;
 }): Diagnostic {
+  const resourceMessage = input.resourceId ? `, resource=${input.resourceId}` : "";
+
   return diagnostic({
     severity: "error",
     code: input.code,
@@ -142,7 +144,47 @@ function missingPageResourceDiagnostic(input: {
     labels: [
       {
         path: input.path,
-        message: `page=${input.pageIndex}, resource=${input.resourceId}`,
+        message: `page=${input.pageIndex}${resourceMessage}`,
+        severity: "primary",
+      },
+    ],
+  });
+}
+
+function duplicatePageFontResourceNameDiagnostic(input: {
+  readonly pageIndex: number;
+  readonly resourceIndex: number;
+  readonly resourceName: string;
+}): Diagnostic {
+  return diagnostic({
+    severity: "error",
+    code: "E_PDF_MODEL_DUPLICATE_PAGE_FONT_RESOURCE_NAME",
+    title: "PDF page font resource name is duplicated",
+    message: "Each font resource name in a PDF page resource dictionary must be unique.",
+    labels: [
+      {
+        path: `pages.${input.pageIndex}.resources.fonts.${input.resourceIndex}`,
+        message: input.resourceName,
+        severity: "primary",
+      },
+    ],
+  });
+}
+
+function unsupportedImageOperationDiagnostic(input: {
+  readonly pageIndex: number;
+  readonly opIndex: number;
+  readonly imageId: PdfResourceId;
+}): Diagnostic {
+  return diagnostic({
+    severity: "error",
+    code: "E_PDF_MODEL_UNSUPPORTED_IMAGE_OPERATION",
+    title: "PDF image operations are not supported",
+    message: "The minimal PDF writer cannot emit image operations yet.",
+    labels: [
+      {
+        path: `pages.${input.pageIndex}.content.${input.opIndex}`,
+        message: `page=${input.pageIndex}, resource=${input.imageId}`,
         severity: "primary",
       },
     ],
@@ -185,6 +227,8 @@ export function validatePdfPageModel(model: PdfPageModel): Diagnostics {
   });
 
   model.pages.forEach((page, pageIndex) => {
+    const pageFontResourceNames = new Map<string, number>();
+
     if (seenPageIds.has(page.id)) {
       issues.push(
         diagnostic({
@@ -234,6 +278,20 @@ export function validatePdfPageModel(model: PdfPageModel): Diagnostics {
           }),
         );
       }
+      const font = model.resources.fonts.find((resource) => resource.id === fontId);
+      if (font) {
+        if (pageFontResourceNames.has(font.name)) {
+          issues.push(
+            duplicatePageFontResourceNameDiagnostic({
+              pageIndex,
+              resourceIndex,
+              resourceName: font.name,
+            }),
+          );
+        } else {
+          pageFontResourceNames.set(font.name, resourceIndex);
+        }
+      }
     });
     page.resources.images.forEach((imageId, resourceIndex) => {
       if (!resources.images.has(imageId)) {
@@ -256,6 +314,16 @@ export function validatePdfPageModel(model: PdfPageModel): Diagnostics {
         issues.push(invalidContentOpDiagnostic({ pageIndex, opIndex, op }));
         return;
       }
+      if (op.op === "text" && !op.fontId && pageFonts.size === 0) {
+        issues.push(
+          missingPageResourceDiagnostic({
+            code: "E_PDF_MODEL_TEXT_MISSING_FONT_RESOURCE",
+            title: "PDF text operation has no page font resource",
+            pageIndex,
+            path: `pages.${pageIndex}.content.${opIndex}`,
+          }),
+        );
+      }
       if (op.op === "text" && op.fontId && !resources.fonts.has(op.fontId)) {
         issues.push(
           unknownResourceDiagnostic({
@@ -275,6 +343,15 @@ export function validatePdfPageModel(model: PdfPageModel): Diagnostics {
             pageIndex,
             resourceId: op.fontId,
             path: `pages.${pageIndex}.content.${opIndex}.fontId`,
+          }),
+        );
+      }
+      if (op.op === "image") {
+        issues.push(
+          unsupportedImageOperationDiagnostic({
+            pageIndex,
+            opIndex,
+            imageId: op.imageId,
           }),
         );
       }

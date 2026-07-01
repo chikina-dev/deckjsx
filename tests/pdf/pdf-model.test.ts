@@ -161,6 +161,88 @@ describe("PDF Page Model", () => {
     );
   });
 
+  test("rejects text operations without a page-local font", () => {
+    const fontId = pdfResourceId("font", "Helvetica");
+    const model: PdfPageModel = {
+      format: "pdf",
+      version: "1.7",
+      documentId: pdfDocumentId("deck:demo"),
+      metadata: { producer: "deckjsx" },
+      pages: [
+        {
+          id: pdfPageId("slide:1", 0),
+          index: 0,
+          mediaBox: { x: 0, y: 0, width: 720, height: 405 },
+          resources: { fonts: [], images: [] },
+          content: [{ op: "text", text: "Implicit global font", x: 0, y: 0 }],
+        },
+      ],
+      resources: { fonts: [{ id: fontId, name: "F1", family: "Helvetica" }], images: [] },
+      fallbacks: [],
+    };
+
+    expect(validatePdfPageModel(model).items.map((item) => item.code)).toContain(
+      "E_PDF_MODEL_TEXT_MISSING_FONT_RESOURCE",
+    );
+  });
+
+  test("rejects duplicate page font resource names", () => {
+    const fontId = pdfResourceId("font", "Helvetica");
+    const duplicateFontId = pdfResourceId("font", "Helvetica Duplicate");
+    const model: PdfPageModel = {
+      format: "pdf",
+      version: "1.7",
+      documentId: pdfDocumentId("deck:demo"),
+      metadata: { producer: "deckjsx" },
+      pages: [
+        {
+          id: pdfPageId("slide:1", 0),
+          index: 0,
+          mediaBox: { x: 0, y: 0, width: 720, height: 405 },
+          resources: { fonts: [fontId, duplicateFontId], images: [] },
+          content: [{ op: "text", text: "Duplicate font names", x: 0, y: 0, fontId }],
+        },
+      ],
+      resources: {
+        fonts: [
+          { id: fontId, name: "F1", family: "Helvetica" },
+          { id: duplicateFontId, name: "F1", family: "Helvetica" },
+        ],
+        images: [],
+      },
+      fallbacks: [],
+    };
+
+    expect(validatePdfPageModel(model).items.map((item) => item.code)).toContain(
+      "E_PDF_MODEL_DUPLICATE_PAGE_FONT_RESOURCE_NAME",
+    );
+  });
+
+  test("rejects unsupported image operations", () => {
+    const imageId = pdfResourceId("image", "Chart");
+    const model: PdfPageModel = {
+      format: "pdf",
+      version: "1.7",
+      documentId: pdfDocumentId("deck:demo"),
+      metadata: { producer: "deckjsx" },
+      pages: [
+        {
+          id: pdfPageId("slide:1", 0),
+          index: 0,
+          mediaBox: { x: 0, y: 0, width: 720, height: 405 },
+          resources: { fonts: [], images: [imageId] },
+          content: [{ op: "image", imageId, box: { x: 0, y: 0, width: 10, height: 10 } }],
+        },
+      ],
+      resources: { fonts: [], images: [{ id: imageId }] },
+      fallbacks: [],
+    };
+
+    expect(validatePdfPageModel(model).items.map((item) => item.code)).toContain(
+      "E_PDF_MODEL_UNSUPPORTED_IMAGE_OPERATION",
+    );
+  });
+
   test("rejects malformed and unknown content operations", () => {
     const imageId = pdfResourceId("image", "Chart");
     const model: PdfPageModel = {

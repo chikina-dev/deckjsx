@@ -25,11 +25,7 @@ function textFont(input: {
   readonly resources: PdfResourceDictionary;
   readonly fontId?: string;
 }): PdfFontResource | undefined {
-  return (
-    fontById(input.resources, input.fontId) ??
-    firstPageFont(input.page, input.resources) ??
-    input.resources.fonts[0]
-  );
+  return fontById(input.resources, input.fontId) ?? firstPageFont(input.page, input.resources);
 }
 
 function rgbColor(input: { readonly r: number; readonly g: number; readonly b: number }): string {
