@@ -1,4 +1,5 @@
 import type { DeckOptions } from "../authoring/options";
+import { implicitOutputFormat } from "../authoring/options/output-formats";
 import { validateDeckOptions } from "../authoring/options/validation";
 import type { RenderOptions, WriterAdapter } from "../adapter";
 import { createWriterRenderContext } from "../adapter/context";
@@ -927,9 +928,8 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function projectionFormatFor(options: unknown): ProjectionFormat {
-  const output = isRecord(options) ? options.output : undefined;
-  return isRecord(output) && output.format === "pdf" ? "pdf" : "pptx";
+function projectionFormatFor(options: DeckOptions): ProjectionFormat {
+  return implicitOutputFormat(options);
 }
 
 function projectionInputFormatMatches(

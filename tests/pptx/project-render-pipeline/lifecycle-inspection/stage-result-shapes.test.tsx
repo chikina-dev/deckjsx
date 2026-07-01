@@ -5,7 +5,7 @@ describe("project/render stage result shapes", () => {
   test("compile, project, and render return result-first stage shapes", async () => {
     const deck = new H.Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
-      output: { format: "pptx" },
+      output: { formats: ["pptx"] },
     });
 
     deck.slide({ name: "Pipeline" }, () => (

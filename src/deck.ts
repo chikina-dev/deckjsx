@@ -1,4 +1,5 @@
 import type { DeckOptions } from "./authoring/options/public";
+import { implicitOutputFormat } from "./authoring/options/output-formats";
 import { validateDeckOptions } from "./authoring/options/validation";
 import type { RenderOptions, WriterAdapter } from "./adapter/public";
 import {
@@ -145,7 +146,7 @@ function projectionArtifactForFormat(
 }
 
 function projectionFormatForOptions(options: DeckOptions, projectOptions?: ProjectOptions) {
-  return projectOptions?.format ?? options.output?.format ?? "pptx";
+  return projectOptions?.format ?? implicitOutputFormat(options);
 }
 
 function projectionFormatForRenderInput(
