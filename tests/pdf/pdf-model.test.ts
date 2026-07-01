@@ -69,4 +69,60 @@ describe("PDF Page Model", () => {
       "E_PDF_MODEL_DUPLICATE_PAGE_ID",
     );
   });
+
+  test("rejects invalid page boxes", () => {
+    const model: PdfPageModel = {
+      format: "pdf",
+      version: "1.7",
+      documentId: pdfDocumentId("deck:demo"),
+      metadata: { producer: "deckjsx" },
+      pages: [
+        {
+          id: pdfPageId("slide:1", 0),
+          index: 0,
+          mediaBox: { x: 0, y: 0, width: 0, height: 405 },
+          resources: { fonts: [], images: [] },
+          content: [],
+        },
+      ],
+      resources: { fonts: [], images: [] },
+      fallbacks: [],
+    };
+
+    expect(validatePdfPageModel(model).items.map((item) => item.code)).toContain(
+      "E_PDF_MODEL_INVALID_PAGE_BOX",
+    );
+  });
+
+  test("rejects unknown font and image resource ids", () => {
+    const fontId = pdfResourceId("font", "Missing Font");
+    const imageId = pdfResourceId("image", "Missing Image");
+    const model: PdfPageModel = {
+      format: "pdf",
+      version: "1.7",
+      documentId: pdfDocumentId("deck:demo"),
+      metadata: { producer: "deckjsx" },
+      pages: [
+        {
+          id: pdfPageId("slide:1", 0),
+          index: 0,
+          mediaBox: { x: 0, y: 0, width: 720, height: 405 },
+          resources: { fonts: [fontId], images: [imageId] },
+          content: [
+            { op: "text", text: "Missing font", x: 0, y: 0, fontId },
+            { op: "image", imageId, box: { x: 0, y: 0, width: 10, height: 10 } },
+          ],
+        },
+      ],
+      resources: { fonts: [], images: [] },
+      fallbacks: [],
+    };
+
+    expect(validatePdfPageModel(model).items.map((item) => item.code)).toEqual(
+      expect.arrayContaining([
+        "E_PDF_MODEL_UNKNOWN_FONT_RESOURCE",
+        "E_PDF_MODEL_UNKNOWN_IMAGE_RESOURCE",
+      ]),
+    );
+  });
 });

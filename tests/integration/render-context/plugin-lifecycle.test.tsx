@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 import * as H from "./helpers.tsx";
+import type { PdfPageModel } from "@/src/projection/pdf/model";
 
 describe("deckjsx integration plugin lifecycle", () => {
   test("runs plugin hooks across the deck lifecycle cycle", async () => {
@@ -140,10 +141,11 @@ describe("deckjsx integration plugin lifecycle", () => {
       name: "test:project-transform",
       hooks: {
         afterProject(context) {
+          const projection = context.projection as H.PptxPackageModel;
           return {
             projection: {
-              ...context.projection,
-              slides: context.projection.slides.map((slide, index) =>
+              ...projection,
+              slides: projection.slides.map((slide, index) =>
                 index === 0
                   ? {
                       ...slide,
@@ -154,8 +156,8 @@ describe("deckjsx integration plugin lifecycle", () => {
                     }
                   : slide,
               ),
-              parts: context.projection.parts.map((part) =>
-                part.kind === "slide" && part.id === context.projection.slides[0]?.id
+              parts: projection.parts.map((part) =>
+                part.kind === "slide" && part.id === projection.slides[0]?.id
                   ? {
                       ...part,
                       payload: {
@@ -180,6 +182,47 @@ describe("deckjsx integration plugin lifecycle", () => {
 
     expect(project.ok).toBe(true);
     expect(H.expectPptxProjection(project).slides[0]?.payload.name).toBe("Project Hook Slide");
+  });
+
+  test("project lifecycle hooks can replace pdf projection models", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin({
+      kind: "deckjsx.plugin",
+      id: "test:pdf-project-transform",
+      name: "test:pdf-project-transform",
+      hooks: {
+        afterProject(context) {
+          const projection = context.projection as unknown as PdfPageModel;
+          return {
+            projection: {
+              ...projection,
+              metadata: { ...projection.metadata, title: "PDF Hook Slide" },
+              pages: projection.pages.map((page, index) =>
+                index === 0
+                  ? {
+                      ...page,
+                      mediaBox: { ...page.mediaBox, width: page.mediaBox.width + 1 },
+                    }
+                  : page,
+              ),
+            },
+          };
+        },
+      },
+    });
+    deck.slide({ name: "Original PDF Slide" }, () => (
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>
+        pdf project transformed
+      </p>
+    ));
+
+    const project = await deck.project({ format: "pdf", inspection: "none" });
+
+    expect(project.ok).toBe(true);
+    expect(project.projection?.format).toBe("pdf");
+    expect(project.diagnostics.items.map((item) => item.code)).not.toContain(
+      "E_PLUGIN_HOOK_INVALID_UPDATE_VALUE",
+    );
   });
 
   test("render lifecycle hooks run around prototype writer adapter methods", async () => {

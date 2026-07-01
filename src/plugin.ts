@@ -6,6 +6,8 @@ import type { DeckIntegrationContext } from "./integration-context";
 import type { MediaSourceOrigin } from "./media-source-origin";
 import type { RenderedArtifact } from "./pipeline/contract";
 import type { AssetArtifact } from "./pipeline/artifacts";
+import { isPdfPageModel } from "./projection/pdf/model";
+import type { ProjectedDocumentModel } from "./projection/registry";
 import { isPptxPackageModel, type PptxPackageModel } from "./projection/pptx/model";
 import type { ResolvedStyleMap } from "./style/resolve";
 
@@ -142,11 +144,11 @@ export type AfterProjectLifecycleContext = {
   readonly graph: SemanticAuthorGraph;
   readonly resolvedStyles: ResolvedStyleMap;
   readonly assetsById: ReadonlyMap<AssetEntityId, AssetArtifact>;
-  readonly projection: PptxPackageModel;
+  readonly projection: ProjectedDocumentModel;
 };
 
 export type AfterProjectLifecycleUpdate = {
-  readonly projection: PptxPackageModel;
+  readonly projection: ProjectedDocumentModel;
 };
 
 export type RenderLifecycleSnapshot = {
@@ -160,18 +162,18 @@ export type BeforeRenderLifecycleContext = {
   readonly stage: "render";
   readonly phase: "before";
   readonly format: string;
-  readonly projection: PptxPackageModel;
+  readonly projection: ProjectedDocumentModel;
 };
 
 export type BeforeRenderLifecycleUpdate = {
-  readonly projection: PptxPackageModel;
+  readonly projection: ProjectedDocumentModel;
 };
 
 export type AfterRenderLifecycleContext = {
   readonly stage: "render";
   readonly phase: "after";
   readonly format: string;
-  readonly projection: PptxPackageModel;
+  readonly projection: ProjectedDocumentModel;
   readonly artifact?: RenderedArtifact;
 };
 
@@ -535,10 +537,10 @@ const pluginHookUpdateValueValidators: Record<
     assetsById: isAssetArtifactMap,
   },
   afterProject: {
-    projection: isPptxPackageModelValue,
+    projection: isProjectedDocumentModelValue,
   },
   beforeRender: {
-    projection: isPptxPackageModelValue,
+    projection: isProjectedDocumentModelValue,
   },
   afterRender: {
     artifact: isRenderedArtifact,
@@ -729,6 +731,10 @@ function isIntegrationContext(value: unknown): value is DeckIntegrationContext {
 
 function isPptxPackageModelValue(value: unknown): value is PptxPackageModel {
   return isRecord(value) && isPptxPackageModel(value as never);
+}
+
+function isProjectedDocumentModelValue(value: unknown): value is ProjectedDocumentModel {
+  return isPptxPackageModelValue(value) || isPdfPageModel(value);
 }
 
 function isRenderedArtifact(value: unknown): value is RenderedArtifact {
