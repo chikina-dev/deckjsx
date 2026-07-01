@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 import { Deck } from "@/src";
 import { pdf } from "@/src/adapter";
+import type { PdfPageModel } from "@/src/projection/pdf/model";
 
 describe("pdf public surface", () => {
   function expectPdfProjectionAvailable(result: Awaited<ReturnType<Deck["project"]>>) {
@@ -8,6 +9,11 @@ describe("pdf public surface", () => {
     expect(result.ok).toBe(true);
     expect(result.projection?.format).toBe("pdf");
     expect(result.stages.project.artifact).toBe("available");
+  }
+
+  function expectPdfPageModel(value: unknown): PdfPageModel {
+    expect(value).toMatchObject({ format: "pdf" });
+    return value as PdfPageModel;
   }
 
   test("exports a PDF writer adapter", () => {
@@ -29,6 +35,73 @@ describe("pdf public surface", () => {
     const result = await deck.project({ format: "pdf", inspection: "none" });
 
     expectPdfProjectionAvailable(result);
+  });
+
+  test("projects authored text into pdf page content operations", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "PDF" }, () => <p>PDF</p>);
+
+    const result = await deck.project({ format: "pdf", inspection: "none" });
+    const projection = expectPdfPageModel(result.projection);
+
+    expectPdfProjectionAvailable(result);
+    expect(projection.pages[0]?.content).toContainEqual(
+      expect.objectContaining({ op: "text", text: "PDF" }),
+    );
+  });
+
+  test("projects text font resources for pdf writer validation", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "PDF" }, () => <p>PDF</p>);
+
+    const result = await deck.project({ format: "pdf", inspection: "none" });
+    const projection = expectPdfPageModel(result.projection);
+    const textOp = projection.pages[0]?.content.find((op) => op.op === "text");
+
+    expectPdfProjectionAvailable(result);
+    expect(textOp).toMatchObject({ op: "text", text: "PDF" });
+    expect(textOp?.fontId).toEqual(expect.any(String));
+    expect(projection.pages[0]?.resources.fonts).toContain(textOp?.fontId);
+    expect(projection.resources.fonts.map((font) => font.id)).toContain(textOp?.fontId);
+    expect(result.diagnostics.items.map((item) => item.code)).not.toContain(
+      "E_PDF_MODEL_TEXT_MISSING_FONT_RESOURCE",
+    );
+    expect(result.diagnostics.items.map((item) => item.code)).not.toContain(
+      "E_PDF_MODEL_PAGE_MISSING_FONT_RESOURCE",
+    );
+  });
+
+  test("renders authored text into pdf content bytes", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "PDF" }, () => <p>PDF</p>);
+
+    const result = await deck.render(pdf({ inspection: "none" }));
+    const bytes = new TextDecoder().decode(result.artifact?.bytes);
+
+    expect(result.ok).toBe(true);
+    expect(bytes).toContain("(PDF) Tj");
+  });
+
+  test("does not warn for the default pdf text font fallback", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "PDF" }, () => <p>PDF</p>);
+
+    const result = await deck.project({ format: "pdf", inspection: "none" });
+
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics.items.map((item) => item.code)).not.toContain("W_PDF_FONT_FALLBACK");
+  });
+
+  test("preserves explicit missing font fallback warnings for pdf text", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "PDF" }, () => <p style={{ fontFamily: "Missing Sans" }}>PDF</p>);
+
+    const result = await deck.project({ format: "pdf", inspection: "none" });
+
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({ code: "W_PDF_FONT_FALLBACK", severity: "warning" }),
+    );
   });
 
   test("projects pdf for deck output preference", async () => {

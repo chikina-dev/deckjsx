@@ -1,14 +1,40 @@
 import type { DeckOptions } from "../../authoring/options";
 import type { Diagnostics } from "../../diagnostics";
-import type { AssetEntity, SemanticAuthorGraph } from "../../graph";
+import type { AssetEntity, GraphNodeId, SemanticAuthorGraph } from "../../graph";
 import type { DeckIntegrationContext, FontAssetRegistration } from "../../integration-context";
+import { buildLayoutInputSnapshot } from "../../layout/input";
+import type { ProjectedLayoutNode, ProjectedLayoutSlide } from "../../layout/projected";
+import { resolveProjectedLayout } from "../../layout/resolve";
+import { normalizeColor } from "../../style/color";
 import type { ResolvedStyleMap } from "../../style/resolve";
-import { POINTS_PER_INCH } from "../../types";
+import { EMU_PER_INCH, POINTS_PER_INCH } from "../../types";
 import { pdfDocumentId, pdfPageId, pdfResourceId } from "./identity";
-import type { PdfFallback, PdfFontResource, PdfPage, PdfPageModel } from "./model";
+import type {
+  PdfContentOp,
+  PdfFallback,
+  PdfFontResource,
+  PdfPage,
+  PdfPageModel,
+  PdfRgbColor,
+} from "./model";
+
+const EMU_PER_POINT = EMU_PER_INCH / POINTS_PER_INCH;
+const DEFAULT_FONT_RESOURCE_ID = pdfResourceId("font", "default-helvetica");
+const DEFAULT_FONT_RESOURCE: PdfFontResource = {
+  id: DEFAULT_FONT_RESOURCE_ID,
+  name: "F1",
+  family: "Helvetica",
+  weight: 400,
+  style: "normal",
+  fallback: false,
+};
 
 function pointsFromLayout(value: number, unit: DeckOptions["layout"]["unit"]): number {
   return unit === "in" ? value * POINTS_PER_INCH : value;
+}
+
+function pointsFromEmu(value: number): number {
+  return value / EMU_PER_POINT;
 }
 
 function pageSizeFromOptions(options: DeckOptions): PdfPage["mediaBox"] {
@@ -148,10 +174,10 @@ function pdfFallbackForRequest(request: FontRequest): PdfFallback {
   };
 }
 
-function pdfFallbackFontResourceForRequest(request: FontRequest): PdfFontResource {
+function pdfFallbackFontResourceForRequest(request: FontRequest, name: string): PdfFontResource {
   return {
     id: pdfResourceId("font", `fallback:${request.family}:${request.weight}:${request.style}`),
-    name: "Helvetica",
+    name,
     family: "Helvetica",
     weight: request.weight,
     style: request.style,
@@ -162,27 +188,172 @@ function pdfFallbackFontResourceForRequest(request: FontRequest): PdfFontResourc
 function pdfFontResourcesForRequests(input: {
   readonly requests: readonly FontRequest[];
   readonly integrationContext?: DeckIntegrationContext;
-}): { readonly fonts: readonly PdfFontResource[]; readonly fallbacks: readonly PdfFallback[] } {
+}): {
+  readonly fonts: readonly PdfFontResource[];
+  readonly fallbacks: readonly PdfFallback[];
+  readonly resourceIdsByRequestKey: ReadonlyMap<string, PdfFontResource["id"]>;
+} {
   const fontAssets = input.integrationContext?.fontAssets ?? [];
 
   const fonts: PdfFontResource[] = [];
   const fallbacks: PdfFallback[] = [];
+  const resourceIdsByRequestKey = new Map<string, PdfFontResource["id"]>();
 
-  input.requests.forEach((request) => {
+  input.requests.forEach((request, index) => {
     const registration = fontAssets.find((candidate) =>
       fontRegistrationMatchesRequest(candidate, request),
     );
 
     if (registration) {
-      fonts.push(pdfFontResourceForRegistration(registration));
+      const font = pdfFontResourceForRegistration(registration);
+      fonts.push(font);
+      resourceIdsByRequestKey.set(fontRequestKey(request), font.id);
       return;
     }
 
-    fonts.push(pdfFallbackFontResourceForRequest(request));
+    const font = pdfFallbackFontResourceForRequest(request, `F${index + 2}`);
+    fonts.push(font);
+    resourceIdsByRequestKey.set(fontRequestKey(request), font.id);
     fallbacks.push(pdfFallbackForRequest(request));
   });
 
-  return { fonts, fallbacks };
+  return { fonts, fallbacks, resourceIdsByRequestKey };
+}
+
+function explicitFontRequestsByTextNode(input: {
+  readonly graph: SemanticAuthorGraph;
+  readonly resolvedStyles: ResolvedStyleMap;
+}): ReadonlyMap<GraphNodeId, FontRequest> {
+  const requests = new Map<GraphNodeId, FontRequest>();
+
+  input.graph.nodes.forEach((node) => {
+    if (node.kind !== "text") {
+      return;
+    }
+
+    const resolvedStyle = input.resolvedStyles.get(node.id);
+    const familyProperty = resolvedStyle?.properties.fontFamily;
+    if (!familyProperty || familyProperty.source.layer === "default") {
+      return;
+    }
+
+    const family = normalizedFontFamily(familyProperty.value);
+    if (!family) {
+      return;
+    }
+
+    requests.set(node.id, {
+      family,
+      weight: resolvedFontWeight(resolvedStyle.properties.fontWeight?.value),
+      style: resolvedFontStyle(resolvedStyle.properties.fontStyle?.value),
+    });
+  });
+
+  return requests;
+}
+
+function textNodeFontId(input: {
+  readonly node: ProjectedLayoutNode;
+  readonly requestsByTextNode: ReadonlyMap<GraphNodeId, FontRequest>;
+  readonly resourceIdsByRequestKey: ReadonlyMap<string, PdfFontResource["id"]>;
+}): PdfFontResource["id"] {
+  const graphNodeIds = input.node.origin?.graphNodeIds ?? [];
+  for (const graphNodeId of graphNodeIds) {
+    const request = input.requestsByTextNode.get(graphNodeId);
+    if (!request) {
+      continue;
+    }
+    const resourceId = input.resourceIdsByRequestKey.get(fontRequestKey(request));
+    if (resourceId) {
+      return resourceId;
+    }
+  }
+
+  return DEFAULT_FONT_RESOURCE_ID;
+}
+
+function rgbColorFromStyle(value: string | undefined): PdfRgbColor | undefined {
+  const color = normalizeColor(value);
+  if (!color || !/^[0-9A-F]{6}$/u.test(color)) {
+    return undefined;
+  }
+
+  return {
+    r: Number.parseInt(color.slice(0, 2), 16) / 255,
+    g: Number.parseInt(color.slice(2, 4), 16) / 255,
+    b: Number.parseInt(color.slice(4, 6), 16) / 255,
+  };
+}
+
+function textOpsFromLayoutNode(input: {
+  readonly node: ProjectedLayoutNode;
+  readonly requestsByTextNode: ReadonlyMap<GraphNodeId, FontRequest>;
+  readonly resourceIdsByRequestKey: ReadonlyMap<string, PdfFontResource["id"]>;
+}): readonly PdfContentOp[] {
+  if (input.node.kind === "group") {
+    return input.node.children.flatMap((child) =>
+      textOpsFromLayoutNode({
+        node: child,
+        requestsByTextNode: input.requestsByTextNode,
+        resourceIdsByRequestKey: input.resourceIdsByRequestKey,
+      }),
+    );
+  }
+
+  if (input.node.kind !== "text" || input.node.content.text.length === 0) {
+    return [];
+  }
+
+  const frame = input.node.frame;
+  const color = rgbColorFromStyle(input.node.style.color);
+
+  return [
+    {
+      op: "text",
+      text: input.node.content.text,
+      x: pointsFromEmu(frame.xEmu),
+      y: pointsFromEmu(frame.yEmu),
+      fontId: textNodeFontId(input),
+      fontSize: input.node.style.fontSizePt ?? 12,
+      ...(color ? { color } : {}),
+    },
+  ];
+}
+
+function textOpsFromLayoutSlide(input: {
+  readonly layoutSlide: ProjectedLayoutSlide | undefined;
+  readonly requestsByTextNode: ReadonlyMap<GraphNodeId, FontRequest>;
+  readonly resourceIdsByRequestKey: ReadonlyMap<string, PdfFontResource["id"]>;
+}): readonly PdfContentOp[] {
+  return (
+    input.layoutSlide?.nodes.flatMap((node) =>
+      textOpsFromLayoutNode({
+        node,
+        requestsByTextNode: input.requestsByTextNode,
+        resourceIdsByRequestKey: input.resourceIdsByRequestKey,
+      }),
+    ) ?? []
+  );
+}
+
+function pageFontIdsForContent(content: readonly PdfContentOp[]): readonly PdfFontResource["id"][] {
+  return [
+    ...new Set(
+      content.flatMap((op) => {
+        return op.op === "text" && op.fontId ? [op.fontId] : [];
+      }),
+    ),
+  ];
+}
+
+function resourceFontsForContent(input: {
+  readonly fontProjectionFonts: readonly PdfFontResource[];
+  readonly pages: readonly Pick<PdfPage, "resources">[];
+}): readonly PdfFontResource[] {
+  const usedFontIds = new Set(input.pages.flatMap((page) => page.resources.fonts));
+  const fonts = input.fontProjectionFonts.filter((font) => usedFontIds.has(font.id));
+
+  return usedFontIds.has(DEFAULT_FONT_RESOURCE_ID) ? [DEFAULT_FONT_RESOURCE, ...fonts] : fonts;
 }
 
 export function projectGraphToPdfPageModel(input: {
@@ -203,7 +374,36 @@ export function projectGraphToPdfPageModel(input: {
     }),
     integrationContext: input.integrationContext,
   });
-  const pageFontIds = fontProjection.fonts.map((font) => font.id);
+  const layoutInput = buildLayoutInputSnapshot({
+    graph: input.graph,
+    resolvedStyles: input.resolvedStyles,
+    deckSize: {
+      widthEmu: mediaBox.width * EMU_PER_POINT,
+      heightEmu: mediaBox.height * EMU_PER_POINT,
+    },
+    diagnostics: input.diagnostics,
+    meta: input.options.meta,
+  });
+  const projectedLayout = resolveProjectedLayout(input.options, layoutInput.snapshot);
+  const requestsByTextNode = explicitFontRequestsByTextNode({
+    graph: input.graph,
+    resolvedStyles: input.resolvedStyles,
+  });
+  const pageDrafts = pageSourceIds.map((slideId, index): PdfPage => {
+    const content = textOpsFromLayoutSlide({
+      layoutSlide: projectedLayout.slides[index],
+      requestsByTextNode,
+      resourceIdsByRequestKey: fontProjection.resourceIdsByRequestKey,
+    });
+
+    return {
+      id: pdfPageId(slideId, index),
+      index,
+      mediaBox,
+      resources: { fonts: pageFontIdsForContent(content), images: [] },
+      content,
+    };
+  });
 
   return {
     format: "pdf",
@@ -213,16 +413,14 @@ export function projectGraphToPdfPageModel(input: {
       producer: "deckjsx",
       ...input.options.meta,
     },
-    pages: pageSourceIds.map((slideId, index): PdfPage => {
-      return {
-        id: pdfPageId(slideId, index),
-        index,
-        mediaBox,
-        resources: { fonts: pageFontIds, images: [] },
-        content: [],
-      };
-    }),
-    resources: { fonts: fontProjection.fonts, images: [] },
+    pages: pageDrafts,
+    resources: {
+      fonts: resourceFontsForContent({
+        fontProjectionFonts: fontProjection.fonts,
+        pages: pageDrafts,
+      }),
+      images: [],
+    },
     fallbacks: fontProjection.fallbacks,
   };
 }
