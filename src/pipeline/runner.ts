@@ -1,5 +1,8 @@
 import type { DeckOptions } from "../authoring/options";
-import { implicitOutputFormat } from "../authoring/options/output-formats";
+import {
+  hasMultipleConfiguredOutputFormats,
+  implicitOutputFormat,
+} from "../authoring/options/output-formats";
 import { validateDeckOptions } from "../authoring/options/validation";
 import type { RenderOptions, WriterAdapter } from "../adapter";
 import { createWriterRenderContext } from "../adapter/context";
@@ -1034,6 +1037,32 @@ function writerAdapterFormatDiagnostics(input: {
   ]);
 }
 
+function implicitFirstOutputFormatDiagnostics(input: {
+  options: DeckOptions;
+  format: ProjectionFormat;
+  path: "project.format" | "render.format";
+}): Diagnostics {
+  if (!hasMultipleConfiguredOutputFormats(input.options)) {
+    return emptyDiagnostics();
+  }
+
+  return createDiagnostics([
+    diagnostic({
+      severity: "warning",
+      code: "W_OUTPUT_FORMATS_IMPLICIT_FIRST",
+      title: "implicit output format selected the first configured format",
+      message:
+        "This Deck declares multiple output formats, so deckjsx used output.formats[0] for this single-format call.",
+      labels: [
+        {
+          path: input.path,
+          message: `selected ${input.format} from output.formats[0]`,
+        },
+      ],
+    }),
+  ]);
+}
+
 function diagnosticFromError(input: {
   stage: "compile" | "project" | "render";
   code: string;
@@ -1263,28 +1292,38 @@ export async function projectSource<
   const artifacts = input.artifacts ?? new PipelineArtifactCollection();
   const projectionFormat =
     input.projectionFormat ?? input.projectOptions?.format ?? projectionFormatFor(input.options);
+  const implicitFormatDiagnostics =
+    input.projectionFormat || input.projectOptions?.format
+      ? emptyDiagnostics()
+      : implicitFirstOutputFormatDiagnostics({
+          options: input.options,
+          format: projectionFormat,
+          path: "project.format",
+        });
   const optionsDiagnostics = validateDeckOptions(input.options);
   const executionDiagnostics = createDiagnostics(input.execution?.diagnostics);
 
   if (optionsDiagnostics.hasErrors) {
+    const diagnostics = combineDiagnostics(implicitFormatDiagnostics, optionsDiagnostics);
     return {
       ok: false,
-      diagnostics: optionsDiagnostics,
+      diagnostics,
       stages: {
-        compile: stageSummary("compile", optionsDiagnostics, "missing"),
-        project: stageSummary("project", optionsDiagnostics, "missing"),
+        compile: stageSummary("compile", diagnostics, "missing"),
+        project: stageSummary("project", diagnostics, "missing"),
       },
       format: projectionFormat,
     };
   }
 
   if (executionDiagnostics.hasErrors) {
+    const diagnostics = combineDiagnostics(implicitFormatDiagnostics, executionDiagnostics);
     return {
       ok: false,
-      diagnostics: executionDiagnostics,
+      diagnostics,
       stages: {
-        compile: stageSummary("compile", executionDiagnostics, "missing"),
-        project: stageSummary("project", executionDiagnostics, "missing"),
+        compile: stageSummary("compile", diagnostics, "missing"),
+        project: stageSummary("project", diagnostics, "missing"),
       },
       format: projectionFormat,
     };
@@ -1298,6 +1337,7 @@ export async function projectSource<
         ? input.definedProjection.diagnostics
         : definedProjectionShapeDiagnostics(definedProjectionInput);
     const diagnostics = combineDiagnostics(
+      implicitFormatDiagnostics,
       definedShapeDiagnostics,
       definedProjection
         ? projectionDiagnosticsForModel({
@@ -1370,12 +1410,13 @@ export async function projectSource<
     !compileResult.graph ||
     !compileResult.resolvedStyles
   ) {
+    const diagnostics = combineDiagnostics(implicitFormatDiagnostics, compileResult.diagnostics);
     return {
       ok: false,
-      diagnostics: compileResult.diagnostics,
+      diagnostics,
       stages: {
         ...compileResult.stages,
-        project: stageSummary("project", compileResult.diagnostics, "missing"),
+        project: stageSummary("project", diagnostics, "missing"),
       },
       format: projectionFormat,
     };
@@ -1511,6 +1552,7 @@ export async function projectSource<
             : undefined))
         : undefined;
     const diagnostics = combineDiagnostics(
+      implicitFormatDiagnostics,
       compileResult.diagnostics,
       assetDiagnostics,
       beforeProjectDiagnostics,
@@ -1558,7 +1600,11 @@ export async function projectSource<
       title: "project failed",
       error,
     });
-    let diagnostics = combineDiagnostics(compileResult.diagnostics, projectDiagnostics);
+    let diagnostics = combineDiagnostics(
+      implicitFormatDiagnostics,
+      compileResult.diagnostics,
+      projectDiagnostics,
+    );
     let partialProjection: ProjectedDocumentModel | undefined;
     try {
       partialProjection = projectGraphToPartialDocumentModel({
@@ -1640,15 +1686,24 @@ export async function renderSource<
   const finishRender = <TResult extends RenderResult>(result: TResult): TResult =>
     attachArtifactWriteToken(result, incrementalSlot?.token);
   const projectionFormat = projectionFormatFor(input.options);
+  const implicitFormatDiagnostics =
+    input.renderInput === undefined || !isWriterAdapter(input.renderInput)
+      ? implicitFirstOutputFormatDiagnostics({
+          options: input.options,
+          format: projectionFormat,
+          path: "render.format",
+        })
+      : emptyDiagnostics();
   const optionsDiagnostics = validateDeckOptions(input.options);
   if (optionsDiagnostics.hasErrors) {
+    const diagnostics = combineDiagnostics(implicitFormatDiagnostics, optionsDiagnostics);
     return finishRender({
       ok: false,
-      diagnostics: optionsDiagnostics,
+      diagnostics,
       stages: {
-        compile: stageSummary("compile", optionsDiagnostics, "missing"),
-        project: stageSummary("project", optionsDiagnostics, "missing"),
-        render: stageSummary("render", optionsDiagnostics, "missing"),
+        compile: stageSummary("compile", diagnostics, "missing"),
+        project: stageSummary("project", diagnostics, "missing"),
+        render: stageSummary("render", diagnostics, "missing"),
       },
       format: projectionFormat,
     });
@@ -1660,13 +1715,14 @@ export async function renderSource<
   });
 
   if (!adapterSelection.ok) {
+    const diagnostics = combineDiagnostics(implicitFormatDiagnostics, adapterSelection.diagnostics);
     return finishRender({
       ok: false,
-      diagnostics: adapterSelection.diagnostics,
+      diagnostics,
       stages: {
         compile: stageSummary("compile", emptyDiagnostics(), "missing"),
         project: stageSummary("project", emptyDiagnostics(), "missing"),
-        render: stageSummary("render", adapterSelection.diagnostics, "missing"),
+        render: stageSummary("render", diagnostics, "missing"),
       },
       format: adapterSelection.format,
     });
@@ -1684,13 +1740,14 @@ export async function renderSource<
   });
   const executionDiagnostics = createDiagnostics(execution.diagnostics);
   if (executionDiagnostics.hasErrors) {
+    const diagnostics = combineDiagnostics(implicitFormatDiagnostics, executionDiagnostics);
     return finishRender({
       ok: false,
-      diagnostics: executionDiagnostics,
+      diagnostics,
       stages: {
-        compile: stageSummary("compile", executionDiagnostics, "missing"),
-        project: stageSummary("project", executionDiagnostics, "missing"),
-        render: stageSummary("render", executionDiagnostics, "missing"),
+        compile: stageSummary("compile", diagnostics, "missing"),
+        project: stageSummary("project", diagnostics, "missing"),
+        render: stageSummary("render", diagnostics, "missing"),
       },
       format: adapter.format,
     });
@@ -1741,7 +1798,11 @@ export async function renderSource<
     adapter,
     deckFormat: projectionFormat,
   });
-  const projectDiagnostics = combineDiagnostics(projectResult.diagnostics, formatDiagnostics);
+  const projectDiagnostics = combineDiagnostics(
+    projectResult.diagnostics,
+    formatDiagnostics,
+    implicitFormatDiagnostics,
+  );
 
   if (!projectResult.projection || projectDiagnostics.hasErrors) {
     return finishRender({

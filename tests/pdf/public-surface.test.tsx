@@ -189,6 +189,43 @@ describe("pdf public surface", () => {
     expectPdfProjectionAvailable(result);
   });
 
+  test("uses the first configured output format for implicit project with a warning", async () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      output: { formats: ["pdf", "pptx"] },
+    });
+    deck.slide({ name: "PDF first" }, () => <p>PDF first</p>);
+
+    const result = await deck.project({ inspection: "none" });
+
+    expectPdfProjectionAvailable(result);
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        code: "W_OUTPUT_FORMATS_IMPLICIT_FIRST",
+        severity: "warning",
+      }),
+    );
+  });
+
+  test("uses the first configured output format for implicit render with a warning", async () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      output: { formats: ["pdf", "pptx"] },
+    });
+    deck.slide({ name: "PDF first" }, () => <p>PDF first</p>);
+
+    const result = await deck.render({ inspection: "none" });
+
+    expect(result.ok).toBe(true);
+    expect(result.artifact).toMatchObject({ format: "pdf", mediaType: "application/pdf" });
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        code: "W_OUTPUT_FORMATS_IMPLICIT_FIRST",
+        severity: "warning",
+      }),
+    );
+  });
+
   test("does not reuse a cached pptx projection for a later pdf project request", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "PDF" }, () => <p>PDF</p>);
