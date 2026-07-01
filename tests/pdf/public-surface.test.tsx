@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 import { Deck } from "@/src";
-import { pdf } from "@/src/adapter";
+import { pdf, pptx } from "@/src/adapter";
 import type { PdfPageModel } from "@/src/projection/pdf/model";
 
 describe("pdf public surface", () => {
@@ -223,6 +223,31 @@ describe("pdf public surface", () => {
         code: "W_OUTPUT_FORMATS_IMPLICIT_FIRST",
         severity: "warning",
       }),
+    );
+  });
+
+  test("renders explicit pptx and pdf adapters without membership warnings when both formats are configured", async () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      output: { formats: ["pptx", "pdf"] },
+    });
+    deck.slide({ name: "Both formats" }, () => <p>Both formats</p>);
+
+    const pptxResult = await deck.render(pptx({ inspection: "none" }));
+    const pdfResult = await deck.render(pdf({ inspection: "none" }));
+
+    expect(pptxResult.ok).toBe(true);
+    expect(pdfResult.ok).toBe(true);
+    expect(pptxResult.artifact?.format).toBe("pptx");
+    expect(pdfResult.artifact?.format).toBe("pdf");
+    expect(pptxResult.diagnostics.items.map((item) => item.code)).not.toContain(
+      "W_RENDER_ADAPTER_FORMAT_NOT_CONFIGURED",
+    );
+    expect(pdfResult.diagnostics.items.map((item) => item.code)).not.toContain(
+      "W_RENDER_ADAPTER_FORMAT_NOT_CONFIGURED",
+    );
+    expect(pdfResult.diagnostics.items.map((item) => item.code)).not.toContain(
+      "W_RENDER_ADAPTER_FORMAT_MISMATCH",
     );
   });
 

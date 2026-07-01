@@ -1,7 +1,9 @@
 import type { DeckOptions } from "../authoring/options";
 import {
+  configuredOutputFormats,
   hasMultipleConfiguredOutputFormats,
   implicitOutputFormat,
+  outputFormatsInclude,
 } from "../authoring/options/output-formats";
 import { validateDeckOptions } from "../authoring/options/validation";
 import type { RenderOptions, WriterAdapter } from "../adapter";
@@ -1011,26 +1013,25 @@ function selectWriterAdapter(input: {
 
 function writerAdapterFormatDiagnostics(input: {
   adapter: WriterAdapter;
-  deckFormat: ProjectionFormat;
+  options: DeckOptions;
 }): Diagnostics {
   const adapterFormat = input.adapter.format;
-  const deckFormat = input.deckFormat;
 
-  if (adapterFormat === deckFormat) {
+  if (outputFormatsInclude(input.options, adapterFormat)) {
     return emptyDiagnostics();
   }
 
   return createDiagnostics([
     diagnostic({
       severity: "warning",
-      code: "W_RENDER_ADAPTER_FORMAT_MISMATCH",
-      title: "writer adapter format differs from deck output format",
+      code: "W_RENDER_ADAPTER_FORMAT_NOT_CONFIGURED",
+      title: "writer adapter format is not configured for deck output",
       message:
-        "The selected Writer Adapter format does not match this Deck's configured output format.",
+        "The selected Writer Adapter format is not listed in this Deck's output.formats configuration.",
       labels: [
         {
           path: "render.adapter.format",
-          message: `adapter=${adapterFormat}, deck=${deckFormat}`,
+          message: `adapter=${adapterFormat}, output.formats=${configuredOutputFormats(input.options).join(",")}`,
         },
       ],
     }),
@@ -1796,7 +1797,7 @@ export async function renderSource<
   });
   const formatDiagnostics = writerAdapterFormatDiagnostics({
     adapter,
-    deckFormat: projectionFormat,
+    options: input.options,
   });
   const projectDiagnostics = combineDiagnostics(
     projectResult.diagnostics,
