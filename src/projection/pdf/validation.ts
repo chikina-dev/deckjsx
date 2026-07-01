@@ -4,7 +4,7 @@ import {
   type Diagnostic,
   type Diagnostics,
 } from "../../diagnostics";
-import type { PdfPageModel, PdfResourceDictionary } from "./model";
+import type { PdfContentOp, PdfPageModel, PdfRectangle, PdfResourceDictionary } from "./model";
 import type { PdfResourceId } from "./identity";
 
 function resourceIds(resources: PdfResourceDictionary): {
@@ -26,6 +26,83 @@ function pageBoxIsPositive(box: PdfPageModel["pages"][number]["mediaBox"]): bool
     box.width > 0 &&
     box.height > 0
   );
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function rectangleIsPositive(value: unknown): value is PdfRectangle {
+  return (
+    isRecord(value) &&
+    typeof value.x === "number" &&
+    typeof value.y === "number" &&
+    typeof value.width === "number" &&
+    typeof value.height === "number" &&
+    Number.isFinite(value.x) &&
+    Number.isFinite(value.y) &&
+    Number.isFinite(value.width) &&
+    Number.isFinite(value.height) &&
+    value.width > 0 &&
+    value.height > 0
+  );
+}
+
+function colorIsValid(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Number.isFinite(value.r) &&
+    Number.isFinite(value.g) &&
+    Number.isFinite(value.b)
+  );
+}
+
+function contentOpIsValid(value: unknown): value is PdfContentOp {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  switch (value.op) {
+    case "setFillColor":
+      return colorIsValid(value.color);
+    case "text":
+      return (
+        typeof value.text === "string" &&
+        Number.isFinite(value.x) &&
+        Number.isFinite(value.y) &&
+        (value.fontId === undefined || typeof value.fontId === "string") &&
+        (value.fontSize === undefined ||
+          (typeof value.fontSize === "number" &&
+            Number.isFinite(value.fontSize) &&
+            value.fontSize > 0)) &&
+        (value.color === undefined || colorIsValid(value.color))
+      );
+    case "image":
+      return typeof value.imageId === "string" && rectangleIsPositive(value.box);
+    default:
+      return false;
+  }
+}
+
+function invalidContentOpDiagnostic(input: {
+  readonly pageIndex: number;
+  readonly opIndex: number;
+  readonly op: unknown;
+}): Diagnostic {
+  return diagnostic({
+    severity: "error",
+    code: "E_PDF_MODEL_INVALID_CONTENT_OP",
+    title: "PDF content operation is invalid",
+    message:
+      "PDF content operations must be valid setFillColor, text, or image operations with required fields.",
+    labels: [
+      {
+        path: `pages.${input.pageIndex}.content.${input.opIndex}`,
+        message: JSON.stringify(input.op),
+        severity: "primary",
+      },
+    ],
+  });
 }
 
 function unknownResourceDiagnostic(input: {
@@ -120,6 +197,10 @@ export function validatePdfPageModel(model: PdfPageModel): Diagnostics {
       }
     });
     page.content.forEach((op, opIndex) => {
+      if (!contentOpIsValid(op)) {
+        issues.push(invalidContentOpDiagnostic({ pageIndex, opIndex, op }));
+        return;
+      }
       if (op.op === "text" && op.fontId && !resources.fonts.has(op.fontId)) {
         issues.push(
           unknownResourceDiagnostic({

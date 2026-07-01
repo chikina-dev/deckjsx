@@ -125,4 +125,34 @@ describe("PDF Page Model", () => {
       ]),
     );
   });
+
+  test("rejects malformed and unknown content operations", () => {
+    const imageId = pdfResourceId("image", "Chart");
+    const model: PdfPageModel = {
+      format: "pdf",
+      version: "1.7",
+      documentId: pdfDocumentId("deck:demo"),
+      metadata: { producer: "deckjsx" },
+      pages: [
+        {
+          id: pdfPageId("slide:1", 0),
+          index: 0,
+          mediaBox: { x: 0, y: 0, width: 720, height: 405 },
+          resources: { fonts: [], images: [imageId] },
+          content: [
+            { op: "setFillColor", color: { r: 1, g: 0 } },
+            { op: "text", text: 42, x: 0, y: 0 },
+            { op: "image", imageId, box: { x: 0, y: 0, width: 0, height: 10 } },
+            { op: "clip" },
+          ] as never,
+        },
+      ],
+      resources: { fonts: [], images: [{ id: imageId }] },
+      fallbacks: [],
+    };
+
+    expect(validatePdfPageModel(model).items.map((item) => item.code)).toEqual(
+      expect.arrayContaining(["E_PDF_MODEL_INVALID_CONTENT_OP"]),
+    );
+  });
 });

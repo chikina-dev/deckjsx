@@ -763,7 +763,8 @@ function isPdfPageValue(value: unknown): boolean {
     value.resources.fonts.every((fontId) => typeof fontId === "string") &&
     Array.isArray(value.resources.images) &&
     value.resources.images.every((imageId) => typeof imageId === "string") &&
-    Array.isArray(value.content)
+    Array.isArray(value.content) &&
+    value.content.every(isPdfContentOpValue)
   );
 }
 
@@ -790,6 +791,47 @@ function isPdfResourceDictionaryValue(value: unknown): boolean {
     value.fonts.every(isPdfFontResourceValue) &&
     Array.isArray(value.images) &&
     value.images.every(isPdfImageResourceValue)
+  );
+}
+
+function isPdfContentOpValue(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  switch (value.op) {
+    case "setFillColor":
+      return isPdfColorValue(value.color);
+    case "text":
+      return (
+        typeof value.text === "string" &&
+        typeof value.x === "number" &&
+        typeof value.y === "number" &&
+        Number.isFinite(value.x) &&
+        Number.isFinite(value.y) &&
+        (value.fontId === undefined || typeof value.fontId === "string") &&
+        (value.fontSize === undefined ||
+          (typeof value.fontSize === "number" &&
+            Number.isFinite(value.fontSize) &&
+            value.fontSize > 0)) &&
+        (value.color === undefined || isPdfColorValue(value.color))
+      );
+    case "image":
+      return typeof value.imageId === "string" && isPdfRectangleValue(value.box);
+    default:
+      return false;
+  }
+}
+
+function isPdfColorValue(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.r === "number" &&
+    typeof value.g === "number" &&
+    typeof value.b === "number" &&
+    Number.isFinite(value.r) &&
+    Number.isFinite(value.g) &&
+    Number.isFinite(value.b)
   );
 }
 
