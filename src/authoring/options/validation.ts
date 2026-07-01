@@ -18,6 +18,7 @@ type DeckOptionDiagnosticCode =
 const deckOptionKeys = ["layout", "templates", "meta", "theme", "output"] as const;
 const metaKeys = ["title", "author", "subject"] as const;
 const outputKeys = ["formats"] as const;
+const legacyOutputKeys = ["format"] as const;
 
 function includesString(values: readonly string[], value: string): boolean {
   return values.includes(value);
@@ -181,7 +182,7 @@ export function validateDeckOptions(options: unknown): Diagnostics {
       );
     } else {
       for (const key of Object.keys(options.output)) {
-        if (!includesString(outputKeys, key)) {
+        if (!includesString(outputKeys, key) && !includesString(legacyOutputKeys, key)) {
           diagnostics.push(
             deckOptionDiagnostic({
               code: "E_DECK_INVALID_OUTPUT",

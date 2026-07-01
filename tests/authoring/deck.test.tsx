@@ -136,6 +136,9 @@ describe("Deck", () => {
         }),
       ]),
     );
+    expect(result.diagnostics.items.map((item) => item.message)).not.toContain(
+      "Deck output format is not part of the public authoring API.",
+    );
     expect(result.stages.compile.artifact).toBe("missing");
     expect(result.stages.project.artifact).toBe("missing");
   });
