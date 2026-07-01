@@ -182,6 +182,29 @@ describe("Deck", () => {
     expect(result.projection?.format).toBe("pptx");
   });
 
+  test("project falls back to pptx when runtime output formats are malformed", async () => {
+    const scalarFormatsDeck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      output: { formats: "pdf" },
+    } as never);
+    scalarFormatsDeck.slide(() => <p>scalar formats</p>);
+    const invalidFormatsDeck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      output: { formats: ["odp"] },
+    } as never);
+    invalidFormatsDeck.slide(() => <p>invalid formats</p>);
+
+    const scalarFormatsResult = await scalarFormatsDeck.project({ inspection: "none" });
+    const invalidFormatsResult = await invalidFormatsDeck.project({ inspection: "none" });
+
+    expect(scalarFormatsResult.ok).toBe(false);
+    expect(scalarFormatsResult.format).toBe("pptx");
+    expect(scalarFormatsResult.projection).toBeUndefined();
+    expect(invalidFormatsResult.ok).toBe(false);
+    expect(invalidFormatsResult.format).toBe("pptx");
+    expect(invalidFormatsResult.projection).toBeUndefined();
+  });
+
   test("compile reports unknown deck options outside the public authoring API", () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },

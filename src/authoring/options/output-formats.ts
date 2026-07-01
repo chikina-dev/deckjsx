@@ -4,13 +4,22 @@ export const DEFAULT_OUTPUT_FORMATS = ["pptx"] as const satisfies readonly Proje
 
 type OutputFormatSource = {
   readonly output?: {
-    readonly formats?: readonly ProjectionFormat[];
+    readonly formats?: unknown;
   };
 };
 
+function isProjectionFormat(value: unknown): value is ProjectionFormat {
+  return value === "pptx" || value === "pdf";
+}
+
 export function configuredOutputFormats(options: OutputFormatSource): readonly ProjectionFormat[] {
   const formats = options.output?.formats;
-  return formats && formats.length > 0 ? formats : DEFAULT_OUTPUT_FORMATS;
+  if (!Array.isArray(formats) || formats.length === 0) {
+    return DEFAULT_OUTPUT_FORMATS;
+  }
+
+  const validFormats = formats.filter(isProjectionFormat);
+  return validFormats.length > 0 ? validFormats : DEFAULT_OUTPUT_FORMATS;
 }
 
 export function implicitOutputFormat(options: OutputFormatSource): ProjectionFormat {
