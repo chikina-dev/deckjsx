@@ -22,4 +22,4 @@ RUN bun install --frozen-lockfile
 
 COPY . .
 
-CMD ["bun", "run", ".github/render/verify-render.tsx", "--strict"]
+CMD ["bash", ".github/render/run-verify-render.sh"]
