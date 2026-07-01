@@ -17,7 +17,7 @@ type DeckOptionDiagnosticCode =
 
 const deckOptionKeys = ["layout", "templates", "meta", "theme", "output"] as const;
 const metaKeys = ["title", "author", "subject"] as const;
-const outputKeys = ["format"] as const;
+const outputKeys = ["formats"] as const;
 
 function includesString(values: readonly string[], value: string): boolean {
   return values.includes(value);
@@ -193,20 +193,56 @@ export function validateDeckOptions(options: unknown): Diagnostics {
         }
       }
 
-      if (
-        options.output.format !== undefined &&
-        options.output.format !== "pptx" &&
-        options.output.format !== "pdf"
-      ) {
+      if ("format" in options.output) {
         diagnostics.push(
           deckOptionDiagnostic({
             code: "E_DECK_INVALID_OUTPUT",
             section: "output",
             path: "deck.options.output.format",
             message:
-              'Deck output format must be "pptx" or "pdf" when provided in the public authoring API.',
+              "Deck output format is no longer part of the public authoring API. Use output.formats instead.",
           }),
         );
+      }
+
+      if (options.output.formats !== undefined) {
+        if (!Array.isArray(options.output.formats)) {
+          diagnostics.push(
+            deckOptionDiagnostic({
+              code: "E_DECK_INVALID_OUTPUT",
+              section: "output",
+              path: "deck.options.output.formats",
+              message: "Deck output formats must be an array in the public authoring API.",
+            }),
+          );
+        } else {
+          const seenFormats = new Set<string>();
+          for (const [index, format] of options.output.formats.entries()) {
+            if (format !== "pptx" && format !== "pdf") {
+              diagnostics.push(
+                deckOptionDiagnostic({
+                  code: "E_DECK_INVALID_OUTPUT",
+                  section: "output",
+                  path: `deck.options.output.formats.${index}`,
+                  message: `Deck output formats[${index}] must be "pptx" or "pdf" in the public authoring API.`,
+                }),
+              );
+              continue;
+            }
+
+            if (seenFormats.has(format)) {
+              diagnostics.push(
+                deckOptionDiagnostic({
+                  code: "E_DECK_INVALID_OUTPUT",
+                  section: "output",
+                  path: `deck.options.output.formats.${index}`,
+                  message: `Deck output formats must not contain duplicate format "${format}".`,
+                }),
+              );
+            }
+            seenFormats.add(format);
+          }
+        }
       }
     }
   }

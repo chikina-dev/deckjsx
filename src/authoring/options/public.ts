@@ -34,8 +34,8 @@ export type DeckOptions<TTemplates extends SlideTemplateSet = EmptySlideTemplate
   };
   /** Theme defaults keyed by authored deckjsx tags and checked against tag-specific style types. */
   theme?: ThemeValue;
-  /** Output format preference for projection/rendering. */
+  /** Output artifact formats this Deck is expected to produce. */
   output?: {
-    format?: ProjectionFormat;
+    formats?: readonly ProjectionFormat[];
   };
 };
