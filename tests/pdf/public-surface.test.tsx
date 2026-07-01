@@ -180,7 +180,7 @@ describe("pdf public surface", () => {
   test("projects pdf for deck output preference", async () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
-      output: { format: "pdf" },
+      output: { formats: ["pdf"] },
     });
     deck.slide({ name: "PDF" }, () => <p>PDF</p>);
 

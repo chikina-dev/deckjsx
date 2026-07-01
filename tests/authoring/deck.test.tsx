@@ -128,7 +128,7 @@ describe("Deck", () => {
         expect.objectContaining({
           code: "E_DECK_INVALID_OUTPUT",
           message:
-            'Deck output format must be "pptx" or "pdf" when provided in the public authoring API.',
+            "Deck output format is no longer part of the public authoring API. Use output.formats instead.",
         }),
         expect.objectContaining({
           code: "E_DECK_INVALID_OUTPUT",
@@ -138,6 +138,45 @@ describe("Deck", () => {
     );
     expect(result.stages.compile.artifact).toBe("missing");
     expect(result.stages.project.artifact).toBe("missing");
+  });
+
+  test("project reports invalid deck output formats arrays", async () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      output: { formats: ["pptx", "odp", "pptx"] },
+    } as never);
+    deck.slide(() => <p>invalid formats</p>);
+
+    const result = await deck.project();
+
+    expect(result.ok).toBe(false);
+    expect(result.projection).toBeUndefined();
+    expect(result.diagnostics.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "E_DECK_INVALID_OUTPUT",
+          message: 'Deck output formats[1] must be "pptx" or "pdf" in the public authoring API.',
+        }),
+        expect.objectContaining({
+          code: "E_DECK_INVALID_OUTPUT",
+          message: 'Deck output formats must not contain duplicate format "pptx".',
+        }),
+      ]),
+    );
+  });
+
+  test("project accepts an empty output formats array as the default pptx target", async () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      output: { formats: [] },
+    });
+    deck.slide(() => <p>empty formats</p>);
+
+    const result = await deck.project({ inspection: "none" });
+
+    expect(result.ok).toBe(true);
+    expect(result.format).toBe("pptx");
+    expect(result.projection?.format).toBe("pptx");
   });
 
   test("compile reports unknown deck options outside the public authoring API", () => {
