@@ -156,12 +156,65 @@ describe("PDF font asset registration", () => {
           sourceKey: "fallback-missing-sans-700-normal",
         }),
         expect.objectContaining({
-          id: "pdf:resource:font:fallback-missing-sans-700-normal",
+          id: expect.stringMatching(
+            /^pdf:resource:font:fallback-missing-sans-700-normal-[0-9a-f]{8}$/u,
+          ),
           family: "Helvetica",
           fallback: true,
         }),
       ]),
     );
+  });
+
+  test("registered plugin font resource ids do not collide for families with the same slug", async () => {
+    const plugin: DeckPlugin = {
+      kind: "deckjsx.plugin",
+      id: "test:font-request-slug-collisions",
+      name: "test:font-request-slug-collisions",
+      integration: {
+        id: integrationContextId("test:font-request-slug-collisions"),
+        fontAssets: [
+          {
+            key: "a-space-b",
+            family: "A B",
+            weight: 400,
+            style: "normal",
+            source: { kind: "bytes", bytes: fontBytes, mediaType: "font/ttf" },
+          },
+          {
+            key: "a-dash-b",
+            family: "A-B",
+            weight: 400,
+            style: "normal",
+            source: { kind: "bytes", bytes: fontBytes, mediaType: "font/ttf" },
+          },
+        ],
+      },
+    };
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin(plugin);
+    deck.slide({ name: "Font Request Slug Collisions" }, () => (
+      <>
+        <p style={{ fontFamily: "A B" }}>Space family</p>
+        <p style={{ fontFamily: "A-B" }}>Dash family</p>
+      </>
+    ));
+
+    const result = await deck.project({ format: "pdf", inspection: "none" });
+    const projection = expectPdfPageModel(result.projection);
+    const registeredFonts = projection.resources.fonts.filter(
+      (font) => font.family === "A B" || font.family === "A-B",
+    );
+    const textFontIds = projection.pages[0]?.content
+      .filter((op) => op.op === "text")
+      .map((op) => op.fontId);
+
+    expect(result.ok).toBe(true);
+    expect(registeredFonts).toHaveLength(2);
+    expect(new Set(registeredFonts.map((font) => font.id)).size).toBe(2);
+    expect(textFontIds).toHaveLength(2);
+    expect(new Set(textFontIds).size).toBe(2);
+    expect(textFontIds).toEqual(expect.arrayContaining(registeredFonts.map((font) => font.id)));
   });
 
   test("registered inline span font asset is projected without a PDF font fallback warning", async () => {

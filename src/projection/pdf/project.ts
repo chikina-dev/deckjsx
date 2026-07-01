@@ -82,6 +82,27 @@ function fontRequestKey(request: FontRequest): string {
   return [request.family, request.weight, request.style].join("\u0000");
 }
 
+function stableRequestHash(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+
+  return hash.toString(16).padStart(8, "0");
+}
+
+function fontRequestResourceId(
+  kind: "request" | "fallback",
+  request: FontRequest,
+): PdfFontResource["id"] {
+  const key = fontRequestKey(request);
+  return pdfResourceId(
+    "font",
+    `${kind}:${request.family}:${request.weight}:${request.style}:${stableRequestHash(key)}`,
+  );
+}
+
 function resolvedFontWeight(value: unknown): number {
   if (typeof value === "number") {
     return value;
@@ -177,7 +198,7 @@ function pdfFontResourceForRegistration(
   name: string,
 ): PdfFontResource {
   return {
-    id: pdfResourceId("font", `request:${request.family}:${request.weight}:${request.style}`),
+    id: fontRequestResourceId("request", request),
     name,
     family: registration.family,
     weight: registrationWeight(registration),
@@ -197,7 +218,7 @@ function pdfFallbackForRequest(request: FontRequest): PdfFallback {
 
 function pdfFallbackFontResourceForRequest(request: FontRequest, name: string): PdfFontResource {
   return {
-    id: pdfResourceId("font", `fallback:${request.family}:${request.weight}:${request.style}`),
+    id: fontRequestResourceId("fallback", request),
     name,
     family: "Helvetica",
     weight: request.weight,
