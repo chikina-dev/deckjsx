@@ -131,7 +131,7 @@ async function loadBenchmarkRuntime() {
     import(pathToFileURL(path.join(root, "dist/index.mjs")).href),
     import(pathToFileURL(path.join(root, "dist/adapter/index.mjs")).href),
     import(pathToFileURL(path.join(root, "dist/jsx-runtime.mjs")).href),
-    import(pathToFileURL(path.join(root, "plugins/node/dist/index.mjs")).href),
+    importNodeRuntime(root),
   ]);
   return {
     Deck: deckjsx.Deck,
@@ -140,6 +140,47 @@ async function loadBenchmarkRuntime() {
     pptx: adapter.pptx,
     write: nodeRuntime.write,
   };
+}
+
+async function importNodeRuntime(root) {
+  const candidates = [
+    {
+      path: path.join(root, "plugins/node/dist/index.mjs"),
+      setup:
+        "Build @deckjsx/node with `cd plugins/node && ../../node_modules/.bin/vp pack`; if importing this entry directly, ensure its `deckjsx` peer resolves from `plugins/node/node_modules`.",
+    },
+    {
+      path: path.join(root, "sample/node_modules/@deckjsx/node/dist/index.mjs"),
+      setup: "Install sample dependencies with `npm install --prefix sample`.",
+    },
+  ];
+  const failures = [];
+
+  for (const candidate of candidates) {
+    try {
+      const file = await stat(candidate.path);
+      if (!file.isFile()) {
+        failures.push(`${candidate.path}: not a file`);
+        continue;
+      }
+
+      return await import(pathToFileURL(candidate.path).href);
+    } catch (error) {
+      failures.push(`${candidate.path}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  throw new Error(
+    [
+      "Unable to load @deckjsx/node benchmark runtime.",
+      "Expected one of:",
+      ...candidates.map((candidate) => `- ${candidate.path}`),
+      "Failures:",
+      ...failures.map((failure) => `- ${failure}`),
+      "Setup:",
+      ...candidates.map((candidate) => `- ${candidate.setup}`),
+    ].join("\n"),
+  );
 }
 
 function assertRenderOk(render, label) {

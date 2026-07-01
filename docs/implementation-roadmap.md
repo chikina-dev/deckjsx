@@ -6534,7 +6534,37 @@ pipeline. The initial target should be practical slide-deck video embedding: an 
 with deterministic package parts, relationships, optional poster/fallback image, diagnostics, and
 render verification. This should not be treated as a background-image variant or an `img` alias.
 
-### Current Code Findings
+### Current Implementation Status
+
+Implemented in the current v0.9 line:
+
+- The Authoring Interface exposes a lowercase `video` intrinsic with narrow `src` / `data`,
+  `poster` / `posterData`, `style`, `className`, and `area` props. Broad browser video props remain
+  intentionally unsupported.
+- Compile represents `video` as its own Semantic Author Graph node with separate video and poster
+  asset references, and Project carries video layout/projected drawing state rather than treating
+  playable video as an `img` alias.
+- PPTX projection and package validation distinguish video media from image media, limit the first
+  compatibility target to `video/mp4` / `.mp4`, and construct slide `video`, embedded `media`, and
+  poster/image relationships before Render.
+- Render emits playable-video OOXML, and focused tests cover the video XML and relationship shape.
+  Missing poster input remains a warning, not a blocker, because the embedded media structure is the
+  success condition.
+- `@deckjsx/node` media-source origin annotation covers `video.src` and `video.poster` along with
+  image sources and component prop forwarding.
+
+Remaining follow-up:
+
+- Keep browser-like `<source>`, tracks/captions, streaming controls, trimming, transcoding, thumbnail
+  extraction, and low-level OOXML media controls out of the public surface until they have a stable
+  deckjsx semantic model.
+- Preserve manual/opening verification notes for the current PowerPoint MP4 compatibility target
+  when release evidence is gathered.
+
+### Historical Pre-Implementation Findings
+
+The following findings are retained as pre-v0.8.3 context. The current implementation status above
+supersedes these bullets where they describe missing code.
 
 - The authoring surface has no `video` intrinsic. `AuthoredTag`, JSX prop types, semantic graph
   roles, layout input, projected layout nodes, and PPTX drawing elements currently distinguish only
@@ -6694,18 +6724,41 @@ v0.8.3 touched only enough to keep PowerPoint from repairing generated files. Th
 `table` a deckjsx authoring concept, not just an OOXML package artifact, and should turn the current
 PowerPoint compatibility fixes into intentional package-model behavior.
 
-### Follow-Up Notes From v0.8.3
+### Current Implementation Status
 
-- v0.8.3 may include `ppt/tableStyles.xml` as a minimal PowerPoint compatibility support part even
-  though deckjsx does not yet expose a `table` tag. That file is an empty/default table-style list,
-  comparable to `viewProps.xml` and `presProps.xml`, not a completed table feature.
-- When `table` authoring is added, `tableStyles.xml` should be revisited and likely rewritten as a
-  projected table-style registry/output. The current default style id can remain a fallback, but it
-  should not be treated as the final table-style design.
-- v0.8.3 also thickened PPTX theme `fmtScheme` generation to avoid PowerPoint repair prompts. v0.8.4
-  should review theme, default text style, presentation properties, view properties, and table style
-  support together as a deliberate PowerPoint compatibility layer rather than a set of isolated
-  repair fixes.
+Implemented in the current v0.9 line:
+
+- The Authoring Interface exposes lowercase `table`, `thead`, `tbody`, `tfoot`, `tr`, `th`, and `td`
+  intrinsics with explicit section/row/cell structure, `colspan` / `rowspan`, class/style support,
+  and semantic graph validation for malformed table hierarchies.
+- Project maps authored tables to native PPTX table drawing elements with deterministic cell grid
+  placement, row/column spans, cell frames, text content, fills, borders, padding, and text style.
+- Render emits native PPTX table graphic frames rather than flattening tables into ordinary shapes
+  or text boxes.
+- `ppt/tableStyles.xml` is now a structured Pptx Package Model support payload. Whole-table and
+  header-row slots are supported; first-column and banded-row slots remain explicit placeholders.
+
+Remaining follow-up:
+
+- `tableLayout: "auto"` and `borderCollapse: "collapse"` are approximated with diagnostics. A full
+  HTML table layout engine remains outside the first table slice.
+- Rich non-text cell content is preserved in projection but falls back to text-centric native table
+  output with unsupported-semantic diagnostics.
+- Fixture-based manual PowerPoint editability/opening evidence should still be kept with release
+  validation when table compatibility is reviewed.
+
+### Historical Follow-Up Notes From v0.8.3
+
+- v0.8.3 treated `ppt/tableStyles.xml` as a minimal PowerPoint compatibility support part before
+  deckjsx exposed a `table` tag. That file was comparable to `viewProps.xml` and `presProps.xml`,
+  not a completed table feature.
+- The current table implementation has revisited `tableStyles.xml` as a structured projected
+  table-style support payload. Some style slots remain explicit placeholders, so this is deeper than
+  the v0.8.3 compatibility scaffold but still not the final table-style design.
+- v0.8.3 also thickened PPTX theme `fmtScheme` generation to avoid PowerPoint repair prompts. Theme,
+  default text style, presentation properties, view properties, and table style support should
+  continue to be reviewed together as a deliberate PowerPoint compatibility layer rather than a set
+  of isolated repair fixes.
 - Avoid landing a giant copied Office theme/template blob as the compatibility strategy. Prefer
   structured generation from Pptx Package Model payloads, with small defaults and tests that explain
   which PowerPoint-required support structures are present.
@@ -6745,6 +6798,31 @@ while preserving deckjsx-owned presentation identity. The main objective is incr
 compilation and package patching: affected sources, slides, projected package parts, and existing
 Patchable PPTX files should update incrementally instead of hiding a whole-deck rebuild behind a
 watch loop.
+
+### Current Implementation Status
+
+Implemented in the current v0.9 line:
+
+- Normal `deck.render(pptx())` emits Patchable PPTX metadata: XML reserve capacity, a persistent
+  `ppt/deckjsx/patch-manifest.json`, and a Render Patch Plan available even when inspection summaries
+  are disabled.
+- Slide Projection Fingerprints, source invalidation, package-part fingerprints, and warm build
+  artifact reuse support unchanged-slide/package-part reuse across ordinary content edits.
+- The plugin-facing `deckjsx/integration` subpath exposes Integration Context, Media Source Origin,
+  AssetLoader, Render Patch Plan, and incremental artifact session contracts for runtime packages.
+- `plugins/node` provides `@deckjsx/node` with `write(RenderResult, path)`, Patchable PPTX
+  inspection, in-place package patching, file locking, whole-archive rewrite fallback, result-first
+  diagnostics, a Node local file AssetLoader, and a `deckjsx dev` compiler loop.
+- The Node dev compiler uses Rolldown-backed source snapshots, externalizes deckjsx runtime packages
+  and Node built-ins, annotates module-local `img.src`, `video.src`, `video.poster`, and forwarded
+  component media props, filters tracked `--out` writes, and retains only the tracked Render Slot.
+
+Remaining follow-up:
+
+- Slide insertion/reordering is still not a complete slide-unit reuse guarantee while `deck.slide()`
+  roots are position-derived and no stable slide-root identity hint exists.
+- Renderer preview UI, PowerPoint automation, and presentation renderer control remain outside the
+  v0.9 runtime scope.
 
 ### Preconditions
 
@@ -6830,6 +6908,10 @@ AssetLoader that users pass through `deck.plugin(nodeAssets(...))` before the no
   retaining package build artifacts for fingerprint-based reuse.
 
 ### Completion Criteria
+
+The checklist below is retained as the v0.9 release checklist. The current v0.9 line implements the
+core patchable artifact, integration, and `@deckjsx/node` runtime items; remaining exceptions are
+called out in the Current Implementation Status section above.
 
 - `deck.render(pptx())` generates Patchable PPTX as the normal PPTX artifact.
 - XML package parts carry deckjsx-owned trailing-comment reserve capacity.

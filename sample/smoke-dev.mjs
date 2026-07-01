@@ -4,14 +4,26 @@ import { fileURLToPath } from "node:url";
 
 const cwd = fileURLToPath(new URL(".", import.meta.url));
 const outputPath = fileURLToPath(new URL("./output-tsx.pptx", import.meta.url));
-const bin = process.platform === "win32" ? ".\\node_modules\\.bin\\deckjsx.cmd" : "./node_modules/.bin/deckjsx";
+const bin = fileURLToPath(new URL("./node_modules/@deckjsx/node/dist/cli.mjs", import.meta.url));
 
 await unlink(outputPath).catch(() => undefined);
 
-const child = spawn(bin, ["dev", "main.tsx", "--out", "output-tsx.pptx"], {
-  cwd,
-  stdio: ["ignore", "pipe", "pipe"],
-});
+const child = spawn(
+  process.execPath,
+  [
+    "--preserve-symlinks",
+    "--preserve-symlinks-main",
+    bin,
+    "dev",
+    "main.tsx",
+    "--out",
+    "output-tsx.pptx",
+  ],
+  {
+    cwd,
+    stdio: ["ignore", "pipe", "pipe"],
+  },
+);
 
 let output = "";
 child.stdout.on("data", (chunk) => {

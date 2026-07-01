@@ -126,7 +126,7 @@ describe("public surface", () => {
       expect(pkg.scripts?.prepublishOnly, `${path} builds before direct npm publish`).toBe(
         "vp run build",
       );
-      expect(pkg.peerDependencies?.deckjsx, `${path} declares deckjsx as a peer`).toBe("^0.9.3");
+      expect(pkg.peerDependencies?.deckjsx, `${path} declares deckjsx as a peer`).toBe("^0.9.5");
       expect(pkg.bin?.deckjsx, `${path} exposes the deckjsx CLI`).toBe("dist/cli.mjs");
     }
   });
