@@ -2,8 +2,9 @@
 
 ## Status
 
-Approved design for implementation planning. This spec refines Deck output configuration after PDF
-became a first-class output target.
+Implemented. Deck output configuration uses `output.formats`; no-arg `deck.project()` and
+`deck.render()` select `formats[0]` and warn when multiple formats are configured, while explicit
+writer adapters are valid when their format is included in the configured set.
 
 ## Problem
 

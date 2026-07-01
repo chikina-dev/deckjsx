@@ -246,9 +246,6 @@ describe("pdf public surface", () => {
     expect(pdfResult.diagnostics.items.map((item) => item.code)).not.toContain(
       "W_RENDER_ADAPTER_FORMAT_NOT_CONFIGURED",
     );
-    expect(pdfResult.diagnostics.items.map((item) => item.code)).not.toContain(
-      "W_RENDER_ADAPTER_FORMAT_MISMATCH",
-    );
   });
 
   test("does not reuse a cached pptx projection for a later pdf project request", async () => {

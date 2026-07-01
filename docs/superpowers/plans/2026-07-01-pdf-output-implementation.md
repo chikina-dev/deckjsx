@@ -65,9 +65,9 @@ Modify:
 - `src/adapter/registry.ts`
   Select `pdf()` as the default adapter for PDF projection format.
 - `src/pipeline/runner.ts`
-  Read `projectOptions.format`, `options.output.format`, and adapter projection format correctly; type render inputs against all projected models; avoid PPTX-only reuse for PDF.
+  Read `projectOptions.format`, `options.output.formats`, and adapter projection format correctly; type render inputs against all projected models; avoid PPTX-only reuse for PDF.
 - `src/authoring/options/public.ts`
-  Allow deck-level `output.format` to include PDF for default projection/render preference.
+  Allow deck-level `output.formats` to include PDF for default projection/render preference.
 - `src/authoring/options/validation.ts`
   Accept `"pdf"` in deck output validation while continuing to reject unknown output keys.
 - `tests/authoring/deck.test.tsx`
@@ -213,25 +213,20 @@ output?: {
 Change `src/authoring/options/validation.ts`:
 
 ```ts
-if (
-  options.output.format !== undefined &&
-  options.output.format !== "pptx" &&
-  options.output.format !== "pdf"
-) {
+if (options.output.formats !== undefined) {
   diagnostics.push(
     deckOptionDiagnostic({
       code: "E_DECK_INVALID_OUTPUT",
       section: "output",
-      path: "deck.options.output.format",
-      message:
-        'Deck output format must be "pptx" or "pdf" when provided in the public authoring API.',
+      path: "deck.options.output.formats",
+      message: 'Deck output formats must contain only "pptx" or "pdf".',
     }),
   );
 }
 ```
 
-Update `tests/authoring/deck.test.tsx` so `output.format: "pdf"` is no longer expected to produce
-an error, while unknown keys still do:
+Update `tests/authoring/deck.test.tsx` so `output.formats: ["pdf"]` is accepted, while unknown
+keys still produce an error:
 
 ```ts
 expect(result.diagnostics.items).toEqual(
@@ -337,7 +332,7 @@ Change `projectionFormatFor` in `src/pipeline/runner.ts`:
 ```ts
 function projectionFormatFor(options: unknown): ProjectionFormat {
   const output = isRecord(options) ? options.output : undefined;
-  return isRecord(output) && output.format === "pdf" ? "pdf" : "pptx";
+  return isRecord(output) && output.formats?.[0] === "pdf" ? "pdf" : "pptx";
 }
 ```
 
@@ -1872,8 +1867,8 @@ Checklist:
 - [ ] **Step 4: Update docs if implementation diverged**
 
 Keep the public call shape aligned with the design: `deck.project({ format: "pdf" })` for explicit
-projection and `new Deck({ output: { format: "pdf" } })` for deck-level default output preference.
-Do not document `deck.project({ output: { format: "pdf" } })`; `output` belongs to Deck options, not
+projection and `new Deck({ output: { formats: ["pdf"] } })` for deck-level default output preference.
+Do not document `deck.project({ output: { formats: ["pdf"] } })`; `output` belongs to Deck options, not
 Project options.
 
 - [ ] **Step 5: Commit final documentation alignment**
