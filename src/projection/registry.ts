@@ -3,6 +3,9 @@ import { createDiagnostics, type Diagnostics } from "../diagnostics";
 import type { AssetEntity, SemanticAuthorGraph } from "../graph";
 import type { ProjectionFormat } from "../pipeline/public";
 import type { ResolvedStyleMap } from "../style/resolve";
+import type { PdfPageModel } from "./pdf/model";
+import { projectGraphToPartialPdfPageModel, projectGraphToPdfPageModel } from "./pdf/project";
+import { validatePdfPageModel } from "./pdf/validation";
 import { summarizePptxPackage } from "./pptx/inspect";
 import { projectGraphToPartialPptxPackage, projectGraphToPptxPackage } from "./pptx/project";
 import {
@@ -18,7 +21,7 @@ import type {
   PptxProjectionAssetArtifact,
 } from "./pptx/model";
 
-export type ProjectedDocumentModel = PptxPackageModel;
+export type ProjectedDocumentModel = PptxPackageModel | PdfPageModel;
 
 type ProjectionCapability<TModel extends ProjectedDocumentModel> = {
   readonly format: ProjectionFormat;
@@ -56,7 +59,7 @@ type ProjectionCapability<TModel extends ProjectedDocumentModel> = {
       includeDetails?: boolean;
       resolvedStyles?: ResolvedStyleMap;
     },
-  ): ProjectInspectionSummary;
+  ): ProjectInspectionSummary | undefined;
 };
 
 const pptxProjectionCapability: ProjectionCapability<PptxPackageModel> = {
@@ -73,6 +76,16 @@ const pptxProjectionCapability: ProjectionCapability<PptxPackageModel> = {
   summarize: summarizePptxPackage,
 };
 
+const pdfProjectionCapability: ProjectionCapability<PdfPageModel> = {
+  format: "pdf",
+  project: projectGraphToPdfPageModel,
+  diagnostics: () => createDiagnostics(),
+  projectionDiagnostics: validatePdfPageModel,
+  projectPartial: projectGraphToPartialPdfPageModel,
+  canSummarize: isPdfPageModelShape,
+  summarize: () => undefined,
+};
+
 function projectionCapabilityFor(
   format: ProjectionFormat,
 ): ProjectionCapability<ProjectedDocumentModel> {
@@ -80,7 +93,7 @@ function projectionCapabilityFor(
     case "pptx":
       return pptxProjectionCapability;
     case "pdf":
-      throw new Error("PDF projection is not implemented yet.");
+      return pdfProjectionCapability;
   }
 }
 
@@ -97,10 +110,6 @@ export function projectionDiagnosticsForModel(input: {
   projection: ProjectedDocumentModel;
   includeAllUnsupportedSemantics?: boolean;
 }): Diagnostics {
-  if (!canSummarizeProjectedDocumentModel(input.projection)) {
-    return { items: [], hasErrors: false, hasWarnings: false };
-  }
-
   return projectionCapabilityFor(input.projection.format).projectionDiagnostics(input.projection, {
     includeAllUnsupportedSemantics: input.includeAllUnsupportedSemantics,
   });
@@ -159,5 +168,14 @@ function isPptxPackageModelShape(
     projection.format === "pptx" &&
     Array.isArray(projection.parts) &&
     Array.isArray(projection.slides)
+  );
+}
+
+function isPdfPageModelShape(projection: ProjectedDocumentModel): projection is PdfPageModel {
+  return (
+    projection.format === "pdf" &&
+    Array.isArray(projection.pages) &&
+    Array.isArray(projection.resources.fonts) &&
+    Array.isArray(projection.resources.images)
   );
 }

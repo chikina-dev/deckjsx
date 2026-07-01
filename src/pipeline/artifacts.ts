@@ -21,6 +21,8 @@ import type {
   PptxPackageModel,
   PptxPackageModelCandidate,
 } from "../projection/pptx/model";
+import { isPptxPackageModel } from "../projection/pptx/model";
+import type { PdfPageModel } from "../projection/pdf/model";
 import {
   pptxProjectionArtifact,
   projectionShapeDiagnostics,
@@ -63,7 +65,14 @@ export type SourceArtifact = {
   readonly diagnostics: Diagnostics;
 };
 
-export type DefinedProjectionArtifact = PptxProjectionArtifact<PptxPackageModelCandidate>;
+type ProjectionArtifactIndexes = Omit<
+  PptxProjectionArtifact<PptxPackageModelCandidate>,
+  keyof ProjectionArtifact<PptxPackageModelCandidate>
+>;
+export type DefinedProjectionArtifact = ProjectionArtifact<
+  PptxPackageModelCandidate | PdfPageModel
+> &
+  ProjectionArtifactIndexes;
 export type {
   PackageDependencyEdge,
   PackageDependencyReason,
@@ -596,7 +605,7 @@ export class PipelineArtifactCollection {
   }
 
   materializeProjection(
-    projection: PptxPackageModel,
+    projection: PptxPackageModel | PdfPageModel,
     diagnostics: Diagnostics,
     options: DeckOptions,
     artifactOptions: {
@@ -606,7 +615,22 @@ export class PipelineArtifactCollection {
       >;
     } = {},
   ): void {
-    this.#projection = pptxProjectionArtifact(projection, diagnostics, artifactOptions);
+    this.#projection = isPptxPackageModel(projection as PptxPackageModelCandidate)
+      ? pptxProjectionArtifact(projection as PptxPackageModel, diagnostics, artifactOptions)
+      : {
+          projection,
+          diagnostics,
+          partsById: new Map(),
+          partsBySourceKey: new Map(),
+          partsByGraphNodeId: new Map(),
+          slideProjectionFingerprints: new Map(),
+          slidePackagePartFingerprints: new Map(),
+          packageDependencies: {
+            edges: [],
+            dependenciesByPartId: new Map(),
+            dependentsByPartId: new Map(),
+          },
+        };
     this.#projectionOptions = options;
     this.clearIncrementalProjectionReuseSnapshot();
   }

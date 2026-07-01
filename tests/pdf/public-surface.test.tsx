@@ -3,14 +3,11 @@ import { Deck } from "@/src";
 import { pdf } from "@/src/adapter";
 
 describe("pdf public surface", () => {
-  function expectPdfProjectionUnavailable(result: Awaited<ReturnType<Deck["project"]>>) {
+  function expectPdfProjectionAvailable(result: Awaited<ReturnType<Deck["project"]>>) {
     expect(result.format).toBe("pdf");
-    expect(result.ok).toBe(false);
-    expect(result.projection).toBeUndefined();
-    expect(result.stages.project.artifact).toBe("missing");
-    expect(result.diagnostics.items).toEqual([
-      expect.objectContaining({ code: "E_PROJECT_FAILED" }),
-    ]);
+    expect(result.ok).toBe(true);
+    expect(result.projection?.format).toBe("pdf");
+    expect(result.stages.project.artifact).toBe("available");
   }
 
   test("exports a PDF writer adapter", () => {
@@ -25,16 +22,16 @@ describe("pdf public surface", () => {
     });
   });
 
-  test("reports pdf projection unavailable for explicit project format", async () => {
+  test("projects pdf for explicit project format", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "PDF" }, () => <p>PDF</p>);
 
     const result = await deck.project({ format: "pdf", inspection: "none" });
 
-    expectPdfProjectionUnavailable(result);
+    expectPdfProjectionAvailable(result);
   });
 
-  test("reports pdf projection unavailable for deck output preference", async () => {
+  test("projects pdf for deck output preference", async () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
       output: { format: "pdf" },
@@ -43,7 +40,7 @@ describe("pdf public surface", () => {
 
     const result = await deck.project({ inspection: "none" });
 
-    expectPdfProjectionUnavailable(result);
+    expectPdfProjectionAvailable(result);
   });
 
   test("does not reuse a cached pptx projection for a later pdf project request", async () => {
@@ -56,11 +53,19 @@ describe("pdf public surface", () => {
     expect(pptxResult.ok).toBe(true);
     expect(pptxResult.format).toBe("pptx");
     expect(pptxResult.projection?.format).toBe("pptx");
-    expectPdfProjectionUnavailable(pdfResult);
+    expectPdfProjectionAvailable(pdfResult);
   });
 
   test("creates a pdf render artifact through a minimal adapter", async () => {
-    const model = { format: "pdf", version: "1.7", pages: [] } as const;
+    const model = {
+      format: "pdf",
+      version: "1.7",
+      documentId: "pdf:document:demo",
+      metadata: { producer: "deckjsx" },
+      pages: [],
+      resources: { fonts: [], images: [] },
+      fallbacks: [],
+    } as const;
     const result = await pdf({ inspection: "none" }).render(model);
 
     expect(result.artifact).toMatchObject({
