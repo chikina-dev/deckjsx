@@ -3,10 +3,14 @@ import type { Diagnostics } from "../../diagnostics";
 import type { AssetEntity, GraphNodeId, SemanticAuthorGraph } from "../../graph";
 import type { DeckIntegrationContext, FontAssetRegistration } from "../../integration-context";
 import { buildLayoutInputSnapshot } from "../../layout/input";
-import type { ProjectedLayoutNode, ProjectedLayoutSlide } from "../../layout/projected";
+import type {
+  ProjectedLayoutNode,
+  ProjectedLayoutSlide,
+  TextStyleIR,
+} from "../../layout/projected";
 import { resolveProjectedLayout } from "../../layout/resolve";
 import { normalizeColor } from "../../style/color";
-import type { ResolvedStyleMap } from "../../style/resolve";
+import type { ResolvedStyle, ResolvedStyleMap } from "../../style/resolve";
 import { EMU_PER_INCH, POINTS_PER_INCH } from "../../types";
 import { pdfDocumentId, pdfPageId, pdfResourceId } from "./identity";
 import type {
@@ -108,6 +112,30 @@ function fontRequestDescription(request: FontRequest): string {
   return `family "${request.family}", weight ${request.weight}, style ${request.style}`;
 }
 
+function fontRequestFromResolvedStyle(input: {
+  readonly resolvedStyle: ResolvedStyle | undefined;
+  readonly requireExplicitFamily: boolean;
+}): FontRequest | undefined {
+  const familyProperty = input.resolvedStyle?.properties.fontFamily;
+  if (!familyProperty) {
+    return undefined;
+  }
+  if (input.requireExplicitFamily && familyProperty.source.layer === "default") {
+    return undefined;
+  }
+
+  const family = normalizedFontFamily(familyProperty.value);
+  if (!family) {
+    return undefined;
+  }
+
+  return {
+    family,
+    weight: resolvedFontWeight(input.resolvedStyle?.properties.fontWeight?.value),
+    style: resolvedFontStyle(input.resolvedStyle?.properties.fontStyle?.value),
+  };
+}
+
 function explicitFontRequests(input: {
   readonly graph: SemanticAuthorGraph;
   readonly resolvedStyles: ResolvedStyleMap;
@@ -115,28 +143,21 @@ function explicitFontRequests(input: {
   const requests = new Map<string, FontRequest>();
 
   input.graph.nodes.forEach((node) => {
-    if (node.kind !== "text") {
+    if (node.kind !== "text" && node.kind !== "textRun") {
+      return;
+    }
+    if (node.kind === "textRun" && !node.styleRef) {
       return;
     }
 
-    const resolvedStyle = input.resolvedStyles.get(node.id);
-    const familyProperty = resolvedStyle?.properties.fontFamily;
-    if (!familyProperty || familyProperty.source.layer === "default") {
+    const request = fontRequestFromResolvedStyle({
+      resolvedStyle: input.resolvedStyles.get(node.id),
+      requireExplicitFamily: true,
+    });
+    if (!request) {
       return;
     }
 
-    const family = normalizedFontFamily(familyProperty.value);
-    if (!family) {
-      return;
-    }
-
-    const weightValue = resolvedStyle.properties.fontWeight?.value;
-    const styleValue = resolvedStyle.properties.fontStyle?.value;
-    const request: FontRequest = {
-      family,
-      weight: resolvedFontWeight(weightValue),
-      style: resolvedFontStyle(styleValue),
-    };
     requests.set(fontRequestKey(request), request);
   });
 
@@ -154,10 +175,13 @@ function fontRegistrationMatchesRequest(
   );
 }
 
-function pdfFontResourceForRegistration(registration: FontAssetRegistration): PdfFontResource {
+function pdfFontResourceForRegistration(
+  registration: FontAssetRegistration,
+  name: string,
+): PdfFontResource {
   return {
     id: pdfResourceId("font", registration.key),
-    name: registration.key,
+    name,
     family: registration.family,
     weight: registrationWeight(registration),
     style: registrationStyle(registration),
@@ -200,18 +224,19 @@ function pdfFontResourcesForRequests(input: {
   const resourceIdsByRequestKey = new Map<string, PdfFontResource["id"]>();
 
   input.requests.forEach((request, index) => {
+    const name = `F${index + 2}`;
     const registration = fontAssets.find((candidate) =>
       fontRegistrationMatchesRequest(candidate, request),
     );
 
     if (registration) {
-      const font = pdfFontResourceForRegistration(registration);
+      const font = pdfFontResourceForRegistration(registration, name);
       fonts.push(font);
       resourceIdsByRequestKey.set(fontRequestKey(request), font.id);
       return;
     }
 
-    const font = pdfFallbackFontResourceForRequest(request, `F${index + 2}`);
+    const font = pdfFallbackFontResourceForRequest(request, name);
     fonts.push(font);
     resourceIdsByRequestKey.set(fontRequestKey(request), font.id);
     fallbacks.push(pdfFallbackForRequest(request));
@@ -227,26 +252,22 @@ function explicitFontRequestsByTextNode(input: {
   const requests = new Map<GraphNodeId, FontRequest>();
 
   input.graph.nodes.forEach((node) => {
-    if (node.kind !== "text") {
+    if (node.kind !== "text" && node.kind !== "textRun") {
+      return;
+    }
+    if (node.kind === "textRun" && !node.styleRef) {
       return;
     }
 
-    const resolvedStyle = input.resolvedStyles.get(node.id);
-    const familyProperty = resolvedStyle?.properties.fontFamily;
-    if (!familyProperty || familyProperty.source.layer === "default") {
-      return;
-    }
-
-    const family = normalizedFontFamily(familyProperty.value);
-    if (!family) {
-      return;
-    }
-
-    requests.set(node.id, {
-      family,
-      weight: resolvedFontWeight(resolvedStyle.properties.fontWeight?.value),
-      style: resolvedFontStyle(resolvedStyle.properties.fontStyle?.value),
+    const request = fontRequestFromResolvedStyle({
+      resolvedStyle: input.resolvedStyles.get(node.id),
+      requireExplicitFamily: true,
     });
+    if (!request) {
+      return;
+    }
+
+    requests.set(node.id, request);
   });
 
   return requests;
@@ -272,6 +293,45 @@ function textNodeFontId(input: {
   return DEFAULT_FONT_RESOURCE_ID;
 }
 
+function ownTextNodeFontId(input: {
+  readonly node: ProjectedLayoutNode;
+  readonly requestsByTextNode: ReadonlyMap<GraphNodeId, FontRequest>;
+  readonly resourceIdsByRequestKey: ReadonlyMap<string, PdfFontResource["id"]>;
+}): PdfFontResource["id"] {
+  const graphNodeId = input.node.origin?.graphNodeIds?.[0];
+  const request = graphNodeId ? input.requestsByTextNode.get(graphNodeId) : undefined;
+  const resourceId = request
+    ? input.resourceIdsByRequestKey.get(fontRequestKey(request))
+    : undefined;
+
+  return resourceId ?? DEFAULT_FONT_RESOURCE_ID;
+}
+
+function fontRequestFromTextStyle(style: TextStyleIR | undefined): FontRequest | undefined {
+  const family = normalizedFontFamily(style?.fontFamily);
+  if (!family) {
+    return undefined;
+  }
+
+  return {
+    family,
+    weight: resolvedFontWeight(style?.fontWeight),
+    style: style?.italic ? "italic" : "normal",
+  };
+}
+
+function textStyleFontId(input: {
+  readonly style: TextStyleIR | undefined;
+  readonly resourceIdsByRequestKey: ReadonlyMap<string, PdfFontResource["id"]>;
+}): PdfFontResource["id"] | undefined {
+  const request = fontRequestFromTextStyle(input.style);
+  if (!request) {
+    return undefined;
+  }
+
+  return input.resourceIdsByRequestKey.get(fontRequestKey(request));
+}
+
 function rgbColorFromStyle(value: string | undefined): PdfRgbColor | undefined {
   const color = normalizeColor(value);
   if (!color || !/^[0-9A-F]{6}$/u.test(color)) {
@@ -289,13 +349,19 @@ function textOpsFromLayoutNode(input: {
   readonly node: ProjectedLayoutNode;
   readonly requestsByTextNode: ReadonlyMap<GraphNodeId, FontRequest>;
   readonly resourceIdsByRequestKey: ReadonlyMap<string, PdfFontResource["id"]>;
+  readonly hidden?: boolean;
 }): readonly PdfContentOp[] {
+  if (input.hidden || input.node.visibility === "hidden") {
+    return [];
+  }
+
   if (input.node.kind === "group") {
     return input.node.children.flatMap((child) =>
       textOpsFromLayoutNode({
         node: child,
         requestsByTextNode: input.requestsByTextNode,
         resourceIdsByRequestKey: input.resourceIdsByRequestKey,
+        hidden: false,
       }),
     );
   }
@@ -304,7 +370,36 @@ function textOpsFromLayoutNode(input: {
     return [];
   }
 
-  const frame = input.node.frame;
+  const textNode = input.node;
+  const frame = textNode.frame;
+  const runs = textNode.content.runs?.filter((run) => run.text.length > 0) ?? [];
+
+  if (runs.length > 0) {
+    return runs.map((run) => {
+      const style = { ...textNode.style, ...run.style };
+      const color = rgbColorFromStyle(style.color);
+
+      return {
+        op: "text",
+        text: run.text,
+        x: pointsFromEmu(frame.xEmu),
+        y: pointsFromEmu(frame.yEmu),
+        fontId:
+          textStyleFontId({
+            style: run.style,
+            resourceIdsByRequestKey: input.resourceIdsByRequestKey,
+          }) ??
+          ownTextNodeFontId({
+            node: textNode,
+            requestsByTextNode: input.requestsByTextNode,
+            resourceIdsByRequestKey: input.resourceIdsByRequestKey,
+          }),
+        fontSize: style.fontSizePt ?? 12,
+        ...(color ? { color } : {}),
+      };
+    });
+  }
+
   const color = rgbColorFromStyle(input.node.style.color);
 
   return [
@@ -331,6 +426,7 @@ function textOpsFromLayoutSlide(input: {
         node,
         requestsByTextNode: input.requestsByTextNode,
         resourceIdsByRequestKey: input.resourceIdsByRequestKey,
+        hidden: false,
       }),
     ) ?? []
   );

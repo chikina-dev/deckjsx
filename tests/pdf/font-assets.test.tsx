@@ -51,6 +51,121 @@ describe("PDF font asset registration", () => {
     );
   });
 
+  test("registered plugin font resource names cannot collide with default PDF font names", async () => {
+    const plugin: DeckPlugin = {
+      kind: "deckjsx.plugin",
+      id: "test:colliding-font-key",
+      name: "test:colliding-font-key",
+      integration: {
+        id: integrationContextId("test:colliding-font-key"),
+        fontAssets: [
+          {
+            key: "F1",
+            family: "Inter",
+            weight: 400,
+            style: "normal",
+            source: { kind: "bytes", bytes: fontBytes, mediaType: "font/ttf" },
+          },
+        ],
+      },
+    };
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin(plugin);
+    deck.slide({ name: "Colliding Font Key" }, () => (
+      <>
+        <p>Default text</p>
+        <p style={{ fontFamily: "Inter", fontWeight: 400 }}>Registered text</p>
+      </>
+    ));
+
+    const result = await deck.project({ format: "pdf", inspection: "none" });
+    const projection = expectPdfPageModel(result.projection);
+    const pageFontNames = projection.resources.fonts
+      .filter((font) => projection.pages[0]?.resources.fonts.includes(font.id))
+      .map((font) => font.name);
+
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics.items.map((item) => item.code)).not.toContain(
+      "E_PDF_MODEL_DUPLICATE_PAGE_FONT_RESOURCE_NAME",
+    );
+    expect(new Set(pageFontNames).size).toBe(pageFontNames.length);
+    expect(pageFontNames).toEqual(["F1", "F2"]);
+    expect(projection.resources.fonts).toContainEqual(
+      expect.objectContaining({
+        family: "Inter",
+        name: "F2",
+        sourceKey: "F1",
+      }),
+    );
+  });
+
+  test("registered inline span font asset is projected without a PDF font fallback warning", async () => {
+    const plugin: DeckPlugin = {
+      kind: "deckjsx.plugin",
+      id: "test:inline-inter-font",
+      name: "test:inline-inter-font",
+      integration: {
+        id: integrationContextId("test:inline-inter-font"),
+        fontAssets: [
+          {
+            key: "inline-inter",
+            family: "Inter",
+            weight: 400,
+            style: "normal",
+            source: { kind: "bytes", bytes: fontBytes, mediaType: "font/ttf" },
+          },
+        ],
+      },
+    };
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin(plugin);
+    deck.slide({ name: "Inline Font" }, () => (
+      <p>
+        Hi <span style={{ fontFamily: "Inter" }}>there</span>
+      </p>
+    ));
+
+    const result = await deck.project({ format: "pdf", inspection: "none" });
+    const projection = expectPdfPageModel(result.projection);
+
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics.items.map((item) => item.code)).not.toContain("W_PDF_FONT_FALLBACK");
+    expect(projection.resources.fonts).toContainEqual(
+      expect.objectContaining({
+        family: "Inter",
+        fallback: false,
+        sourceKey: "inline-inter",
+      }),
+    );
+  });
+
+  test("missing inline span font family emits a PDF fallback warning", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Missing Inline Font" }, () => (
+      <p>
+        Hi <span style={{ fontFamily: "Missing Inline" }}>there</span>
+      </p>
+    ));
+
+    const result = await deck.project({ format: "pdf", inspection: "none" });
+    const projection = expectPdfPageModel(result.projection);
+
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        code: "W_PDF_FONT_FALLBACK",
+        message:
+          'PDF projection used Helvetica for missing font request family "Missing Inline", weight 400, style normal.',
+      }),
+    );
+    expect(projection.resources.fonts).toContainEqual(
+      expect.objectContaining({
+        family: "Helvetica",
+        fallback: true,
+      }),
+    );
+  });
+
   test("missing font family projects with a nonblocking PDF fallback warning", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Missing Font" }, () => (

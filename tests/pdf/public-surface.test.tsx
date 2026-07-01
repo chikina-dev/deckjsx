@@ -82,6 +82,56 @@ describe("pdf public surface", () => {
     expect(bytes).toContain("(PDF) Tj");
   });
 
+  test("does not project hidden text into pdf content", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Hidden PDF" }, () => (
+      <>
+        <p>Visible</p>
+        <p style={{ visibility: "hidden" }}>Hidden</p>
+      </>
+    ));
+
+    const projectResult = await deck.project({ format: "pdf", inspection: "none" });
+    const renderResult = await deck.render(pdf({ inspection: "none" }));
+    const projection = expectPdfPageModel(projectResult.projection);
+    const bytes = new TextDecoder().decode(renderResult.artifact?.bytes);
+
+    expect(projectResult.ok).toBe(true);
+    expect(renderResult.ok).toBe(true);
+    expect(projection.pages[0]?.content).toContainEqual(
+      expect.objectContaining({ op: "text", text: "Visible" }),
+    );
+    expect(projection.pages[0]?.content).not.toContainEqual(
+      expect.objectContaining({ op: "text", text: "Hidden" }),
+    );
+    expect(bytes).toContain("(Visible) Tj");
+    expect(bytes).not.toContain("(Hidden) Tj");
+  });
+
+  test("does not project text inside a hidden parent into pdf content", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Hidden Parent PDF" }, () => (
+      <>
+        <p>Visible</p>
+        <div style={{ visibility: "hidden" }}>
+          <p>Hidden Child</p>
+        </div>
+      </>
+    ));
+
+    const projectResult = await deck.project({ format: "pdf", inspection: "none" });
+    const renderResult = await deck.render(pdf({ inspection: "none" }));
+    const projection = expectPdfPageModel(projectResult.projection);
+    const bytes = new TextDecoder().decode(renderResult.artifact?.bytes);
+
+    expect(projectResult.ok).toBe(true);
+    expect(renderResult.ok).toBe(true);
+    expect(projection.pages[0]?.content).not.toContainEqual(
+      expect.objectContaining({ op: "text", text: "Hidden Child" }),
+    );
+    expect(bytes).not.toContain("(Hidden Child) Tj");
+  });
+
   test("does not warn for the default pdf text font fallback", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "PDF" }, () => <p>PDF</p>);
