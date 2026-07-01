@@ -1,10 +1,10 @@
 import type { Diagnostics } from "../diagnostics";
 
 /** Document model format produced by `deck.project()`. */
-export type ProjectionFormat = "pptx";
+export type ProjectionFormat = "pptx" | "pdf";
 
 /** Runtime artifact format produced by `deck.render(...)`. */
-export type OutputFormat = ProjectionFormat | "pdf";
+export type OutputFormat = ProjectionFormat;
 
 /** Pipeline stage names exposed in compile/project/render result summaries. */
 export type StageName = "compile" | "project" | "render";
@@ -29,6 +29,8 @@ export type InspectionDetailLevel = "details" | "none" | "summary";
 
 /** Options accepted by `deck.project(...)`. */
 export type ProjectOptions = {
+  /** Projection format to produce for this project call. */
+  readonly format?: ProjectionFormat;
   /** Controls optional inspection summaries. Defaults to the normal summary level. */
   readonly inspection?: InspectionDetailLevel;
 };

@@ -903,18 +903,16 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 
 function projectionFormatFor(options: unknown): ProjectionFormat {
   const output = isRecord(options) ? options.output : undefined;
-  return isRecord(output) && output.format === "pptx" ? "pptx" : "pptx";
+  return isRecord(output) && output.format === "pdf" ? "pdf" : "pptx";
 }
 
 function isRenderInputObject(
-  value: RenderOptions | WriterAdapter<PptxPackageModel> | undefined,
-): value is RenderOptions | WriterAdapter<PptxPackageModel> {
+  value: RenderOptions | WriterAdapter | undefined,
+): value is RenderOptions | WriterAdapter {
   return typeof value === "object" && value !== null;
 }
 
-function isWriterAdapterLike(
-  value: RenderOptions | WriterAdapter<PptxPackageModel> | undefined,
-): boolean {
+function isWriterAdapterLike(value: RenderOptions | WriterAdapter | undefined): boolean {
   return (
     isRenderInputObject(value) &&
     (("kind" in value && value.kind === "deckjsx.writerAdapter") ||
@@ -925,7 +923,7 @@ function isWriterAdapterLike(
 }
 
 function invalidWriterAdapterDiagnostics(
-  value: RenderOptions | WriterAdapter<PptxPackageModel> | undefined,
+  value: RenderOptions | WriterAdapter | undefined,
 ): Diagnostics | undefined {
   if (!isWriterAdapterLike(value) || isWriterAdapter(value)) {
     return undefined;
@@ -942,7 +940,7 @@ function invalidWriterAdapterDiagnostics(
         {
           path: "render.adapter",
           message:
-            'expected kind, name, projectionFormat="pptx", format, options, and render(projection)',
+            'expected kind, name, projectionFormat="pptx" or "pdf", format, options, and render(projection)',
           severity: "primary",
         },
       ],
@@ -951,10 +949,10 @@ function invalidWriterAdapterDiagnostics(
 }
 
 function selectWriterAdapter(input: {
-  renderInput: RenderOptions | WriterAdapter<PptxPackageModel> | undefined;
+  renderInput: RenderOptions | WriterAdapter | undefined;
   projectionFormat: ProjectionFormat;
 }):
-  | { readonly ok: true; readonly adapter: WriterAdapter<PptxPackageModel> }
+  | { readonly ok: true; readonly adapter: WriterAdapter }
   | { readonly ok: false; readonly diagnostics: Diagnostics; readonly format: OutputFormat } {
   const invalidAdapterDiagnostics = invalidWriterAdapterDiagnostics(input.renderInput);
 
@@ -1204,7 +1202,8 @@ export async function projectSource<
   retainSlideProjectionFingerprints?: boolean;
 }): Promise<InternalProjectResult> {
   const artifacts = input.artifacts ?? new PipelineArtifactCollection();
-  const projectionFormat = input.projectionFormat ?? projectionFormatFor(input.options);
+  const projectionFormat =
+    input.projectionFormat ?? input.projectOptions?.format ?? projectionFormatFor(input.options);
   const optionsDiagnostics = validateDeckOptions(input.options);
   const executionDiagnostics = createDiagnostics(input.execution?.diagnostics);
 
@@ -1557,7 +1556,7 @@ export async function renderSource<
 >(input: {
   source: CompositionSource<TSourceContext, TTemplates>;
   options: DeckOptions;
-  renderInput?: RenderOptions | WriterAdapter<PptxPackageModel>;
+  renderInput?: RenderOptions | WriterAdapter;
   definedGraph?: DefinedGraphInput;
   definedProjection?: DefinedProjectionInput;
   artifacts?: PipelineArtifactCollection;

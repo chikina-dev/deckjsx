@@ -115,7 +115,7 @@ describe("Deck", () => {
   test("project reports deck output options outside the public authoring API", async () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
-      output: { format: "pdf", target: "deck.pdf" },
+      output: { format: "odp", target: "deck.odp" },
     } as never);
     deck.slide(() => <p>invalid output</p>);
 
@@ -127,7 +127,8 @@ describe("Deck", () => {
       expect.arrayContaining([
         expect.objectContaining({
           code: "E_DECK_INVALID_OUTPUT",
-          message: 'Deck output format must be "pptx" when provided in the public authoring API.',
+          message:
+            'Deck output format must be "pptx" or "pdf" when provided in the public authoring API.',
         }),
         expect.objectContaining({
           code: "E_DECK_INVALID_OUTPUT",

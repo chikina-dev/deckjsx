@@ -1,5 +1,10 @@
-import { pptx } from "deckjsx/adapter";
-import type { PptxRenderOptions, WriterAdapter, WriterRenderContext } from "deckjsx/adapter";
+import { pdf, pptx } from "deckjsx/adapter";
+import type {
+  PdfRenderOptions,
+  PptxRenderOptions,
+  WriterAdapter,
+  WriterRenderContext,
+} from "deckjsx/adapter";
 import type { ProjectionFormat } from "deckjsx";
 import type { PptxPackageModel } from "deckjsx/inspect";
 
@@ -15,20 +20,31 @@ adapter satisfies WriterAdapter<PptxPackageModel>;
 adapter.projectionFormat satisfies ProjectionFormat;
 adapter.format satisfies "pptx";
 
+const pdfAdapter = pdf({ inspection: "summary" });
+pdfAdapter satisfies WriterAdapter;
+pdfAdapter.projectionFormat satisfies ProjectionFormat;
+pdfAdapter.format satisfies "pdf";
+
 const renderOptions = {
   inspection: "summary",
 } satisfies PptxRenderOptions;
 void renderOptions;
 
+const pdfRenderOptions = {
+  inspection: "summary",
+} satisfies PdfRenderOptions;
+void pdfRenderOptions;
+
 const projectionFormat = "pptx" satisfies ProjectionFormat;
 void projectionFormat;
 
+const pdfProjectionFormat = "pdf" satisfies ProjectionFormat;
+void pdfProjectionFormat;
+
 const projectionFormatTypeAssertions = {
-  pdfIsNotAProjectionFormat: true,
+  pdfIsAProjectionFormat: true,
 } satisfies {
-  pdfIsNotAProjectionFormat: Assert<
-    IsAssignable<"pdf", ProjectionFormat> extends true ? false : true
-  >;
+  pdfIsAProjectionFormat: Assert<IsAssignable<"pdf", ProjectionFormat>>;
 };
 void projectionFormatTypeAssertions;
 

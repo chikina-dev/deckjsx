@@ -193,13 +193,18 @@ export function validateDeckOptions(options: unknown): Diagnostics {
         }
       }
 
-      if (options.output.format !== undefined && options.output.format !== "pptx") {
+      if (
+        options.output.format !== undefined &&
+        options.output.format !== "pptx" &&
+        options.output.format !== "pdf"
+      ) {
         diagnostics.push(
           deckOptionDiagnostic({
             code: "E_DECK_INVALID_OUTPUT",
             section: "output",
             path: "deck.options.output.format",
-            message: 'Deck output format must be "pptx" when provided in the public authoring API.',
+            message:
+              'Deck output format must be "pptx" or "pdf" when provided in the public authoring API.',
           }),
         );
       }

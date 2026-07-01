@@ -1,4 +1,5 @@
 import type { ThemeValue } from "../../style/theme/public";
+import type { ProjectionFormat } from "../../pipeline/contract";
 import type { EmptySlideTemplateSet, SlideTemplateSet } from "../../templates";
 
 /**
@@ -35,6 +36,6 @@ export type DeckOptions<TTemplates extends SlideTemplateSet = EmptySlideTemplate
   theme?: ThemeValue;
   /** Output format preference for projection/rendering. */
   output?: {
-    format?: "pptx";
+    format?: ProjectionFormat;
   };
 };

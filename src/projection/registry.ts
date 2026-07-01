@@ -79,6 +79,8 @@ function projectionCapabilityFor(
   switch (format) {
     case "pptx":
       return pptxProjectionCapability;
+    case "pdf":
+      throw new Error("PDF projection is not implemented yet.");
   }
 }
 
