@@ -3,11 +3,7 @@ import type { Diagnostics } from "../../diagnostics";
 import type { AssetEntity, GraphNodeId, SemanticAuthorGraph } from "../../graph";
 import type { DeckIntegrationContext, FontAssetRegistration } from "../../integration-context";
 import { buildLayoutInputSnapshot } from "../../layout/input";
-import type {
-  ProjectedLayoutNode,
-  ProjectedLayoutSlide,
-  TextStyleIR,
-} from "../../layout/projected";
+import type { ProjectedLayoutNode, ProjectedLayoutSlide } from "../../layout/projected";
 import { resolveProjectedLayout } from "../../layout/resolve";
 import { normalizeColor } from "../../style/color";
 import type { ResolvedStyle, ResolvedStyleMap } from "../../style/resolve";
@@ -176,11 +172,12 @@ function fontRegistrationMatchesRequest(
 }
 
 function pdfFontResourceForRegistration(
+  request: FontRequest,
   registration: FontAssetRegistration,
   name: string,
 ): PdfFontResource {
   return {
-    id: pdfResourceId("font", registration.key),
+    id: pdfResourceId("font", `request:${request.family}:${request.weight}:${request.style}`),
     name,
     family: registration.family,
     weight: registrationWeight(registration),
@@ -230,7 +227,7 @@ function pdfFontResourcesForRequests(input: {
     );
 
     if (registration) {
-      const font = pdfFontResourceForRegistration(registration, name);
+      const font = pdfFontResourceForRegistration(request, registration, name);
       fonts.push(font);
       resourceIdsByRequestKey.set(fontRequestKey(request), font.id);
       return;
@@ -293,45 +290,6 @@ function textNodeFontId(input: {
   return DEFAULT_FONT_RESOURCE_ID;
 }
 
-function ownTextNodeFontId(input: {
-  readonly node: ProjectedLayoutNode;
-  readonly requestsByTextNode: ReadonlyMap<GraphNodeId, FontRequest>;
-  readonly resourceIdsByRequestKey: ReadonlyMap<string, PdfFontResource["id"]>;
-}): PdfFontResource["id"] {
-  const graphNodeId = input.node.origin?.graphNodeIds?.[0];
-  const request = graphNodeId ? input.requestsByTextNode.get(graphNodeId) : undefined;
-  const resourceId = request
-    ? input.resourceIdsByRequestKey.get(fontRequestKey(request))
-    : undefined;
-
-  return resourceId ?? DEFAULT_FONT_RESOURCE_ID;
-}
-
-function fontRequestFromTextStyle(style: TextStyleIR | undefined): FontRequest | undefined {
-  const family = normalizedFontFamily(style?.fontFamily);
-  if (!family) {
-    return undefined;
-  }
-
-  return {
-    family,
-    weight: resolvedFontWeight(style?.fontWeight),
-    style: style?.italic ? "italic" : "normal",
-  };
-}
-
-function textStyleFontId(input: {
-  readonly style: TextStyleIR | undefined;
-  readonly resourceIdsByRequestKey: ReadonlyMap<string, PdfFontResource["id"]>;
-}): PdfFontResource["id"] | undefined {
-  const request = fontRequestFromTextStyle(input.style);
-  if (!request) {
-    return undefined;
-  }
-
-  return input.resourceIdsByRequestKey.get(fontRequestKey(request));
-}
-
 function rgbColorFromStyle(value: string | undefined): PdfRgbColor | undefined {
   const color = normalizeColor(value);
   if (!color || !/^[0-9A-F]{6}$/u.test(color)) {
@@ -372,44 +330,16 @@ function textOpsFromLayoutNode(input: {
 
   const textNode = input.node;
   const frame = textNode.frame;
-  const runs = textNode.content.runs?.filter((run) => run.text.length > 0) ?? [];
-
-  if (runs.length > 0) {
-    return runs.map((run) => {
-      const style = { ...textNode.style, ...run.style };
-      const color = rgbColorFromStyle(style.color);
-
-      return {
-        op: "text",
-        text: run.text,
-        x: pointsFromEmu(frame.xEmu),
-        y: pointsFromEmu(frame.yEmu),
-        fontId:
-          textStyleFontId({
-            style: run.style,
-            resourceIdsByRequestKey: input.resourceIdsByRequestKey,
-          }) ??
-          ownTextNodeFontId({
-            node: textNode,
-            requestsByTextNode: input.requestsByTextNode,
-            resourceIdsByRequestKey: input.resourceIdsByRequestKey,
-          }),
-        fontSize: style.fontSizePt ?? 12,
-        ...(color ? { color } : {}),
-      };
-    });
-  }
-
-  const color = rgbColorFromStyle(input.node.style.color);
+  const color = rgbColorFromStyle(textNode.style.color);
 
   return [
     {
       op: "text",
-      text: input.node.content.text,
+      text: textNode.content.text,
       x: pointsFromEmu(frame.xEmu),
       y: pointsFromEmu(frame.yEmu),
       fontId: textNodeFontId(input),
-      fontSize: input.node.style.fontSizePt ?? 12,
+      fontSize: textNode.style.fontSizePt ?? 12,
       ...(color ? { color } : {}),
     },
   ];
@@ -442,14 +372,28 @@ function pageFontIdsForContent(content: readonly PdfContentOp[]): readonly PdfFo
   ];
 }
 
+function pageFontIdsForContentAndRequests(input: {
+  readonly content: readonly PdfContentOp[];
+  readonly fontProjectionFonts: readonly PdfFontResource[];
+}): readonly PdfFontResource["id"][] {
+  return [
+    ...new Set([
+      ...pageFontIdsForContent(input.content),
+      ...input.fontProjectionFonts.map((font) => font.id),
+    ]),
+  ];
+}
+
 function resourceFontsForContent(input: {
   readonly fontProjectionFonts: readonly PdfFontResource[];
   readonly pages: readonly Pick<PdfPage, "resources">[];
 }): readonly PdfFontResource[] {
   const usedFontIds = new Set(input.pages.flatMap((page) => page.resources.fonts));
-  const fonts = input.fontProjectionFonts.filter((font) => usedFontIds.has(font.id));
 
-  return usedFontIds.has(DEFAULT_FONT_RESOURCE_ID) ? [DEFAULT_FONT_RESOURCE, ...fonts] : fonts;
+  return [
+    ...(usedFontIds.has(DEFAULT_FONT_RESOURCE_ID) ? [DEFAULT_FONT_RESOURCE] : []),
+    ...input.fontProjectionFonts,
+  ];
 }
 
 export function projectGraphToPdfPageModel(input: {
@@ -496,7 +440,13 @@ export function projectGraphToPdfPageModel(input: {
       id: pdfPageId(slideId, index),
       index,
       mediaBox,
-      resources: { fonts: pageFontIdsForContent(content), images: [] },
+      resources: {
+        fonts: pageFontIdsForContentAndRequests({
+          content,
+          fontProjectionFonts: fontProjection.fonts,
+        }),
+        images: [],
+      },
       content,
     };
   });

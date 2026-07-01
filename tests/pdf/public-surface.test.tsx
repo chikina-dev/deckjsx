@@ -82,6 +82,29 @@ describe("pdf public surface", () => {
     expect(bytes).toContain("(PDF) Tj");
   });
 
+  test("renders rich text as one aggregate pdf text operation until run positioning exists", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Rich PDF" }, () => (
+      <p>
+        Hi <span style={{ fontWeight: 700 }}>there</span>
+      </p>
+    ));
+
+    const projectResult = await deck.project({ format: "pdf", inspection: "none" });
+    const renderResult = await deck.render(pdf({ inspection: "none" }));
+    const projection = expectPdfPageModel(projectResult.projection);
+    const textOps = projection.pages[0]?.content.filter((op) => op.op === "text") ?? [];
+    const bytes = new TextDecoder().decode(renderResult.artifact?.bytes);
+
+    expect(projectResult.ok).toBe(true);
+    expect(renderResult.ok).toBe(true);
+    expect(textOps).toHaveLength(1);
+    expect(textOps[0]).toMatchObject({ op: "text", text: "Hi there" });
+    expect(bytes.match(/\(Hi there\) Tj/g)).toHaveLength(1);
+    expect(bytes).not.toContain("(Hi ) Tj");
+    expect(bytes).not.toContain("(there) Tj");
+  });
+
   test("does not project hidden text into pdf content", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Hidden PDF" }, () => (

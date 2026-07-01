@@ -99,6 +99,71 @@ describe("PDF font asset registration", () => {
     );
   });
 
+  test("registered plugin font resource ids do not collide with default or fallback-shaped keys", async () => {
+    const plugin: DeckPlugin = {
+      kind: "deckjsx.plugin",
+      id: "test:font-id-collisions",
+      name: "test:font-id-collisions",
+      integration: {
+        id: integrationContextId("test:font-id-collisions"),
+        fontAssets: [
+          {
+            key: "default-helvetica",
+            family: "Inter",
+            weight: 400,
+            style: "normal",
+            source: { kind: "bytes", bytes: fontBytes, mediaType: "font/ttf" },
+          },
+          {
+            key: "fallback-missing-sans-700-normal",
+            family: "Source Sans",
+            weight: 400,
+            style: "normal",
+            source: { kind: "bytes", bytes: fontBytes, mediaType: "font/ttf" },
+          },
+        ],
+      },
+    };
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin(plugin);
+    deck.slide({ name: "Font Id Collisions" }, () => (
+      <>
+        <p>Default text</p>
+        <p style={{ fontFamily: "Inter" }}>Registered default-shaped key</p>
+        <p style={{ fontFamily: "Source Sans" }}>Registered fallback-shaped key</p>
+        <p style={{ fontFamily: "Missing Sans", fontWeight: 700 }}>Missing fallback</p>
+      </>
+    ));
+
+    const result = await deck.project({ format: "pdf", inspection: "none" });
+    const projection = expectPdfPageModel(result.projection);
+    const fontIds = projection.resources.fonts.map((font) => font.id);
+
+    expect(result.ok).toBe(true);
+    expect(new Set(fontIds).size).toBe(fontIds.length);
+    expect(projection.resources.fonts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "pdf:resource:font:default-helvetica",
+          family: "Helvetica",
+        }),
+        expect.objectContaining({
+          family: "Inter",
+          sourceKey: "default-helvetica",
+        }),
+        expect.objectContaining({
+          family: "Source Sans",
+          sourceKey: "fallback-missing-sans-700-normal",
+        }),
+        expect.objectContaining({
+          id: "pdf:resource:font:fallback-missing-sans-700-normal",
+          family: "Helvetica",
+          fallback: true,
+        }),
+      ]),
+    );
+  });
+
   test("registered inline span font asset is projected without a PDF font fallback warning", async () => {
     const plugin: DeckPlugin = {
       kind: "deckjsx.plugin",
