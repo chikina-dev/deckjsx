@@ -3,7 +3,7 @@ import type { RenderedArtifact } from "../pipeline/public";
 import type { PdfDocumentModel } from "../projection/pdf/model";
 import type { PdfRenderOptions } from "../adapter/public";
 
-const PDF_PLACEHOLDER_BYTES = new TextEncoder().encode("%PDF-1.");
+const PDF_PLACEHOLDER_BYTES = new TextEncoder().encode("%PDF-1.7\n%%deckjsx\n");
 
 export type PdfWriterResult = {
   readonly diagnostics: ReturnType<typeof createDiagnostics>;

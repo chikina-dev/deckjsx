@@ -45,6 +45,6 @@ describe("pdf public surface", () => {
       mediaType: "application/pdf",
       extension: "pdf",
     });
-    expect(new TextDecoder().decode(result.artifact?.bytes.subarray(0, 8))).toBe("%PDF-1.");
+    expect(new TextDecoder().decode(result.artifact?.bytes)).toBe("%PDF-1.7\n%%deckjsx\n");
   });
 });
