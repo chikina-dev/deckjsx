@@ -41,8 +41,8 @@ export function pptx(options: PptxRenderOptions = {}): WriterAdapter<PptxPackage
 /**
  * Create the built-in PDF writer adapter.
  *
- * This adapter is intentionally minimal in the first PDF public-surface slice. It accepts the
- * placeholder PDF projection model and returns runtime-neutral PDF bytes.
+ * This adapter accepts projected PDF page models and emits minimal structurally valid PDF document
+ * bytes with catalog, page tree, page objects, content streams, and cross-reference metadata.
  *
  * @param options - PDF render options such as inspection detail level.
  * @returns A Writer Adapter that renders projected PDF models into `.pdf` artifact bytes.

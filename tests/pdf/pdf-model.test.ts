@@ -126,6 +126,41 @@ describe("PDF Page Model", () => {
     );
   });
 
+  test("rejects content resources not declared on the page", () => {
+    const fontId = pdfResourceId("font", "Helvetica");
+    const imageId = pdfResourceId("image", "Chart");
+    const model: PdfPageModel = {
+      format: "pdf",
+      version: "1.7",
+      documentId: pdfDocumentId("deck:demo"),
+      metadata: { producer: "deckjsx" },
+      pages: [
+        {
+          id: pdfPageId("slide:1", 0),
+          index: 0,
+          mediaBox: { x: 0, y: 0, width: 720, height: 405 },
+          resources: { fonts: [], images: [] },
+          content: [
+            { op: "text", text: "Global-only font", x: 0, y: 0, fontId },
+            { op: "image", imageId, box: { x: 0, y: 0, width: 10, height: 10 } },
+          ],
+        },
+      ],
+      resources: {
+        fonts: [{ id: fontId, name: "F1", family: "Helvetica" }],
+        images: [{ id: imageId }],
+      },
+      fallbacks: [],
+    };
+
+    expect(validatePdfPageModel(model).items.map((item) => item.code)).toEqual(
+      expect.arrayContaining([
+        "E_PDF_MODEL_PAGE_MISSING_FONT_RESOURCE",
+        "E_PDF_MODEL_PAGE_MISSING_IMAGE_RESOURCE",
+      ]),
+    );
+  });
+
   test("rejects malformed and unknown content operations", () => {
     const imageId = pdfResourceId("image", "Chart");
     const model: PdfPageModel = {

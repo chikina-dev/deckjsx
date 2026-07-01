@@ -127,6 +127,28 @@ function unknownResourceDiagnostic(input: {
   });
 }
 
+function missingPageResourceDiagnostic(input: {
+  readonly code: string;
+  readonly title: string;
+  readonly pageIndex: number;
+  readonly resourceId: PdfResourceId;
+  readonly path: string;
+}): Diagnostic {
+  return diagnostic({
+    severity: "error",
+    code: input.code,
+    title: input.title,
+    message: "The PDF content operation references a resource id that is not declared on the page.",
+    labels: [
+      {
+        path: input.path,
+        message: `page=${input.pageIndex}, resource=${input.resourceId}`,
+        severity: "primary",
+      },
+    ],
+  });
+}
+
 function fallbackDiagnostic(input: {
   readonly fallbackIndex: number;
   readonly code: string;
@@ -226,6 +248,9 @@ export function validatePdfPageModel(model: PdfPageModel): Diagnostics {
         );
       }
     });
+    const pageFonts = new Set(page.resources.fonts);
+    const pageImages = new Set(page.resources.images);
+
     page.content.forEach((op, opIndex) => {
       if (!contentOpIsValid(op)) {
         issues.push(invalidContentOpDiagnostic({ pageIndex, opIndex, op }));
@@ -242,11 +267,33 @@ export function validatePdfPageModel(model: PdfPageModel): Diagnostics {
           }),
         );
       }
+      if (op.op === "text" && op.fontId && !pageFonts.has(op.fontId)) {
+        issues.push(
+          missingPageResourceDiagnostic({
+            code: "E_PDF_MODEL_PAGE_MISSING_FONT_RESOURCE",
+            title: "PDF content references a font resource missing from the page",
+            pageIndex,
+            resourceId: op.fontId,
+            path: `pages.${pageIndex}.content.${opIndex}.fontId`,
+          }),
+        );
+      }
       if (op.op === "image" && !resources.images.has(op.imageId)) {
         issues.push(
           unknownResourceDiagnostic({
             code: "E_PDF_MODEL_UNKNOWN_IMAGE_RESOURCE",
             title: "PDF content references an unknown image resource",
+            pageIndex,
+            resourceId: op.imageId,
+            path: `pages.${pageIndex}.content.${opIndex}.imageId`,
+          }),
+        );
+      }
+      if (op.op === "image" && !pageImages.has(op.imageId)) {
+        issues.push(
+          missingPageResourceDiagnostic({
+            code: "E_PDF_MODEL_PAGE_MISSING_IMAGE_RESOURCE",
+            title: "PDF content references an image resource missing from the page",
             pageIndex,
             resourceId: op.imageId,
             path: `pages.${pageIndex}.content.${opIndex}.imageId`,

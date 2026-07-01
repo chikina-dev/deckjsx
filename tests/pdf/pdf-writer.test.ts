@@ -76,4 +76,25 @@ describe("PDF writer", () => {
     expect(result.diagnostics.items).toEqual([]);
     expect(pdf).toContain("(Hello \\(PDF\\) \\\\ writer) Tj");
   });
+
+  test("rejects text font references that are not declared on the page", async () => {
+    const model = onePageModel("Hidden font");
+    const result = await renderPdfPageModel(
+      {
+        ...model,
+        pages: [
+          {
+            ...model.pages[0],
+            resources: { fonts: [], images: [] },
+          },
+        ],
+      },
+      { inspection: "none" },
+    );
+
+    expect(result.artifact).toBeUndefined();
+    expect(result.diagnostics.items.map((item) => item.code)).toContain(
+      "E_PDF_MODEL_PAGE_MISSING_FONT_RESOURCE",
+    );
+  });
 });
