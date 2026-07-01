@@ -66,6 +66,10 @@ An author-defined collection of reusable style classes registered on a Deck inst
 StyleSheet class entries are CSS-like stylesheet rules. A class dictionary entry behaves like a `.className` rule, and selector targets extend the same stylesheet model rather than introducing a separate non-CSS rule system.
 _Avoid_: DeckOptions.styles as primary API, global style registry, output stylesheet
 
+**Font Family Reference**:
+The CSS-like text style value that selects a named font family, such as `fontFamily: "Inter"`. Style authors should reference fonts by family name in ordinary style values; they should not embed font bytes, paths, or asset handles inside style declarations.
+_Avoid_: font asset handle in style, CSS url source in style, output font object
+
 **Stylesheet Target**:
 A CSS selector string attached to a StyleSheet class definition to constrain where that Style Class applies, such as `p.title`, `div.card`, `header.title`, or descendant selectors like `.card .caption`.
 Public Stylesheet Targets should be authored-tag and class selector language, not deckjsx-specific semantic target strings such as `"text"` or `"view"`. A Stylesheet Target belongs to its Style Class, so it must include the selector for that Style Class rather than relying on implicit class injection.
@@ -137,6 +141,10 @@ Cross-output visual layering such as generated backgrounds, borders, outlines, c
 For tables, Projected Layout Snapshot should preserve table frame, row geometry, column geometry, cell geometry, and projected table content/style data so Pptx Table Projection can emit native PPTX table payloads without reconstructing table layout from generic drawing nodes.
 _Avoid_: authoring-shaped layout bridge, solver IR, PPTX package model
 
+**Text Layout Decision**:
+An inspectable layout decision for authored text, such as measured line breaks, overflow, fit, baseline placement, font fallback, and paragraph spacing. It belongs to layout/projection inspection so sandbox tooling can explain why text appears where it does before PPTX or PDF writers serialize it.
+_Avoid_: writer-only text wrapping, renderer side effect, uninspectable auto-fit
+
 **Projected Layout Identity**:
 Stable identity for a node inside a Projected Layout Snapshot. It is distinct from Graph Identity because one semantic graph node may produce multiple layout nodes or generated layout artifacts.
 Projected Layout nodes should retain Graph Identity and Style Entity provenance, but their own identity belongs to the layout snapshot.
@@ -159,6 +167,11 @@ _Avoid_: root authoring export, output projection surface, legacy output surface
 An inspection-only view computed from a Projected Document Model, diagnostics, and related Pipeline Artifacts to explain output-facing state without becoming the primary projected model. Examples include Effective Projected Style View, Composed Visual Paint Order View, Project Result warning rollups, and build/reuse explanations exposed through Render inspection summaries.
 Derived Projection Inspection Views may be materialized lazily or by detail level so ordinary Project and Render calls do not pay for every sandbox explanation. They must not be writer input and must not duplicate ownership from the Pptx Package Model or Pptx Package Assembly Plan.
 _Avoid_: Projected Document Model, writer input, eager debug payload, root authoring export
+
+**Sandbox Explanation Surface**:
+The inspection-facing surface that lets tooling explain how authoring became layout, projection, and rendered output, including text layout decisions, visual paint order, clipping, fallback strategies, and format-specific projection effects. It is a future tooling surface over Project and derived inspection data, not a separate renderer or an authoring API.
+It may describe drawing-like appearance across formats for comparison, but it must not become a shared Presentation IR or the input model for PPTX/PDF writers.
+_Avoid_: public authoring model, writer internals UI, eager default Project cost, shared writer IR, Presentation IR replacement
 
 **Human-First Dev Console**:
 The terminal-facing development surface for `deckjsx dev`, covering both ordinary resident dev logs and optional inline inspection. It presents runtime events, diagnostics, artifact updates, and inspector results as human-readable development UI rather than machine logs or a public protocol.
@@ -234,15 +247,36 @@ If a mounted child source declares Deck Plugins, that child contribution should 
 _Avoid_: source-local plugin registry, process-global plugin registry, child render owner
 
 **Asset Entity**:
-A graph entity that represents reusable media or external content such as an image source. Renderable nodes reference Asset Entities instead of embedding output-specific media paths.
-Asset Entities describe authored media relationships; they are not output package parts or media byte caches.
-_Avoid_: PPTX media path
+A graph entity that represents reusable external content such as an image source, video source, or font source. Renderable nodes and style/layout decisions reference Asset Entities instead of embedding output-specific paths or bytes.
+Asset Entities describe authored asset relationships; they are not output package parts, font programs, or media byte caches.
+_Avoid_: PPTX media path, PDF font object, loaded asset bytes
 
 **Authored Media Source**:
 The media reference supplied by authoring, such as a data URI, bytes, an absolute URL, an app-public URL, or a filesystem-like path. It is distinct from a PPTX Media Part, and resolving it into bytes belongs to a multi-runtime asset-loading boundary rather than to graph construction or package projection.
 Filesystem-like paths remain part of the core Authored Media Source vocabulary even though core does not resolve them. They preserve author intent for AssetLoaders supplied by Runtime Integration Packages.
 Authoring-facing `src` values should stay ordinary media references; integration metadata needed to interpret them belongs to internal source/origin plumbing rather than to extra user-authored props.
 _Avoid_: media part, package path, resolved image bytes
+
+**Authored Font Source**:
+The font program supplied by authoring for text measurement and PDF embedding, normally as runtime-neutral asset bytes or data. Filesystem-like paths may be accepted only when an integration AssetLoader interprets them; core must not rely on Node filesystem access to resolve font assets.
+It resolves through the Asset Loading Boundary like other assets, but it is distinct from ordinary `fontFamily` names because it identifies the font program deckjsx may measure or embed.
+_Avoid_: system font assumption, PDF font object, CSS font-family name only, core filesystem lookup
+
+**Font Asset**:
+An Asset Entity and Asset Artifact pair for a loaded or probed font program used by text layout decisions and PDF writing. Font Assets may provide metadata such as family name, style, weight, supported ranges, metrics, and bytes for embedding, and style resolution should match text Font Family References to these registered assets by declared font metadata rather than by asset handles in style values.
+Font Assets should reuse the existing Asset Loading Boundary, AssetSource, AssetLoader, Asset Artifact, Resolver Identity, diagnostics, provenance, and cache behavior instead of introducing a separate font registry pipeline. Any font-specific additions should extend asset kind/source metadata and font probe/load result metadata rather than bypassing the asset flow.
+Font Asset declarations should enter through Deck-owned configuration or Deck Plugin integration flow so the data path starts from the Deck render execution, while StyleSheets only request fonts through Font Family References.
+_Avoid_: system font lookup, writer-local font cache, theme font scheme, style-owned font bytes
+
+**Font Asset Registration**:
+A Deck Plugin integration contribution that declares named Font Assets for the current render execution, including the key or family metadata used by style resolution and the AssetSource consumed by the Asset Loading Boundary. It complements `assetLoaders`: registrations say which font assets exist, while loaders say how sources are probed and loaded.
+Font Asset Registration belongs to `DeckIntegrationContext` rather than StyleSheet declarations so font bytes follow the same Deck-owned data path as other assets.
+The registration key is the stable asset identity for the font program or variant; text style matching should use declared family, weight, style, and range metadata rather than treating the key as the authored `fontFamily` value.
+_Avoid_: StyleSheet-owned font bytes, CSS url resolver, process-global font registry
+
+**PDF Font Fallback**:
+A nonblocking PDF projection or render diagnostic used when a Font Family Reference cannot be matched to a usable Font Asset. The first PDF output path may fall back to a standard PDF font while emitting a stable warning code, so strict fidelity workflows can fail on that diagnostic without adding a PDF-specific font policy option.
+_Avoid_: silent system font substitution, mandatory fontPolicy option, render-blocking default
 
 **Media Source Origin**:
 The authoring-module origin needed to interpret a relative Authored Media Source, such as the module or file that supplied the media reference. It is distinct from Source Identity, which is stable composition identity, and from Source Span, which is diagnostic location detail.
@@ -435,7 +469,7 @@ The temporary explicit public surface for the current legacy rendering path and 
 _Avoid_: Authoring Interface, canonical graph model, future output projection surface, compatibility guarantee
 
 **Adapter Interface**:
-The explicit public surface for Writer Adapters used by Render, such as the built-in `pptx()` adapter. It is separate from the Authoring Interface so render-time adapter selection does not become ordinary deck authoring vocabulary.
+The explicit public surface for Writer Adapters used by Render, such as the built-in `pptx()` and `pdf()` adapters. It is separate from the Authoring Interface so render-time adapter selection does not become ordinary deck authoring vocabulary.
 _Avoid_: root authoring export, backend registry, legacy output surface
 
 **Pptx Package Model**:
@@ -650,6 +684,31 @@ The output-facing document model produced from the Semantic Author Graph before 
 Different output formats may use similar projected vocabulary, but deckjsx should not introduce a shared format-neutral Projected Element layer merely to reuse names. Each output format should project directly from the Semantic Author Graph into the structure it needs.
 _Avoid_: Semantic Author Graph, writer bytes, legacy Presentation IR, renderer command stream
 
+**PDF Page Model**:
+The PDF-specific Projected Document Model produced from the Semantic Author Graph for PDF output. It is parallel to the Pptx Package Model rather than derived from PPTX packages or office-suite conversion output.
+Its shape should stay close to PDF document/page/resource/content-stream structure so the PDF writer can serialize it quickly and directly, while sandbox-oriented explanation remains in derived inspection views rather than in the model's primary shape.
+_Avoid_: converted PPTX, Pptx Package Model, PDF bytes, sandbox explanation model
+
+**PDF Specification Profile**:
+The deliberately selected subset and interpretation of official PDF specifications that deckjsx's PDF Page Model and PDF Writer Boundary target first, including page tree structure, resource dictionaries, content stream operations, font dictionaries, embedded font programs, image XObjects, metadata, and cross-reference/trailer serialization.
+It is design input for the PDF Page Model and validation fixtures, not a separate authoring feature flag. The profile should be researched from primary PDF, font, and CSS font-matching references before model implementation so deckjsx's projected fields are shaped by PDF semantics rather than by a convenient writer library surface.
+_Avoid_: library feature matrix, ad hoc PDF object dump, generic drawing IR
+
+**PDF Writer Boundary**:
+The render-stage boundary that serializes the PDF Page Model into PDF bytes. The PDF Page Model belongs to deckjsx even if the first PDF writer uses a low-level Edge-safe library internally, so deckjsx can replace that writer with a direct implementation without changing Project or inspection vocabulary.
+_Avoid_: library-owned projection model, runtime LibreOffice conversion, public PDF library wrapper
+
+**Static PDF Surface**:
+The PDF output surface for author-visible static slide appearance, including layout geometry, text, fills, strokes, images, backgrounds, tables, clipping, transforms, opacity, z-order, and other non-interactive visual effects. It excludes presentation-only behavior such as animation, playback, and editable PowerPoint metadata.
+For video content, the Static PDF Surface uses an authored poster image when one exists; PDF output should not generate thumbnails from video bytes in core. Missing poster imagery should produce a stable warning and a static fallback rather than making video playback part of PDF output.
+_Avoid_: interactive presentation behavior, PowerPoint editability, partial visual subset
+
+**PDF Fidelity Baseline**:
+The visual compatibility reference for deckjsx PDF output: a generated PDF should closely match the author-visible appearance of the same deck when deckjsx's PPTX output is converted to PDF by LibreOffice. It is a reference baseline, not the generation mechanism.
+LibreOffice belongs to verification and regression tooling for this baseline; core PDF Project and Render must not require LibreOffice, Node-only process execution, or renderer measurement callbacks so Edge-like runtimes can still produce PDF bytes.
+PDF fidelity validation should include PDF structure checks, raster visual comparison, and text/metadata/font checks so sandbox workflows can trust both appearance and inspectable document semantics.
+_Avoid_: exact byte equivalence, PPTX conversion path, separate PDF design language, runtime LibreOffice dependency, measurement oracle
+
 **Output Projection**:
 The transformation from the Semantic Author Graph into an output-format-specific Projected Document Model. Each output format owns its own projection, such as the projection into the Pptx Package Model for PPTX.
 _Avoid_: backend
@@ -673,7 +732,7 @@ _Avoid_: writer-side projection, direct imports of projection internals, public 
 
 **Render Output Side Effect**:
 The runtime action, owned by a Runtime Integration Package rather than core Render, that writes a produced Rendered Artifact to an output path after artifact bytes exist. It is separate from package generation: Rendered Artifact bytes remain the primary output, while path writing belongs outside the core `deckjsx` package.
-The Node Runtime Integration Package exposes this as a helper shaped like `write(await deck.render(pptx()), "out.pptx")`; the helper may choose In-place Package Patch for Patchable PPTX outputs before falling back to a whole-archive rewrite.
+The Node Runtime Integration Package exposes this as a helper shaped like `write(await deck.render(pptx()), "out.pptx")` or `write(await deck.render(pdf()), "out.pdf")`; the helper may choose In-place Package Patch for Patchable PPTX outputs before falling back to a whole-archive rewrite, while non-patchable formats such as PDF use ordinary artifact byte writes.
 Runtime write helpers should follow the result-first diagnostics culture of core stages: expected filesystem, lock, patch-capacity, non-patchable-package, and fallback failures return diagnostics rather than throwing ordinary user-manageable errors.
 Runtime write helpers should not modify the target path when the Render Result has errors, lacks an artifact, or targets an unsupported format.
 In v0.8.5, core should remove the root/core `output: string` path-writing option and the current Node output side-effect implementation/types instead of keeping a compatibility side effect in Render.
