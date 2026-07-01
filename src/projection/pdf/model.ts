@@ -18,6 +18,10 @@ export type PdfFontResource = {
   readonly id: PdfResourceId;
   readonly name: string;
   readonly family?: string;
+  readonly weight?: number;
+  readonly style?: "normal" | "italic";
+  readonly fallback?: boolean;
+  readonly sourceKey?: string;
   readonly data?: Uint8Array;
 };
 

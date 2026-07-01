@@ -5,7 +5,7 @@ import {
   type AuthoringRuntimeObserver,
   type AuthoringRuntimeObserverCarrier,
 } from "./authoring-runtime-observer";
-import type { AssetLoader } from "./assets";
+import type { AssetLoader, AssetSource } from "./assets";
 import type { DeckIntegrationContext } from "./integration-context";
 import { integrationContextFromPlugins, mergeIntegrationContexts } from "./integration-context";
 import type { MediaSourceOrigin } from "./media-source-origin";
@@ -195,7 +195,12 @@ function renderContextIntegrationValidationMessage(integration: unknown): string
   }
 
   for (const key of Object.keys(integration)) {
-    if (key !== "id" && key !== "assetLoaders" && key !== "mediaSourceOrigin") {
+    if (
+      key !== "id" &&
+      key !== "assetLoaders" &&
+      key !== "fontAssets" &&
+      key !== "mediaSourceOrigin"
+    ) {
       return `Render execution integration.${key} is not part of the public authoring API.`;
     }
   }
@@ -206,6 +211,13 @@ function renderContextIntegrationValidationMessage(integration: unknown): string
 
   if (integration.assetLoaders !== undefined && !isAssetLoaderArray(integration.assetLoaders)) {
     return "Render execution integration.assetLoaders must be an array of Asset Loaders.";
+  }
+
+  if (
+    integration.fontAssets !== undefined &&
+    !isFontAssetRegistrationArray(integration.fontAssets)
+  ) {
+    return "Render execution integration.fontAssets must be an array of Font Asset Registrations.";
   }
 
   if (
@@ -286,6 +298,51 @@ function isAssetLoaderArray(value: unknown): value is readonly AssetLoader[] {
         (loader.load === undefined || typeof loader.load === "function"),
     )
   );
+}
+
+function isAssetSource(value: unknown): value is AssetSource {
+  if (!isRecord(value)) {
+    return false;
+  }
+  switch (value.kind) {
+    case "bytes":
+      return (
+        hasOnlyKeys(value, ["kind", "bytes", "mediaType", "extension"]) &&
+        value.bytes instanceof Uint8Array &&
+        (value.mediaType === undefined || typeof value.mediaType === "string") &&
+        (value.extension === undefined || typeof value.extension === "string")
+      );
+    case "data":
+      return hasOnlyKeys(value, ["kind", "data"]) && typeof value.data === "string";
+    case "url":
+      return hasOnlyKeys(value, ["kind", "url"]) && typeof value.url === "string";
+    case "path":
+      return hasOnlyKeys(value, ["kind", "path"]) && typeof value.path === "string";
+    default:
+      return false;
+  }
+}
+
+function isFontAssetRegistrationArray(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (asset) =>
+        isRecord(asset) &&
+        hasOnlyKeys(asset, ["key", "family", "weight", "style", "unicodeRange", "source"]) &&
+        typeof asset.key === "string" &&
+        typeof asset.family === "string" &&
+        (asset.weight === undefined ||
+          (typeof asset.weight === "number" && Number.isFinite(asset.weight))) &&
+        (asset.style === undefined || asset.style === "normal" || asset.style === "italic") &&
+        (asset.unicodeRange === undefined || isStringArray(asset.unicodeRange)) &&
+        isAssetSource(asset.source),
+    )
+  );
+}
+
+function isStringArray(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
 function hasOnlyKeys(

@@ -127,10 +127,40 @@ function unknownResourceDiagnostic(input: {
   });
 }
 
+function fallbackDiagnostic(input: {
+  readonly fallbackIndex: number;
+  readonly code: string;
+  readonly message: string;
+}): Diagnostic {
+  return diagnostic({
+    severity: "warning",
+    code: input.code,
+    title: "PDF projection used a fallback font",
+    message: input.message,
+    labels: [
+      {
+        path: `fallbacks.${input.fallbackIndex}`,
+        message: input.message,
+        severity: "primary",
+      },
+    ],
+  });
+}
+
 export function validatePdfPageModel(model: PdfPageModel): Diagnostics {
   const issues: Diagnostic[] = [];
   const seenPageIds = new Set<string>();
   const resources = resourceIds(model.resources);
+
+  model.fallbacks.forEach((fallback, fallbackIndex) => {
+    issues.push(
+      fallbackDiagnostic({
+        fallbackIndex,
+        code: fallback.code,
+        message: fallback.message,
+      }),
+    );
+  });
 
   model.pages.forEach((page, pageIndex) => {
     if (seenPageIds.has(page.id)) {

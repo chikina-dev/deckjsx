@@ -269,7 +269,12 @@ function deckPluginIntegrationValidationMessage(integration: unknown): string | 
   }
 
   for (const key of Object.keys(integration)) {
-    if (key !== "id" && key !== "assetLoaders" && key !== "mediaSourceOrigin") {
+    if (
+      key !== "id" &&
+      key !== "assetLoaders" &&
+      key !== "fontAssets" &&
+      key !== "mediaSourceOrigin"
+    ) {
       return `Deck plugin integration.${key} is not part of the public authoring API.`;
     }
   }
@@ -280,6 +285,13 @@ function deckPluginIntegrationValidationMessage(integration: unknown): string | 
 
   if (integration.assetLoaders !== undefined && !isAssetLoaderArray(integration.assetLoaders)) {
     return "Deck plugin integration.assetLoaders must be an array of Asset Loaders.";
+  }
+
+  if (
+    integration.fontAssets !== undefined &&
+    !isFontAssetRegistrationArray(integration.fontAssets)
+  ) {
+    return "Deck plugin integration.fontAssets must be an array of Font Asset Registrations.";
   }
 
   if (
@@ -687,8 +699,32 @@ function isAssetSource(value: unknown): value is AssetSource {
   }
 }
 
+function isFontAssetRegistrationArray(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (asset) =>
+        isRecord(asset) &&
+        hasOnlyKeys(asset, ["key", "family", "weight", "style", "unicodeRange", "source"]) &&
+        typeof asset.key === "string" &&
+        typeof asset.family === "string" &&
+        (asset.weight === undefined ||
+          (typeof asset.weight === "number" && Number.isFinite(asset.weight))) &&
+        (asset.style === undefined || asset.style === "normal" || asset.style === "italic") &&
+        (asset.unicodeRange === undefined || isStringArray(asset.unicodeRange)) &&
+        isAssetSource(asset.source),
+    )
+  );
+}
+
 function isAssetSourceField(value: unknown): boolean {
-  return value === "src" || value === "data" || value === "poster" || value === "posterData";
+  return (
+    value === "src" ||
+    value === "data" ||
+    value === "poster" ||
+    value === "posterData" ||
+    value === "font"
+  );
 }
 
 function isDiagnosticsValue(value: unknown): value is { readonly items: readonly Diagnostic[] } {
@@ -722,9 +758,10 @@ function isMediaSourceOrigin(value: unknown): value is MediaSourceOrigin {
 function isIntegrationContext(value: unknown): value is DeckIntegrationContext {
   return (
     isRecord(value) &&
-    hasOnlyKeys(value, ["id", "assetLoaders", "mediaSourceOrigin"]) &&
+    hasOnlyKeys(value, ["id", "assetLoaders", "fontAssets", "mediaSourceOrigin"]) &&
     typeof value.id === "string" &&
     (value.assetLoaders === undefined || isAssetLoaderArray(value.assetLoaders)) &&
+    (value.fontAssets === undefined || isFontAssetRegistrationArray(value.fontAssets)) &&
     (value.mediaSourceOrigin === undefined || isMediaSourceOrigin(value.mediaSourceOrigin))
   );
 }
@@ -841,6 +878,11 @@ function isPdfFontResourceValue(value: unknown): boolean {
     typeof value.id === "string" &&
     typeof value.name === "string" &&
     (value.family === undefined || typeof value.family === "string") &&
+    (value.weight === undefined ||
+      (typeof value.weight === "number" && Number.isFinite(value.weight))) &&
+    (value.style === undefined || value.style === "normal" || value.style === "italic") &&
+    (value.fallback === undefined || typeof value.fallback === "boolean") &&
+    (value.sourceKey === undefined || typeof value.sourceKey === "string") &&
     (value.data === undefined || value.data instanceof Uint8Array)
   );
 }

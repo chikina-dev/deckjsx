@@ -1464,6 +1464,7 @@ export async function projectSource<
       resolvedStyles: projectResolvedStyles,
       options: input.options,
       assets: projectAssetsById,
+      integrationContext: afterAsset.context.integrationContext ?? execution.integrationContext,
     });
     const reusedProjection =
       projected.format === "pptx"

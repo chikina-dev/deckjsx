@@ -1,6 +1,7 @@
 import type { DeckOptions } from "../authoring/options";
 import { createDiagnostics, type Diagnostics } from "../diagnostics";
 import type { AssetEntity, SemanticAuthorGraph } from "../graph";
+import type { DeckIntegrationContext } from "../integration-context";
 import type { ProjectionFormat } from "../pipeline/public";
 import type { ResolvedStyleMap } from "../style/resolve";
 import type { PdfPageModel } from "./pdf/model";
@@ -31,6 +32,7 @@ type ProjectionCapability<TModel extends ProjectedDocumentModel> = {
     options: DeckOptions;
     diagnostics?: Diagnostics;
     assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
+    integrationContext?: DeckIntegrationContext;
   }): TModel;
   diagnostics(input: {
     graph: SemanticAuthorGraph;
@@ -47,6 +49,7 @@ type ProjectionCapability<TModel extends ProjectedDocumentModel> = {
     options: DeckOptions;
     diagnostics?: Diagnostics;
     assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
+    integrationContext?: DeckIntegrationContext;
   }): TModel;
   canSummarize(projection: ProjectedDocumentModel): projection is TModel;
   summarize(
@@ -122,6 +125,7 @@ export function projectGraphToDocumentModel(input: {
   options: DeckOptions;
   diagnostics?: Diagnostics;
   assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
+  integrationContext?: DeckIntegrationContext;
 }): ProjectedDocumentModel {
   return projectionCapabilityFor(input.format).project(input);
 }
@@ -133,6 +137,7 @@ export function projectGraphToPartialDocumentModel(input: {
   options: DeckOptions;
   diagnostics?: Diagnostics;
   assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
+  integrationContext?: DeckIntegrationContext;
 }): ProjectedDocumentModel {
   return projectionCapabilityFor(input.format).projectPartial(input);
 }

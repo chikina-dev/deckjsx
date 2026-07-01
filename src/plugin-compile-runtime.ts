@@ -1,5 +1,6 @@
 import type { Diagnostic } from "./diagnostics";
 import type { SemanticAuthorGraph } from "./graph/types";
+import type { AssetSource } from "./assets";
 
 export type CompilePluginHookName = "afterGraph" | "afterTree" | "beforeGraph" | "beforeTree";
 
@@ -84,7 +85,12 @@ const compilePluginHookUpdateValueValidators: Record<
 };
 
 const deckPluginKeys = ["kind", "id", "name", "integration", "hooks"] as const;
-const deckPluginIntegrationKeys = ["id", "assetLoaders", "mediaSourceOrigin"] as const;
+const deckPluginIntegrationKeys = [
+  "id",
+  "assetLoaders",
+  "fontAssets",
+  "mediaSourceOrigin",
+] as const;
 
 export function validateCompileDeckPlugins(plugins: unknown): readonly Diagnostic[] {
   if (plugins === undefined) {
@@ -243,6 +249,13 @@ function deckPluginIntegrationValidationMessage(integration: unknown): string | 
   }
 
   if (
+    integration.fontAssets !== undefined &&
+    !isFontAssetRegistrationArray(integration.fontAssets)
+  ) {
+    return "Deck plugin integration.fontAssets must be an array of Font Asset Registrations.";
+  }
+
+  if (
     integration.mediaSourceOrigin !== undefined &&
     !isMediaSourceOrigin(integration.mediaSourceOrigin)
   ) {
@@ -388,6 +401,47 @@ function isAssetLoaderArray(value: unknown): boolean {
         typeof loader.resolverIdentity === "string" &&
         (loader.probe === undefined || typeof loader.probe === "function") &&
         (loader.load === undefined || typeof loader.load === "function"),
+    )
+  );
+}
+
+function isAssetSource(value: unknown): value is AssetSource {
+  if (!isRecord(value)) {
+    return false;
+  }
+  switch (value.kind) {
+    case "bytes":
+      return (
+        hasOnlyKeys(value, ["kind", "bytes", "mediaType", "extension"]) &&
+        value.bytes instanceof Uint8Array &&
+        (value.mediaType === undefined || typeof value.mediaType === "string") &&
+        (value.extension === undefined || typeof value.extension === "string")
+      );
+    case "data":
+      return hasOnlyKeys(value, ["kind", "data"]) && typeof value.data === "string";
+    case "url":
+      return hasOnlyKeys(value, ["kind", "url"]) && typeof value.url === "string";
+    case "path":
+      return hasOnlyKeys(value, ["kind", "path"]) && typeof value.path === "string";
+    default:
+      return false;
+  }
+}
+
+function isFontAssetRegistrationArray(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (asset) =>
+        isRecord(asset) &&
+        hasOnlyKeys(asset, ["key", "family", "weight", "style", "unicodeRange", "source"]) &&
+        typeof asset.key === "string" &&
+        typeof asset.family === "string" &&
+        (asset.weight === undefined ||
+          (typeof asset.weight === "number" && Number.isFinite(asset.weight))) &&
+        (asset.style === undefined || asset.style === "normal" || asset.style === "italic") &&
+        (asset.unicodeRange === undefined || isStringArray(asset.unicodeRange)) &&
+        isAssetSource(asset.source),
     )
   );
 }
