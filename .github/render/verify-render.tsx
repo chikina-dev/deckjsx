@@ -586,6 +586,7 @@ function packageAssertion(
 async function assertPptxZip(input: {
   path: string;
   expectedSlides: number;
+  expectedImageCropSourceRects?: readonly string[];
   requiredTexts: readonly string[];
   orderedTextSignals?: readonly string[];
   requiredXmlSnippets?: readonly string[];
@@ -695,23 +696,42 @@ async function assertPptxZip(input: {
   }
 
   if (input.requireImageCropSourceRectSignal) {
+    const expectedSourceRects = input.expectedImageCropSourceRects ?? [];
     assertions.push(
-      packageAssertion(
-        "image crop source-rect signal",
-        allSlideXml.includes('<a:srcRect l="10000" r="20000" t="0" b="30000"/>') ||
-          allSlideXml.includes("<a:srcRect"),
-      ),
+      packageAssertion("image crop source-rect signal configured", expectedSourceRects.length > 0, {
+        expectedSourceRects,
+      }),
     );
+    for (const sourceRect of expectedSourceRects) {
+      assertions.push(
+        packageAssertion(
+          `image crop source-rect signal: ${sourceRect}`,
+          allSlideXml.includes(sourceRect),
+          { sourceRect },
+        ),
+      );
+    }
   }
 
-  if (input.requirePaintOrderSignal && input.orderedTextSignals) {
+  if (input.requirePaintOrderSignal) {
+    const orderedTextSignals = input.orderedTextSignals ?? [];
     assertions.push(
-      packageAssertion(
-        "paint-order z-index signal declared",
-        input.orderedTextSignals.length >= 2,
-        { orderedTextSignals: input.orderedTextSignals },
-      ),
+      packageAssertion("paint-order z-index signal configured", orderedTextSignals.length >= 2, {
+        orderedTextSignals,
+      }),
     );
+    let previousIndex = -1;
+    for (const text of orderedTextSignals) {
+      const currentIndex = allSlideXml.indexOf(text, previousIndex + 1);
+      assertions.push(
+        packageAssertion(`paint-order z-index signal: ${text}`, currentIndex > previousIndex, {
+          previousIndex,
+          currentIndex,
+          text,
+        }),
+      );
+      previousIndex = currentIndex;
+    }
   }
 
   if (input.requireRichTextRunSignal) {
@@ -735,12 +755,19 @@ async function assertPptxZip(input: {
   }
 
   if (input.requireTextBodySignal) {
+    const requiredXmlSnippets = input.requiredXmlSnippets ?? [];
     assertions.push(
-      packageAssertion(
-        "text body semantics signal",
-        (input.requiredXmlSnippets ?? []).every((snippet) => allSlideXml.includes(snippet)),
-      ),
+      packageAssertion("text body semantics snippets configured", requiredXmlSnippets.length > 0, {
+        requiredXmlSnippets,
+      }),
     );
+    for (const snippet of requiredXmlSnippets) {
+      assertions.push(
+        packageAssertion(`text body semantics signal: ${snippet}`, allSlideXml.includes(snippet), {
+          snippet,
+        }),
+      );
+    }
   }
 
   if (input.requireTableSignal) {

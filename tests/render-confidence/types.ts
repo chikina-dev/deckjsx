@@ -10,6 +10,7 @@ export type RenderConfidenceCategory =
 
 export type RenderConfidenceAssertionOptions = {
   readonly expectedSlides: number;
+  readonly expectedImageCropSourceRects?: readonly string[];
   readonly requiredTexts: readonly string[];
   readonly orderedTextSignals?: readonly string[];
   readonly requiredXmlSnippets?: readonly string[];

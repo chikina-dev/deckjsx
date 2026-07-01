@@ -72,6 +72,20 @@ function createTextLayoutDeck(): Deck {
     <p
       style={{
         position: "absolute",
+        left: 6.78,
+        top: 1.5,
+        width: 2,
+        height: 0.4,
+        fontSize: 16,
+        color: "#64748B",
+        zIndex: 0,
+      }}
+    >
+      Back label
+    </p>,
+    <p
+      style={{
+        position: "absolute",
         left: 0.8,
         top: 3.05,
         width: 4,
@@ -102,9 +116,12 @@ export const featureTextLayoutFixtures: readonly RenderConfidenceFixture[] = [
         "Centered paragraph with ",
         "rich red",
         "run",
+        "Back label",
         "Front label",
         "Bullet item",
       ],
+      orderedTextSignals: ["Back label", "Front label"],
+      requirePaintOrderSignal: true,
       requireRichTextRunSignal: true,
       requiredXmlSnippets: ["DC2626"],
     },

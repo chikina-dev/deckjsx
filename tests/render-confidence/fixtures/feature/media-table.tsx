@@ -95,6 +95,7 @@ export const featureMediaTableFixtures: readonly RenderConfidenceFixture[] = [
     rasterPages: [{ page: 1, category: "imageCrop" }],
     assertions: {
       expectedSlides: 1,
+      expectedImageCropSourceRects: ['<a:srcRect l="10000" r="20000" t="0" b="30000"/>'],
       requiredTexts: [
         "Media table confidence",
         "Template body text",
