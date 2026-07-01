@@ -906,10 +906,10 @@ function projectionFormatFor(options: unknown): ProjectionFormat {
   return isRecord(output) && output.format === "pdf" ? "pdf" : "pptx";
 }
 
-function projectionInputMatchesFormat(
+function projectionInputFormatMatches(
   input: DefinedProjectionInput | undefined,
   format: ProjectionFormat,
-): input is DefinedProjectionInput {
+): boolean {
   const projection = input?.projection;
   return isRecord(projection) && projection.format === format;
 }
@@ -1239,7 +1239,7 @@ export async function projectSource<
     };
   }
 
-  if (projectionInputMatchesFormat(input.definedProjection, projectionFormat)) {
+  if (input.definedProjection) {
     const definedProjection = input.definedProjection.projection as PptxPackageModelCandidate;
     const definedProjectionShapeDiagnostics =
       input.definedProjection.diagnostics.items.length > 0
@@ -1651,9 +1651,16 @@ export async function renderSource<
     projectionFormat: adapter.projectionFormat,
     definedGraph: sourceInvalidated ? artifacts.graph : (incrementalGraph ?? inputGraph),
     definedProjection: sourceInvalidated
-      ? artifacts.projection
+      ? projectionInputFormatMatches(artifacts.projection, adapter.projectionFormat)
+        ? artifacts.projection
+        : undefined
       : incrementalGraph
-        ? incrementalSlot?.artifacts.projection
+        ? projectionInputFormatMatches(
+            incrementalSlot?.artifacts.projection,
+            adapter.projectionFormat,
+          )
+          ? incrementalSlot?.artifacts.projection
+          : undefined
         : input.definedProjection,
     artifacts,
     assetLoaders: execution.assetLoaders,

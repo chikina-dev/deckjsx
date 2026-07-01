@@ -132,6 +132,32 @@ function projectedArtifactStatus<T>(
   return diagnostics.hasErrors ? "partial" : "available";
 }
 
+function projectionArtifactForFormat(
+  projection: DefinedProjectionInput | undefined,
+  format: ProjectionFormat,
+): DefinedProjectionInput | undefined {
+  const value = projection?.projection;
+  return typeof value === "object" && value !== null && "format" in value && value.format === format
+    ? projection
+    : undefined;
+}
+
+function projectionFormatForOptions(options: DeckOptions, projectOptions?: ProjectOptions) {
+  return projectOptions?.format ?? options.output?.format ?? "pptx";
+}
+
+function projectionFormatForRenderInput(
+  options: DeckOptions,
+  config: RenderOptions | WriterAdapter | undefined,
+) {
+  return typeof config === "object" &&
+    config !== null &&
+    "kind" in config &&
+    config.kind === "deckjsx.writerAdapter"
+    ? config.projectionFormat
+    : projectionFormatForOptions(options);
+}
+
 /**
  * A Deck with Source Context already bound.
  *
@@ -518,13 +544,16 @@ export class Deck<
     return loadPipelineRunner().then(({ createPipelineArtifacts, projectSource }) => {
       const artifacts = this.#pipelineArtifacts(createPipelineArtifacts);
       const artifactGraph = this.#artifactGraph();
+      const artifactProjection = projectionArtifactForFormat(
+        artifactGraph ? artifacts.projection : undefined,
+        projectionFormatForOptions(this.#options, options),
+      );
       return projectSource({
         source: this,
         options: this.#options,
         projectOptions: options,
         definedGraph: this.#definedGraph ?? artifactGraph,
-        definedProjection:
-          this.#definedProjection ?? (artifactGraph ? artifacts.projection : undefined),
+        definedProjection: this.#definedProjection ?? artifactProjection,
         artifacts,
       });
     });
@@ -543,13 +572,17 @@ export class Deck<
     return loadPipelineRunner().then(({ createPipelineArtifacts, renderSource }) => {
       const artifacts = this.#pipelineArtifacts(createPipelineArtifacts);
       const artifactGraph = this.#artifactGraph();
+      const renderInput = config ?? {};
+      const artifactProjection = projectionArtifactForFormat(
+        artifactGraph ? artifacts.projection : undefined,
+        projectionFormatForRenderInput(this.#options, renderInput),
+      );
       return renderSource({
         source: this,
         options: this.#options,
-        renderInput: config ?? {},
+        renderInput,
         definedGraph: this.#definedGraph ?? artifactGraph,
-        definedProjection:
-          this.#definedProjection ?? (artifactGraph ? artifacts.projection : undefined),
+        definedProjection: this.#definedProjection ?? artifactProjection,
         artifacts,
       });
     });
