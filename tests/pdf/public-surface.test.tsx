@@ -73,6 +73,13 @@ describe("pdf public surface", () => {
       mediaType: "application/pdf",
       extension: "pdf",
     });
-    expect(new TextDecoder().decode(result.artifact?.bytes)).toBe("%PDF-1.7\n%%deckjsx\n");
+    const bytes = new TextDecoder().decode(result.artifact?.bytes);
+    expect(bytes.startsWith("%PDF-1.7\n")).toBe(true);
+    expect(bytes).toContain("/Type /Catalog");
+    expect(bytes).toContain("/Type /Pages");
+    expect(bytes).toContain("xref");
+    expect(bytes).toContain("trailer");
+    expect(bytes).toContain("startxref");
+    expect(bytes).toContain("%%EOF");
   });
 });
