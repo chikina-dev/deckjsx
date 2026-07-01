@@ -31,8 +31,8 @@ function slideIdsForGraph(graph: SemanticAuthorGraph): readonly string[] {
 
 type FontRequest = {
   readonly family: string;
-  readonly weight?: number;
-  readonly style?: "normal" | "italic";
+  readonly weight: number;
+  readonly style: "normal" | "italic";
 };
 
 function normalizedFontFamily(value: unknown): string | undefined {
@@ -53,7 +53,33 @@ function normalizedFontFamily(value: unknown): string | undefined {
 }
 
 function fontRequestKey(request: FontRequest): string {
-  return [request.family, request.weight ?? "", request.style ?? ""].join("\u0000");
+  return [request.family, request.weight, request.style].join("\u0000");
+}
+
+function resolvedFontWeight(value: unknown): number {
+  if (typeof value === "number") {
+    return value;
+  }
+  if (value === "bold") {
+    return 700;
+  }
+  return 400;
+}
+
+function resolvedFontStyle(value: unknown): "normal" | "italic" {
+  return value === "italic" ? "italic" : "normal";
+}
+
+function registrationWeight(registration: FontAssetRegistration): number {
+  return registration.weight ?? 400;
+}
+
+function registrationStyle(registration: FontAssetRegistration): "normal" | "italic" {
+  return registration.style ?? "normal";
+}
+
+function fontRequestDescription(request: FontRequest): string {
+  return `family "${request.family}", weight ${request.weight}, style ${request.style}`;
 }
 
 function explicitFontRequests(input: {
@@ -82,8 +108,8 @@ function explicitFontRequests(input: {
     const styleValue = resolvedStyle.properties.fontStyle?.value;
     const request: FontRequest = {
       family,
-      ...(typeof weightValue === "number" ? { weight: weightValue } : {}),
-      ...(styleValue === "normal" || styleValue === "italic" ? { style: styleValue } : {}),
+      weight: resolvedFontWeight(weightValue),
+      style: resolvedFontStyle(styleValue),
     };
     requests.set(fontRequestKey(request), request);
   });
@@ -97,25 +123,18 @@ function fontRegistrationMatchesRequest(
 ): boolean {
   return (
     registration.family === request.family &&
-    (request.weight === undefined ||
-      registration.weight === undefined ||
-      registration.weight === request.weight) &&
-    (request.style === undefined ||
-      registration.style === undefined ||
-      registration.style === request.style)
+    registrationWeight(registration) === request.weight &&
+    registrationStyle(registration) === request.style
   );
 }
 
-function pdfFontResourceForRegistration(
-  registration: FontAssetRegistration,
-  request: FontRequest,
-): PdfFontResource {
+function pdfFontResourceForRegistration(registration: FontAssetRegistration): PdfFontResource {
   return {
     id: pdfResourceId("font", registration.key),
     name: registration.key,
     family: registration.family,
-    weight: registration.weight ?? request.weight,
-    style: registration.style ?? request.style,
+    weight: registrationWeight(registration),
+    style: registrationStyle(registration),
     fallback: false,
     sourceKey: registration.key,
     ...(registration.source.kind === "bytes" ? { data: registration.source.bytes } : {}),
@@ -125,15 +144,17 @@ function pdfFontResourceForRegistration(
 function pdfFallbackForRequest(request: FontRequest): PdfFallback {
   return {
     code: "W_PDF_FONT_FALLBACK",
-    message: `PDF projection used Helvetica for missing font family "${request.family}".`,
+    message: `PDF projection used Helvetica for missing font request ${fontRequestDescription(request)}.`,
   };
 }
 
 function pdfFallbackFontResourceForRequest(request: FontRequest): PdfFontResource {
   return {
-    id: pdfResourceId("font", `fallback:${request.family}`),
+    id: pdfResourceId("font", `fallback:${request.family}:${request.weight}:${request.style}`),
     name: "Helvetica",
     family: "Helvetica",
+    weight: request.weight,
+    style: request.style,
     fallback: true,
   };
 }
@@ -153,7 +174,7 @@ function pdfFontResourcesForRequests(input: {
     );
 
     if (registration) {
-      fonts.push(pdfFontResourceForRegistration(registration, request));
+      fonts.push(pdfFontResourceForRegistration(registration));
       return;
     }
 

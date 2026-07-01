@@ -336,7 +336,8 @@ function isFontAssetRegistrationArray(value: unknown): boolean {
           (typeof asset.weight === "number" && Number.isFinite(asset.weight))) &&
         (asset.style === undefined || asset.style === "normal" || asset.style === "italic") &&
         (asset.unicodeRange === undefined || isStringArray(asset.unicodeRange)) &&
-        isAssetSource(asset.source),
+        isAssetSource(asset.source) &&
+        asset.source.kind === "bytes",
     )
   );
 }
