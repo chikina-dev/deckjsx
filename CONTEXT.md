@@ -272,6 +272,7 @@ _Avoid_: system font lookup, writer-local font cache, theme font scheme, style-o
 A Deck Plugin integration contribution that declares named Font Assets for the current render execution, including the key or family metadata used by style resolution and the AssetSource consumed by the Asset Loading Boundary. It complements `assetLoaders`: registrations say which font assets exist, while loaders say how sources are probed and loaded.
 Font Asset Registration belongs to `DeckIntegrationContext` rather than StyleSheet declarations so font bytes follow the same Deck-owned data path as other assets.
 The registration key is the stable asset identity for the font program or variant; text style matching should use declared family, weight, style, and range metadata rather than treating the key as the authored `fontFamily` value.
+The initial PDF implementation accepts byte-backed Font Asset Registrations only. Path, URL, or other non-byte font sources should remain invalid until font sources are routed through the Asset Loading Boundary with runtime-neutral loading semantics.
 _Avoid_: StyleSheet-owned font bytes, CSS url resolver, process-global font registry
 
 **PDF Font Fallback**:
@@ -701,6 +702,7 @@ _Avoid_: library-owned projection model, runtime LibreOffice conversion, public 
 **Static PDF Surface**:
 The PDF output surface for author-visible static slide appearance, including layout geometry, text, fills, strokes, images, backgrounds, tables, clipping, transforms, opacity, z-order, and other non-interactive visual effects. It excludes presentation-only behavior such as animation, playback, and editable PowerPoint metadata.
 For video content, the Static PDF Surface uses an authored poster image when one exists; PDF output should not generate thumbnails from video bytes in core. Missing poster imagery should produce a stable warning and a static fallback rather than making video playback part of PDF output.
+The initial PDF writer supports text content streams and rejects image content operations until image XObject resources and streams are implemented. Unsupported static visual families should fail validation or project with explicit fallback records rather than disappearing silently.
 _Avoid_: interactive presentation behavior, PowerPoint editability, partial visual subset
 
 **PDF Fidelity Baseline**:

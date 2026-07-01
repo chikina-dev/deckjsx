@@ -8,6 +8,9 @@ Loading Boundary. Missing font matches should initially produce stable nonblocki
 diagnostics so strict fidelity workflows can fail on those warnings without adding a dedicated
 `fontPolicy` option.
 
+The first implementation may require byte-backed font registrations while preserving the same
+integration shape for future loader-backed font sources.
+
 ## Consequences
 
 - `DeckIntegrationContext` can grow a font asset registration field alongside `assetLoaders`.

@@ -2,9 +2,10 @@
 
 ## Status
 
-Draft for review. This document captures the agreed direction for first-class PDF generation in
-deckjsx. It is a design/specification artifact only; implementation should wait until this spec is
-reviewed.
+Implemented as an initial vertical slice. The current implementation covers the public `pdf()`
+adapter, `deck.project({ format: "pdf" })`, a deckjsx-owned PDF Page Model, text projection, a
+minimal direct PDF writer, byte-backed font asset registration, ordinary `@deckjsx/node write()` PDF
+artifact writes, and structure/text verification tests.
 
 ## Goals
 
@@ -146,6 +147,10 @@ family reference cannot be matched to a registered usable Font Asset, PDF projec
 emit a stable warning and use a standard PDF fallback font initially. Verification and CI can treat
 that warning as a failure without adding a dedicated `fontPolicy` option.
 
+The first implemented slice accepts runtime-neutral byte font sources in `fontAssets`. Path, URL,
+and CSS `url(...)` font sources remain future work until font asset loading is deliberately routed
+through the Asset Loading Boundary without Node-only assumptions.
+
 ## Model Research Phase
 
 Model creation needs its own implementation phase before broad visual coverage. The phase should
@@ -216,7 +221,8 @@ or depend on process execution.
 
 4. Minimal writer vertical slice:
    Emit valid PDF bytes for pages, metadata, text with registered fonts or fallback fonts, and simple
-   graphics operations from the PDF Page Model.
+   text operations from the PDF Page Model. Image operations are modeled but rejected by validation
+   until image XObject resources and streams are implemented.
 
 5. Node write support:
    Allow `@deckjsx/node write()` to write PDF artifacts as normal bytes while preserving PPTX patch
@@ -229,6 +235,14 @@ or depend on process execution.
 7. Static surface expansion:
    Expand visual coverage fixture by fixture: images, backgrounds, strokes/fills, clipping,
    transforms, opacity, z-order, tables, and visual fallbacks.
+
+Current implementation status:
+
+- Completed: public PDF plumbing, PDF Specification Profile and Page Model, text projection, minimal
+  PDF writer, byte-backed font asset registration, Node PDF writes, and structure/text verification.
+- Deferred: image XObject writing, shape/stroke/fill/background/table projection, font
+  subsetting/embedding beyond modeled byte-backed font resources, full rich-text run positioning,
+  raster comparison, and the sandbox UI.
 
 ## Open Design Risks
 
