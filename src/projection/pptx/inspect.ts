@@ -1,6 +1,7 @@
 import type { Diagnostics } from "@/src/diagnostics";
 import type { AssetEntityId, GraphNodeId, SemanticAuthorGraph, SemanticNode } from "@/src/graph";
 import type { ResolvedStyleDeclaration, ResolvedStyleMap } from "@/src/style/resolve";
+import { EMU_PER_INCH, POINTS_PER_INCH } from "@/src/types";
 import { walkElements } from "./drawing";
 import { isContentTypesPayload, isInspectableThemePayload, isRecord } from "./package-candidates";
 import { packageDependencyEdges, relationshipTargets } from "./package-parts";
@@ -14,22 +15,33 @@ import type {
   ProjectInspectionEffectiveProjectedStyleEntry,
   ProjectInspectionElementSummary,
   ProjectInspectionFilteredRecord,
+  ProjectInspectionMediaMetrics,
   ProjectInspectionMediaSummary,
   ProjectInspectionPackageDependencyReason,
   ProjectInspectionPackageDependencySummary,
   ProjectInspectionResolvedValues,
   ProjectInspectionRelationshipSummary,
   ProjectInspectionSummary,
+  ProjectInspectionTextMetrics,
   ProjectInspectionUnsupportedSemanticRecord,
+  ProjectInspectionVisualCheck,
   PptxElement,
   PptxElementOrigin,
   PptxPackageModel,
   PptxDrawingNode,
   PptxBackgroundLayer,
+  PptxTextBodyStyle,
+  PptxTableCell,
 } from "./model";
 
 type InspectedDrawingElement = PptxElement &
   Partial<Pick<PptxDrawingNode, "emissionTarget" | "paintOrderIndex">>;
+
+const EMU_PER_POINT = EMU_PER_INCH / POINTS_PER_INCH;
+const DEFAULT_TEXT_FONT_SIZE_PT = 12;
+const DEFAULT_LINE_HEIGHT_MULTIPLE = 1.2;
+const SMALL_TEXT_THRESHOLD_PT = 9;
+const SMALL_MEDIA_EDGE_EMU = 0.5 * EMU_PER_INCH;
 
 function summarizeBackgroundLayer(
   layer: PptxBackgroundLayer,
@@ -80,6 +92,316 @@ function summarizeBackgroundLayers(
   layers: readonly PptxBackgroundLayer[] | undefined,
 ): ProjectInspectionBackgroundLayerSummary[] | undefined {
   return layers?.length ? layers.map(summarizeBackgroundLayer) : undefined;
+}
+
+function pointsFromEmu(value: number): number {
+  return value / EMU_PER_POINT;
+}
+
+function estimatedCharacterWidthPt(char: string, fontSizePt: number): number {
+  if (/\s/u.test(char)) {
+    return fontSizePt * 0.33;
+  }
+
+  return char.charCodeAt(0) > 0x7f ? fontSizePt : fontSizePt * 0.55;
+}
+
+function estimatedTextWidthPt(text: string, fontSizePt: number): number {
+  return Array.from(text).reduce(
+    (total, char) => total + estimatedCharacterWidthPt(char, fontSizePt),
+    0,
+  );
+}
+
+function lineHeightPt(style: PptxTextBodyStyle | PptxTableCell["style"]): number {
+  const fontSizePt = style.fontSizePt ?? DEFAULT_TEXT_FONT_SIZE_PT;
+  return (
+    style.lineSpacing ?? fontSizePt * (style.lineSpacingMultiple ?? DEFAULT_LINE_HEIGHT_MULTIPLE)
+  );
+}
+
+function textRunsForMetrics(input: {
+  readonly text: string;
+  readonly style: PptxTextBodyStyle | PptxTableCell["style"];
+  readonly runs?: readonly { readonly text: string; readonly style?: PptxTableCell["style"] }[];
+}): readonly { readonly text: string; readonly fontSizePt: number }[] {
+  if (input.runs?.length) {
+    return input.runs.map((run) => ({
+      text: run.text,
+      fontSizePt: run.style?.fontSizePt ?? input.style.fontSizePt ?? DEFAULT_TEXT_FONT_SIZE_PT,
+    }));
+  }
+
+  return [{ text: input.text, fontSizePt: input.style.fontSizePt ?? DEFAULT_TEXT_FONT_SIZE_PT }];
+}
+
+function summarizeTextMetricsFromInput(input: {
+  readonly text: string;
+  readonly runs?: readonly { readonly text: string; readonly style?: PptxTableCell["style"] }[];
+  readonly style: PptxTextBodyStyle | PptxTableCell["style"];
+  readonly frame: PptxElement["frame"];
+}): ProjectInspectionTextMetrics {
+  const runs = textRunsForMetrics(input);
+  const fontSizePt = Math.min(...runs.map((run) => run.fontSizePt));
+  const resolvedLineHeightPt = lineHeightPt(input.style);
+  const padding = input.style.paddingPt ?? [0, 0, 0, 0];
+  const availableWidthPt = Math.max(
+    0,
+    pointsFromEmu(input.frame.widthEmu) - padding[1] - padding[3],
+  );
+  const availableHeightPt = Math.max(
+    0,
+    pointsFromEmu(input.frame.heightEmu) - padding[0] - padding[2],
+  );
+  const estimatedWidthPt = runs.reduce(
+    (total, run) => total + estimatedTextWidthPt(run.text, run.fontSizePt),
+    0,
+  );
+  const estimatedLineCount =
+    input.style.wrap === false
+      ? 1
+      : Math.max(1, Math.ceil(estimatedWidthPt / Math.max(availableWidthPt, 1)));
+  const estimatedLineCapacity = Math.max(
+    0,
+    Math.floor(availableHeightPt / Math.max(resolvedLineHeightPt, 1)),
+  );
+
+  return {
+    characterCount: Array.from(input.text).length,
+    fontSizePt,
+    lineHeightPt: resolvedLineHeightPt,
+    availableWidthPt,
+    availableHeightPt,
+    estimatedTextWidthPt: estimatedWidthPt,
+    estimatedLineCount,
+    estimatedLineCapacity,
+    fit: input.style.fit ?? "none",
+    wrap: input.style.wrap ?? true,
+  };
+}
+
+function summarizeTextMetrics(element: PptxElement): ProjectInspectionTextMetrics | undefined {
+  if (element.kind !== "text") {
+    return undefined;
+  }
+
+  return summarizeTextMetricsFromInput({
+    text: element.content.text,
+    runs: element.content.runs,
+    style: element.style,
+    frame: element.frame,
+  });
+}
+
+function summarizeTableCellTextMetrics(cell: PptxTableCell): ProjectInspectionTextMetrics {
+  return summarizeTextMetricsFromInput({
+    text: cell.text,
+    style: cell.style,
+    frame: cell.frame,
+  });
+}
+
+function frameDiffers(left: PptxElement["frame"], right: PptxElement["frame"]): boolean {
+  return (
+    left.xEmu !== right.xEmu ||
+    left.yEmu !== right.yEmu ||
+    left.widthEmu !== right.widthEmu ||
+    left.heightEmu !== right.heightEmu
+  );
+}
+
+function summarizeMediaMetrics(element: PptxElement): ProjectInspectionMediaMetrics | undefined {
+  if (element.kind !== "image" && element.kind !== "video") {
+    return undefined;
+  }
+
+  return {
+    sourceKind: element.source.kind,
+    frame: element.frame,
+    sourceFrame: element.sourceFrame,
+    fit: element.fit,
+    objectPosition: element.objectPosition,
+    cropped:
+      element.fit === "cover" ||
+      frameDiffers(element.frame, element.sourceFrame) ||
+      (element.kind === "image" && element.crop !== undefined),
+    ...(element.kind === "image" && element.crop ? { crop: element.crop } : {}),
+  };
+}
+
+function textVisualChecks(input: {
+  readonly elementId?: ProjectInspectionVisualCheck["elementId"];
+  readonly kind: ProjectInspectionVisualCheck["kind"];
+  readonly textPreview: string;
+  readonly metrics: ProjectInspectionTextMetrics | undefined;
+  readonly slidePartId: ProjectInspectionVisualCheck["slidePartId"];
+  readonly slideId: string;
+}): ProjectInspectionVisualCheck[] {
+  const metrics = input.metrics;
+  if (!metrics) {
+    return [];
+  }
+
+  const checks: ProjectInspectionVisualCheck[] = [];
+
+  if (metrics.fontSizePt < SMALL_TEXT_THRESHOLD_PT) {
+    checks.push({
+      severity: "warning",
+      code: "W_VISUAL_TEXT_SMALL",
+      message: `Text uses ${metrics.fontSizePt}pt type, which may be hard to read in the generated PPTX.`,
+      slidePartId: input.slidePartId,
+      slideId: input.slideId,
+      ...(input.elementId ? { elementId: input.elementId } : {}),
+      kind: input.kind,
+      textPreview: input.textPreview.slice(0, 80),
+      metrics,
+    });
+  }
+
+  if (metrics.wrap === false && metrics.estimatedTextWidthPt > metrics.availableWidthPt) {
+    checks.push({
+      severity: "warning",
+      code: "W_VISUAL_TEXT_MAY_OVERFLOW",
+      message: "No-wrap text is estimated to be wider than its box and may overflow horizontally.",
+      slidePartId: input.slidePartId,
+      slideId: input.slideId,
+      ...(input.elementId ? { elementId: input.elementId } : {}),
+      kind: input.kind,
+      textPreview: input.textPreview.slice(0, 80),
+      metrics,
+    });
+  }
+
+  if (metrics.estimatedLineCount > metrics.estimatedLineCapacity) {
+    const shrink = metrics.fit === "shrink";
+    const resize = metrics.fit === "resize";
+    checks.push({
+      severity: "warning",
+      code: shrink
+        ? "W_VISUAL_TEXT_MAY_SHRINK"
+        : resize
+          ? "W_VISUAL_TEXT_MAY_RESIZE"
+          : "W_VISUAL_TEXT_MAY_OVERFLOW",
+      message: shrink
+        ? "Text is estimated to need more lines than the box can hold, so PPTX auto-fit may shrink it."
+        : resize
+          ? "Text is estimated to need more lines than the box can hold, so PPTX auto-fit may resize the shape and affect nearby layout."
+          : "Text is estimated to need more lines than the box can hold and may overflow or clip.",
+      slidePartId: input.slidePartId,
+      slideId: input.slideId,
+      ...(input.elementId ? { elementId: input.elementId } : {}),
+      kind: input.kind,
+      textPreview: input.textPreview.slice(0, 80),
+      metrics,
+    });
+  }
+
+  return checks;
+}
+
+function mediaVisualChecks(input: {
+  readonly element: PptxElement;
+  readonly metrics: ProjectInspectionMediaMetrics | undefined;
+  readonly slidePartId: ProjectInspectionVisualCheck["slidePartId"];
+  readonly slideId: string;
+}): ProjectInspectionVisualCheck[] {
+  const metrics = input.metrics;
+  if ((input.element.kind !== "image" && input.element.kind !== "video") || !metrics) {
+    return [];
+  }
+
+  const checks: ProjectInspectionVisualCheck[] = [];
+
+  if (
+    input.element.frame.widthEmu < SMALL_MEDIA_EDGE_EMU ||
+    input.element.frame.heightEmu < SMALL_MEDIA_EDGE_EMU
+  ) {
+    checks.push({
+      severity: "warning",
+      code: "W_VISUAL_MEDIA_SMALL",
+      message:
+        "Media is projected smaller than 0.5in on at least one edge; embedded labels may be hard to read.",
+      slidePartId: input.slidePartId,
+      slideId: input.slideId,
+      elementId: input.element.id,
+      kind: input.element.kind,
+      metrics,
+    });
+  }
+
+  if (metrics.cropped) {
+    checks.push({
+      severity: "info",
+      code: "I_VISUAL_MEDIA_CROPPED",
+      message: "Media uses a cropped or cover-style source frame in the projected PPTX model.",
+      slidePartId: input.slidePartId,
+      slideId: input.slideId,
+      elementId: input.element.id,
+      kind: input.element.kind,
+      metrics,
+    });
+  }
+
+  return checks;
+}
+
+function collectVisualChecksForSlide(
+  slide: PptxPackageModel["slides"][number],
+): ProjectInspectionVisualCheck[] {
+  const checks: ProjectInspectionVisualCheck[] = [];
+
+  function collectFromElement(element: PptxElement, hidden = false): void {
+    const elementHidden = hidden || element.visibility === "hidden";
+    if (elementHidden) {
+      return;
+    }
+
+    const textMetrics = summarizeTextMetrics(element);
+    const mediaMetrics = summarizeMediaMetrics(element);
+    checks.push(
+      ...textVisualChecks({
+        elementId: element.id,
+        kind: element.kind,
+        textPreview: element.kind === "text" ? element.content.text : "",
+        metrics: textMetrics,
+        slidePartId: slide.id,
+        slideId: slide.payload.slideId,
+      }),
+      ...mediaVisualChecks({
+        element,
+        metrics: mediaMetrics,
+        slidePartId: slide.id,
+        slideId: slide.payload.slideId,
+      }),
+    );
+
+    if (element.kind === "group") {
+      element.children.forEach((child) => collectFromElement(child, elementHidden));
+    } else if (element.kind === "table") {
+      element.sections.forEach((section) => {
+        section.rows.forEach((row) => {
+          row.cells.forEach((cell) => {
+            const cellMetrics = summarizeTableCellTextMetrics(cell);
+            checks.push(
+              ...textVisualChecks({
+                elementId: element.id,
+                kind: "table",
+                textPreview: cell.text,
+                metrics: cellMetrics,
+                slidePartId: slide.id,
+                slideId: slide.payload.slideId,
+              }),
+            );
+            cell.children.forEach((child) => collectFromElement(child, elementHidden));
+          });
+        });
+      });
+    }
+  }
+
+  slide.payload.drawing.children.forEach((element) => collectFromElement(element));
+
+  return checks;
 }
 
 function effectiveProjectedValues(element: PptxElement): ProjectInspectionResolvedValues {
@@ -150,6 +472,10 @@ function summarizeElement(element: PptxDrawingNode): ProjectInspectionElementSum
     ...(element.layoutAnchor ? { layoutAnchor: element.layoutAnchor } : {}),
     ...(element.kind === "text" && element.content.text
       ? { textPreview: element.content.text.slice(0, 80) }
+      : {}),
+    ...(element.kind === "text" ? { textMetrics: summarizeTextMetrics(element) } : {}),
+    ...(element.kind === "image" || element.kind === "video"
+      ? { mediaMetrics: summarizeMediaMetrics(element) }
       : {}),
     origin: element.origin,
     resolvedValues: effectiveProjectedValues(element),
@@ -775,6 +1101,7 @@ export function summarizePptxPackage(
         ? { backgroundLayers: summarizeBackgroundLayers(slide.payload.backgroundLayers) }
         : {}),
       elements: slide.payload.drawing.children.map(summarizeElement),
+      visualChecks: collectVisualChecksForSlide(slide),
     })),
     pptx: {
       packageParts: parts,

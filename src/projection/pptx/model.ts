@@ -1064,9 +1064,52 @@ export type ProjectInspectionElementSummary = {
   readonly outline?: StrokeIR;
   readonly generatedStrokes?: readonly PptxGeneratedStrokeLayer[];
   readonly textPreview?: string;
+  readonly textMetrics?: ProjectInspectionTextMetrics;
+  readonly mediaMetrics?: ProjectInspectionMediaMetrics;
   readonly layoutAnchor?: PptxLayoutAnchor;
   readonly origin: PptxElementOrigin;
   readonly resolvedValues?: ProjectInspectionResolvedValues;
+};
+
+export type ProjectInspectionTextMetrics = {
+  readonly characterCount: number;
+  readonly fontSizePt: number;
+  readonly lineHeightPt: number;
+  readonly availableWidthPt: number;
+  readonly availableHeightPt: number;
+  readonly estimatedTextWidthPt: number;
+  readonly estimatedLineCount: number;
+  readonly estimatedLineCapacity: number;
+  readonly fit: PptxTextBodyStyle["fit"];
+  readonly wrap: boolean;
+};
+
+export type ProjectInspectionMediaMetrics = {
+  readonly sourceKind: ImageSourceIR["kind"];
+  readonly frame: FrameIR;
+  readonly sourceFrame: FrameIR;
+  readonly fit: "contain" | "cover" | "stretch";
+  readonly objectPosition: ObjectPositionIR;
+  readonly cropped: boolean;
+  readonly crop?: ImageCropIR;
+};
+
+export type ProjectInspectionVisualCheck = {
+  readonly severity: "info" | "warning";
+  readonly code:
+    | "I_VISUAL_MEDIA_CROPPED"
+    | "W_VISUAL_MEDIA_SMALL"
+    | "W_VISUAL_TEXT_MAY_OVERFLOW"
+    | "W_VISUAL_TEXT_MAY_RESIZE"
+    | "W_VISUAL_TEXT_MAY_SHRINK"
+    | "W_VISUAL_TEXT_SMALL";
+  readonly message: string;
+  readonly slidePartId: PackagePartId;
+  readonly slideId: string;
+  readonly elementId?: PptxElementId;
+  readonly kind?: PptxElementKind;
+  readonly textPreview?: string;
+  readonly metrics?: ProjectInspectionTextMetrics | ProjectInspectionMediaMetrics;
 };
 
 export type ProjectInspectionResolvedValues = {
@@ -1167,6 +1210,7 @@ export type ProjectInspectionSummary = {
     readonly name?: string;
     readonly backgroundLayers?: readonly ProjectInspectionBackgroundLayerSummary[];
     readonly elements: readonly ProjectInspectionElementSummary[];
+    readonly visualChecks: readonly ProjectInspectionVisualCheck[];
   }[];
   readonly pptx: {
     readonly packageParts: readonly ProjectInspectionPartSummary[];

@@ -32,16 +32,70 @@ TypeScript component で書きます。authoring semantics は `deck.compile()`�
   template、component hierarchy、layout semantics が JSX から見えなくなります。
 - `...card(0.75, 1.38, ...)` や `...statement(0.75, 4.35, ...)` のように、
   coordinate-generated element の配列を slide に spread しない。
-- 再利用する layout / appearance は `StyleSheet` class と `Theme` default に置く。inline
-  `style` は本当に slide-local な値だけに使う。
-- 繰り返しの slide region は flow layout の templates に置く。Template Area は
-  `style.gridArea`、`alignSelf`、`justifySelf` を使い、numeric `frame` definition は受け取らない。
+- Template Area は `style.gridArea`、`alignSelf`、`justifySelf` などの authored style を使い、
+  numeric `frame` definition は受け取らない。
+- Slide Template root の `style` は flow-layout surface。template root style に `width`、
+  `height`、`position`、`left`、`top`、`right`、`bottom` を入れない。slide size は `Deck`
+  layout、slide content は通常の authored element style で扱う。
+
+## 制約と推奨を分ける
+
+deckjsx は authoring では意図的に Web に近い書き味にしています。多くの slide code は、通常の
+JSX、component、配列の map、CSS-like な layout / style object として書けます。deckjsx を、
+常に PPTX の低レベル object を意識して書く API として説明しないでください。
+
+ユーザーに案内するときは、次を分けます。
+
+- Public API の制約: lowercase deckjsx tag、typed children、direct style prop ではなく
+  `style={{ ... }}`、authored `x` / `y` key なし、tag ごとの style key、slide factory の typed
+  `template` handle から得る Template Area reference。
+- Authoring の推奨: 繰り返す slide region には template、繰り返す visual vocabulary には
+  StyleSheet / Theme、不透明 helper より named component、fixed placement より grid / flex /
+  flow、data normalization は JSX の外。
+
+推奨は、読みやすさ、再利用、Project inspection のしやすさのためです。deckjsx が Web-like ではない、
+または一回限りの inline style がすべて悪い、という意味ではありません。
+
+## Authoring Samples
+
+nontrivial な deck を生成する前に、この skill directory の sample file を読みます。
+
+- `samples/review-loop-project/`: `theme.ts`、`styles.ts`、`templates.ts`、`data/`、
+  `components/`、`slides/`、`deck.tsx` entrypoint、`package.json`、`tsconfig.sample.json`、
+  Project inspection、minimal PDF review output、final PPTX render を含む complete multi-file
+  sample project。
+- `samples/review-loop.tsx`: Web-like JSX authoring、`project({ inspection: "summary" })`、
+  `visualChecks`、minimal PDF review output、final PPTX render を1つの compact file にした例。
+- `samples/component-pattern.tsx`: data array -> named component -> visible `deck.slide(...)`
+  structure、template area、StyleSheet class を1つの compact file にした例。
+
+これらは prose snippet ではなく reference implementation として扱います。新しい deck structure を
+発明する前に、この形をコピーしてください。1つの opaque helper call に畳んだり、coordinate helper に
+書き換えたりしないでください。
+
+ユーザーが sample project を求めている場合は、`samples/review-loop-project/` を標準形として使います。
+single-file sample は compact explanation、smoke test、小さな sketch のためにだけ使います。
+
+custom component に Template Area reference を渡す場合、prop は `deckjsx` から import した
+`TemplateAreaRef` として型付けします。sample code で `unknown`、`any`、hand-built template area
+object を使わないでください。
+
+coordinate-helper refactor では、representative explanation と implementation shape を分けます。
+
+- plan や representative TSX を求められた場合は compact excerpt でもよいですが、実装コードにするなら
+  `theme.ts`、`styles.ts`、`templates.ts`、`data/`、`components/`、`slides/` に分ける、と明示します。
+- sample project や implementation を求められた場合は、最初から multi-file shape で作ります。
+- 元 slide の exact dimensions や visual constraints がない場合、coordinate-equivalent な spacing を
+  invent せず、まず semantic content と component structure を保ちます。rows、gaps、text heights、
+  fit は `deck.project({ inspection: "summary" })` で詰めます。
 
 ## プロジェクト構成
 
 小さな例以外はファイルを分けます。
 
 ```text
+package.json
+tsconfig.sample.json
 src/
   deck.tsx
   theme.ts
@@ -64,6 +118,10 @@ src/
 
 sketch なら少ないファイルでもよいですが、data schema、繰り返す visual pattern、混み合う
 templates/styles、名前を持つべき slide archetype が出たら分割します。
+
+direct writer を呼ぶ、または `process` を使う standalone TypeScript deck では、project template に
+Node 型を含めます。`@types/node` を入れ、`compilerOptions.types` に `["node"]` を設定します。
+sample project ではこれを `tsconfig.sample.json` に置き、`npm run check` がその file を見るようにします。
 
 ## データフロー
 
@@ -100,8 +158,10 @@ lowercase tag を使います。
 - 編集可能な単純図形: lowercase `shape` with `shape="rect"`、`"roundRect"`、`"ellipse"`、
   `"line"`
 
-layout/container style は view-like tag に置きます。typography は text-like tag に置きます。
-rich inline run は text-like tag の中で `span` を使います。
+view-like tag は authored element children を受け、text-like tag は primitive text と inline
+`span` run を受けます。これは typed deckjsx child contract であり、Web-like authoring を否定する
+ものではありません。projected text box を inspection しやすく保つため、通常は layout/container
+style を view-like tag に、typography を text-like tag に置きます。
 
 ## Layout Policy
 
@@ -111,14 +171,21 @@ layout はこの順で考えます。
 2. 単純な縦方向 content には normal block flow。
 3. row、column、strip、一次元の繰り返しには flex。
 4. dashboard、card grid、matrix、comparison、table-like structure には grid。
-5. local overlay が必要な場合だけ、サポート範囲内で `left`、`top`、`right`、`bottom` の inset-style placement。
-6. absolute placement は one-off 互換や装飾例外だけ。
+5. local overlay や slide-local fixed geometry が必要な場合は、サポート範囲内で `left`、`top`、
+   `right`、`bottom` の inset-style placement。
+6. absolute placement は one-off callout、overlay、互換ケース、exact placement を意図的に検証する
+   fixture などに使えます。
 
 繰り返し要素を手配置せず、`gap`、`padding`、`gridTemplateColumns`、`gridTemplateRows`、
 `flexDirection`、`alignItems`、`justifyContent`、percentage、`fr` track を使います。
 
 dense deck では explicit text height、controlled `lineHeight`、読みやすい padding、
-`fit: "shrink"` を安全網として使います。すべての text box を手配置して密度を解決しないでください。
+`fit: "shrink"` を安全網として使います。full PPTX review の前に Project inspection の
+`textMetrics` と `visualChecks` で、縮小や overflow の可能性がある text を見つけます。
+inspection summary では、`slide.visualChecks` が slide の review hint を集約し、`textMetrics` と
+`mediaMetrics` は top-level の `slide.elements[]` entry 上にあります。nested group content や
+native table cell については、top-level slide element に出ない content の metrics を
+`visualChecks[].metrics` が持つことがあります。
 
 ## よいパターン
 
@@ -144,7 +211,7 @@ const theme = new Theme({
 
 const styles = new StyleSheet({
   classes: {
-    slide: { target: "slide.slide", style: { backgroundColor: theme.colors.paper } },
+    slide: { target: "main.slide", style: { backgroundColor: theme.colors.paper } },
     title: { target: "h1.title", style: { width: "100%", height: 0.55 } },
     cardGrid: {
       target: "section.cardGrid",
@@ -208,22 +275,19 @@ function CardGrid({ cards }: { cards: Card[] }) {
   );
 }
 
-deck.slide(
-  { name: "Findings", template: "report", className: "slide" },
-  ({ template, composition }) => (
-    <main>
-      <h1 area={template.title} className="title">
-        Findings
-      </h1>
-      <section area={template.body}>
-        <CardGrid cards={findings.cards} />
-      </section>
-      <p area={template.footer} className="footer">
-        {composition.slideIndex + 1}
-      </p>
-    </main>
-  ),
-);
+deck.slide({ name: "Findings", template: "report" }, ({ template, composition }) => (
+  <main className="slide">
+    <h1 area={template.title} className="title">
+      Findings
+    </h1>
+    <section area={template.body}>
+      <CardGrid cards={findings.cards} />
+    </section>
+    <p area={template.footer} className="footer">
+      {composition.slideIndex + 1}
+    </p>
+  </main>
+));
 ```
 
 この形では page-level placement は template 定義に、繰り返す rhythm は class に、slide content は
@@ -308,8 +372,8 @@ const disputes = [
   { lens: "政治", tone: "amber", points: ["米中AI競争の文脈", "同盟国アクセスの境界"] },
 ];
 
-deck.slide({ name: "Three disputes", template: "report", className: "slide" }, ({ template }) => (
-  <main>
+deck.slide({ name: "Three disputes", template: "report" }, ({ template }) => (
+  <main className="slide">
     <TitleBlock
       area={template.title}
       kicker="03 AI MODEL GEOPOLITICS"
@@ -360,6 +424,10 @@ content pattern、`Theme` は基礎 typography と visual vocabulary、`StyleShe
 layout / appearance を定義します。slide-local inline `style` は一回限りの値に使い、component
 structure の代わりにしません。
 
+inline `style` は、1枚の slide や1つの authored element に属する値なら普通に使って構いません。
+同じ値が繰り返される、deck 全体の vocabulary になる、後の inspection や編集を楽にする、という時に
+`StyleSheet`、`Theme`、template に昇格します。
+
 ## Layout Flow
 
 view-like element はデフォルトで normal flow に参加します。region 内の rhythm は block、flex、
@@ -378,11 +446,30 @@ authored tag が受け付ける public style key だけを使います。text st
 cell、`span` に置き、media fitting は `img` / `video`、shape paint は `shape` に置きます。
 `x` と `y` は public authoring style key ではありません。
 
+`toneColor(tone): string` のような palette helper は、`color`、`backgroundColor`、
+`borderColor`、`textDecorationColor` などの color-bearing property に使えます。malformed な
+dynamic color string は compile/project 時に deckjsx が検証します。style error を消すために
+`as any` や広い cast を足さないでください。`background`、`border`、`fill`、`stroke` のような
+shorthand が type-check で落ちる場合は、shorthand syntax を直すか、dynamic value を specific
+color property に移します。
+
 ## Diagnostics
 
 invalid props、unsupported style key、invalid CSS-like value、table hierarchy mistake、
 misused template area は compile diagnostics として扱います。cast や compatibility alias で
 diagnostics を回避せず、authored JSX、style、template、data model を直します。
+
+視覚品質の問題は compile failure とは別です。`await deck.project({ inspection: "summary" })` で
+`visualChecks`、text metrics、media placement、clipping、projected frame を確認します。text-heavy
+deck では minimal PDF render を速い確認 artifact として使えますが、納品前に確認すべき最終出力は
+生成された PPTX です。
+`visualChecks` は各 slide から読みます。`textMetrics` / `mediaMetrics` は top-level の
+`slide.elements[]` entry から読み、nested group content や native table cell の check では
+`visualChecks[].metrics` も読みます。これらの metrics を slide-level field として扱わないでください。
+
+`visualChecks`、text metrics、media metrics に universal な pass/fail threshold を invent
+しないでください。これらは human judgment が必要な slide を示す triage list として扱います。最終的な
+acceptability は generated PPTX を開き、意図した presentation context で確認して判断します。
 
 ## Red Flags
 
@@ -408,3 +495,5 @@ diagnostics を回避せず、authored JSX、style、template、data model を�
   `bun run benchmark:pptx -- --iterations 1 --strict` と
   `bun run verify:render -- --skip-raster` も実行する。
 - standalone generated deck では、その project の type/build command を実行し、`.pptx` を render する。
+  可能なら `package.json`、task config、README を確認します。command が提示されていない場合は、
+  存在しない command を invent せず、その project の既存 validation/render command を使う、と案内します。

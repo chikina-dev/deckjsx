@@ -89,6 +89,10 @@ const deck = new Deck({
   templates: reportTemplates,
 });
 
+function slideBackgroundColor(): string {
+  return "#F8FAFC";
+}
+
 deck.slide({ template: "report" }, ({ template }) => {
   const templateRef = template.title;
   templateRef satisfies TemplateAreaRef<"report", "title">;
@@ -104,6 +108,11 @@ deck.slide({ template: "report" }, ({ template }) => {
     </>
   );
 });
+
+deck.slide(
+  { template: "report", style: { backgroundColor: slideBackgroundColor() } },
+  ({ template }) => <h1 area={template.title}>Dynamic background</h1>,
+);
 
 deck.slide({ template: "twoColumn" }, ({ template }) => (
   <>

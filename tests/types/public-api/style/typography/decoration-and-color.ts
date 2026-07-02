@@ -31,7 +31,7 @@ const invalidTextDecorationStyleTypes = {
   textDecoration: "overline",
   // @ts-expect-error textDecorationLine is closed to the decoration lines deckjsx resolves.
   textDecorationLine: "underline overline",
-  // @ts-expect-error color is closed to deckjsx's supported CSS color syntax.
+  // Detailed dynamic color grammar is runtime validated.
   color: "definitely-not-a-color",
   // Detailed font-family identifier grammar is runtime validated.
   fontFamily: "123bad",
@@ -52,7 +52,7 @@ const invalidTextShadowNegativeBlur = {
 void invalidTextShadowNegativeBlur;
 
 const invalidEmptyHexColor = {
-  // @ts-expect-error hex colors require at least one hex digit after #.
+  // Detailed dynamic color grammar is runtime validated.
   color: "#",
 } satisfies TextStyle;
 void invalidEmptyHexColor;
