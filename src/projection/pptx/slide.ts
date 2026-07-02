@@ -57,13 +57,13 @@ import {
 } from "@/src/style/typography";
 import { comparePptxElementsByPaintOrder, drawingFromElements } from "./drawing";
 import {
+  createShapeObjectIdAllocator,
   elementIdentity,
-  generatedShapeObjectId,
   mediaPartIdForElement,
   packageIdentity,
   pptxElementId,
   serializedId,
-  shapeObjectId,
+  type ShapeObjectIdAllocator,
 } from "./identity";
 import { projectedRelationshipTarget } from "./relationships";
 import type {
@@ -87,6 +87,7 @@ import type {
 
 const BACKGROUND_LAYER_SHAPE_OBJECT_ID_OFFSET = 50;
 const BACKGROUND_LAYER_SHAPE_OBJECT_ID_STRIDE = 100;
+const BACKGROUND_LAYER_TILE_ID_HEADROOM = 65535;
 const DEFAULT_OBJECT_POSITION: ObjectPositionIR = { x: 0.5, y: 0.5 };
 const DEFAULT_VIDEO_POSTER_SOURCE: ImageSourceIR = {
   kind: "data",
@@ -414,6 +415,8 @@ function generatedStrokeLayers(input: {
   packagePartId: PackagePartId;
   graphNodeId?: GraphNodeId;
   indexPath: readonly number[];
+  ownerShapeObjectId: string;
+  shapeObjectIds: ShapeObjectIdAllocator;
   frame: FrameIR;
   siblingOrder: number;
   zIndex?: number;
@@ -461,7 +464,12 @@ function generatedStrokeLayers(input: {
         role: "border",
         key: edge,
       }),
-      serialized: { shapeObjectId: generatedShapeObjectId(input.indexPath, localIndex) },
+      serialized: {
+        shapeObjectId: input.shapeObjectIds.generatedShapeObjectId(
+          serializedId(input.ownerShapeObjectId),
+          localIndex,
+        ),
+      },
       frame,
       stroke,
       shape: "line",
@@ -485,7 +493,12 @@ function generatedStrokeLayers(input: {
         role: "outline",
         key: "outline",
       }),
-      serialized: { shapeObjectId: generatedShapeObjectId(input.indexPath, localIndex) },
+      serialized: {
+        shapeObjectId: input.shapeObjectIds.generatedShapeObjectId(
+          serializedId(input.ownerShapeObjectId),
+          localIndex,
+        ),
+      },
       frame: input.frame,
       stroke: input.outline,
       shape: "rect",
@@ -502,8 +515,10 @@ function generatedStrokeLayers(input: {
 
 function projectBackgroundLayers(input: {
   layers: readonly BackgroundLayerIR[] | undefined;
-  indexPath: readonly number[];
+  ownerShapeObjectId: string;
+  shapeObjectIds: ShapeObjectIdAllocator;
   zIndex?: number;
+  siblingOrder: number;
 }): readonly PptxBackgroundLayer[] | undefined {
   if (!input.layers || input.layers.length === 0) {
     return undefined;
@@ -511,14 +526,19 @@ function projectBackgroundLayers(input: {
 
   return input.layers.map((layer, index) => {
     const paintOrder = generatedPaintOrder({
-      siblingOrder: input.indexPath.at(-1) ?? 0,
+      siblingOrder: input.siblingOrder,
       zIndex: input.zIndex,
       generatedLayerRole: "background",
     });
+    const reservedIdHeadroom =
+      layer.kind === "background-image" && layer.repeat !== "no-repeat"
+        ? BACKGROUND_LAYER_TILE_ID_HEADROOM
+        : undefined;
     const serialized = {
-      shapeObjectId: generatedShapeObjectId(
-        input.indexPath,
+      shapeObjectId: input.shapeObjectIds.generatedShapeObjectId(
+        serializedId(input.ownerShapeObjectId),
         BACKGROUND_LAYER_SHAPE_OBJECT_ID_OFFSET + index * BACKGROUND_LAYER_SHAPE_OBJECT_ID_STRIDE,
+        { reservedIdHeadroom },
       ),
     };
 
@@ -580,6 +600,7 @@ function baseElement(input: {
   node: SemanticNode;
   packagePartId: PackagePartId;
   indexPath: readonly number[];
+  shapeObjectId: string;
   frame: FrameIR;
   props: BaseElementProps;
   templateAreaKind?: TemplateAreaKind;
@@ -599,7 +620,7 @@ function baseElement(input: {
       indexPath: input.indexPath,
     }),
     packagePartId: input.packagePartId,
-    serialized: { shapeObjectId: shapeObjectId(input.indexPath) },
+    serialized: { shapeObjectId: serializedId(input.shapeObjectId) },
     origin: originFor(input.node),
     frame: input.frame,
     measurement: { frame: input.frame },
@@ -637,6 +658,7 @@ function compileContainer(
   packagePartIdValue: PackagePartId,
   parentFrame: Frame,
   indexPath: readonly number[],
+  shapeObjectIds: ShapeObjectIdAllocator,
   context?: LengthResolutionContext,
 ): PptxGroupElement | undefined {
   const resolved = resolvedStyleFor(node, resolvedStyles);
@@ -647,6 +669,7 @@ function compileContainer(
 
   const frame = childFrame(props, parentFrame, context);
   const siblingOrder = indexPath.at(-1) ?? 0;
+  const ownerShapeObjectId = shapeObjectIds.shapeObjectId(indexPath);
   const strokes = resolveNodeStrokesSafely(props, context);
   const shadowResult = parseShadowSafely({ property: "boxShadow", value: props.boxShadow });
   const outlineResult = outlineStrokeSafely(props, context);
@@ -654,6 +677,8 @@ function compileContainer(
     packagePartId: packagePartIdValue,
     graphNodeId: node.id,
     indexPath,
+    ownerShapeObjectId,
+    shapeObjectIds,
     frame,
     siblingOrder,
     zIndex: props.zIndex,
@@ -684,8 +709,10 @@ function compileContainer(
   );
   const backgroundLayers = projectBackgroundLayers({
     layers: backgroundFill.backgroundLayers,
-    indexPath,
+    ownerShapeObjectId,
+    shapeObjectIds,
     zIndex: props.zIndex,
+    siblingOrder,
   });
 
   return {
@@ -693,6 +720,7 @@ function compileContainer(
       node,
       packagePartId: packagePartIdValue,
       indexPath,
+      shapeObjectId: ownerShapeObjectId,
       frame,
       props,
       templateAreaKind: templateAreaKindFor(node, templates),
@@ -724,6 +752,7 @@ function compileContainer(
       packagePartIdValue,
       frame,
       indexPath,
+      shapeObjectIds,
       context,
     ),
   };
@@ -737,6 +766,7 @@ function compileText(
   packagePartIdValue: PackagePartId,
   parentFrame: Frame,
   indexPath: readonly number[],
+  shapeObjectIds: ShapeObjectIdAllocator,
   context?: LengthResolutionContext,
 ): PptxTextElement | undefined {
   const resolved = resolvedStyleFor(node, resolvedStyles);
@@ -748,6 +778,7 @@ function compileText(
   const textLengthContext = getTextLengthContext(props, context);
   const frame = childFrame(props, parentFrame, textLengthContext);
   const siblingOrder = indexPath.at(-1) ?? 0;
+  const ownerShapeObjectId = shapeObjectIds.shapeObjectId(indexPath);
   const strokes = resolveNodeStrokesSafely(props, textLengthContext);
   const shadowValue: string | undefined =
     (props.textShadow as string | undefined) ?? (props.boxShadow as string | undefined);
@@ -760,6 +791,8 @@ function compileText(
     packagePartId: packagePartIdValue,
     graphNodeId: node.id,
     indexPath,
+    ownerShapeObjectId,
+    shapeObjectIds,
     frame,
     siblingOrder,
     zIndex: props.zIndex,
@@ -792,8 +825,10 @@ function compileText(
   );
   const backgroundLayers = projectBackgroundLayers({
     layers: backgroundFill.backgroundLayers,
-    indexPath,
+    ownerShapeObjectId,
+    shapeObjectIds,
     zIndex: props.zIndex,
+    siblingOrder,
   });
   const hyperlink = props.href
     ? {
@@ -807,6 +842,7 @@ function compileText(
       node,
       packagePartId: packagePartIdValue,
       indexPath,
+      shapeObjectId: ownerShapeObjectId,
       frame,
       props,
       templateAreaKind: templateAreaKindFor(node, templates),
@@ -846,6 +882,7 @@ function compileImage(
   packagePartIdValue: PackagePartId,
   parentFrame: Frame,
   indexPath: readonly number[],
+  shapeObjectIds: ShapeObjectIdAllocator,
   context?: LengthResolutionContext,
 ): PptxPictureElement | undefined {
   const asset = node.assetRef ? graph.assets.get(node.assetRef) : undefined;
@@ -866,6 +903,7 @@ function compileImage(
   const frame = frameToFrameIR(resolved);
   const fit = normalizeProjectedImageFit(props.fit);
   const shadowResult = parseShadowSafely({ property: "boxShadow", value: props.boxShadow });
+  const ownerShapeObjectId = shapeObjectIds.shapeObjectId(indexPath);
   const hyperlink = props.href
     ? {
         url: props.href,
@@ -876,6 +914,7 @@ function compileImage(
     node,
     packagePartId: packagePartIdValue,
     indexPath,
+    shapeObjectId: ownerShapeObjectId,
     frame,
     props,
     templateAreaKind: templateAreaKindFor(node, templates),
@@ -910,6 +949,7 @@ function compileShape(
   packagePartIdValue: PackagePartId,
   parentFrame: Frame,
   indexPath: readonly number[],
+  shapeObjectIds: ShapeObjectIdAllocator,
   context?: LengthResolutionContext,
 ): PptxShapeElement | undefined {
   const resolved = resolvedStyleFor(node, resolvedStyles);
@@ -920,6 +960,7 @@ function compileShape(
 
   const frame = childFrame(props, parentFrame, context);
   const siblingOrder = indexPath.at(-1) ?? 0;
+  const ownerShapeObjectId = shapeObjectIds.shapeObjectId(indexPath);
   const strokes = resolveNodeStrokesSafely(props, context);
   const shadowResult = parseShadowSafely({ property: "boxShadow", value: props.boxShadow });
   const outlineResult = outlineStrokeSafely(props, context);
@@ -927,6 +968,8 @@ function compileShape(
     packagePartId: packagePartIdValue,
     graphNodeId: node.id,
     indexPath,
+    ownerShapeObjectId,
+    shapeObjectIds,
     frame,
     siblingOrder,
     zIndex: props.zIndex,
@@ -962,8 +1005,10 @@ function compileShape(
   );
   const backgroundLayers = projectBackgroundLayers({
     layers: shapeFill.backgroundLayers,
-    indexPath,
+    ownerShapeObjectId,
+    shapeObjectIds,
     zIndex: props.zIndex,
+    siblingOrder,
   });
 
   return {
@@ -971,6 +1016,7 @@ function compileShape(
       node,
       packagePartId: packagePartIdValue,
       indexPath,
+      shapeObjectId: ownerShapeObjectId,
       frame,
       props,
       templateAreaKind: templateAreaKindFor(node, templates),
@@ -1006,6 +1052,7 @@ function compileElement(input: {
   packagePartId: PackagePartId;
   parentFrame: Frame;
   indexPath: readonly number[];
+  shapeObjectIds: ShapeObjectIdAllocator;
   context?: LengthResolutionContext;
 }): PptxElement | undefined {
   const node = input.graph.nodes.get(input.nodeId);
@@ -1023,6 +1070,7 @@ function compileElement(input: {
         input.packagePartId,
         input.parentFrame,
         input.indexPath,
+        input.shapeObjectIds,
         input.context,
       );
     case "text":
@@ -1034,6 +1082,7 @@ function compileElement(input: {
         input.packagePartId,
         input.parentFrame,
         input.indexPath,
+        input.shapeObjectIds,
         input.context,
       );
     case "image":
@@ -1045,6 +1094,7 @@ function compileElement(input: {
         input.packagePartId,
         input.parentFrame,
         input.indexPath,
+        input.shapeObjectIds,
         input.context,
       );
     case "video":
@@ -1057,6 +1107,7 @@ function compileElement(input: {
         input.packagePartId,
         input.parentFrame,
         input.indexPath,
+        input.shapeObjectIds,
         input.context,
       );
     case "document":
@@ -1074,6 +1125,7 @@ function compileChildren(
   packagePartIdValue: PackagePartId,
   parentFrame: Frame,
   parentPath: readonly number[],
+  shapeObjectIds: ShapeObjectIdAllocator,
   context?: LengthResolutionContext,
 ): PptxElement[] {
   return children
@@ -1086,6 +1138,7 @@ function compileChildren(
         packagePartId: packagePartIdValue,
         parentFrame,
         indexPath: [...parentPath, index],
+        shapeObjectIds,
         context,
       }),
     )
@@ -1101,6 +1154,7 @@ function compileChildrenPartial(
   packagePartIdValue: PackagePartId,
   parentFrame: Frame,
   parentPath: readonly number[],
+  shapeObjectIds: ShapeObjectIdAllocator,
   context?: LengthResolutionContext,
 ): PptxElement[] {
   const elements: PptxElement[] = [];
@@ -1115,6 +1169,7 @@ function compileChildrenPartial(
         packagePartId: packagePartIdValue,
         parentFrame,
         indexPath: [...parentPath, index],
+        shapeObjectIds,
         context,
       });
       if (element) {
@@ -1190,6 +1245,7 @@ function mapProjectedLayoutNodeToElement(input: {
   node: ProjectedLayoutNode;
   packagePartId: PackagePartId;
   indexPath: readonly number[];
+  shapeObjectIds: ShapeObjectIdAllocator;
 }): PptxElement {
   const graphNodeId = input.node.origin?.graphNodeIds?.[0];
   const layoutAnchor = layoutAnchorFor({
@@ -1197,6 +1253,7 @@ function mapProjectedLayoutNodeToElement(input: {
     templateAreaKind: input.node.origin?.templateAreaKind,
     frame: input.node.frame,
   });
+  const ownerShapeObjectId = input.shapeObjectIds.shapeObjectId(input.indexPath);
   const base = {
     id: elementIdentity({
       packagePartId: input.packagePartId,
@@ -1204,7 +1261,7 @@ function mapProjectedLayoutNodeToElement(input: {
       indexPath: input.indexPath,
     }),
     packagePartId: input.packagePartId,
-    serialized: { shapeObjectId: shapeObjectId(input.indexPath) },
+    serialized: { shapeObjectId: ownerShapeObjectId },
     origin: elementOriginFromLayoutOrigin(input.node.origin),
     frame: input.node.frame,
     measurement: { frame: input.node.frame },
@@ -1227,13 +1284,17 @@ function mapProjectedLayoutNodeToElement(input: {
     case "group": {
       const backgroundLayers = projectBackgroundLayers({
         layers: input.node.backgroundLayers,
-        indexPath: input.indexPath,
+        ownerShapeObjectId,
+        shapeObjectIds: input.shapeObjectIds,
         zIndex: input.node.zIndex,
+        siblingOrder: input.node.siblingOrder,
       });
       const generatedStrokes = generatedStrokeLayers({
         packagePartId: input.packagePartId,
         graphNodeId,
         indexPath: input.indexPath,
+        ownerShapeObjectId,
+        shapeObjectIds: input.shapeObjectIds,
         frame: input.node.frame,
         siblingOrder: input.node.siblingOrder,
         zIndex: input.node.zIndex,
@@ -1256,6 +1317,7 @@ function mapProjectedLayoutNodeToElement(input: {
             node: child,
             packagePartId: input.packagePartId,
             indexPath: [...input.indexPath, index],
+            shapeObjectIds: input.shapeObjectIds,
           }),
         ),
       };
@@ -1276,6 +1338,7 @@ function mapProjectedLayoutNodeToElement(input: {
                   node: child,
                   packagePartId: input.packagePartId,
                   indexPath: [...input.indexPath, sectionIndex, rowIndex, cellIndex, childIndex],
+                  shapeObjectIds: input.shapeObjectIds,
                 }),
               );
               const unsupportedSemantics = unsupportedTableCellContentSemantics(children);
@@ -1301,13 +1364,17 @@ function mapProjectedLayoutNodeToElement(input: {
     case "text": {
       const backgroundLayers = projectBackgroundLayers({
         layers: input.node.backgroundLayers,
-        indexPath: input.indexPath,
+        ownerShapeObjectId,
+        shapeObjectIds: input.shapeObjectIds,
         zIndex: input.node.zIndex,
+        siblingOrder: input.node.siblingOrder,
       });
       const textGeneratedStrokes = generatedStrokeLayers({
         packagePartId: input.packagePartId,
         graphNodeId,
         indexPath: input.indexPath,
+        ownerShapeObjectId,
+        shapeObjectIds: input.shapeObjectIds,
         frame: input.node.frame,
         siblingOrder: input.node.siblingOrder,
         zIndex: input.node.zIndex,
@@ -1365,13 +1432,17 @@ function mapProjectedLayoutNodeToElement(input: {
     case "shape": {
       const backgroundLayers = projectBackgroundLayers({
         layers: input.node.backgroundLayers,
-        indexPath: input.indexPath,
+        ownerShapeObjectId,
+        shapeObjectIds: input.shapeObjectIds,
         zIndex: input.node.zIndex,
+        siblingOrder: input.node.siblingOrder,
       });
       const shapeGeneratedStrokes = generatedStrokeLayers({
         packagePartId: input.packagePartId,
         graphNodeId,
         indexPath: input.indexPath,
+        ownerShapeObjectId,
+        shapeObjectIds: input.shapeObjectIds,
         frame: input.node.frame,
         siblingOrder: input.node.siblingOrder,
         zIndex: input.node.zIndex,
@@ -1405,9 +1476,13 @@ export function pptxSlidePartFor(input: {
 }): PptxSlidePart {
   const slideNumber = input.slideIndex + 1;
   const partId = input.slidePartId;
+  const shapeObjectIds = createShapeObjectIdAllocator();
+  const slideBackgroundOwnerShapeObjectId = shapeObjectIds.shapeObjectId([5000 + input.slideIndex]);
   const backgroundLayers = projectBackgroundLayers({
     layers: input.layoutSlide.backgroundLayers,
-    indexPath: [5000 + input.slideIndex],
+    ownerShapeObjectId: slideBackgroundOwnerShapeObjectId,
+    shapeObjectIds,
+    siblingOrder: 0,
   });
   const origin = elementOriginFromLayoutOrigin(input.layoutSlide.origin);
 
@@ -1440,6 +1515,7 @@ export function pptxSlidePartFor(input: {
             node,
             packagePartId: partId,
             indexPath: [index],
+            shapeObjectIds,
           }),
         ),
       ),
@@ -1459,6 +1535,7 @@ export function partialPptxSlidePartFor(input: {
   const slideNumber = input.slideIndex + 1;
   const partId = input.slidePartId;
   const slideTemplates = input.graph.templates.get(sourceKeyForOrigin(input.slide.origin.source));
+  const shapeObjectIds = createShapeObjectIdAllocator();
 
   return {
     id: partId,
@@ -1493,6 +1570,7 @@ export function partialPptxSlidePartFor(input: {
           partId,
           input.slideFrame,
           [],
+          shapeObjectIds,
           {
             viewportWidthEmu: input.slideFrame.widthEmu,
             viewportHeightEmu: input.slideFrame.heightEmu,

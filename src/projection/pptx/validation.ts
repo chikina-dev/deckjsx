@@ -6,6 +6,11 @@ import {
 } from "@/src/diagnostics";
 import type { FrameIR } from "@/src/layout/projected";
 import { isTemplateAreaKind } from "@/src/templates";
+import {
+  generatedShapeObjectIdFromOwner,
+  MAX_WRITER_SHAPE_OBJECT_ID,
+  serializedId,
+} from "./identity";
 import { isPptxSlidePart } from "./model";
 import type {
   PackagePartId,
@@ -196,7 +201,6 @@ const DRAWING_BACKGROUND_IMAGE_REPEATS = ["no-repeat", "repeat", "repeat-x", "re
 
 const PACKAGE_PART_CATEGORIES = ["authored-content", "manifest", "support"] as const;
 
-const MAX_WRITER_SHAPE_OBJECT_ID = Number.MAX_SAFE_INTEGER - 1;
 const MIN_PRESENTATION_SLIDE_ID = 256;
 const MAX_PRESENTATION_SLIDE_ID = 2147483647;
 const MIN_PRESENTATION_SLIDE_MASTER_ID = 2147483648;
@@ -3735,7 +3739,7 @@ function validateGeneratedStrokeLayerOwnerConsistency(input: {
     index: input.index,
   });
   if (
-    expectedShapeObjectId?.status === "overflow" &&
+    expectedShapeObjectId?.status === "invalid-owner" &&
     isRecord(input.layer.serialized) &&
     typeof input.layer.serialized.shapeObjectId === "string"
   ) {
@@ -3882,7 +3886,7 @@ function expectedGeneratedStrokeId(input: {
 
 type ExpectedGeneratedShapeObjectId =
   | { readonly status: "available"; readonly value: string }
-  | { readonly status: "overflow" };
+  | { readonly status: "invalid-owner" };
 
 function expectedGeneratedShapeObjectId(input: {
   ownerSerialized: unknown;
@@ -3894,18 +3898,19 @@ function expectedGeneratedShapeObjectId(input: {
 
   const ownerShapeObjectId = serializedShapeObjectIdNumber(input.ownerSerialized.shapeObjectId);
   if (ownerShapeObjectId === undefined) {
-    return undefined;
+    return typeof input.ownerSerialized.shapeObjectId === "string"
+      ? { status: "invalid-owner" }
+      : undefined;
   }
 
-  const generatedShapeObjectId = ownerShapeObjectId * 100 + input.index + 1;
-  if (
-    !Number.isSafeInteger(generatedShapeObjectId) ||
-    generatedShapeObjectId > MAX_WRITER_SHAPE_OBJECT_ID
-  ) {
-    return { status: "overflow" };
+  if (!Number.isSafeInteger(input.index) || input.index < 0) {
+    return { status: "invalid-owner" };
   }
 
-  return { status: "available", value: String(generatedShapeObjectId) };
+  return {
+    status: "available",
+    value: generatedShapeObjectIdFromOwner(serializedId(String(ownerShapeObjectId)), input.index),
+  };
 }
 
 type GeneratedStrokeFrame = {

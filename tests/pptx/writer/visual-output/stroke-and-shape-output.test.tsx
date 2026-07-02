@@ -1,7 +1,63 @@
 import { describe, expect, test } from "vite-plus/test";
+import {
+  createShapeObjectIdAllocator,
+  MAX_WRITER_SHAPE_OBJECT_ID,
+} from "@/src/projection/pptx/identity.ts";
 import * as H from "../helpers.tsx";
 
 describe("direct pptx writer stroke and shape output", () => {
+  test("projection shape id allocation probes fallback collisions and reserves tile headroom", () => {
+    const allocator = createShapeObjectIdAllocator();
+    const first = allocator.shapeObjectId([139, 997, 381, 472, 962]);
+    const second = allocator.shapeObjectId([420, 864, 737, 396, 559]);
+    const backgroundOwner = allocator.shapeObjectId([286, 122, 573, 956, 365]);
+    const repeatedBackground = allocator.generatedShapeObjectId(backgroundOwner, 50, {
+      reservedIdHeadroom: 65535,
+    });
+
+    expect(first).not.toBe(second);
+    expect(Number.parseInt(first, 10)).toBeLessThanOrEqual(MAX_WRITER_SHAPE_OBJECT_ID);
+    expect(Number.parseInt(second, 10)).toBeLessThanOrEqual(MAX_WRITER_SHAPE_OBJECT_ID);
+    expect(Number.parseInt(repeatedBackground, 10) + 6472).toBeLessThanOrEqual(
+      MAX_WRITER_SHAPE_OBJECT_ID,
+    );
+  });
+
+  test("output keeps non-visual drawing ids in the OOXML unsigned-int range", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Deep drawing ids" }, () => (
+      <div style={{ position: "absolute", left: 0.5, top: 0.5, width: 8, height: 4 }}>
+        <div style={{ position: "absolute", left: 0.2, top: 0.2, width: 7, height: 3.5 }}>
+          <div style={{ position: "absolute", left: 0.2, top: 0.2, width: 6, height: 3 }}>
+            <div style={{ position: "absolute", left: 0.2, top: 0.2, width: 5, height: 2.5 }}>
+              <div style={{ position: "absolute", left: 0.2, top: 0.2, width: 4, height: 2 }}>
+                <p style={{ position: "absolute", left: 0.1, top: 0.1, width: 3, height: 0.6 }}>
+                  deep id
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    ));
+
+    const content = await H.renderDeckBytes(deck);
+
+    const zip = H.unzipSync(content);
+    const slideXml = H.zipEntry(zip, "ppt/slides/slide1.xml") ?? "";
+    const ids = [...slideXml.matchAll(/<p:cNvPr id="(\d+)"/g)].map((match) =>
+      Number.parseInt(match[1]!, 10),
+    );
+
+    expect(ids.length).toBeGreaterThan(1);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) {
+      expect(id).toBeGreaterThan(0);
+      expect(id).toBeLessThanOrEqual(4294967295);
+    }
+  });
+
   test("output emits shadow markup through the direct pptx writer", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 

@@ -5,9 +5,8 @@ import type {
   ShadowIR,
   StrokeIR,
 } from "@/src/layout/projected";
+import { MAX_WRITER_SHAPE_OBJECT_ID } from "@/src/projection/pptx/identity";
 import { XmlChunkWriter } from "./xml-writer";
-
-const MAX_WRITER_SHAPE_OBJECT_ID = Number.MAX_SAFE_INTEGER - 1;
 
 export function emu(value: number | undefined, path = "EMU value"): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
