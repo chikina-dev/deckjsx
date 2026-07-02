@@ -24,6 +24,26 @@ describe("project/render pipeline artifacts", () => {
     expect(artifacts.projection?.packageDependencies.dependenciesByPartId.size).toBeGreaterThan(0);
   });
 
+  test("pipeline artifact collection replaces projection artifacts with pdf models", () => {
+    const artifacts = new H.PipelineArtifactCollection();
+    const projection = {
+      format: "pdf",
+      version: "1.7",
+      documentId: "pdf:document:artifact",
+      metadata: { producer: "deckjsx" },
+      pages: [],
+      resources: { fonts: [], images: [] },
+      fallbacks: [],
+    } as const;
+
+    expect(() => artifacts.replaceProjectionArtifact(projection as never)).not.toThrow();
+
+    expect(artifacts.graph).toBeUndefined();
+    expect(artifacts.projection?.projection).toBe(projection);
+    expect(artifacts.projection?.partsById.size).toBe(0);
+    expect(artifacts.projection?.packageDependencies.dependenciesByPartId.size).toBe(0);
+  });
+
   test("pipeline artifact invalidation clears stale package part build artifacts", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Build artifact lifecycle" }, () => (

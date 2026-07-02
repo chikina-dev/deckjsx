@@ -9,6 +9,7 @@ import { projectGraphToPartialPdfPageModel, projectGraphToPdfPageModel } from ".
 import { validatePdfPageModel } from "./pdf/validation";
 import { summarizePptxPackage } from "./pptx/inspect";
 import { projectGraphToPartialPptxPackage, projectGraphToPptxPackage } from "./pptx/project";
+import { validatePptxPackageModel } from "./pptx/validation";
 import {
   collectPptxUnsupportedProjectionDiagnostics,
   collectPptxUnsupportedProjectionModelDiagnostics,
@@ -43,6 +44,7 @@ type ProjectionCapability<TModel extends ProjectedDocumentModel> = {
     projection: TModel,
     options?: { readonly includeAllUnsupportedSemantics?: boolean },
   ): Diagnostics;
+  validateModel(projection: TModel): Diagnostics;
   projectPartial(input: {
     graph: SemanticAuthorGraph;
     resolvedStyles: ResolvedStyleMap;
@@ -74,6 +76,7 @@ const pptxProjectionCapability: ProjectionCapability<PptxPackageModel> = {
       ...collectPptxThemeProjectionDiagnostics(input).items,
     ]),
   projectionDiagnostics: collectPptxUnsupportedProjectionModelDiagnostics,
+  validateModel: validatePptxPackageModel,
   projectPartial: projectGraphToPartialPptxPackage,
   canSummarize: isPptxPackageModelShape,
   summarize: summarizePptxPackage,
@@ -83,7 +86,8 @@ const pdfProjectionCapability: ProjectionCapability<PdfPageModel> = {
   format: "pdf",
   project: projectGraphToPdfPageModel,
   diagnostics: () => createDiagnostics(),
-  projectionDiagnostics: validatePdfPageModel,
+  projectionDiagnostics: () => createDiagnostics(),
+  validateModel: validatePdfPageModel,
   projectPartial: projectGraphToPartialPdfPageModel,
   canSummarize: isPdfPageModelShape,
   summarize: () => undefined,
@@ -116,6 +120,10 @@ export function projectionDiagnosticsForModel(input: {
   return projectionCapabilityFor(input.projection.format).projectionDiagnostics(input.projection, {
     includeAllUnsupportedSemantics: input.includeAllUnsupportedSemantics,
   });
+}
+
+export function validateProjectedDocumentModel(projection: ProjectedDocumentModel): Diagnostics {
+  return projectionCapabilityFor(projection.format).validateModel(projection);
 }
 
 export function projectGraphToDocumentModel(input: {
@@ -162,8 +170,8 @@ export function summarizeProjectedDocumentModel(
 
 export function canSummarizeProjectedDocumentModel(
   projection: ProjectedDocumentModel,
-): projection is PptxPackageModel {
-  return projection.format === "pptx" && pptxProjectionCapability.canSummarize(projection);
+): projection is ProjectedDocumentModel {
+  return projectionCapabilityFor(projection.format).canSummarize(projection);
 }
 
 function isPptxPackageModelShape(

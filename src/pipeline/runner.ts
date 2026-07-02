@@ -1,10 +1,4 @@
 import type { DeckOptions } from "../authoring/options";
-import {
-  configuredOutputFormats,
-  hasMultipleConfiguredOutputFormats,
-  implicitOutputFormat,
-  outputFormatsInclude,
-} from "../authoring/options/output-formats";
 import { validateDeckOptions } from "../authoring/options/validation";
 import type { RenderOptions, WriterAdapter } from "../adapter";
 import { createWriterRenderContext } from "../adapter/context";
@@ -23,11 +17,7 @@ import {
   normalizedAssetProbeResult,
   summarizeAssetResolutions,
 } from "../asset-loading";
-import {
-  defaultAdapterLimitationsFor,
-  defaultWriterAdapterFor,
-  isWriterAdapter,
-} from "../adapter/registry";
+import { defaultAdapterLimitationsFor, selectWriterAdapter } from "../adapter/registry";
 import { createDiagnostics, diagnostic, type Diagnostics } from "../diagnostics";
 import {
   COMPOSITION_SOURCE,
@@ -49,7 +39,6 @@ import { type AssetEntityId, type GraphNodeId, type SemanticAuthorGraph } from "
 import { resultOk, stageSummary } from "./index";
 import type {
   InspectionDetailLevel,
-  OutputFormat,
   ProjectOptions,
   ProjectionFormat,
   StageArtifactStatus,
@@ -64,6 +53,12 @@ import {
 import type { DefinedGraphInput, DefinedProjectionInput } from "./artifact-input";
 import type { MediaSourceOrigin } from "../media-source-origin";
 import { compileSource } from "../compile-runner";
+import {
+  definedProjectionFormatDiagnostics,
+  selectProjectOutputTarget,
+  selectRenderOutputTarget,
+  writerAdapterFormatDiagnostics,
+} from "../output-target/policy";
 import type { InternalProjectResult } from "./results";
 import type { PresentStageArtifactStatus, RenderResult } from "./results-public";
 import { isPptxPackageModel, isPptxSlidePart } from "../projection/pptx/model";
@@ -83,9 +78,9 @@ import {
   projectionDiagnosticsForGraph,
   projectionDiagnosticsForModel,
   summarizeProjectedDocumentModel,
+  validateProjectedDocumentModel,
   type ProjectedDocumentModel,
 } from "../projection/registry";
-import { validatePptxPackageModel } from "../projection/pptx/validation";
 import {
   incrementalProjectionReusePlan,
   slideProjectionFingerprintSnapshots,
@@ -125,10 +120,6 @@ function definedProjectionShapeDiagnostics(value: unknown): Diagnostics {
   }
 
   return emptyDiagnostics();
-}
-
-function validateProjectedDocumentModel(projection: ProjectedDocumentModel): Diagnostics {
-  return projection.format === "pptx" ? validatePptxPackageModel(projection) : emptyDiagnostics();
 }
 
 function combineDiagnostics(...diagnostics: readonly Diagnostics[]): Diagnostics {
@@ -933,135 +924,12 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function projectionFormatFor(options: DeckOptions): ProjectionFormat {
-  return implicitOutputFormat(options);
-}
-
 function projectionInputFormatMatches(
   input: DefinedProjectionInput | undefined,
   format: ProjectionFormat,
 ): boolean {
   const projection = input?.projection;
   return isRecord(projection) && projection.format === format;
-}
-
-function isRenderInputObject(
-  value: RenderOptions | WriterAdapter | undefined,
-): value is RenderOptions | WriterAdapter {
-  return typeof value === "object" && value !== null;
-}
-
-function isWriterAdapterLike(value: RenderOptions | WriterAdapter | undefined): boolean {
-  return (
-    isRenderInputObject(value) &&
-    (("kind" in value && value.kind === "deckjsx.writerAdapter") ||
-      "projectionFormat" in value ||
-      "render" in value ||
-      ("name" in value && "format" in value))
-  );
-}
-
-function invalidWriterAdapterDiagnostics(
-  value: RenderOptions | WriterAdapter | undefined,
-): Diagnostics | undefined {
-  if (!isWriterAdapterLike(value) || isWriterAdapter(value)) {
-    return undefined;
-  }
-
-  return createDiagnostics([
-    diagnostic({
-      severity: "error",
-      code: "E_RENDER_INVALID_WRITER_ADAPTER",
-      title: "writer adapter shape is invalid",
-      message:
-        "render() received a value that looks like a Writer Adapter, but it does not satisfy the deckjsx.writerAdapter runtime contract.",
-      labels: [
-        {
-          path: "render.adapter",
-          message:
-            'expected kind, name, projectionFormat="pptx" or "pdf", format, options, and render(projection)',
-          severity: "primary",
-        },
-      ],
-    }),
-  ]);
-}
-
-function selectWriterAdapter(input: {
-  renderInput: RenderOptions | WriterAdapter | undefined;
-  projectionFormat: ProjectionFormat;
-}):
-  | { readonly ok: true; readonly adapter: WriterAdapter }
-  | { readonly ok: false; readonly diagnostics: Diagnostics; readonly format: OutputFormat } {
-  const invalidAdapterDiagnostics = invalidWriterAdapterDiagnostics(input.renderInput);
-
-  if (invalidAdapterDiagnostics) {
-    return {
-      ok: false,
-      diagnostics: invalidAdapterDiagnostics,
-      format: input.projectionFormat,
-    };
-  }
-
-  return {
-    ok: true,
-    adapter: isWriterAdapter(input.renderInput)
-      ? input.renderInput
-      : defaultWriterAdapterFor(input.projectionFormat, input.renderInput ?? {}),
-  };
-}
-
-function writerAdapterFormatDiagnostics(input: {
-  adapter: WriterAdapter;
-  options: DeckOptions;
-}): Diagnostics {
-  const adapterFormat = input.adapter.format;
-
-  if (outputFormatsInclude(input.options, adapterFormat)) {
-    return emptyDiagnostics();
-  }
-
-  return createDiagnostics([
-    diagnostic({
-      severity: "warning",
-      code: "W_RENDER_ADAPTER_FORMAT_NOT_CONFIGURED",
-      title: "writer adapter format is not configured for deck output",
-      message:
-        "The selected Writer Adapter format is not listed in this Deck's output.formats configuration.",
-      labels: [
-        {
-          path: "render.adapter.format",
-          message: `adapter=${adapterFormat}, output.formats=${configuredOutputFormats(input.options).join(",")}`,
-        },
-      ],
-    }),
-  ]);
-}
-
-function implicitFirstOutputFormatDiagnostics(input: {
-  options: DeckOptions;
-  format: ProjectionFormat;
-  path: "project.format" | "render.format";
-}): Diagnostics {
-  if (!hasMultipleConfiguredOutputFormats(input.options)) {
-    return emptyDiagnostics();
-  }
-
-  return createDiagnostics([
-    diagnostic({
-      severity: "warning",
-      code: "W_OUTPUT_FORMATS_IMPLICIT_FIRST",
-      title: "implicit output format selected the first configured format",
-      message:
-        "This Deck declares multiple output formats, so deckjsx used output.formats[0] for this single-format call.",
-      labels: [
-        {
-          path: input.path,
-          message: `selected ${input.format} from output.formats[0]`,
-        },
-      ],
-    }),
-  ]);
 }
 
 function diagnosticFromError(input: {
@@ -1291,16 +1159,13 @@ export async function projectSource<
   input: ProjectSourceRunnerInput<TSourceContext, TTemplates>,
 ): Promise<InternalProjectResult<ProjectedDocumentModel>> {
   const artifacts = input.artifacts ?? new PipelineArtifactCollection();
-  const projectionFormat =
-    input.projectionFormat ?? input.projectOptions?.format ?? projectionFormatFor(input.options);
-  const implicitFormatDiagnostics =
-    input.projectionFormat || input.projectOptions?.format
-      ? emptyDiagnostics()
-      : implicitFirstOutputFormatDiagnostics({
-          options: input.options,
-          format: projectionFormat,
-          path: "project.format",
-        });
+  const outputTarget = selectProjectOutputTarget({
+    options: input.options,
+    projectOptions: input.projectOptions,
+    projectionFormat: input.projectionFormat,
+  });
+  const projectionFormat = outputTarget.projectionFormat;
+  const implicitFormatDiagnostics = outputTarget.diagnostics;
   const optionsDiagnostics = validateDeckOptions(input.options);
   const executionDiagnostics = createDiagnostics(input.execution?.diagnostics);
 
@@ -1337,9 +1202,16 @@ export async function projectSource<
       input.definedProjection.diagnostics.items.length > 0
         ? input.definedProjection.diagnostics
         : definedProjectionShapeDiagnostics(definedProjectionInput);
+    const definedFormatDiagnostics = definedProjection
+      ? definedProjectionFormatDiagnostics({
+          projection: definedProjection,
+          format: projectionFormat,
+        })
+      : emptyDiagnostics();
     const diagnostics = combineDiagnostics(
       implicitFormatDiagnostics,
       definedShapeDiagnostics,
+      definedFormatDiagnostics,
       definedProjection
         ? projectionDiagnosticsForModel({
             projection: definedProjection,
@@ -1348,7 +1220,7 @@ export async function projectSource<
         : emptyDiagnostics(),
       definedProjection ? validateProjectedDocumentModel(definedProjection) : emptyDiagnostics(),
     );
-    if (!definedProjection) {
+    if (!definedProjection || definedFormatDiagnostics.hasErrors) {
       return {
         ok: resultOk(diagnostics),
         diagnostics,
@@ -1686,15 +1558,12 @@ export async function renderSource<
     incrementalSlot?.artifacts ?? input.artifacts ?? new PipelineArtifactCollection();
   const finishRender = <TResult extends RenderResult>(result: TResult): TResult =>
     attachArtifactWriteToken(result, incrementalSlot?.token);
-  const projectionFormat = projectionFormatFor(input.options);
-  const implicitFormatDiagnostics =
-    input.renderInput === undefined || !isWriterAdapter(input.renderInput)
-      ? implicitFirstOutputFormatDiagnostics({
-          options: input.options,
-          format: projectionFormat,
-          path: "render.format",
-        })
-      : emptyDiagnostics();
+  const outputTarget = selectRenderOutputTarget({
+    options: input.options,
+    renderInput: input.renderInput,
+  });
+  const projectionFormat = outputTarget.projectionFormat;
+  const implicitFormatDiagnostics = outputTarget.diagnostics;
   const optionsDiagnostics = validateDeckOptions(input.options);
   if (optionsDiagnostics.hasErrors) {
     const diagnostics = combineDiagnostics(implicitFormatDiagnostics, optionsDiagnostics);

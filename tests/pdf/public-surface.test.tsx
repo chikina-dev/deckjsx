@@ -248,6 +248,23 @@ describe("pdf public surface", () => {
     );
   });
 
+  test("reports the explicit adapter format when render fails before projection", async () => {
+    const deck = new Deck({
+      layout: { width: -1, height: 5.625, unit: "in" },
+    } as never);
+    deck.slide({ name: "Invalid PDF" }, () => <p>Invalid PDF</p>);
+
+    const result = await deck.render(pdf({ inspection: "none" }));
+
+    expect(result.ok).toBe(false);
+    expect(result.format).toBe("pdf");
+    expect(result.artifact).toBeUndefined();
+    expect(result.stages.project.artifact).toBe("missing");
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({ code: "E_DECK_INVALID_LAYOUT" }),
+    );
+  });
+
   test("does not reuse a cached pptx projection for a later pdf project request", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "PDF" }, () => <p>PDF</p>);
@@ -259,6 +276,43 @@ describe("pdf public surface", () => {
     expect(pptxResult.format).toBe("pptx");
     expect(pptxResult.projection?.format).toBe("pptx");
     expectPdfProjectionAvailable(pdfResult);
+  });
+
+  test("rejects a defined pptx projection for an explicit pdf project request", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Defined PPTX" }, () => <p>Defined PPTX</p>);
+    const pptxResult = await deck.project({ inspection: "none" });
+
+    deck.defineProjection(pptxResult.projection!);
+
+    const pdfResult = await deck.project({ format: "pdf", inspection: "none" });
+
+    expect(pdfResult.ok).toBe(false);
+    expect(pdfResult.format).toBe("pdf");
+    expect(pdfResult.projection).toBeUndefined();
+    expect(pdfResult.stages.project.artifact).toBe("missing");
+    expect(pdfResult.diagnostics.items).toContainEqual(
+      expect.objectContaining({ code: "E_DEFINE_PROJECTION_FORMAT" }),
+    );
+  });
+
+  test("rejects a defined pptx projection for an explicit pdf render request", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Defined PPTX" }, () => <p>Defined PPTX</p>);
+    const pptxResult = await deck.project({ inspection: "none" });
+
+    deck.defineProjection(pptxResult.projection!);
+
+    const pdfResult = await deck.render(pdf({ inspection: "none" }));
+
+    expect(pdfResult.ok).toBe(false);
+    expect(pdfResult.format).toBe("pdf");
+    expect(pdfResult.artifact).toBeUndefined();
+    expect(pdfResult.stages.project.artifact).toBe("missing");
+    expect(pdfResult.stages.render.artifact).toBe("missing");
+    expect(pdfResult.diagnostics.items).toContainEqual(
+      expect.objectContaining({ code: "E_DEFINE_PROJECTION_FORMAT" }),
+    );
   });
 
   test("creates a pdf render artifact through a minimal adapter", async () => {

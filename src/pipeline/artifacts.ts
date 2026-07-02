@@ -22,7 +22,7 @@ import type {
   PptxPackageModelCandidate,
 } from "../projection/pptx/model";
 import { isPptxPackageModel } from "../projection/pptx/model";
-import type { PdfPageModel } from "../projection/pdf/model";
+import { isPdfPageModel, type PdfPageModel } from "../projection/pdf/model";
 import {
   pptxProjectionArtifact,
   projectionShapeDiagnostics,
@@ -80,6 +80,40 @@ export type {
   ProjectionArtifact,
   PptxProjectionArtifact,
 };
+
+function emptyProjectionArtifactIndexes(): ProjectionArtifactIndexes {
+  return {
+    partsById: new Map(),
+    partsBySourceKey: new Map(),
+    partsByGraphNodeId: new Map(),
+    slideProjectionFingerprints: new Map(),
+    slidePackagePartFingerprints: new Map(),
+    packageDependencies: {
+      edges: [],
+      dependenciesByPartId: new Map(),
+      dependentsByPartId: new Map(),
+    },
+  };
+}
+
+function projectionArtifactForModel(
+  projection: PptxPackageModel | PdfPageModel,
+  diagnostics: Diagnostics,
+  artifactOptions: {
+    readonly slideProjectionFingerprints?: ReadonlyMap<
+      GraphNodeId,
+      SlideProjectionFingerprintSnapshot
+    >;
+  } = {},
+): DefinedProjectionArtifact {
+  return isPptxPackageModel(projection as PptxPackageModelCandidate)
+    ? pptxProjectionArtifact(projection as PptxPackageModel, diagnostics, artifactOptions)
+    : {
+        projection,
+        diagnostics,
+        ...emptyProjectionArtifactIndexes(),
+      };
+}
 
 export type AssetArtifact = {
   readonly assetEntityId: AssetEntityId;
@@ -615,22 +649,7 @@ export class PipelineArtifactCollection {
       >;
     } = {},
   ): void {
-    this.#projection = isPptxPackageModel(projection as PptxPackageModelCandidate)
-      ? pptxProjectionArtifact(projection as PptxPackageModel, diagnostics, artifactOptions)
-      : {
-          projection,
-          diagnostics,
-          partsById: new Map(),
-          partsBySourceKey: new Map(),
-          partsByGraphNodeId: new Map(),
-          slideProjectionFingerprints: new Map(),
-          slidePackagePartFingerprints: new Map(),
-          packageDependencies: {
-            edges: [],
-            dependenciesByPartId: new Map(),
-            dependentsByPartId: new Map(),
-          },
-        };
+    this.#projection = projectionArtifactForModel(projection, diagnostics, artifactOptions);
     this.#projectionOptions = options;
     this.clearIncrementalProjectionReuseSnapshot();
   }
@@ -687,10 +706,12 @@ export class PipelineArtifactCollection {
     this.clearIncrementalProjectionReuseSnapshot();
   }
 
-  replaceProjectionArtifact(projection: PptxPackageModelCandidate): void {
+  replaceProjectionArtifact(projection: PptxPackageModelCandidate | PdfPageModel): void {
     this.#sourcesByKey.clear();
     this.#graphsBySourceKey.clear();
-    this.#projection = pptxProjectionArtifact(projection, projectionShapeDiagnostics(projection));
+    this.#projection = isPdfPageModel(projection)
+      ? projectionArtifactForModel(projection, createDiagnostics())
+      : pptxProjectionArtifact(projection, projectionShapeDiagnostics(projection));
     this.#projectionOptions = undefined;
     this.clearIncrementalProjectionReuseSnapshot();
   }

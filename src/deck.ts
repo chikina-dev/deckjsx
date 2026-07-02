@@ -1,5 +1,4 @@
 import type { DeckOptions } from "./authoring/options/public";
-import { implicitOutputFormat } from "./authoring/options/output-formats";
 import { validateDeckOptions } from "./authoring/options/validation";
 import type { RenderOptions, WriterAdapter } from "./adapter/public";
 import {
@@ -21,6 +20,7 @@ import type { SemanticAuthorGraph } from "./graph";
 import { resultOk, stageSummary } from "./pipeline/stage";
 import type { ProjectOptions, ProjectionFormat, StageArtifactStatus } from "./pipeline/contract";
 import type { DefinedGraphInput, DefinedProjectionInput } from "./pipeline/artifact-input";
+import { selectProjectOutputTarget, selectRenderOutputTarget } from "./output-target/policy";
 import { compileSource, defineGraphForSource } from "./compile-runner";
 import type {
   CompiledAuthorGraph,
@@ -146,19 +146,14 @@ function projectionArtifactForFormat(
 }
 
 function projectionFormatForOptions(options: DeckOptions, projectOptions?: ProjectOptions) {
-  return projectOptions?.format ?? implicitOutputFormat(options);
+  return selectProjectOutputTarget({ options, projectOptions }).projectionFormat;
 }
 
 function projectionFormatForRenderInput(
   options: DeckOptions,
   config: RenderOptions | WriterAdapter | undefined,
 ) {
-  return typeof config === "object" &&
-    config !== null &&
-    "kind" in config &&
-    config.kind === "deckjsx.writerAdapter"
-    ? config.projectionFormat
-    : projectionFormatForOptions(options);
+  return selectRenderOutputTarget({ options, renderInput: config }).projectionFormat;
 }
 
 /**
