@@ -36,6 +36,29 @@ const exportedCssValueTypes = {
 };
 void exportedCssValueTypes;
 
+type Tone = "primary" | "warning";
+const palette: Record<Tone, string> = {
+  primary: "#1D4ED8",
+  warning: "rgba(245, 158, 11, 0.9)",
+};
+
+function toneColor(tone: Tone): string {
+  return palette[tone];
+}
+
+const dynamicColorValues = {
+  slide: { backgroundColor: toneColor("primary") },
+  view: { backgroundColor: toneColor("warning"), borderColor: toneColor("primary") },
+  text: { color: toneColor("primary"), textDecorationColor: toneColor("warning") },
+  shape: { backgroundColor: toneColor("warning"), borderColor: toneColor("primary") },
+} satisfies {
+  slide: import("deckjsx").SlideStyle;
+  view: ViewStyle;
+  text: TextStyle;
+  shape: ShapeStyle;
+};
+void dynamicColorValues;
+
 const cssAlphaBackgrounds = {
   slide: { backgroundColor: "rgba(17, 34, 51, 0.88)" },
   view: { backgroundColor: "rgba(248, 225, 108, 0.85)" },

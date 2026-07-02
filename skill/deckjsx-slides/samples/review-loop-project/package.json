@@ -1,0 +1,19 @@
+{
+  "name": "deckjsx-review-loop-project",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.sample.json",
+    "build": "tsx deck.tsx"
+  },
+  "dependencies": {
+    "@deckjsx/node": "latest",
+    "deckjsx": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}

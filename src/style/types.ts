@@ -148,7 +148,7 @@ export type CssBorderShorthand =
   | `${CssBorderStyleKeyword} ${string}`
   | `${CssBorderShorthandWidth} ${CssBorderStyleKeyword} ${string}`
   | `${CssBorderStyleKeyword} ${CssBorderShorthandWidth} ${string}`;
-export type CssStrokeShorthand = CssColor | CssBorderShorthand;
+export type CssStrokeShorthand = CssPaintColor | CssBorderShorthand;
 export type StrokeDashType =
   | "solid"
   | "dash"
@@ -326,10 +326,11 @@ export type CssHslColor = `hsl(${string})` | `hsla(${string})`;
 /**
  * CSS color accepted by public authoring styles.
  *
- * Named colors are closed to deckjsx's supported CSS color table. Hex and color-function strings
- * are typed by recognizable CSS syntax and validated by compile diagnostics before projection.
+ * Literal colors can still use deckjsx's supported CSS color vocabulary, but authoring code often
+ * passes palette tokens through helpers such as `toneColor(tone): string`. Those dynamic values are
+ * accepted at the type boundary and validated by compile diagnostics before projection.
  */
-export type CssColor = CssNamedColor | CssHexColor | CssRgbColor | CssHslColor;
+export type CssColor = string;
 type CssPaintColor = CssNamedColor | CssHexColor | CssRgbColor | CssHslColor;
 /**
  * CSS gradient string accepted by public authoring styles.

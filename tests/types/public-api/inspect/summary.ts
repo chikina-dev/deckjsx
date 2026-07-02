@@ -180,6 +180,20 @@ projectSummary.slides[0]?.elements[0]?.outline satisfies I.PptxTextElement["outl
 projectSummary.slides[0]?.elements[0]?.generatedStrokes satisfies
   | readonly I.PptxGeneratedStrokeLayer[]
   | undefined;
+projectSummary.slides[0]?.elements[0]?.textMetrics satisfies
+  | I.ProjectInspectionTextMetrics
+  | undefined;
+projectSummary.slides[0]?.elements[0]?.mediaMetrics satisfies
+  | I.ProjectInspectionMediaMetrics
+  | undefined;
+projectSummary.slides[0]?.visualChecks satisfies readonly I.ProjectInspectionVisualCheck[];
+projectSummary.slides[0]?.visualChecks[0]?.code satisfies
+  | I.ProjectInspectionVisualCheck["code"]
+  | undefined;
+projectSummary.slides[0]?.visualChecks[0]?.metrics satisfies
+  | I.ProjectInspectionTextMetrics
+  | I.ProjectInspectionMediaMetrics
+  | undefined;
 projectSummary.slides[0]?.elements[0]?.resolvedValues?.opacity satisfies number | undefined;
 projectSummary.slides[0]?.elements[0]?.resolvedValues?.rotation satisfies number | undefined;
 projectSummary.slides[0]?.elements[0]?.resolvedValues?.flipH satisfies boolean | undefined;

@@ -248,6 +248,202 @@ describe("project/render package and inspection output", () => {
     expect(project.stages.project.artifact).toBe("available");
   });
 
+  test("project inspection summarizes output-facing visual review hints", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Visual review" }, () => (
+      <>
+        <p
+          style={{
+            position: "absolute",
+            left: 0.8,
+            top: 0.8,
+            width: 1.2,
+            height: 0.22,
+            fontSize: 8,
+            lineHeight: 1.1,
+            fit: "shrink",
+          }}
+        >
+          This deliberately long sentence should be reviewed before relying on the PPTX output.
+        </p>
+        <img
+          data={H.SAMPLE_SVG_DATA_URI}
+          style={{
+            position: "absolute",
+            left: 3,
+            top: 0.8,
+            width: 0.45,
+            height: 0.35,
+            objectFit: "cover",
+          }}
+        />
+      </>
+    ));
+
+    const project = await deck.project({ inspection: "summary" });
+    const slideSummary = project.summary?.slides[0];
+    const [textSummary, imageSummary] = slideSummary?.elements ?? [];
+
+    expect(project.ok).toBe(true);
+    expect(textSummary).toMatchObject({
+      kind: "text",
+      textMetrics: expect.objectContaining({
+        characterCount: 85,
+        fontSizePt: 8,
+        estimatedLineCount: expect.any(Number),
+        estimatedLineCapacity: 1,
+        fit: "shrink",
+        wrap: true,
+      }),
+    });
+    expect(textSummary?.textMetrics?.estimatedLineCount ?? 0).toBeGreaterThan(1);
+    expect(imageSummary).toMatchObject({
+      kind: "image",
+      mediaMetrics: expect.objectContaining({
+        sourceKind: "data",
+        fit: "cover",
+        objectPosition: { x: 0.5, y: 0.5 },
+        cropped: true,
+      }),
+    });
+    expect(slideSummary?.visualChecks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "W_VISUAL_TEXT_SMALL",
+          severity: "warning",
+          elementId: textSummary?.id,
+        }),
+        expect.objectContaining({
+          code: "W_VISUAL_TEXT_MAY_SHRINK",
+          severity: "warning",
+          elementId: textSummary?.id,
+        }),
+        expect.objectContaining({
+          code: "W_VISUAL_MEDIA_SMALL",
+          severity: "warning",
+          elementId: imageSummary?.id,
+        }),
+      ]),
+    );
+  });
+
+  test("project inspection handles visual review edge cases", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Visual edge cases" }, () => (
+      <>
+        <img
+          data={H.SAMPLE_SVG_DATA_URI}
+          style={{
+            position: "absolute",
+            left: 0.5,
+            top: 0.5,
+            width: 1,
+            height: 1,
+            objectFit: "contain",
+            crop: { left: "10%", right: "10%" },
+          }}
+        />
+        <p
+          style={{
+            position: "absolute",
+            left: 2,
+            top: 0.5,
+            width: 0.6,
+            height: 0.4,
+            whiteSpace: "nowrap",
+          }}
+        >
+          Unbroken nowrap label that should exceed its box
+        </p>
+        <p style={{ position: "absolute", left: 3, top: 0.5, width: 3, height: 0.5, fontSize: 18 }}>
+          Large label with <span style={{ fontSize: 6 }}>tiny run</span>
+        </p>
+        <table
+          style={{
+            position: "absolute",
+            left: 0.5,
+            top: 2,
+            width: 2,
+            height: 0.45,
+            tableLayout: "fixed",
+          }}
+        >
+          <tbody>
+            <tr>
+              <td style={{ fontSize: 6 }}>Small table text</td>
+            </tr>
+          </tbody>
+        </table>
+        <p
+          style={{
+            position: "absolute",
+            left: 3,
+            top: 2,
+            width: 0.8,
+            height: 0.25,
+            fit: "resize",
+          }}
+        >
+          Resize autofit text should be called out separately
+        </p>
+        <div
+          style={{
+            position: "absolute",
+            left: 5,
+            top: 2,
+            width: 1,
+            height: 0.5,
+            visibility: "hidden",
+          }}
+        >
+          <p
+            style={{ position: "absolute", left: 0, top: 0, width: 0.5, height: 0.2, fontSize: 4 }}
+          >
+            Hidden tiny text should not warn
+          </p>
+        </div>
+      </>
+    ));
+
+    const project = await deck.project({ inspection: "summary" });
+    const checks = project.summary?.slides[0]?.visualChecks ?? [];
+    const codes = checks.map((check) => check.code);
+    const cropCheck = checks.find(
+      (check) => check.code === "I_VISUAL_MEDIA_CROPPED" && "crop" in (check.metrics ?? {}),
+    );
+    const nowrapCheck = checks.find((check) =>
+      check.textPreview?.startsWith("Unbroken nowrap label"),
+    );
+    const richRunCheck = checks.find((check) => check.textPreview?.includes("tiny run"));
+    const tableCheck = checks.find((check) => check.textPreview === "Small table text");
+    const resizeCheck = checks.find((check) => check.code === "W_VISUAL_TEXT_MAY_RESIZE");
+
+    expect(project.ok).toBe(true);
+    expect(cropCheck).toMatchObject({
+      code: "I_VISUAL_MEDIA_CROPPED",
+      metrics: expect.objectContaining({ cropped: true }),
+    });
+    expect(nowrapCheck).toMatchObject({
+      code: "W_VISUAL_TEXT_MAY_OVERFLOW",
+      metrics: expect.objectContaining({ wrap: false }),
+    });
+    expect(richRunCheck).toMatchObject({
+      code: "W_VISUAL_TEXT_SMALL",
+      metrics: expect.objectContaining({ fontSizePt: 6 }),
+    });
+    expect(tableCheck).toMatchObject({
+      code: "W_VISUAL_TEXT_SMALL",
+      kind: "table",
+      metrics: expect.objectContaining({ fontSizePt: 6 }),
+    });
+    expect(resizeCheck).toMatchObject({
+      code: "W_VISUAL_TEXT_MAY_RESIZE",
+      metrics: expect.objectContaining({ fit: "resize" }),
+    });
+    expect(checks.some((check) => check.textPreview?.includes("Hidden tiny text"))).toBe(false);
+    expect(codes).toContain("I_VISUAL_MEDIA_CROPPED");
+  });
+
   test("project derives detailed composed paint order only when requested", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Detailed inspection" }, () => (

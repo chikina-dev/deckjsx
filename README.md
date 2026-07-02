@@ -1,7 +1,9 @@
 # deckjsx
 
 `deckjsx` is a TypeScript library for generating presentation files from JSX through a compiler
-pipeline.
+pipeline. The authoring model is intentionally web-like: use lowercase JSX tags, CSS-like `style`
+objects, flex/grid/block flow, components, and data mapping instead of drawing PowerPoint objects by
+coordinate.
 
 The intended architecture is:
 
@@ -15,7 +17,9 @@ JSX
 
 This project is designed as a presentation compiler. The API uses a class-based compiler with
 callback-based `.slide()`, synchronous `.compile()`, async `.project()`, and async `.render()`.
-Authoring uses typed JSX elements with CSS-like style and class semantics.
+Authoring uses typed JSX elements with CSS-like style and class semantics. It is not a browser DOM
+or a complete CSS engine; deckjsx has a smaller typed tag contract and projects the result into
+formats such as PPTX and PDF.
 
 The implementation preserves the compiler model with explicit module boundaries for authoring,
 semantic graph construction, style resolution, output projection, writer adapters, and runtime
@@ -164,6 +168,64 @@ import { write } from "@deckjsx/node";
 
 await write(await deck.render(pptx()), "quarterly-review.pptx");
 ```
+
+## Review Loop
+
+Most deck authoring should feel close to writing web JSX: compose components, map over data, use
+typed CSS-like layout, and let deckjsx project that structure into the output format. The review
+loop is still presentation-specific because the final consumer is a slide file, not a browser
+viewport.
+
+Use `project()` first when adjusting a deck. The PPTX inspection summary exposes output-facing
+frames, resolved text style, media placement, and non-blocking `visualChecks` for things that often
+need human review, such as very small text, text that may shrink/overflow, and media that is tiny or
+cropped:
+
+```tsx
+const projected = await deck.project({ inspection: "summary" });
+const summary = projected.summary as import("deckjsx/inspect").ProjectInspectionSummary | undefined;
+for (const slide of summary?.slides ?? []) {
+  for (const check of slide.visualChecks) {
+    console.warn(`${slide.name ?? slide.slideId}: ${check.code} ${check.message}`);
+    if (check.metrics) {
+      console.info(`${slide.name ?? slide.slideId}: review metrics`, check.metrics);
+    }
+  }
+  // `slide.elements` summarizes top-level drawing nodes; nested group/table content may surface
+  // through `visualChecks[].metrics` instead.
+  for (const element of slide.elements) {
+    if (element.textMetrics) {
+      console.info(
+        `${slide.name ?? slide.slideId}: ${element.id} text lines ${element.textMetrics.estimatedLineCount}/${element.textMetrics.estimatedLineCapacity}`,
+      );
+    }
+    if (element.mediaMetrics) {
+      console.info(
+        `${slide.name ?? slide.slideId}: ${element.id} media ${element.mediaMetrics.fit}${element.mediaMetrics.cropped ? " cropped" : ""}`,
+      );
+    }
+  }
+}
+```
+
+The checks are review hints, not compile failures. A deck can be structurally valid and still need a
+human pass for Japanese line wrapping, figure legibility, margins, and the balance between title,
+body, and footer.
+
+For fast visual review of text-heavy decks, the built-in PDF adapter can produce a simple PDF
+artifact:
+
+```tsx
+import { pdf, pptx } from "deckjsx/adapter";
+import { write } from "@deckjsx/node";
+
+await write(await deck.render(pdf()), "quarterly-review.review.pdf");
+await write(await deck.render(pptx()), "quarterly-review.pptx");
+```
+
+The PDF writer is intentionally minimal today: it is useful as a quick text/layout check, but it does
+not replace reviewing the generated PPTX or a full PPTX-to-PDF/raster verification path for final
+slides with images, shapes, tables, or precise PowerPoint text wrapping.
 
 ## JSX elements
 
@@ -413,7 +475,9 @@ For decorative or underlay images inside a box, use background layers with `back
 `backgroundPosition`, `backgroundRepeat`, `backgroundClip`, and `backgroundOrigin`.
 
 Primitive text belongs inside text-like elements such as `p` or `h1`; view-like elements contain
-authored elements. Inline rich text uses `span` inside text-like elements:
+authored elements. This is a typed authoring contract so text boxes, typography, flow, and
+diagnostics stay explicit in the projected slide model. Inline rich text uses `span` inside
+text-like elements:
 
 ```tsx
 <p>
@@ -475,6 +539,9 @@ JavaScript or casted inputs: unknown props, style keys outside the public author
 on the wrong element, and malformed CSS-like values are reported as values that are not part of the
 public authoring API. Projection diagnostics continue to describe supported PPTX fallback behavior
 for representable CSS-like features such as clipping, transform, opacity, and compositing metadata.
+Project inspection also includes visual review hints for output-facing layout concerns. Those hints
+do not change `ok`; they exist to shorten the loop between web-like JSX authoring and the generated
+slide file people will read.
 
 ## Development
 

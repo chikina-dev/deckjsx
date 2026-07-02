@@ -33,16 +33,71 @@ For Japanese guidance, read `SKILL-ja.md` in this folder. Keep both files aligne
   that hides templates, component hierarchy, or layout semantics from the JSX.
 - Do not spread arrays of coordinate-generated elements into slides, such as
   `...card(0.75, 1.38, ...)` or `...statement(0.75, 4.35, ...)`.
-- Keep reusable layout and appearance in `StyleSheet` classes and `Theme` defaults. Use inline
-  `style` only for slide-local values that are genuinely local.
-- Use templates for repeated slide regions with flow layout. Template Areas use `style.gridArea`,
-  `alignSelf`, and `justifySelf`; they do not accept numeric `frame` definitions.
+- Template Areas use authored style such as `style.gridArea`, `alignSelf`, and `justifySelf`; they
+  do not accept numeric `frame` definitions.
+- Slide Template root `style` is a flow-layout surface. Do not put `width`, `height`, `position`,
+  `left`, `top`, `right`, or `bottom` in template root styles; use `Deck` layout for slide size and
+  normal authored element styles for slide content.
+
+## Constraints Versus Recommendations
+
+deckjsx is intentionally web-like to author. Most slide code should be ordinary JSX, components,
+arrays mapped to elements, and CSS-like layout/style objects. Do not explain deckjsx as a low-level
+PPTX API that authors must constantly think about.
+
+Separate these two categories when guiding users:
+
+- Public API constraints: lowercase deckjsx tags, typed children, `style={{ ... }}` instead of
+  direct style props, no authored `x` / `y` keys, tag-scoped style keys, and Template Area references
+  from the slide factory's typed `template` handle.
+- Authoring recommendations: prefer templates for repeated slide regions, prefer StyleSheet/Theme
+  for repeated visual vocabulary, prefer named components over opaque helpers, prefer grid/flex/flow
+  before fixed placement, and keep data normalization outside JSX.
+
+The recommendations are about readability, reuse, and Project inspection quality. They are not
+claims that deckjsx is less web-like or that every one-off slide-local style is wrong.
+
+## Authoring Samples
+
+Before generating a nontrivial deck, read the sample files in this skill directory:
+
+- `samples/review-loop-project/`: complete multi-file sample project with `theme.ts`,
+  `styles.ts`, `templates.ts`, `data/`, `components/`, `slides/`, a `deck.tsx` entrypoint,
+  `package.json`, `tsconfig.sample.json`, Project inspection, minimal PDF review output, and final
+  PPTX render.
+- `samples/review-loop.tsx`: web-like JSX authoring, `project({ inspection: "summary" })`,
+  `visualChecks`, minimal PDF review output, and final PPTX render in one compact file.
+- `samples/component-pattern.tsx`: data array -> named component -> visible `deck.slide(...)`
+  structure with template areas and StyleSheet classes in one compact file.
+
+Treat these as reference implementations, not prose snippets. Copy their shape before inventing new
+deck structure. Do not collapse them into one opaque helper call or rewrite them as coordinate
+helpers.
+
+When the user asks for a sample project, use `samples/review-loop-project/` as the default shape.
+Use the single-file samples only for compact explanation, smoke tests, or a tiny sketch.
+
+When forwarding a Template Area reference through a custom component, type the prop as
+`TemplateAreaRef` imported from `deckjsx`. Do not use `unknown`, `any`, or hand-built template area
+objects in sample code.
+
+For coordinate-helper refactors, distinguish representative explanation from implementation shape:
+
+- If the user asks for a plan or representative TSX, a compact excerpt is acceptable, but explicitly
+  say the real implementation should split into `theme.ts`, `styles.ts`, `templates.ts`, `data/`,
+  `components/`, and `slides/` once it becomes project code.
+- If the user asks for a sample project or implementation, create the multi-file shape directly.
+- When the source slide does not provide exact dimensions or visual constraints, preserve semantic
+  content and component structure first. Tune rows, gaps, text heights, and fit using
+  `deck.project({ inspection: "summary" })` rather than inventing coordinate-equivalent spacing.
 
 ## Project Shape
 
 For anything beyond a tiny example, split the deck into files:
 
 ```text
+package.json
+tsconfig.sample.json
 src/
   deck.tsx
   theme.ts
@@ -65,6 +120,10 @@ src/
 
 Use fewer files only for a small sketch. Split when data needs a schema, a visual pattern repeats,
 templates/styles get crowded, or a slide archetype deserves a name.
+
+For standalone TypeScript decks that call the direct writer or access `process`, include Node types
+in the project template: install `@types/node` and set `compilerOptions.types` to `["node"]`. The
+sample project keeps this in `tsconfig.sample.json` and wires `npm run check` to that file.
 
 ## Data Flow
 
@@ -103,8 +162,10 @@ Use lowercase tags:
 - Editable simple shapes: lowercase `shape` with `shape="rect"`, `"roundRect"`, `"ellipse"`, or
   `"line"`.
 
-Put layout/container styles on view-like tags. Put typography on text-like tags. Use `span` inside
-text-like tags for rich inline runs.
+View-like tags accept authored element children; text-like tags accept primitive text and inline
+`span` runs. This is a typed deckjsx child contract, not a rejection of web-style authoring.
+Generally put layout/container styles on view-like tags and typography on text-like tags so the
+projected text boxes remain easy to inspect.
 
 ## Layout Policy
 
@@ -114,15 +175,21 @@ Prefer layout constructs in this order:
 2. Normal block flow for simple vertical content.
 3. Flex for rows, columns, strips, and repeated one-dimensional groups.
 4. Grid for dashboards, card grids, matrices, comparisons, and table-like structure.
-5. Inset-style placement (`left`, `top`, `right`, `bottom`) only when the supported deckjsx surface
-   needs a local overlay.
-6. Isolated absolute placement only for one-off compatibility or decorative exceptions.
+5. Inset-style placement (`left`, `top`, `right`, `bottom`) when the supported deckjsx surface needs
+   a local overlay or fixed slide-local geometry.
+6. Isolated absolute placement for one-off callouts, overlays, compatibility cases, or fixtures that
+   intentionally exercise exact placement.
 
 Use `gap`, `padding`, `gridTemplateColumns`, `gridTemplateRows`, `flexDirection`, `alignItems`,
 `justifyContent`, percentages, and `fr` tracks instead of hand-placing repeated children.
 
 For dense decks, use explicit text heights, controlled `lineHeight`, readable padding, and
-`fit: "shrink"` as a safety net. Do not solve density by hand-positioning every text box.
+`fit: "shrink"` as a safety net. Use Project inspection `textMetrics` and `visualChecks` to find
+text that may shrink or overflow before doing a full PPTX review.
+In the inspection summary, `slide.visualChecks` aggregates review hints for the slide, while
+`textMetrics` and `mediaMetrics` live on top-level `slide.elements[]` entries. For nested group
+content and native table cells, read `visualChecks[].metrics` because those checks can carry metrics
+for content that is not listed as a top-level slide element.
 
 ## Good Pattern
 
@@ -148,7 +215,7 @@ const theme = new Theme({
 
 const styles = new StyleSheet({
   classes: {
-    slide: { target: "slide.slide", style: { backgroundColor: theme.colors.paper } },
+    slide: { target: "main.slide", style: { backgroundColor: theme.colors.paper } },
     title: { target: "h1.title", style: { width: "100%", height: 0.55 } },
     cardGrid: {
       target: "section.cardGrid",
@@ -212,22 +279,19 @@ function CardGrid({ cards }: { cards: Card[] }) {
   );
 }
 
-deck.slide(
-  { name: "Findings", template: "report", className: "slide" },
-  ({ template, composition }) => (
-    <main>
-      <h1 area={template.title} className="title">
-        Findings
-      </h1>
-      <section area={template.body}>
-        <CardGrid cards={findings.cards} />
-      </section>
-      <p area={template.footer} className="footer">
-        {composition.slideIndex + 1}
-      </p>
-    </main>
-  ),
-);
+deck.slide({ name: "Findings", template: "report" }, ({ template, composition }) => (
+  <main className="slide">
+    <h1 area={template.title} className="title">
+      Findings
+    </h1>
+    <section area={template.body}>
+      <CardGrid cards={findings.cards} />
+    </section>
+    <p area={template.footer} className="footer">
+      {composition.slideIndex + 1}
+    </p>
+  </main>
+));
 ```
 
 This pattern keeps page-level placement in template definitions, repeated rhythm in classes, and
@@ -314,8 +378,8 @@ const disputes = [
   { lens: "政治", tone: "amber", points: ["米中AI競争の文脈", "同盟国アクセスの境界"] },
 ];
 
-deck.slide({ name: "Three disputes", template: "report", className: "slide" }, ({ template }) => (
-  <main>
+deck.slide({ name: "Three disputes", template: "report" }, ({ template }) => (
+  <main className="slide">
     <TitleBlock
       area={template.title}
       kicker="03 AI MODEL GEOPOLITICS"
@@ -366,6 +430,10 @@ content patterns, `Theme` defines baseline typography and visual vocabulary, and
 classes define reusable layout and appearance. Slide-local inline `style` is for one-off values,
 not a replacement for component structure.
 
+Use inline `style` freely for values that belong to one slide or one authored element. Promote a
+value to `StyleSheet`, `Theme`, or a template only when it repeats, expresses deck-wide vocabulary,
+or helps future inspection and edits.
+
 ## Layout Flow
 
 View-like elements participate in normal flow by default. Use block, flex, and grid layout to create
@@ -384,11 +452,30 @@ Use only public style keys accepted by the authored tag. Text styles belong on `
 cells, and `span`; media fitting belongs on `img` and `video`; shape paint belongs on `shape`.
 `x` and `y` are not public authoring style keys.
 
+Palette helpers such as `toneColor(tone): string` may be used for color-bearing properties like
+`color`, `backgroundColor`, `borderColor`, and `textDecorationColor`; deckjsx validates malformed
+dynamic color strings at compile/project time. Do not add `as any` or broad casts to silence style
+errors. If a shorthand such as `background`, `border`, `fill`, or `stroke` fails type-checking, fix
+the shorthand syntax or move the dynamic value to the specific color property.
+
 ## Diagnostics
 
 Invalid props, unsupported style keys, invalid CSS-like values, table hierarchy mistakes, and
 misused template areas should be treated as compile diagnostics. Do not work around diagnostics with
 casts or compatibility aliases; fix the authored JSX, style, template, or data model.
+
+Visual quality issues are different from compile failures. Use
+`await deck.project({ inspection: "summary" })` to review `visualChecks`, text metrics, media
+placement, clipping, and projected frames. For text-heavy decks, a minimal PDF render can be a fast
+review artifact, but the generated PPTX remains the final output to inspect before delivery.
+Read `visualChecks` from each slide. Read `textMetrics` / `mediaMetrics` from top-level entries in
+`slide.elements[]`, and also read `visualChecks[].metrics` for nested group content and native table
+cell checks. Do not treat element metrics as slide-level fields.
+
+Do not invent universal pass/fail thresholds for `visualChecks`, text metrics, or media metrics.
+Treat them as a triage list that points the reviewer to slides needing human judgment. Final
+acceptability is decided by opening the generated PPTX and checking the intended presentation
+context.
 
 ## Red Flags
 
@@ -415,3 +502,5 @@ Stop and refactor if:
   `bun run benchmark:pptx -- --iterations 1 --strict` and
   `bun run verify:render -- --skip-raster` when available.
 - For generated standalone decks, run that project's type/build command and render the `.pptx`.
+  Inspect its `package.json`, task config, or README when available. If no command is provided, say
+  to use the project's existing validation/render command instead of inventing one.
