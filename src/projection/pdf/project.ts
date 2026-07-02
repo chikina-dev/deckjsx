@@ -393,18 +393,6 @@ function pageFontIdsForContent(content: readonly PdfContentOp[]): readonly PdfFo
   ];
 }
 
-function pageFontIdsForContentAndRequests(input: {
-  readonly content: readonly PdfContentOp[];
-  readonly fontProjectionFonts: readonly PdfFontResource[];
-}): readonly PdfFontResource["id"][] {
-  return [
-    ...new Set([
-      ...pageFontIdsForContent(input.content),
-      ...input.fontProjectionFonts.map((font) => font.id),
-    ]),
-  ];
-}
-
 function resourceFontsForContent(input: {
   readonly fontProjectionFonts: readonly PdfFontResource[];
   readonly pages: readonly Pick<PdfPage, "resources">[];
@@ -462,10 +450,7 @@ export function projectGraphToPdfPageModel(input: {
       index,
       mediaBox,
       resources: {
-        fonts: pageFontIdsForContentAndRequests({
-          content,
-          fontProjectionFonts: fontProjection.fonts,
-        }),
+        fonts: pageFontIdsForContent(content),
         images: [],
       },
       content,

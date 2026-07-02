@@ -66,10 +66,12 @@ function infoDictionary(metadata: PdfDocumentMetadata): string {
   return `<< ${entries.join(" ")} >>`;
 }
 
-function contentStreamObject(id: number, stream: string): PdfIndirectObject {
+export function contentStreamObject(id: number, stream: string): PdfIndirectObject {
+  const streamBytes = /[\r\n]$/.test(stream) ? stream : `${stream}\n`;
+
   return {
     id,
-    body: `<< /Length ${byteLength(stream)} >>\nstream\n${stream}endstream`,
+    body: `<< /Length ${byteLength(streamBytes)} >>\nstream\n${streamBytes}endstream`,
   };
 }
 
@@ -123,14 +125,17 @@ function buildObjects(model: PdfPageModel): readonly PdfIndirectObject[] {
 export function writePdfDocument(model: PdfPageModel): Uint8Array {
   const objects = buildObjects(model);
   let document = PDF_HEADER;
+  let position = byteLength(document);
   const offsets = new Map<number, number>();
 
   objects.forEach((object) => {
-    offsets.set(object.id, byteLength(document));
-    document += `${object.id} 0 obj\n${object.body}\nendobj\n`;
+    const objectBytes = `${object.id} 0 obj\n${object.body}\nendobj\n`;
+    offsets.set(object.id, position);
+    document += objectBytes;
+    position += byteLength(objectBytes);
   });
 
-  const startxref = byteLength(document);
+  const startxref = position;
   const maxObjectId = Math.max(0, ...objects.map((object) => object.id));
   const xrefEntries = ["0000000000 65535 f "];
 

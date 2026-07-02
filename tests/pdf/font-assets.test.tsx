@@ -433,4 +433,26 @@ describe("PDF font asset registration", () => {
     expect(fallbackWarnings).toHaveLength(2);
     expect(new Set(fallbackWarnings.map((warning) => warning.message)).size).toBe(2);
   });
+
+  test("page font resources only include fonts referenced by that page content", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Regular" }, () => (
+      <p style={{ fontFamily: "Missing Per Page", fontWeight: 400 }}>regular</p>
+    ));
+    deck.slide({ name: "Bold" }, () => (
+      <p style={{ fontFamily: "Missing Per Page", fontWeight: 700 }}>bold</p>
+    ));
+
+    const result = await deck.project({ format: "pdf", inspection: "none" });
+    const projection = expectPdfPageModel(result.projection);
+
+    expect(result.ok).toBe(true);
+    expect(projection.resources.fonts).toHaveLength(2);
+    expect(projection.pages).toHaveLength(2);
+    expect(projection.pages[0]?.resources.fonts).toHaveLength(1);
+    expect(projection.pages[1]?.resources.fonts).toHaveLength(1);
+    expect(projection.pages[0]?.resources.fonts[0]).not.toBe(
+      projection.pages[1]?.resources.fonts[0],
+    );
+  });
 });

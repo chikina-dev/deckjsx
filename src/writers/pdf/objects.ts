@@ -1,4 +1,5 @@
 const PDF_NAME_DELIMITERS = new Set(["(", ")", "<", ">", "[", "]", "{", "}", "/", "%", "#"]);
+const UTF8_ENCODER = new TextEncoder();
 
 export type PdfIndirectObject = {
   readonly id: number;
@@ -24,7 +25,9 @@ export function pdfName(name: string): string {
   for (const character of source) {
     const code = character.charCodeAt(0);
     if (code < 0x21 || code > 0x7e || PDF_NAME_DELIMITERS.has(character)) {
-      encoded += `#${code.toString(16).toUpperCase().padStart(2, "0")}`;
+      for (const byte of UTF8_ENCODER.encode(character)) {
+        encoded += `#${byte.toString(16).toUpperCase().padStart(2, "0")}`;
+      }
     } else {
       encoded += character;
     }

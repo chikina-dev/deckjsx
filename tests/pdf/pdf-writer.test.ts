@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 import { renderPdfPageModel } from "@/src/writers/pdf";
+import { contentStreamObject } from "@/src/writers/pdf/document";
+import { pdfName } from "@/src/writers/pdf/objects";
 import { pdfDocumentId, pdfPageId, pdfResourceId } from "@/src/projection/pdf/identity";
 import type { PdfPageModel } from "@/src/projection/pdf/model";
 
@@ -40,6 +42,15 @@ function onePageModel(text: string): PdfPageModel {
 }
 
 describe("PDF writer", () => {
+  test("escapes PDF names by UTF-8 byte", () => {
+    expect(pdfName("Café/😀")).toBe("/Caf#C3#A9#2F#F0#9F#98#80");
+    expect(pdfName("")).toBe("/Unnamed");
+  });
+
+  test("separates content stream bytes from endstream", () => {
+    expect(contentStreamObject(7, "BT").body).toBe("<< /Length 3 >>\nstream\nBT\nendstream");
+  });
+
   test("emits a minimal structurally valid PDF with one text operation", async () => {
     const result = await renderPdfPageModel(onePageModel("Hello PDF"), { inspection: "none" });
 
