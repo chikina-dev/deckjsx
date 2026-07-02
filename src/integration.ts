@@ -51,6 +51,7 @@ import { withRenderExecutionContext, type RenderExecutionContext } from "./rende
 import {
   integrationContextId,
   type DeckIntegrationContext,
+  type FontAssetRegistration,
   type IntegrationContextId,
 } from "./integration-context";
 import {
@@ -119,6 +120,7 @@ export type {
   DeckPluginHooks,
   DeckPlugin,
   DeckIntegrationContext,
+  FontAssetRegistration,
   PluginHookResult,
   IntegrationContextId,
   PatchManifest,

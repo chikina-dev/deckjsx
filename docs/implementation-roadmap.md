@@ -1632,7 +1632,7 @@ other output projections according to each format's capabilities.
 ```ts
 const deck = new Deck({
   layout,
-  output: { format: "pptx" },
+  output: { formats: ["pptx"] },
 });
 
 const compileResult = deck.compile();
@@ -1643,7 +1643,7 @@ compileResult.stages.compile;
 
 const projectResult = await deck.project();
 projectResult.ok;
-projectResult.projection; // Pptx Package Model when output.format is "pptx"
+projectResult.projection; // Pptx Package Model when output.formats[0] is "pptx"
 projectResult.summary;
 projectResult.diagnostics;
 projectResult.stages.compile;
@@ -1693,8 +1693,8 @@ Recommended API shape:
 - `ok` is derived from error diagnostics; warning diagnostics do not make a result unsuccessful.
 - `project()` and `render()` may materialize earlier unresolved stages, but their results should keep
   the prior-stage diagnostics visible.
-- `output.format` defaults to `"pptx"` and drives `project()` when no explicit format or Writer
-  Adapter is provided.
+- Missing or empty `output.formats` defaults to `["pptx"]`; no-arg `project()` and `render()` use
+  `output.formats[0]` when no explicit format or Writer Adapter is provided.
 - `build()` and `output()` are not part of the primary `0.6` API.
 - `project(graph)` and `render(projection, ...)` should be avoided; edited Pipeline Artifacts should
   be supplied with `defineGraph()` or `defineProjection()`.

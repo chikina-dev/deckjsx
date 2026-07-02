@@ -1,10 +1,15 @@
 import type { DeckOptions } from "../authoring/options";
-import { createDiagnostics, type Diagnostics } from "../diagnostics";
+import { createDiagnostics, diagnostic, type Diagnostic, type Diagnostics } from "../diagnostics";
 import type { AssetEntity, SemanticAuthorGraph } from "../graph";
+import type { DeckIntegrationContext } from "../integration-context";
 import type { ProjectionFormat } from "../pipeline/public";
 import type { ResolvedStyleMap } from "../style/resolve";
+import type { PdfPageModel } from "./pdf/model";
+import { projectGraphToPartialPdfPageModel, projectGraphToPdfPageModel } from "./pdf/project";
+import { validatePdfPageModel } from "./pdf/validation";
 import { summarizePptxPackage } from "./pptx/inspect";
 import { projectGraphToPartialPptxPackage, projectGraphToPptxPackage } from "./pptx/project";
+import { validatePptxPackageModel } from "./pptx/validation";
 import {
   collectPptxUnsupportedProjectionDiagnostics,
   collectPptxUnsupportedProjectionModelDiagnostics,
@@ -18,7 +23,7 @@ import type {
   PptxProjectionAssetArtifact,
 } from "./pptx/model";
 
-export type ProjectedDocumentModel = PptxPackageModel;
+export type ProjectedDocumentModel = PptxPackageModel | PdfPageModel;
 
 type ProjectionCapability<TModel extends ProjectedDocumentModel> = {
   readonly format: ProjectionFormat;
@@ -28,6 +33,7 @@ type ProjectionCapability<TModel extends ProjectedDocumentModel> = {
     options: DeckOptions;
     diagnostics?: Diagnostics;
     assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
+    integrationContext?: DeckIntegrationContext;
   }): TModel;
   diagnostics(input: {
     graph: SemanticAuthorGraph;
@@ -38,12 +44,14 @@ type ProjectionCapability<TModel extends ProjectedDocumentModel> = {
     projection: TModel,
     options?: { readonly includeAllUnsupportedSemantics?: boolean },
   ): Diagnostics;
+  validateModel(projection: TModel): Diagnostics;
   projectPartial(input: {
     graph: SemanticAuthorGraph;
     resolvedStyles: ResolvedStyleMap;
     options: DeckOptions;
     diagnostics?: Diagnostics;
     assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
+    integrationContext?: DeckIntegrationContext;
   }): TModel;
   canSummarize(projection: ProjectedDocumentModel): projection is TModel;
   summarize(
@@ -56,7 +64,7 @@ type ProjectionCapability<TModel extends ProjectedDocumentModel> = {
       includeDetails?: boolean;
       resolvedStyles?: ResolvedStyleMap;
     },
-  ): ProjectInspectionSummary;
+  ): ProjectInspectionSummary | undefined;
 };
 
 const pptxProjectionCapability: ProjectionCapability<PptxPackageModel> = {
@@ -68,10 +76,66 @@ const pptxProjectionCapability: ProjectionCapability<PptxPackageModel> = {
       ...collectPptxThemeProjectionDiagnostics(input).items,
     ]),
   projectionDiagnostics: collectPptxUnsupportedProjectionModelDiagnostics,
+  validateModel: validatePptxPackageModel,
   projectPartial: projectGraphToPartialPptxPackage,
   canSummarize: isPptxPackageModelShape,
   summarize: summarizePptxPackage,
 };
+
+const pdfProjectionCapability: ProjectionCapability<PdfPageModel> = {
+  format: "pdf",
+  project: projectGraphToPdfPageModel,
+  diagnostics: collectPdfUnsupportedProjectionDiagnostics,
+  projectionDiagnostics: () => createDiagnostics(),
+  validateModel: validatePdfPageModel,
+  projectPartial: projectGraphToPartialPdfPageModel,
+  canSummarize: isPdfPageModelShape,
+  summarize: () => undefined,
+};
+
+function pdfUnsupportedContentDiagnostic(input: {
+  readonly nodeId: string;
+  readonly kind: string;
+  readonly path: string;
+}): Diagnostic {
+  return diagnostic({
+    severity: "error",
+    code: "E_PDF_UNSUPPORTED_AUTHOR_CONTENT",
+    title: "authored content is not supported by PDF projection",
+    message:
+      "PDF projection currently supports text content only; this authored node would be omitted.",
+    labels: [
+      {
+        path: input.path,
+        message: `node=${input.nodeId}, kind=${input.kind}`,
+        severity: "primary",
+      },
+    ],
+  });
+}
+
+function collectPdfUnsupportedProjectionDiagnostics(input: {
+  graph: SemanticAuthorGraph;
+}): Diagnostics {
+  const unsupportedKinds = new Set(["image", "shape", "table", "video"]);
+  const issues: Diagnostic[] = [];
+
+  input.graph.nodes.forEach((node, nodeId) => {
+    if (!unsupportedKinds.has(node.kind)) {
+      return;
+    }
+
+    issues.push(
+      pdfUnsupportedContentDiagnostic({
+        nodeId,
+        kind: node.kind,
+        path: node.origin.path,
+      }),
+    );
+  });
+
+  return createDiagnostics(issues);
+}
 
 function projectionCapabilityFor(
   format: ProjectionFormat,
@@ -79,6 +143,8 @@ function projectionCapabilityFor(
   switch (format) {
     case "pptx":
       return pptxProjectionCapability;
+    case "pdf":
+      return pdfProjectionCapability;
   }
 }
 
@@ -95,13 +161,13 @@ export function projectionDiagnosticsForModel(input: {
   projection: ProjectedDocumentModel;
   includeAllUnsupportedSemantics?: boolean;
 }): Diagnostics {
-  if (!canSummarizeProjectedDocumentModel(input.projection)) {
-    return { items: [], hasErrors: false, hasWarnings: false };
-  }
-
   return projectionCapabilityFor(input.projection.format).projectionDiagnostics(input.projection, {
     includeAllUnsupportedSemantics: input.includeAllUnsupportedSemantics,
   });
+}
+
+export function validateProjectedDocumentModel(projection: ProjectedDocumentModel): Diagnostics {
+  return projectionCapabilityFor(projection.format).validateModel(projection);
 }
 
 export function projectGraphToDocumentModel(input: {
@@ -111,6 +177,7 @@ export function projectGraphToDocumentModel(input: {
   options: DeckOptions;
   diagnostics?: Diagnostics;
   assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
+  integrationContext?: DeckIntegrationContext;
 }): ProjectedDocumentModel {
   return projectionCapabilityFor(input.format).project(input);
 }
@@ -122,6 +189,7 @@ export function projectGraphToPartialDocumentModel(input: {
   options: DeckOptions;
   diagnostics?: Diagnostics;
   assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
+  integrationContext?: DeckIntegrationContext;
 }): ProjectedDocumentModel {
   return projectionCapabilityFor(input.format).projectPartial(input);
 }
@@ -146,8 +214,8 @@ export function summarizeProjectedDocumentModel(
 
 export function canSummarizeProjectedDocumentModel(
   projection: ProjectedDocumentModel,
-): projection is PptxPackageModel {
-  return projection.format === "pptx" && pptxProjectionCapability.canSummarize(projection);
+): projection is ProjectedDocumentModel {
+  return projectionCapabilityFor(projection.format).canSummarize(projection);
 }
 
 function isPptxPackageModelShape(
@@ -157,5 +225,14 @@ function isPptxPackageModelShape(
     projection.format === "pptx" &&
     Array.isArray(projection.parts) &&
     Array.isArray(projection.slides)
+  );
+}
+
+function isPdfPageModelShape(projection: ProjectedDocumentModel): projection is PdfPageModel {
+  return (
+    projection.format === "pdf" &&
+    Array.isArray(projection.pages) &&
+    Array.isArray(projection.resources.fonts) &&
+    Array.isArray(projection.resources.images)
   );
 }

@@ -63,7 +63,7 @@ export type WriteResult = {
   /** Output path passed to `write()`, after deckjsx has associated diagnostics with the target. */
   readonly path: string;
   /** High-level outcome of the attempted write. */
-  readonly status: "created" | "failed" | "patched" | "replaced";
+  readonly status: "created" | "failed" | "patched" | "replaced" | "written";
   /** File write mechanism selected for this attempt. */
   readonly strategy: WriteStrategy;
   /** Number of bytes written or patched during this attempt. */
@@ -289,13 +289,13 @@ export async function inspectPatchablePptx(
  * callers pass the full `deck.render(...)` result, and expected render or filesystem failures are
  * returned as `WriteResult` diagnostics rather than thrown.
  *
- * The function accepts only render results with a PPTX artifact. Failed renders or non-PPTX
- * artifacts return a failed `WriteResult`. When an existing PPTX contains deckjsx patch metadata,
- * `write()` may update patchable package parts in place; otherwise it writes or atomically replaces
- * the destination file.
+ * The function accepts render results with a PPTX or PDF artifact. Failed renders or other
+ * artifact formats return a failed `WriteResult`. When an existing PPTX contains deckjsx patch
+ * metadata, `write()` may update patchable package parts in place; otherwise it writes or
+ * atomically replaces the destination file. PDF artifacts are always written as ordinary bytes.
  *
  * @param render - Result returned by `deck.render(...)`.
- * @param outputPath - Destination `.pptx` path.
+ * @param outputPath - Destination `.pptx` or `.pdf` path.
  * @returns Write status, byte counts, patched part paths, and diagnostics.
  */
 export async function write(render: RenderResult, outputPath: string): Promise<WriteResult> {
@@ -343,7 +343,8 @@ export async function write(render: RenderResult, outputPath: string): Promise<W
       ],
     });
   }
-  if (artifact.format !== "pptx") {
+  const artifactFormat = String((artifact as { readonly format: unknown }).format);
+  if (artifactFormat !== "pptx" && artifactFormat !== "pdf") {
     return finishWrite({
       path: outputPath,
       status: "failed",
@@ -353,7 +354,7 @@ export async function write(render: RenderResult, outputPath: string): Promise<W
       diagnostics: [
         {
           code: "deckjsx.node.write.unsupportedFormat",
-          message: `@deckjsx/node write() can only write pptx artifacts, got ${artifact.format}.`,
+          message: `@deckjsx/node write() can only write pptx or pdf artifacts, got ${artifactFormat}.`,
           path: outputPath,
         },
       ],
@@ -373,6 +374,18 @@ export async function write(render: RenderResult, outputPath: string): Promise<W
   }
 
   try {
+    if (artifact.format === "pdf") {
+      await replaceWithLockFile(lock.lock, outputPath, artifact.bytes);
+      return finishWrite({
+        path: outputPath,
+        status: "written",
+        strategy: "write-file",
+        bytesWritten: artifact.bytes.byteLength,
+        patchedParts: [],
+        diagnostics: [],
+      });
+    }
+
     if (!(await pathExists(outputPath))) {
       await replaceWithLockFile(lock.lock, outputPath, artifact.bytes);
       return finishWrite({

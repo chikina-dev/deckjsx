@@ -1,4 +1,5 @@
 import type { ThemeValue } from "../../style/theme/public";
+import type { ProjectionFormat } from "../../pipeline/contract";
 import type { EmptySlideTemplateSet, SlideTemplateSet } from "../../templates";
 
 /**
@@ -33,8 +34,8 @@ export type DeckOptions<TTemplates extends SlideTemplateSet = EmptySlideTemplate
   };
   /** Theme defaults keyed by authored deckjsx tags and checked against tag-specific style types. */
   theme?: ThemeValue;
-  /** Output format preference for projection/rendering. */
+  /** Output artifact formats this Deck is expected to produce. */
   output?: {
-    format?: "pptx";
+    formats?: readonly ProjectionFormat[];
   };
 };

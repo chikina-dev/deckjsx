@@ -20,6 +20,7 @@ import type { SemanticAuthorGraph } from "./graph";
 import { resultOk, stageSummary } from "./pipeline/stage";
 import type { ProjectOptions, ProjectionFormat, StageArtifactStatus } from "./pipeline/contract";
 import type { DefinedGraphInput, DefinedProjectionInput } from "./pipeline/artifact-input";
+import { selectProjectOutputTarget, selectRenderOutputTarget } from "./output-target/policy";
 import { compileSource, defineGraphForSource } from "./compile-runner";
 import type {
   CompiledAuthorGraph,
@@ -86,6 +87,7 @@ type ProjectSourceInput<
   readonly projectOptions?: ProjectOptions;
   readonly definedGraph?: DefinedGraphInput;
   readonly definedProjection?: DefinedProjectionInput;
+  readonly definedProjectionOrigin?: "cache" | "explicit";
   readonly artifacts?: DeckPipelineArtifacts;
 };
 type RenderSourceInput<
@@ -97,6 +99,7 @@ type RenderSourceInput<
   readonly renderInput?: RenderOptions | WriterAdapter;
   readonly definedGraph?: DefinedGraphInput;
   readonly definedProjection?: DefinedProjectionInput;
+  readonly definedProjectionOrigin?: "cache" | "explicit";
   readonly artifacts?: DeckPipelineArtifacts;
 };
 type PipelineRunnerModule = {
@@ -130,6 +133,27 @@ function projectedArtifactStatus<T>(
   }
 
   return diagnostics.hasErrors ? "partial" : "available";
+}
+
+function projectionArtifactForFormat(
+  projection: DefinedProjectionInput | undefined,
+  format: ProjectionFormat,
+): DefinedProjectionInput | undefined {
+  const value = projection?.projection;
+  return typeof value === "object" && value !== null && "format" in value && value.format === format
+    ? projection
+    : undefined;
+}
+
+function projectionFormatForOptions(options: DeckOptions, projectOptions?: ProjectOptions) {
+  return selectProjectOutputTarget({ options, projectOptions }).projectionFormat;
+}
+
+function projectionFormatForRenderInput(
+  options: DeckOptions,
+  config: RenderOptions | WriterAdapter | undefined,
+) {
+  return selectRenderOutputTarget({ options, renderInput: config }).projectionFormat;
 }
 
 /**
@@ -518,13 +542,17 @@ export class Deck<
     return loadPipelineRunner().then(({ createPipelineArtifacts, projectSource }) => {
       const artifacts = this.#pipelineArtifacts(createPipelineArtifacts);
       const artifactGraph = this.#artifactGraph();
+      const artifactProjection = projectionArtifactForFormat(
+        artifactGraph ? artifacts.projection : undefined,
+        projectionFormatForOptions(this.#options, options),
+      );
       return projectSource({
         source: this,
         options: this.#options,
         projectOptions: options,
         definedGraph: this.#definedGraph ?? artifactGraph,
-        definedProjection:
-          this.#definedProjection ?? (artifactGraph ? artifacts.projection : undefined),
+        definedProjection: this.#definedProjection ?? artifactProjection,
+        definedProjectionOrigin: this.#definedProjection ? "explicit" : "cache",
         artifacts,
       });
     });
@@ -543,13 +571,18 @@ export class Deck<
     return loadPipelineRunner().then(({ createPipelineArtifacts, renderSource }) => {
       const artifacts = this.#pipelineArtifacts(createPipelineArtifacts);
       const artifactGraph = this.#artifactGraph();
+      const renderInput = config ?? {};
+      const artifactProjection = projectionArtifactForFormat(
+        artifactGraph ? artifacts.projection : undefined,
+        projectionFormatForRenderInput(this.#options, renderInput),
+      );
       return renderSource({
         source: this,
         options: this.#options,
-        renderInput: config ?? {},
+        renderInput,
         definedGraph: this.#definedGraph ?? artifactGraph,
-        definedProjection:
-          this.#definedProjection ?? (artifactGraph ? artifacts.projection : undefined),
+        definedProjection: this.#definedProjection ?? artifactProjection,
+        definedProjectionOrigin: this.#definedProjection ? "explicit" : "cache",
         artifacts,
       });
     });

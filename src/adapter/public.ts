@@ -21,12 +21,22 @@ export type PptxRenderOptions = {
 };
 
 /**
+ * Public render options for deckjsx's built-in PDF writer.
+ *
+ * This first PDF slice only exposes render-time inspection options. Full PDF projection and
+ * rendering controls will grow behind this adapter contract later.
+ */
+export type PdfRenderOptions = {
+  /** Amount of inspection metadata included in the render result. */
+  readonly inspection?: InspectionDetailLevel;
+};
+
+/**
  * Render options accepted by `Deck#render()` when no explicit Writer Adapter is supplied.
  *
- * The current public built-in writer target is PPTX, so this is the same contract as
- * `PptxRenderOptions`.
+ * The current built-in writers share the same inspection-only option shape.
  */
-export type RenderOptions = PptxRenderOptions;
+export type RenderOptions = PptxRenderOptions | PdfRenderOptions;
 
 /**
  * Result returned by a Writer Adapter implementation.

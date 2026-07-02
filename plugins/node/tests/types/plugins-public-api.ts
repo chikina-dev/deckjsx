@@ -20,7 +20,7 @@ import type {
 import { createNodeFileAssetLoader, inspectPatchablePptx, nodeAssets, write } from "@deckjsx/node";
 import { createDeckjsxDevCompiler } from "@deckjsx/node/dev";
 import { Deck } from "deckjsx";
-import type { RenderResult } from "deckjsx";
+import type { RenderedArtifact, RenderResult } from "deckjsx";
 import type { AssetLoader, DeckPlugin, RenderPatchPlanPart } from "deckjsx/integration";
 
 type Assert<T extends true> = T;
@@ -65,6 +65,13 @@ declare const renderResult: RenderResult;
 const writePromise = write(renderResult, "/project/out.pptx");
 void (writePromise satisfies Promise<WriteResult>);
 writeResult.ok satisfies boolean;
+
+declare const pdfRenderResult: RenderResult & {
+  readonly format: "pdf";
+  readonly artifact: RenderedArtifact<"pdf">;
+};
+const pdfWritePromise = write(pdfRenderResult, "/project/out.pdf");
+void (pdfWritePromise satisfies Promise<WriteResult>);
 
 const compilerOptions = {
   entry: "main.tsx",
@@ -154,7 +161,7 @@ type PluginAssertions = {
     >
   >;
   readonly writeResultStatusIsClosed: Assert<
-    IsAssignable<WriteResult["status"], "created" | "failed" | "patched" | "replaced">
+    IsAssignable<WriteResult["status"], "created" | "failed" | "patched" | "replaced" | "written">
   >;
 };
 

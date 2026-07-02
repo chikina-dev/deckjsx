@@ -34,12 +34,18 @@ export function incrementalProjectionReusePlan(input: {
     return undefined;
   }
   const previousGraph = input.previousGraph;
-  const previousProjection = input.previousProjection.projection;
+  const previousProjectionArtifact = input.previousProjection;
+  const previousProjection = previousProjectionArtifact.projection;
   const previousOptions = input.previousOptions;
   const previousAssets = input.previousAssets;
-  if (!isPptxPackageModel(previousProjection) || !previousOptions || !previousAssets) {
+  if (
+    !isPptxPackageModel(previousProjection as PptxPackageModel) ||
+    !previousOptions ||
+    !previousAssets
+  ) {
     return undefined;
   }
+  const previousPptxProjection = previousProjection as PptxPackageModel;
 
   const document = input.graph.nodes.get(input.graph.documentId);
   const previousDocument = previousGraph.graph.nodes.get(previousGraph.graph.documentId);
@@ -78,7 +84,7 @@ export function incrementalProjectionReusePlan(input: {
     }
 
     const previousFingerprint =
-      input.previousProjection?.slideProjectionFingerprints.get(slideNodeId)?.fingerprint ??
+      previousProjectionArtifact.slideProjectionFingerprints.get(slideNodeId)?.fingerprint ??
       slideProjectionFingerprint({
         graph: previousGraph.graph,
         resolvedStyles: previousGraph.resolvedStyles,
@@ -92,7 +98,11 @@ export function incrementalProjectionReusePlan(input: {
     }
   });
 
-  return { previousProjection, slideNodeIds, slideProjectionFingerprints };
+  return {
+    previousProjection: previousPptxProjection,
+    slideNodeIds,
+    slideProjectionFingerprints,
+  };
 }
 
 export function slideProjectionFingerprintSnapshots(input: {

@@ -51,7 +51,7 @@ export type AssetLoadResult = AssetProbeResult & {
   readonly bytes: Uint8Array;
 };
 
-export type AssetSourceField = "src" | "data" | "poster" | "posterData";
+export type AssetSourceField = "src" | "data" | "poster" | "posterData" | "font";
 
 export type AssetLoaderOutcome<T> =
   | {

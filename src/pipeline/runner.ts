@@ -17,11 +17,7 @@ import {
   normalizedAssetProbeResult,
   summarizeAssetResolutions,
 } from "../asset-loading";
-import {
-  defaultAdapterLimitationsFor,
-  defaultWriterAdapterFor,
-  isWriterAdapter,
-} from "../adapter/registry";
+import { defaultAdapterLimitationsFor, selectWriterAdapter } from "../adapter/registry";
 import { createDiagnostics, diagnostic, type Diagnostics } from "../diagnostics";
 import {
   COMPOSITION_SOURCE,
@@ -43,7 +39,6 @@ import { type AssetEntityId, type GraphNodeId, type SemanticAuthorGraph } from "
 import { resultOk, stageSummary } from "./index";
 import type {
   InspectionDetailLevel,
-  OutputFormat,
   ProjectOptions,
   ProjectionFormat,
   StageArtifactStatus,
@@ -58,9 +53,16 @@ import {
 import type { DefinedGraphInput, DefinedProjectionInput } from "./artifact-input";
 import type { MediaSourceOrigin } from "../media-source-origin";
 import { compileSource } from "../compile-runner";
+import {
+  definedProjectionFormatDiagnostics,
+  selectProjectOutputTarget,
+  selectRenderOutputTarget,
+  writerAdapterFormatDiagnostics,
+} from "../output-target/policy";
 import type { InternalProjectResult } from "./results";
 import type { PresentStageArtifactStatus, RenderResult } from "./results-public";
 import { isPptxPackageModel, isPptxSlidePart } from "../projection/pptx/model";
+import { isPdfPageModel, type PdfPageModel } from "../projection/pdf/model";
 import { projectionShapeDiagnostics } from "../projection/pptx/artifact";
 import { withPackagePartFingerprints } from "../projection/pptx/fingerprint";
 import type {
@@ -76,8 +78,9 @@ import {
   projectionDiagnosticsForGraph,
   projectionDiagnosticsForModel,
   summarizeProjectedDocumentModel,
+  validateProjectedDocumentModel,
+  type ProjectedDocumentModel,
 } from "../projection/registry";
-import { validatePptxPackageModel } from "../projection/pptx/validation";
 import {
   incrementalProjectionReusePlan,
   slideProjectionFingerprintSnapshots,
@@ -97,6 +100,26 @@ function isDefinedPptxPackageModelArtifact(
   return (
     artifact !== undefined && isPptxPackageModel(artifact.projection as PptxPackageModelCandidate)
   );
+}
+
+function definedDocumentModel(value: unknown): ProjectedDocumentModel | undefined {
+  if (isPptxPackageModel(value as PptxPackageModelCandidate)) {
+    return value as PptxPackageModel;
+  }
+
+  return isPdfPageModel(value) ? value : undefined;
+}
+
+function definedProjectionShapeDiagnostics(value: unknown): Diagnostics {
+  if (isPdfPageModel(value)) {
+    return emptyDiagnostics();
+  }
+
+  if (isRecord(value)) {
+    return projectionShapeDiagnostics(value as PptxPackageModelCandidate);
+  }
+
+  return emptyDiagnostics();
 }
 
 function combineDiagnostics(...diagnostics: readonly Diagnostics[]): Diagnostics {
@@ -901,105 +924,12 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function projectionFormatFor(options: unknown): ProjectionFormat {
-  const output = isRecord(options) ? options.output : undefined;
-  return isRecord(output) && output.format === "pptx" ? "pptx" : "pptx";
-}
-
-function isRenderInputObject(
-  value: RenderOptions | WriterAdapter<PptxPackageModel> | undefined,
-): value is RenderOptions | WriterAdapter<PptxPackageModel> {
-  return typeof value === "object" && value !== null;
-}
-
-function isWriterAdapterLike(
-  value: RenderOptions | WriterAdapter<PptxPackageModel> | undefined,
+function projectionInputFormatMatches(
+  input: DefinedProjectionInput | undefined,
+  format: ProjectionFormat,
 ): boolean {
-  return (
-    isRenderInputObject(value) &&
-    (("kind" in value && value.kind === "deckjsx.writerAdapter") ||
-      "projectionFormat" in value ||
-      "render" in value ||
-      ("name" in value && "format" in value))
-  );
-}
-
-function invalidWriterAdapterDiagnostics(
-  value: RenderOptions | WriterAdapter<PptxPackageModel> | undefined,
-): Diagnostics | undefined {
-  if (!isWriterAdapterLike(value) || isWriterAdapter(value)) {
-    return undefined;
-  }
-
-  return createDiagnostics([
-    diagnostic({
-      severity: "error",
-      code: "E_RENDER_INVALID_WRITER_ADAPTER",
-      title: "writer adapter shape is invalid",
-      message:
-        "render() received a value that looks like a Writer Adapter, but it does not satisfy the deckjsx.writerAdapter runtime contract.",
-      labels: [
-        {
-          path: "render.adapter",
-          message:
-            'expected kind, name, projectionFormat="pptx", format, options, and render(projection)',
-          severity: "primary",
-        },
-      ],
-    }),
-  ]);
-}
-
-function selectWriterAdapter(input: {
-  renderInput: RenderOptions | WriterAdapter<PptxPackageModel> | undefined;
-  projectionFormat: ProjectionFormat;
-}):
-  | { readonly ok: true; readonly adapter: WriterAdapter<PptxPackageModel> }
-  | { readonly ok: false; readonly diagnostics: Diagnostics; readonly format: OutputFormat } {
-  const invalidAdapterDiagnostics = invalidWriterAdapterDiagnostics(input.renderInput);
-
-  if (invalidAdapterDiagnostics) {
-    return {
-      ok: false,
-      diagnostics: invalidAdapterDiagnostics,
-      format: input.projectionFormat,
-    };
-  }
-
-  return {
-    ok: true,
-    adapter: isWriterAdapter(input.renderInput)
-      ? input.renderInput
-      : defaultWriterAdapterFor(input.projectionFormat, input.renderInput ?? {}),
-  };
-}
-
-function writerAdapterFormatDiagnostics(input: {
-  adapter: WriterAdapter;
-  deckFormat: ProjectionFormat;
-}): Diagnostics {
-  const adapterFormat = input.adapter.format;
-  const deckFormat = input.deckFormat;
-
-  if (adapterFormat === deckFormat) {
-    return emptyDiagnostics();
-  }
-
-  return createDiagnostics([
-    diagnostic({
-      severity: "warning",
-      code: "W_RENDER_ADAPTER_FORMAT_MISMATCH",
-      title: "writer adapter format differs from deck output format",
-      message:
-        "The selected Writer Adapter format does not match this Deck's configured output format.",
-      labels: [
-        {
-          path: "render.adapter.format",
-          message: `adapter=${adapterFormat}, deck=${deckFormat}`,
-        },
-      ],
-    }),
-  ]);
+  const projection = input?.projection;
+  return isRecord(projection) && projection.format === format;
 }
 
 function diagnosticFromError(input: {
@@ -1187,10 +1117,10 @@ export function createPipelineArtifacts(): PipelineArtifactCollection {
   return new PipelineArtifactCollection();
 }
 
-export async function projectSource<
+type ProjectSourceRunnerInput<
   TSourceContext extends SourceContextValue | void,
   TTemplates extends SlideTemplateSet,
->(input: {
+> = {
   source: CompositionSource<TSourceContext, TTemplates>;
   options: DeckOptions;
   projectOptions?: ProjectOptions;
@@ -1202,53 +1132,107 @@ export async function projectSource<
   mediaSourceOrigin?: MediaSourceOrigin;
   execution?: RenderExecution;
   retainSlideProjectionFingerprints?: boolean;
-}): Promise<InternalProjectResult> {
+};
+
+export function projectSource<
+  TSourceContext extends SourceContextValue | void,
+  TTemplates extends SlideTemplateSet,
+>(
+  input: ProjectSourceRunnerInput<TSourceContext, TTemplates> & { projectionFormat: "pdf" },
+): Promise<InternalProjectResult<PdfPageModel>>;
+export function projectSource<
+  TSourceContext extends SourceContextValue | void,
+  TTemplates extends SlideTemplateSet,
+>(
+  input: ProjectSourceRunnerInput<TSourceContext, TTemplates> & {
+    projectOptions: ProjectOptions & { readonly format: "pdf" };
+  },
+): Promise<InternalProjectResult<PdfPageModel>>;
+export function projectSource<
+  TSourceContext extends SourceContextValue | void,
+  TTemplates extends SlideTemplateSet,
+>(input: ProjectSourceRunnerInput<TSourceContext, TTemplates>): Promise<InternalProjectResult>;
+export async function projectSource<
+  TSourceContext extends SourceContextValue | void,
+  TTemplates extends SlideTemplateSet,
+>(
+  input: ProjectSourceRunnerInput<TSourceContext, TTemplates>,
+): Promise<InternalProjectResult<ProjectedDocumentModel>> {
   const artifacts = input.artifacts ?? new PipelineArtifactCollection();
-  const projectionFormat = input.projectionFormat ?? projectionFormatFor(input.options);
+  const outputTarget = selectProjectOutputTarget({
+    options: input.options,
+    projectOptions: input.projectOptions,
+    projectionFormat: input.projectionFormat,
+  });
+  const projectionFormat = outputTarget.projectionFormat;
+  const implicitFormatDiagnostics = outputTarget.diagnostics;
   const optionsDiagnostics = validateDeckOptions(input.options);
   const executionDiagnostics = createDiagnostics(input.execution?.diagnostics);
 
   if (optionsDiagnostics.hasErrors) {
+    const diagnostics = combineDiagnostics(implicitFormatDiagnostics, optionsDiagnostics);
     return {
       ok: false,
-      diagnostics: optionsDiagnostics,
+      diagnostics,
       stages: {
-        compile: stageSummary("compile", optionsDiagnostics, "missing"),
-        project: stageSummary("project", optionsDiagnostics, "missing"),
+        compile: stageSummary("compile", diagnostics, "missing"),
+        project: stageSummary("project", diagnostics, "missing"),
       },
       format: projectionFormat,
     };
   }
 
   if (executionDiagnostics.hasErrors) {
+    const diagnostics = combineDiagnostics(implicitFormatDiagnostics, executionDiagnostics);
     return {
       ok: false,
-      diagnostics: executionDiagnostics,
+      diagnostics,
       stages: {
-        compile: stageSummary("compile", executionDiagnostics, "missing"),
-        project: stageSummary("project", executionDiagnostics, "missing"),
+        compile: stageSummary("compile", diagnostics, "missing"),
+        project: stageSummary("project", diagnostics, "missing"),
+      },
+      format: projectionFormat,
+    };
+  }
+
+  if (implicitFormatDiagnostics.hasErrors) {
+    return {
+      ok: false,
+      diagnostics: implicitFormatDiagnostics,
+      stages: {
+        compile: stageSummary("compile", implicitFormatDiagnostics, "missing"),
+        project: stageSummary("project", implicitFormatDiagnostics, "missing"),
       },
       format: projectionFormat,
     };
   }
 
   if (input.definedProjection) {
-    const definedProjection = input.definedProjection.projection as PptxPackageModelCandidate;
-    const definedProjectionShapeDiagnostics =
+    const definedProjectionInput = input.definedProjection.projection;
+    const definedProjection = definedDocumentModel(definedProjectionInput);
+    const definedShapeDiagnostics =
       input.definedProjection.diagnostics.items.length > 0
         ? input.definedProjection.diagnostics
-        : projectionShapeDiagnostics(definedProjection);
+        : definedProjectionShapeDiagnostics(definedProjectionInput);
+    const definedFormatDiagnostics = definedProjection
+      ? definedProjectionFormatDiagnostics({
+          projection: definedProjection,
+          format: projectionFormat,
+        })
+      : emptyDiagnostics();
     const diagnostics = combineDiagnostics(
-      definedProjectionShapeDiagnostics,
-      isPptxPackageModel(definedProjection)
+      implicitFormatDiagnostics,
+      definedShapeDiagnostics,
+      definedFormatDiagnostics,
+      definedProjection
         ? projectionDiagnosticsForModel({
             projection: definedProjection,
             includeAllUnsupportedSemantics: true,
           })
         : emptyDiagnostics(),
-      validatePptxPackageModel(definedProjection),
+      definedProjection ? validateProjectedDocumentModel(definedProjection) : emptyDiagnostics(),
     );
-    if (!isPptxPackageModel(definedProjection)) {
+    if (!definedProjection || definedFormatDiagnostics.hasErrors) {
       return {
         ok: resultOk(diagnostics),
         diagnostics,
@@ -1311,12 +1295,13 @@ export async function projectSource<
     !compileResult.graph ||
     !compileResult.resolvedStyles
   ) {
+    const diagnostics = combineDiagnostics(implicitFormatDiagnostics, compileResult.diagnostics);
     return {
       ok: false,
-      diagnostics: compileResult.diagnostics,
+      diagnostics,
       stages: {
         ...compileResult.stages,
-        project: stageSummary("project", compileResult.diagnostics, "missing"),
+        project: stageSummary("project", diagnostics, "missing"),
       },
       format: projectionFormat,
     };
@@ -1384,17 +1369,20 @@ export async function projectSource<
       materializeAssetMap(artifacts, projectAssetsById);
     }
     const incrementalReuseSnapshot = artifacts.incrementalProjectionReuseSnapshot;
-    const projectionReuse = incrementalProjectionReusePlan({
-      graph: projectGraph,
-      resolvedStyles: projectResolvedStyles,
-      options: input.options,
-      assets: projectAssetsById,
-      previousGraph: incrementalReuseSnapshot?.graph,
-      previousProjection: incrementalReuseSnapshot?.projection,
-      previousOptions: incrementalReuseSnapshot?.options,
-      previousAssets: incrementalReuseSnapshot?.assetsById,
-      staleAssetEntityIds: incrementalReuseSnapshot?.staleAssetEntityIds,
-    });
+    const projectionReuse =
+      projectionFormat === "pptx"
+        ? incrementalProjectionReusePlan({
+            graph: projectGraph,
+            resolvedStyles: projectResolvedStyles,
+            options: input.options,
+            assets: projectAssetsById,
+            previousGraph: incrementalReuseSnapshot?.graph,
+            previousProjection: incrementalReuseSnapshot?.projection,
+            previousOptions: incrementalReuseSnapshot?.options,
+            previousAssets: incrementalReuseSnapshot?.assetsById,
+            staleAssetEntityIds: incrementalReuseSnapshot?.staleAssetEntityIds,
+          })
+        : undefined;
     const beforeProjectDiagnostics = createDiagnostics(beforeProject.diagnostics);
     const projected = projectGraphToDocumentModel({
       format: projectionFormat,
@@ -1402,13 +1390,17 @@ export async function projectSource<
       resolvedStyles: projectResolvedStyles,
       options: input.options,
       assets: projectAssetsById,
+      integrationContext: afterAsset.context.integrationContext ?? execution.integrationContext,
     });
-    const reusedProjection = projectionWithReusablePackageParts({
-      projection: projected,
-      previous: incrementalReuseSnapshot?.projection,
-      graph: projectGraph,
-      reusableSlideNodeIds: projectionReuse?.slideNodeIds,
-    });
+    const reusedProjection =
+      projected.format === "pptx"
+        ? projectionWithReusablePackageParts({
+            projection: projected,
+            previous: incrementalReuseSnapshot?.projection,
+            graph: projectGraph,
+            reusableSlideNodeIds: projectionReuse?.slideNodeIds,
+          })
+        : projected;
     const afterProject = applyPluginHooks(execution.plugins, "afterProject", {
       stage: "project" as const,
       phase: "after" as const,
@@ -1421,7 +1413,9 @@ export async function projectSource<
     const projection =
       afterProject.context.projection === reusedProjection
         ? reusedProjection
-        : normalizePptxPackageProjection(afterProject.context.projection);
+        : afterProject.context.projection.format === "pptx"
+          ? normalizePptxPackageProjection(afterProject.context.projection)
+          : afterProject.context.projection;
     const unsupportedProjectionDiagnostics = projectionDiagnosticsForGraph({
       format: projectionFormat,
       graph: projectGraph,
@@ -1429,18 +1423,21 @@ export async function projectSource<
       options: input.options,
     });
     const unsupportedProjectionModelDiagnostics = projectionDiagnosticsForModel({ projection });
-    const projectionDiagnostics = validatePptxPackageModel(projection);
+    const projectionDiagnostics = validateProjectedDocumentModel(projection);
     const slideProjectionFingerprints =
-      projectionReuse?.slideProjectionFingerprints ??
-      (input.retainSlideProjectionFingerprints
-        ? slideProjectionFingerprintSnapshots({
-            graph: projectGraph,
-            resolvedStyles: projectResolvedStyles,
-            options: input.options,
-            assets: projectAssetsById,
-          })
-        : undefined);
+      projection.format === "pptx"
+        ? (projectionReuse?.slideProjectionFingerprints ??
+          (input.retainSlideProjectionFingerprints
+            ? slideProjectionFingerprintSnapshots({
+                graph: projectGraph,
+                resolvedStyles: projectResolvedStyles,
+                options: input.options,
+                assets: projectAssetsById,
+              })
+            : undefined))
+        : undefined;
     const diagnostics = combineDiagnostics(
+      implicitFormatDiagnostics,
       compileResult.diagnostics,
       assetDiagnostics,
       beforeProjectDiagnostics,
@@ -1488,8 +1485,12 @@ export async function projectSource<
       title: "project failed",
       error,
     });
-    let diagnostics = combineDiagnostics(compileResult.diagnostics, projectDiagnostics);
-    let partialProjection: PptxPackageModel | undefined;
+    let diagnostics = combineDiagnostics(
+      implicitFormatDiagnostics,
+      compileResult.diagnostics,
+      projectDiagnostics,
+    );
+    let partialProjection: ProjectedDocumentModel | undefined;
     try {
       partialProjection = projectGraphToPartialDocumentModel({
         format: projectionFormat,
@@ -1503,7 +1504,7 @@ export async function projectSource<
           projection: partialProjection,
           includeAllUnsupportedSemantics: true,
         }),
-        validatePptxPackageModel(partialProjection),
+        validateProjectedDocumentModel(partialProjection),
       );
       diagnostics = partialDiagnostics;
       artifacts.materializeProjection(partialProjection, partialDiagnostics, input.options);
@@ -1557,9 +1558,10 @@ export async function renderSource<
 >(input: {
   source: CompositionSource<TSourceContext, TTemplates>;
   options: DeckOptions;
-  renderInput?: RenderOptions | WriterAdapter<PptxPackageModel>;
+  renderInput?: RenderOptions | WriterAdapter;
   definedGraph?: DefinedGraphInput;
   definedProjection?: DefinedProjectionInput;
+  definedProjectionOrigin?: "cache" | "explicit";
   artifacts?: PipelineArtifactCollection;
   assetLoaders?: readonly AssetLoader[];
 }): Promise<RenderResult> {
@@ -1568,16 +1570,22 @@ export async function renderSource<
     incrementalSlot?.artifacts ?? input.artifacts ?? new PipelineArtifactCollection();
   const finishRender = <TResult extends RenderResult>(result: TResult): TResult =>
     attachArtifactWriteToken(result, incrementalSlot?.token);
-  const projectionFormat = projectionFormatFor(input.options);
+  const outputTarget = selectRenderOutputTarget({
+    options: input.options,
+    renderInput: input.renderInput,
+  });
+  const projectionFormat = outputTarget.projectionFormat;
+  const implicitFormatDiagnostics = outputTarget.diagnostics;
   const optionsDiagnostics = validateDeckOptions(input.options);
   if (optionsDiagnostics.hasErrors) {
+    const diagnostics = combineDiagnostics(implicitFormatDiagnostics, optionsDiagnostics);
     return finishRender({
       ok: false,
-      diagnostics: optionsDiagnostics,
+      diagnostics,
       stages: {
-        compile: stageSummary("compile", optionsDiagnostics, "missing"),
-        project: stageSummary("project", optionsDiagnostics, "missing"),
-        render: stageSummary("render", optionsDiagnostics, "missing"),
+        compile: stageSummary("compile", diagnostics, "missing"),
+        project: stageSummary("project", diagnostics, "missing"),
+        render: stageSummary("render", diagnostics, "missing"),
       },
       format: projectionFormat,
     });
@@ -1589,13 +1597,14 @@ export async function renderSource<
   });
 
   if (!adapterSelection.ok) {
+    const diagnostics = combineDiagnostics(implicitFormatDiagnostics, adapterSelection.diagnostics);
     return finishRender({
       ok: false,
-      diagnostics: adapterSelection.diagnostics,
+      diagnostics,
       stages: {
         compile: stageSummary("compile", emptyDiagnostics(), "missing"),
         project: stageSummary("project", emptyDiagnostics(), "missing"),
-        render: stageSummary("render", adapterSelection.diagnostics, "missing"),
+        render: stageSummary("render", diagnostics, "missing"),
       },
       format: adapterSelection.format,
     });
@@ -1613,13 +1622,14 @@ export async function renderSource<
   });
   const executionDiagnostics = createDiagnostics(execution.diagnostics);
   if (executionDiagnostics.hasErrors) {
+    const diagnostics = combineDiagnostics(implicitFormatDiagnostics, executionDiagnostics);
     return finishRender({
       ok: false,
-      diagnostics: executionDiagnostics,
+      diagnostics,
       stages: {
-        compile: stageSummary("compile", executionDiagnostics, "missing"),
-        project: stageSummary("project", executionDiagnostics, "missing"),
-        render: stageSummary("render", executionDiagnostics, "missing"),
+        compile: stageSummary("compile", diagnostics, "missing"),
+        project: stageSummary("project", diagnostics, "missing"),
+        render: stageSummary("render", diagnostics, "missing"),
       },
       format: adapter.format,
     });
@@ -1638,16 +1648,27 @@ export async function renderSource<
     input.definedGraph,
     currentCompositionRevision,
   );
+  const explicitDefinedProjection =
+    input.definedProjectionOrigin === "cache" ? undefined : input.definedProjection;
   const projectResult = await projectSource({
     source: input.source,
     options: input.options,
     projectionFormat: adapter.projectionFormat,
     definedGraph: sourceInvalidated ? artifacts.graph : (incrementalGraph ?? inputGraph),
-    definedProjection: sourceInvalidated
-      ? artifacts.projection
-      : incrementalGraph
-        ? incrementalSlot?.artifacts.projection
-        : input.definedProjection,
+    definedProjection:
+      explicitDefinedProjection ??
+      (sourceInvalidated
+        ? projectionInputFormatMatches(artifacts.projection, adapter.projectionFormat)
+          ? artifacts.projection
+          : undefined
+        : incrementalGraph
+          ? projectionInputFormatMatches(
+              incrementalSlot?.artifacts.projection,
+              adapter.projectionFormat,
+            )
+            ? incrementalSlot?.artifacts.projection
+            : undefined
+          : undefined),
     artifacts,
     assetLoaders: execution.assetLoaders,
     mediaSourceOrigin: execution.mediaSourceOrigin,
@@ -1657,9 +1678,13 @@ export async function renderSource<
   });
   const formatDiagnostics = writerAdapterFormatDiagnostics({
     adapter,
-    deckFormat: projectionFormat,
+    options: input.options,
   });
-  const projectDiagnostics = combineDiagnostics(projectResult.diagnostics, formatDiagnostics);
+  const projectDiagnostics = combineDiagnostics(
+    projectResult.diagnostics,
+    formatDiagnostics,
+    implicitFormatDiagnostics,
+  );
 
   if (!projectResult.projection || projectDiagnostics.hasErrors) {
     return finishRender({
@@ -1727,12 +1752,16 @@ export async function renderSource<
         format: adapter.format,
       });
     }
-    const assetLoadDiagnostics = await loadAssetArtifacts({
-      artifacts,
-      loaders: beforeAssetLoad?.context.assetLoaders ?? execution.assetLoaders,
-      mediaSourceOrigin: beforeAssetLoad?.context.mediaSourceOrigin ?? execution.mediaSourceOrigin,
-      projection: renderProjection,
-    });
+    const assetLoadDiagnostics =
+      renderProjection.format === "pptx"
+        ? await loadAssetArtifacts({
+            artifacts,
+            loaders: beforeAssetLoad?.context.assetLoaders ?? execution.assetLoaders,
+            mediaSourceOrigin:
+              beforeAssetLoad?.context.mediaSourceOrigin ?? execution.mediaSourceOrigin,
+            projection: renderProjection,
+          })
+        : emptyDiagnostics();
     const afterAssetLoad =
       graphArtifact && graphArtifact.graph && graphArtifact.resolvedStyles
         ? applyPluginHooks(execution.plugins, "afterAsset", {

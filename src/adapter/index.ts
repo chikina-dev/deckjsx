@@ -1,9 +1,12 @@
 import type { PptxPackageModel } from "../projection/pptx/model";
-import type { PptxRenderOptions, WriterAdapter } from "./public";
+import type { PdfDocumentModel } from "../projection/pdf/model";
+import type { PdfRenderOptions, PptxRenderOptions, WriterAdapter } from "./public";
 import { pptxWriterContext } from "./context";
+import { renderPdfDocument } from "../writers/pdf";
 import { renderPptxPackage } from "../writers/pptx";
 
 export type {
+  PdfRenderOptions,
   PptxRenderOptions,
   RenderOptions,
   WriterAdapter,
@@ -31,6 +34,28 @@ export function pptx(options: PptxRenderOptions = {}): WriterAdapter<PptxPackage
     options,
     async render(projection, context) {
       return renderPptxPackage(projection, options, pptxWriterContext(context));
+    },
+  };
+}
+
+/**
+ * Create the built-in PDF writer adapter.
+ *
+ * This adapter accepts projected PDF page models and emits minimal structurally valid PDF document
+ * bytes with catalog, page tree, page objects, content streams, and cross-reference metadata.
+ *
+ * @param options - PDF render options such as inspection detail level.
+ * @returns A Writer Adapter that renders projected PDF models into `.pdf` artifact bytes.
+ */
+export function pdf(options: PdfRenderOptions = {}): WriterAdapter<PdfDocumentModel, "pdf"> {
+  return {
+    kind: "deckjsx.writerAdapter",
+    name: "pdf",
+    projectionFormat: "pdf",
+    format: "pdf",
+    options,
+    async render(projection) {
+      return renderPdfDocument(projection, options);
     },
   };
 }

@@ -171,7 +171,7 @@ async function renderWithoutArtifact() {
   return deck.render(adapter);
 }
 
-async function renderUnsupportedArtifact() {
+async function renderPdfArtifact() {
   const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
   const adapter = {
     kind: "deckjsx.writerAdapter",
@@ -191,6 +191,44 @@ async function renderUnsupportedArtifact() {
       };
     },
   } satisfies WriterAdapter<PptxPackageModel, "pdf">;
+
+  deck.slide({ name: "PDF artifact" }, () => (
+    <main
+      style={{
+        width: 9,
+        height: 4.5,
+        display: "flex",
+        flexDirection: "column",
+        gap: 0.15,
+        padding: 0.5,
+      }}
+    >
+      <p style={{ width: 3, height: 0.5 }}>pdf</p>
+    </main>
+  ));
+  return deck.render(adapter);
+}
+
+async function renderUnsupportedArtifact() {
+  const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+  const adapter = {
+    kind: "deckjsx.writerAdapter",
+    name: "test-unsupported-artifact",
+    projectionFormat: "pptx",
+    format: "html",
+    options: {},
+    async render() {
+      return {
+        diagnostics: createDiagnostics(),
+        artifact: {
+          format: "html",
+          mediaType: "text/html",
+          extension: "html",
+          bytes: textEncoder.encode("<!doctype html>\n"),
+        },
+      };
+    },
+  } as unknown as WriterAdapter<PptxPackageModel>;
 
   deck.slide({ name: "Unsupported artifact" }, () => (
     <main
@@ -779,6 +817,27 @@ describe("@deckjsx/node write", () => {
       }),
     );
     expect(Array.from(output)).toEqual(Array.from(existing));
+    expect(await fileExists(lockPathFor(outputPath))).toBe(false);
+  });
+
+  test("writes a rendered pdf artifact to a new file", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-write-"));
+    const outputPath = path.join(directory, "out.pdf");
+    const render = await renderPdfArtifact();
+
+    const result = await write(render, outputPath);
+    const output = await readFile(outputPath);
+
+    expect(result).toEqual({
+      ok: true,
+      path: outputPath,
+      status: "written",
+      strategy: "write-file",
+      bytesWritten: render.artifact?.bytes.byteLength,
+      patchedParts: [],
+      diagnostics: [],
+    });
+    expect(Array.from(output)).toEqual(Array.from(render.artifact?.bytes ?? []));
     expect(await fileExists(lockPathFor(outputPath))).toBe(false);
   });
 

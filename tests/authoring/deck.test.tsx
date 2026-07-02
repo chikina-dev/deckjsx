@@ -115,7 +115,7 @@ describe("Deck", () => {
   test("project reports deck output options outside the public authoring API", async () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
-      output: { format: "pdf", target: "deck.pdf" },
+      output: { format: "odp", target: "deck.odp" },
     } as never);
     deck.slide(() => <p>invalid output</p>);
 
@@ -127,7 +127,8 @@ describe("Deck", () => {
       expect.arrayContaining([
         expect.objectContaining({
           code: "E_DECK_INVALID_OUTPUT",
-          message: 'Deck output format must be "pptx" when provided in the public authoring API.',
+          message:
+            "Deck output format is no longer part of the public authoring API. Use output.formats instead.",
         }),
         expect.objectContaining({
           code: "E_DECK_INVALID_OUTPUT",
@@ -135,8 +136,73 @@ describe("Deck", () => {
         }),
       ]),
     );
+    expect(result.diagnostics.items.map((item) => item.message)).not.toContain(
+      "Deck output format is not part of the public authoring API.",
+    );
     expect(result.stages.compile.artifact).toBe("missing");
     expect(result.stages.project.artifact).toBe("missing");
+  });
+
+  test("project reports invalid deck output formats arrays", async () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      output: { formats: ["pptx", "odp", "pptx"] },
+    } as never);
+    deck.slide(() => <p>invalid formats</p>);
+
+    const result = await deck.project();
+
+    expect(result.ok).toBe(false);
+    expect(result.projection).toBeUndefined();
+    expect(result.diagnostics.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "E_DECK_INVALID_OUTPUT",
+          message: 'Deck output formats[1] must be "pptx" or "pdf" in the public authoring API.',
+        }),
+        expect.objectContaining({
+          code: "E_DECK_INVALID_OUTPUT",
+          message: 'Deck output formats must not contain duplicate format "pptx".',
+        }),
+      ]),
+    );
+  });
+
+  test("project accepts an empty output formats array as the default pptx target", async () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      output: { formats: [] },
+    });
+    deck.slide(() => <p>empty formats</p>);
+
+    const result = await deck.project({ inspection: "none" });
+
+    expect(result.ok).toBe(true);
+    expect(result.format).toBe("pptx");
+    expect(result.projection?.format).toBe("pptx");
+  });
+
+  test("project falls back to pptx when runtime output formats are malformed", async () => {
+    const scalarFormatsDeck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      output: { formats: "pdf" },
+    } as never);
+    scalarFormatsDeck.slide(() => <p>scalar formats</p>);
+    const invalidFormatsDeck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      output: { formats: ["odp"] },
+    } as never);
+    invalidFormatsDeck.slide(() => <p>invalid formats</p>);
+
+    const scalarFormatsResult = await scalarFormatsDeck.project({ inspection: "none" });
+    const invalidFormatsResult = await invalidFormatsDeck.project({ inspection: "none" });
+
+    expect(scalarFormatsResult.ok).toBe(false);
+    expect(scalarFormatsResult.format).toBe("pptx");
+    expect(scalarFormatsResult.projection).toBeUndefined();
+    expect(invalidFormatsResult.ok).toBe(false);
+    expect(invalidFormatsResult.format).toBe("pptx");
+    expect(invalidFormatsResult.projection).toBeUndefined();
   });
 
   test("compile reports unknown deck options outside the public authoring API", () => {

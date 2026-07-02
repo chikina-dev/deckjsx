@@ -5,7 +5,10 @@ import type { AssetEntityId, SemanticAuthorGraph } from "./graph";
 import type { DeckIntegrationContext } from "./integration-context";
 import type { MediaSourceOrigin } from "./media-source-origin";
 import type { RenderedArtifact } from "./pipeline/contract";
+import type { ProjectionFormat } from "./pipeline/public";
 import type { AssetArtifact } from "./pipeline/artifacts";
+import { isPdfPageModel } from "./projection/pdf/model";
+import type { ProjectedDocumentModel } from "./projection/registry";
 import { isPptxPackageModel, type PptxPackageModel } from "./projection/pptx/model";
 import type { ResolvedStyleMap } from "./style/resolve";
 
@@ -142,11 +145,11 @@ export type AfterProjectLifecycleContext = {
   readonly graph: SemanticAuthorGraph;
   readonly resolvedStyles: ResolvedStyleMap;
   readonly assetsById: ReadonlyMap<AssetEntityId, AssetArtifact>;
-  readonly projection: PptxPackageModel;
+  readonly projection: ProjectedDocumentModel;
 };
 
 export type AfterProjectLifecycleUpdate = {
-  readonly projection: PptxPackageModel;
+  readonly projection: ProjectedDocumentModel;
 };
 
 export type RenderLifecycleSnapshot = {
@@ -160,18 +163,18 @@ export type BeforeRenderLifecycleContext = {
   readonly stage: "render";
   readonly phase: "before";
   readonly format: string;
-  readonly projection: PptxPackageModel;
+  readonly projection: ProjectedDocumentModel;
 };
 
 export type BeforeRenderLifecycleUpdate = {
-  readonly projection: PptxPackageModel;
+  readonly projection: ProjectedDocumentModel;
 };
 
 export type AfterRenderLifecycleContext = {
   readonly stage: "render";
   readonly phase: "after";
   readonly format: string;
-  readonly projection: PptxPackageModel;
+  readonly projection: ProjectedDocumentModel;
   readonly artifact?: RenderedArtifact;
 };
 
@@ -267,7 +270,12 @@ function deckPluginIntegrationValidationMessage(integration: unknown): string | 
   }
 
   for (const key of Object.keys(integration)) {
-    if (key !== "id" && key !== "assetLoaders" && key !== "mediaSourceOrigin") {
+    if (
+      key !== "id" &&
+      key !== "assetLoaders" &&
+      key !== "fontAssets" &&
+      key !== "mediaSourceOrigin"
+    ) {
       return `Deck plugin integration.${key} is not part of the public authoring API.`;
     }
   }
@@ -278,6 +286,13 @@ function deckPluginIntegrationValidationMessage(integration: unknown): string | 
 
   if (integration.assetLoaders !== undefined && !isAssetLoaderArray(integration.assetLoaders)) {
     return "Deck plugin integration.assetLoaders must be an array of Asset Loaders.";
+  }
+
+  if (
+    integration.fontAssets !== undefined &&
+    !isFontAssetRegistrationArray(integration.fontAssets)
+  ) {
+    return "Deck plugin integration.fontAssets must be an array of Font Asset Registrations.";
   }
 
   if (
@@ -387,7 +402,7 @@ export function applyPluginHooks<TContext extends object>(
           return false;
         }
         const validator = pluginHookUpdateValueValidators[hookName]?.[key];
-        if (!validator || validator(value)) {
+        if (!validator || validator(value, context)) {
           return true;
         }
         diagnostics.push(
@@ -501,7 +516,7 @@ const allowedPluginHookUpdateKeys = {
   afterRender: ["artifact"],
 } satisfies Record<keyof DeckPluginHooks, readonly string[]>;
 
-type PluginHookUpdateValueValidator = (value: unknown) => boolean;
+type PluginHookUpdateValueValidator = (value: unknown, context: object) => boolean;
 
 const pluginHookUpdateValueValidators: Record<
   keyof DeckPluginHooks,
@@ -535,10 +550,10 @@ const pluginHookUpdateValueValidators: Record<
     assetsById: isAssetArtifactMap,
   },
   afterProject: {
-    projection: isPptxPackageModelValue,
+    projection: isProjectedDocumentModelForActiveFormat,
   },
   beforeRender: {
-    projection: isPptxPackageModelValue,
+    projection: isProjectedDocumentModelForActiveFormat,
   },
   afterRender: {
     artifact: isRenderedArtifact,
@@ -547,6 +562,23 @@ const pluginHookUpdateValueValidators: Record<
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object";
+}
+
+function activeFormatFromContext(context: object): ProjectionFormat | undefined {
+  if (!isRecord(context)) {
+    return undefined;
+  }
+
+  return context.format === "pptx" || context.format === "pdf" ? context.format : undefined;
+}
+
+function isProjectedDocumentModelForActiveFormat(value: unknown, context: object): boolean {
+  if (!isProjectedDocumentModelValue(value)) {
+    return false;
+  }
+
+  const format = activeFormatFromContext(context);
+  return format === undefined || value.format === format;
 }
 
 function isReadonlyMap(value: unknown): value is ReadonlyMap<unknown, unknown> {
@@ -685,8 +717,33 @@ function isAssetSource(value: unknown): value is AssetSource {
   }
 }
 
+function isFontAssetRegistrationArray(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (asset) =>
+        isRecord(asset) &&
+        hasOnlyKeys(asset, ["key", "family", "weight", "style", "unicodeRange", "source"]) &&
+        typeof asset.key === "string" &&
+        typeof asset.family === "string" &&
+        (asset.weight === undefined ||
+          (typeof asset.weight === "number" && Number.isFinite(asset.weight))) &&
+        (asset.style === undefined || asset.style === "normal" || asset.style === "italic") &&
+        (asset.unicodeRange === undefined || isStringArray(asset.unicodeRange)) &&
+        isAssetSource(asset.source) &&
+        asset.source.kind === "bytes",
+    )
+  );
+}
+
 function isAssetSourceField(value: unknown): boolean {
-  return value === "src" || value === "data" || value === "poster" || value === "posterData";
+  return (
+    value === "src" ||
+    value === "data" ||
+    value === "poster" ||
+    value === "posterData" ||
+    value === "font"
+  );
 }
 
 function isDiagnosticsValue(value: unknown): value is { readonly items: readonly Diagnostic[] } {
@@ -720,15 +777,145 @@ function isMediaSourceOrigin(value: unknown): value is MediaSourceOrigin {
 function isIntegrationContext(value: unknown): value is DeckIntegrationContext {
   return (
     isRecord(value) &&
-    hasOnlyKeys(value, ["id", "assetLoaders", "mediaSourceOrigin"]) &&
+    hasOnlyKeys(value, ["id", "assetLoaders", "fontAssets", "mediaSourceOrigin"]) &&
     typeof value.id === "string" &&
     (value.assetLoaders === undefined || isAssetLoaderArray(value.assetLoaders)) &&
+    (value.fontAssets === undefined || isFontAssetRegistrationArray(value.fontAssets)) &&
     (value.mediaSourceOrigin === undefined || isMediaSourceOrigin(value.mediaSourceOrigin))
   );
 }
 
 function isPptxPackageModelValue(value: unknown): value is PptxPackageModel {
   return isRecord(value) && isPptxPackageModel(value as never);
+}
+
+function isProjectedDocumentModelValue(value: unknown): value is ProjectedDocumentModel {
+  return isPptxPackageModelValue(value) || isPdfPageModelValue(value);
+}
+
+function isPdfPageModelValue(value: unknown): boolean {
+  return (
+    isPdfPageModel(value) &&
+    value.pages.every(isPdfPageValue) &&
+    isPdfResourceDictionaryValue(value.resources) &&
+    value.fallbacks.every(
+      (fallback) =>
+        isRecord(fallback) &&
+        typeof fallback.code === "string" &&
+        typeof fallback.message === "string" &&
+        (fallback.pageId === undefined || typeof fallback.pageId === "string"),
+    )
+  );
+}
+
+function isPdfPageValue(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.index === "number" &&
+    isPdfRectangleValue(value.mediaBox) &&
+    isRecord(value.resources) &&
+    Array.isArray(value.resources.fonts) &&
+    value.resources.fonts.every((fontId) => typeof fontId === "string") &&
+    Array.isArray(value.resources.images) &&
+    value.resources.images.every((imageId) => typeof imageId === "string") &&
+    Array.isArray(value.content) &&
+    value.content.every(isPdfContentOpValue)
+  );
+}
+
+function isPdfRectangleValue(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.x === "number" &&
+    typeof value.y === "number" &&
+    typeof value.width === "number" &&
+    typeof value.height === "number" &&
+    Number.isFinite(value.x) &&
+    Number.isFinite(value.y) &&
+    Number.isFinite(value.width) &&
+    Number.isFinite(value.height) &&
+    value.width > 0 &&
+    value.height > 0
+  );
+}
+
+function isPdfResourceDictionaryValue(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.fonts) &&
+    value.fonts.every(isPdfFontResourceValue) &&
+    Array.isArray(value.images) &&
+    value.images.every(isPdfImageResourceValue)
+  );
+}
+
+function isPdfContentOpValue(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  switch (value.op) {
+    case "setFillColor":
+      return isPdfColorValue(value.color);
+    case "text":
+      return (
+        typeof value.text === "string" &&
+        typeof value.x === "number" &&
+        typeof value.y === "number" &&
+        Number.isFinite(value.x) &&
+        Number.isFinite(value.y) &&
+        (value.fontId === undefined || typeof value.fontId === "string") &&
+        (value.fontSize === undefined ||
+          (typeof value.fontSize === "number" &&
+            Number.isFinite(value.fontSize) &&
+            value.fontSize > 0)) &&
+        (value.color === undefined || isPdfColorValue(value.color))
+      );
+    case "image":
+      return typeof value.imageId === "string" && isPdfRectangleValue(value.box);
+    default:
+      return false;
+  }
+}
+
+function isPdfColorValue(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.r === "number" &&
+    typeof value.g === "number" &&
+    typeof value.b === "number" &&
+    Number.isFinite(value.r) &&
+    Number.isFinite(value.g) &&
+    Number.isFinite(value.b)
+  );
+}
+
+function isPdfFontResourceValue(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    (value.family === undefined || typeof value.family === "string") &&
+    (value.weight === undefined ||
+      (typeof value.weight === "number" && Number.isFinite(value.weight))) &&
+    (value.style === undefined || value.style === "normal" || value.style === "italic") &&
+    (value.fallback === undefined || typeof value.fallback === "boolean") &&
+    (value.sourceKey === undefined || typeof value.sourceKey === "string") &&
+    (value.data === undefined || value.data instanceof Uint8Array)
+  );
+}
+
+function isPdfImageResourceValue(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    (value.name === undefined || typeof value.name === "string") &&
+    (value.mediaType === undefined || typeof value.mediaType === "string") &&
+    (value.width === undefined || typeof value.width === "number") &&
+    (value.height === undefined || typeof value.height === "number") &&
+    (value.data === undefined || value.data instanceof Uint8Array)
+  );
 }
 
 function isRenderedArtifact(value: unknown): value is RenderedArtifact {

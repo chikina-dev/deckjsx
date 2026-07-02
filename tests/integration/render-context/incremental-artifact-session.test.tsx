@@ -466,6 +466,46 @@ describe("deckjsx integration incremental artifact session", () => {
     );
   });
 
+  test("explicit defined projections take precedence over retained incremental projections", async () => {
+    const session = H.createIncrementalArtifactSession();
+    const projectionDeck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    projectionDeck.slide({ name: "Defined" }, () => (
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>defined</p>
+    ));
+    const mismatchedProjection = {
+      ...(await projectionDeck.project({ inspection: "none" })).projection!,
+      format: "pdf" as never,
+    };
+
+    await H.runIncrementalArtifactCycle(session, {}, async () => {
+      const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+      deck.slide({ name: "Defined" }, () => (
+        <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>defined</p>
+      ));
+
+      const render = await deck.render(H.pptx({ inspection: "none" }));
+
+      expect(render.ok).toBe(true);
+    });
+
+    await H.runIncrementalArtifactCycle(session, {}, async () => {
+      const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+      deck.slide({ name: "Defined" }, () => (
+        <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>defined</p>
+      ));
+      deck.defineProjection(mismatchedProjection);
+
+      const render = await deck.render(H.pptx({ inspection: "none" }));
+
+      expect(render.ok).toBe(false);
+      expect(render.artifact).toBeUndefined();
+      expect(render.stages.project.artifact).toBe("missing");
+      expect(render.diagnostics.items).toContainEqual(
+        expect.objectContaining({ code: "E_DEFINE_PROJECTION_FORMAT" }),
+      );
+    });
+  });
+
   test("incremental artifact session does not reuse retained root artifacts after a mounted child Deck changes", async () => {
     const session = H.createIncrementalArtifactSession();
     const parent = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });

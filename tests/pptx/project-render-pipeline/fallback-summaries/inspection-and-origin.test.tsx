@@ -93,8 +93,11 @@ describe("project/render fallback inspection and origin", () => {
     ).toBe(true);
   });
 
-  test("explicit writer adapter format mismatches are warnings", async () => {
-    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+  test("explicit writer adapter formats outside output formats are warnings", async () => {
+    const deck = new H.Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      output: { formats: ["pptx"] },
+    });
     deck.slide({ name: "Adapter mismatch" }, () => <></>);
     const adapter: H.WriterAdapter<H.PptxPackageModel, "pdf"> = {
       kind: "deckjsx.writerAdapter",
@@ -120,7 +123,10 @@ describe("project/render fallback inspection and origin", () => {
     expect(result.ok).toBe(true);
     expect(result.artifact?.extension).toBe("pdf");
     expect(result.diagnostics.items).toContainEqual(
-      expect.objectContaining({ code: "W_RENDER_ADAPTER_FORMAT_MISMATCH", severity: "warning" }),
+      expect.objectContaining({
+        code: "W_RENDER_ADAPTER_FORMAT_NOT_CONFIGURED",
+        severity: "warning",
+      }),
     );
   });
 
