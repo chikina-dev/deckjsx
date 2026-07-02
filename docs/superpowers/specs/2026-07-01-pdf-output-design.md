@@ -7,6 +7,10 @@ adapter, `deck.project({ format: "pdf" })`, a deckjsx-owned PDF Page Model, text
 minimal direct PDF writer, byte-backed font asset registration, ordinary `@deckjsx/node write()` PDF
 artifact writes, and structure/text verification tests.
 
+This is not yet a complete static-fidelity PDF renderer. The current slice proves the runtime-neutral
+format boundary and minimal writer path; broad visual parity with PPTX/LibreOffice PDF output remains
+future work.
+
 ## Goals
 
 - Add PDF as a first-class `ProjectionFormat` and `WriterAdapter` target through `format: "pdf"` and
@@ -151,6 +155,34 @@ The first implemented slice accepts runtime-neutral byte font sources in `fontAs
 and CSS `url(...)` font sources remain future work until font asset loading is deliberately routed
 through the Asset Loading Boundary without Node-only assumptions.
 
+The first implemented slice does not embed registered font bytes into the PDF. Registered font
+assets are accepted and matched so the data flow is in place, but PDF projection still emits a
+standard Helvetica fallback resource with a stable `W_PDF_FONT_FALLBACK` warning until font
+embedding, subsetting, encodings, and ToUnicode maps are implemented.
+
+## Current Initial-Slice Limitations
+
+The current implementation intentionally stops short of full static visual fidelity:
+
+- PDF projection is text-centric. Authored images, shapes, tables, and videos are reported as
+  unsupported PDF content instead of being silently omitted or approximated.
+- The writer emits a minimal PDF object graph: catalog, pages, page resource dictionaries, Type1 font
+  resources, content streams, xref, trailer, and metadata.
+- Registered font assets are not embedded yet. Matching a registered font still renders through a
+  Helvetica fallback resource and emits a `W_PDF_FONT_FALLBACK` warning.
+- Non-ASCII text and metadata are rejected for now because the minimal writer does not yet emit font
+  encodings or ToUnicode maps that would make UTF-8 text reliable in PDF viewers.
+- Text shaping, font metrics, measured line breaking, overflow handling, rich text run positioning,
+  and sandbox-explainable text layout decisions remain future work.
+- Fills, strokes, backgrounds, clipping, transforms, opacity, gradients, z-order fidelity, image
+  XObjects, and table geometry are not implemented in the PDF writer yet.
+- The LibreOffice-derived verification path is a direction and fixture strategy, not proof of broad
+  visual parity in this initial slice.
+
+These limitations should be visible as diagnostics where authored content would otherwise be lost or
+rendered misleadingly. Strict workflows can fail on the warning/error codes while the PDF surface is
+expanded fixture by fixture.
+
 ## Model Research Phase
 
 Model creation needs its own implementation phase before broad visual coverage. The phase should
@@ -241,8 +273,8 @@ Current implementation status:
 - Completed: public PDF plumbing, PDF Specification Profile and Page Model, text projection, minimal
   PDF writer, byte-backed font asset registration, Node PDF writes, and structure/text verification.
 - Deferred: image XObject writing, shape/stroke/fill/background/table projection, font
-  subsetting/embedding beyond modeled byte-backed font resources, full rich-text run positioning,
-  raster comparison, and the sandbox UI.
+  subsetting/embedding, PDF text encodings and ToUnicode maps, measured line breaking and overflow,
+  full rich-text run positioning, raster comparison, and the sandbox UI.
 
 ## Open Design Risks
 
