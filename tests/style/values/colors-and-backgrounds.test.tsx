@@ -430,7 +430,7 @@ describe("style value colors and backgrounds", () => {
         fit: "stretch",
         repeat: "repeat-x",
         objectPosition: { x: 1, y: 1 },
-        serialized: { shapeObjectId: "151" },
+        serialized: { shapeObjectId: "2635011245" },
       },
     ]);
 

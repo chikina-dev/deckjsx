@@ -95,7 +95,7 @@ describe("background image layers", () => {
         fit: "contain",
         repeat: "repeat-x",
         objectPosition: { x: 0, y: 0 },
-        serialized: { shapeObjectId: "151" },
+        serialized: { shapeObjectId: "2635011245" },
       },
     ]);
 
@@ -322,7 +322,7 @@ describe("background image layers", () => {
         fit: "contain",
         repeat: "repeat-y",
         objectPosition: { x: 0, y: 0 },
-        serialized: { shapeObjectId: "151" },
+        serialized: { shapeObjectId: "2635011245" },
       },
     ]);
 
@@ -349,7 +349,7 @@ describe("background image layers", () => {
         fit: "contain",
         repeat: "repeat-x",
         objectPosition: { x: 0, y: 0 },
-        serialized: { shapeObjectId: "251" },
+        serialized: { shapeObjectId: "3102823620" },
       },
     ]);
   });
