@@ -225,6 +225,33 @@ describe("deckjsx integration plugin lifecycle", () => {
     );
   });
 
+  test("project lifecycle hooks reject projection updates with the wrong active format", async () => {
+    const pptxDeck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    pptxDeck.slide({ name: "PPTX Source" }, () => <p>pptx source</p>);
+    const pptxProjection = H.expectPptxProjection(await pptxDeck.project({ inspection: "none" }));
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin({
+      kind: "deckjsx.plugin",
+      id: "test:wrong-format-project-transform",
+      name: "test:wrong-format-project-transform",
+      hooks: {
+        afterProject() {
+          return { projection: pptxProjection };
+        },
+      },
+    });
+    deck.slide({ name: "PDF Slide" }, () => <p>pdf source</p>);
+
+    const project = await deck.project({ format: "pdf", inspection: "none" });
+
+    expect(project.ok).toBe(false);
+    expect(project.format).toBe("pdf");
+    expect(project.projection?.format).toBe("pdf");
+    expect(project.diagnostics.items).toContainEqual(
+      expect.objectContaining({ code: "E_PLUGIN_HOOK_INVALID_UPDATE_VALUE" }),
+    );
+  });
+
   test("project lifecycle hooks reject malformed pdf projection page updates", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.plugin({

@@ -243,6 +243,34 @@ describe("PDF Page Model", () => {
     );
   });
 
+  test("rejects non-ASCII text until PDF text encoding support exists", () => {
+    const fontId = pdfResourceId("font", "Helvetica");
+    const model: PdfPageModel = {
+      format: "pdf",
+      version: "1.7",
+      documentId: pdfDocumentId("deck:demo"),
+      metadata: { producer: "deckjsx", title: "Café" },
+      pages: [
+        {
+          id: pdfPageId("slide:1", 0),
+          index: 0,
+          mediaBox: { x: 0, y: 0, width: 720, height: 405 },
+          resources: { fonts: [fontId], images: [] },
+          content: [{ op: "text", text: "Café 😀", x: 0, y: 0, fontId }],
+        },
+      ],
+      resources: { fonts: [{ id: fontId, name: "F1", family: "Helvetica" }], images: [] },
+      fallbacks: [],
+    };
+
+    expect(validatePdfPageModel(model).items.map((item) => item.code)).toEqual(
+      expect.arrayContaining([
+        "E_PDF_MODEL_UNSUPPORTED_TEXT_ENCODING",
+        "E_PDF_MODEL_UNSUPPORTED_METADATA_ENCODING",
+      ]),
+    );
+  });
+
   test("rejects malformed and unknown content operations", () => {
     const imageId = pdfResourceId("image", "Chart");
     const model: PdfPageModel = {

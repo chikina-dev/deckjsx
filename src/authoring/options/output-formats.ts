@@ -8,7 +8,7 @@ type OutputFormatSource = {
   };
 };
 
-function isProjectionFormat(value: unknown): value is ProjectionFormat {
+export function isProjectionFormat(value: unknown): value is ProjectionFormat {
   return value === "pptx" || value === "pdf";
 }
 

@@ -5,6 +5,7 @@ import type { AssetEntityId, SemanticAuthorGraph } from "./graph";
 import type { DeckIntegrationContext } from "./integration-context";
 import type { MediaSourceOrigin } from "./media-source-origin";
 import type { RenderedArtifact } from "./pipeline/contract";
+import type { ProjectionFormat } from "./pipeline/public";
 import type { AssetArtifact } from "./pipeline/artifacts";
 import { isPdfPageModel } from "./projection/pdf/model";
 import type { ProjectedDocumentModel } from "./projection/registry";
@@ -401,7 +402,7 @@ export function applyPluginHooks<TContext extends object>(
           return false;
         }
         const validator = pluginHookUpdateValueValidators[hookName]?.[key];
-        if (!validator || validator(value)) {
+        if (!validator || validator(value, context)) {
           return true;
         }
         diagnostics.push(
@@ -515,7 +516,7 @@ const allowedPluginHookUpdateKeys = {
   afterRender: ["artifact"],
 } satisfies Record<keyof DeckPluginHooks, readonly string[]>;
 
-type PluginHookUpdateValueValidator = (value: unknown) => boolean;
+type PluginHookUpdateValueValidator = (value: unknown, context: object) => boolean;
 
 const pluginHookUpdateValueValidators: Record<
   keyof DeckPluginHooks,
@@ -549,10 +550,10 @@ const pluginHookUpdateValueValidators: Record<
     assetsById: isAssetArtifactMap,
   },
   afterProject: {
-    projection: isProjectedDocumentModelValue,
+    projection: isProjectedDocumentModelForActiveFormat,
   },
   beforeRender: {
-    projection: isProjectedDocumentModelValue,
+    projection: isProjectedDocumentModelForActiveFormat,
   },
   afterRender: {
     artifact: isRenderedArtifact,
@@ -561,6 +562,23 @@ const pluginHookUpdateValueValidators: Record<
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object";
+}
+
+function activeFormatFromContext(context: object): ProjectionFormat | undefined {
+  if (!isRecord(context)) {
+    return undefined;
+  }
+
+  return context.format === "pptx" || context.format === "pdf" ? context.format : undefined;
+}
+
+function isProjectedDocumentModelForActiveFormat(value: unknown, context: object): boolean {
+  if (!isProjectedDocumentModelValue(value)) {
+    return false;
+  }
+
+  const format = activeFormatFromContext(context);
+  return format === undefined || value.format === format;
 }
 
 function isReadonlyMap(value: unknown): value is ReadonlyMap<unknown, unknown> {

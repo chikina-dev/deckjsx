@@ -1,5 +1,5 @@
 import type { DeckOptions } from "../authoring/options";
-import { createDiagnostics, type Diagnostics } from "../diagnostics";
+import { createDiagnostics, diagnostic, type Diagnostic, type Diagnostics } from "../diagnostics";
 import type { AssetEntity, SemanticAuthorGraph } from "../graph";
 import type { DeckIntegrationContext } from "../integration-context";
 import type { ProjectionFormat } from "../pipeline/public";
@@ -85,13 +85,57 @@ const pptxProjectionCapability: ProjectionCapability<PptxPackageModel> = {
 const pdfProjectionCapability: ProjectionCapability<PdfPageModel> = {
   format: "pdf",
   project: projectGraphToPdfPageModel,
-  diagnostics: () => createDiagnostics(),
+  diagnostics: collectPdfUnsupportedProjectionDiagnostics,
   projectionDiagnostics: () => createDiagnostics(),
   validateModel: validatePdfPageModel,
   projectPartial: projectGraphToPartialPdfPageModel,
   canSummarize: isPdfPageModelShape,
   summarize: () => undefined,
 };
+
+function pdfUnsupportedContentDiagnostic(input: {
+  readonly nodeId: string;
+  readonly kind: string;
+  readonly path: string;
+}): Diagnostic {
+  return diagnostic({
+    severity: "error",
+    code: "E_PDF_UNSUPPORTED_AUTHOR_CONTENT",
+    title: "authored content is not supported by PDF projection",
+    message:
+      "PDF projection currently supports text content only; this authored node would be omitted.",
+    labels: [
+      {
+        path: input.path,
+        message: `node=${input.nodeId}, kind=${input.kind}`,
+        severity: "primary",
+      },
+    ],
+  });
+}
+
+function collectPdfUnsupportedProjectionDiagnostics(input: {
+  graph: SemanticAuthorGraph;
+}): Diagnostics {
+  const unsupportedKinds = new Set(["image", "shape", "table", "video"]);
+  const issues: Diagnostic[] = [];
+
+  input.graph.nodes.forEach((node, nodeId) => {
+    if (!unsupportedKinds.has(node.kind)) {
+      return;
+    }
+
+    issues.push(
+      pdfUnsupportedContentDiagnostic({
+        nodeId,
+        kind: node.kind,
+        path: node.origin.path,
+      }),
+    );
+  });
+
+  return createDiagnostics(issues);
+}
 
 function projectionCapabilityFor(
   format: ProjectionFormat,

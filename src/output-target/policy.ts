@@ -3,6 +3,7 @@ import {
   configuredOutputFormats,
   hasMultipleConfiguredOutputFormats,
   implicitOutputFormat,
+  isProjectionFormat,
   outputFormatsInclude,
 } from "../authoring/options/output-formats";
 import type { RenderOptions, WriterAdapter } from "../adapter";
@@ -48,21 +49,45 @@ function implicitFirstOutputFormatDiagnostics(input: {
   ]);
 }
 
+function invalidProjectFormatDiagnostics(input: { format: unknown }): Diagnostics {
+  return createDiagnostics([
+    diagnostic({
+      severity: "error",
+      code: "E_PROJECT_FORMAT_INVALID",
+      title: "project format is invalid",
+      message: "Project format must be one of: pptx, pdf.",
+      labels: [
+        {
+          path: "project.format",
+          message: `received ${String(input.format)}`,
+          severity: "primary",
+        },
+      ],
+    }),
+  ]);
+}
+
 export function selectProjectOutputTarget(input: {
   options: DeckOptions;
   projectOptions?: ProjectOptions;
   projectionFormat?: ProjectionFormat;
 }): OutputTargetSelection {
-  const projectionFormat =
-    input.projectionFormat ?? input.projectOptions?.format ?? implicitOutputFormat(input.options);
-  const diagnostics =
-    input.projectionFormat || input.projectOptions?.format
-      ? emptyDiagnostics()
-      : implicitFirstOutputFormatDiagnostics({
-          options: input.options,
-          format: projectionFormat,
-          path: "project.format",
-        });
+  const requestedFormat = input.projectionFormat ?? input.projectOptions?.format;
+  if (requestedFormat !== undefined && !isProjectionFormat(requestedFormat)) {
+    return {
+      projectionFormat: implicitOutputFormat(input.options),
+      diagnostics: invalidProjectFormatDiagnostics({ format: requestedFormat }),
+    };
+  }
+
+  const projectionFormat = requestedFormat ?? implicitOutputFormat(input.options);
+  const diagnostics = requestedFormat
+    ? emptyDiagnostics()
+    : implicitFirstOutputFormatDiagnostics({
+        options: input.options,
+        format: projectionFormat,
+        path: "project.format",
+      });
 
   return { projectionFormat, diagnostics };
 }

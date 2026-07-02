@@ -200,12 +200,11 @@ function pdfFontResourceForRegistration(
   return {
     id: fontRequestResourceId("request", request),
     name,
-    family: registration.family,
-    weight: registrationWeight(registration),
-    style: registrationStyle(registration),
-    fallback: false,
+    family: "Helvetica",
+    weight: request.weight,
+    style: request.style,
+    fallback: true,
     sourceKey: registration.key,
-    ...(registration.source.kind === "bytes" ? { data: registration.source.bytes } : {}),
   };
 }
 
@@ -213,6 +212,16 @@ function pdfFallbackForRequest(request: FontRequest): PdfFallback {
   return {
     code: "W_PDF_FONT_FALLBACK",
     message: `PDF projection used Helvetica for missing font request ${fontRequestDescription(request)}.`,
+  };
+}
+
+function pdfFallbackForRegistration(
+  request: FontRequest,
+  registration: FontAssetRegistration,
+): PdfFallback {
+  return {
+    code: "W_PDF_FONT_FALLBACK",
+    message: `PDF projection used Helvetica because embedding registered font asset key "${registration.key}" for ${fontRequestDescription(request)} is not supported yet.`,
   };
 }
 
@@ -251,6 +260,7 @@ function pdfFontResourcesForRequests(input: {
       const font = pdfFontResourceForRegistration(request, registration, name);
       fonts.push(font);
       resourceIdsByRequestKey.set(fontRequestKey(request), font.id);
+      fallbacks.push(pdfFallbackForRegistration(request, registration));
       return;
     }
 

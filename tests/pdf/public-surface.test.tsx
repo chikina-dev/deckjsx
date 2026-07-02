@@ -37,6 +37,24 @@ describe("pdf public surface", () => {
     expectPdfProjectionAvailable(result);
   });
 
+  test("rejects unknown project formats from JavaScript callers", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "PDF" }, () => <p>PDF</p>);
+
+    const result = await deck.project({
+      format: "odp",
+      inspection: "none",
+    } as never);
+
+    expect(result.ok).toBe(false);
+    expect(result.format).toBe("pptx");
+    expect(result.projection).toBeUndefined();
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({ code: "E_PROJECT_FORMAT_INVALID" }),
+    );
+    expect(result.diagnostics.items.map((item) => item.code)).not.toContain("E_PROJECT_FAILED");
+  });
+
   test("projects authored text into pdf page content operations", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "PDF" }, () => <p>PDF</p>);
@@ -68,6 +86,27 @@ describe("pdf public surface", () => {
     );
     expect(result.diagnostics.items.map((item) => item.code)).not.toContain(
       "E_PDF_MODEL_PAGE_MISSING_FONT_RESOURCE",
+    );
+  });
+
+  test("reports unsupported authored media instead of silently omitting it from pdf", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Unsupported PDF" }, () => (
+      <>
+        <p>Supported text</p>
+        <shape
+          shape="rect"
+          style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+        />
+      </>
+    ));
+
+    const result = await deck.project({ format: "pdf", inspection: "none" });
+
+    expect(result.ok).toBe(false);
+    expect(result.format).toBe("pdf");
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({ code: "E_PDF_UNSUPPORTED_AUTHOR_CONTENT" }),
     );
   });
 

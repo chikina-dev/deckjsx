@@ -191,6 +191,53 @@ function unsupportedImageOperationDiagnostic(input: {
   });
 }
 
+function hasNonAscii(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    if (value.charCodeAt(index) > 0x7f) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function unsupportedTextEncodingDiagnostic(input: {
+  readonly pageIndex: number;
+  readonly opIndex: number;
+}): Diagnostic {
+  return diagnostic({
+    severity: "error",
+    code: "E_PDF_MODEL_UNSUPPORTED_TEXT_ENCODING",
+    title: "PDF text encoding is unsupported",
+    message:
+      "The minimal PDF writer currently supports ASCII text only until font encoding and ToUnicode support exist.",
+    labels: [
+      {
+        path: `pages.${input.pageIndex}.content.${input.opIndex}.text`,
+        message: "text contains non-ASCII characters",
+        severity: "primary",
+      },
+    ],
+  });
+}
+
+function unsupportedMetadataEncodingDiagnostic(input: { readonly field: string }): Diagnostic {
+  return diagnostic({
+    severity: "error",
+    code: "E_PDF_MODEL_UNSUPPORTED_METADATA_ENCODING",
+    title: "PDF metadata encoding is unsupported",
+    message:
+      "The minimal PDF writer currently supports ASCII metadata only until PDF string encoding support exists.",
+    labels: [
+      {
+        path: `metadata.${input.field}`,
+        message: "metadata contains non-ASCII characters",
+        severity: "primary",
+      },
+    ],
+  });
+}
+
 function fallbackDiagnostic(input: {
   readonly fallbackIndex: number;
   readonly code: string;
@@ -215,6 +262,13 @@ export function validatePdfPageModel(model: PdfPageModel): Diagnostics {
   const issues: Diagnostic[] = [];
   const seenPageIds = new Set<string>();
   const resources = resourceIds(model.resources);
+
+  (["producer", "title", "author", "subject"] as const).forEach((field) => {
+    const value = model.metadata[field];
+    if (value && hasNonAscii(value)) {
+      issues.push(unsupportedMetadataEncodingDiagnostic({ field }));
+    }
+  });
 
   model.fallbacks.forEach((fallback, fallbackIndex) => {
     issues.push(
@@ -345,6 +399,9 @@ export function validatePdfPageModel(model: PdfPageModel): Diagnostics {
             path: `pages.${pageIndex}.content.${opIndex}.fontId`,
           }),
         );
+      }
+      if (op.op === "text" && hasNonAscii(op.text)) {
+        issues.push(unsupportedTextEncodingDiagnostic({ pageIndex, opIndex }));
       }
       if (op.op === "image") {
         issues.push(

@@ -11,7 +11,7 @@ function expectPdfPageModel(value: unknown): PdfPageModel {
 }
 
 describe("PDF font asset registration", () => {
-  test("registered plugin font asset is projected without a PDF font fallback warning", async () => {
+  test("registered plugin font asset keeps a PDF font fallback warning until embedding exists", async () => {
     const plugin: DeckPlugin = {
       kind: "deckjsx.plugin",
       id: "test:inter-font",
@@ -39,12 +39,17 @@ describe("PDF font asset registration", () => {
     const projection = expectPdfPageModel(result.projection);
 
     expect(result.ok).toBe(true);
-    expect(result.diagnostics.items.map((item) => item.code)).not.toContain("W_PDF_FONT_FALLBACK");
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        code: "W_PDF_FONT_FALLBACK",
+        message:
+          'PDF projection used Helvetica because embedding registered font asset key "inter-regular" for family "Inter", weight 400, style normal is not supported yet.',
+      }),
+    );
     expect(projection.resources.fonts).toContainEqual(
       expect.objectContaining({
-        family: "Inter",
-        fallback: false,
-        sourceKey: "inter-regular",
+        family: "Helvetica",
+        fallback: true,
         weight: 400,
         style: "normal",
       }),
@@ -92,7 +97,8 @@ describe("PDF font asset registration", () => {
     expect(pageFontNames).toEqual(["F1", "F2"]);
     expect(projection.resources.fonts).toContainEqual(
       expect.objectContaining({
-        family: "Inter",
+        family: "Helvetica",
+        fallback: true,
         name: "F2",
         sourceKey: "F1",
       }),
@@ -148,11 +154,13 @@ describe("PDF font asset registration", () => {
           family: "Helvetica",
         }),
         expect.objectContaining({
-          family: "Inter",
+          family: "Helvetica",
+          fallback: true,
           sourceKey: "default-helvetica",
         }),
         expect.objectContaining({
-          family: "Source Sans",
+          family: "Helvetica",
+          fallback: true,
           sourceKey: "fallback-missing-sans-700-normal",
         }),
         expect.objectContaining({
@@ -202,22 +210,30 @@ describe("PDF font asset registration", () => {
 
     const result = await deck.project({ format: "pdf", inspection: "none" });
     const projection = expectPdfPageModel(result.projection);
-    const registeredFonts = projection.resources.fonts.filter(
-      (font) => font.family === "A B" || font.family === "A-B",
+    const registeredFallbackFonts = projection.resources.fonts.filter(
+      (font) => font.sourceKey === "a-space-b" || font.sourceKey === "a-dash-b",
     );
     const textFontIds = projection.pages[0]?.content
       .filter((op) => op.op === "text")
       .map((op) => op.fontId);
 
     expect(result.ok).toBe(true);
-    expect(registeredFonts).toHaveLength(2);
-    expect(new Set(registeredFonts.map((font) => font.id)).size).toBe(2);
+    expect(registeredFallbackFonts).toHaveLength(2);
+    expect(new Set(registeredFallbackFonts.map((font) => font.id)).size).toBe(2);
+    expect(registeredFallbackFonts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ family: "Helvetica", fallback: true, sourceKey: "a-space-b" }),
+        expect.objectContaining({ family: "Helvetica", fallback: true, sourceKey: "a-dash-b" }),
+      ]),
+    );
     expect(textFontIds).toHaveLength(2);
     expect(new Set(textFontIds).size).toBe(2);
-    expect(textFontIds).toEqual(expect.arrayContaining(registeredFonts.map((font) => font.id)));
+    expect(textFontIds).toEqual(
+      expect.arrayContaining(registeredFallbackFonts.map((font) => font.id)),
+    );
   });
 
-  test("registered inline span font asset is projected without a PDF font fallback warning", async () => {
+  test("registered inline span font asset keeps a PDF font fallback warning", async () => {
     const plugin: DeckPlugin = {
       kind: "deckjsx.plugin",
       id: "test:inline-inter-font",
@@ -247,11 +263,17 @@ describe("PDF font asset registration", () => {
     const projection = expectPdfPageModel(result.projection);
 
     expect(result.ok).toBe(true);
-    expect(result.diagnostics.items.map((item) => item.code)).not.toContain("W_PDF_FONT_FALLBACK");
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        code: "W_PDF_FONT_FALLBACK",
+        message:
+          'PDF projection used Helvetica because embedding registered font asset key "inline-inter" for family "Inter", weight 400, style normal is not supported yet.',
+      }),
+    );
     expect(projection.resources.fonts).toContainEqual(
       expect.objectContaining({
-        family: "Inter",
-        fallback: false,
+        family: "Helvetica",
+        fallback: true,
         sourceKey: "inline-inter",
       }),
     );
@@ -396,8 +418,8 @@ describe("PDF font asset registration", () => {
 
     expect(projection.resources.fonts).toContainEqual(
       expect.objectContaining({
-        family: "Default Font",
-        fallback: false,
+        family: "Helvetica",
+        fallback: true,
         sourceKey: "default-font",
         weight: 400,
         style: "normal",

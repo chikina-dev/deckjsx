@@ -1195,6 +1195,18 @@ export async function projectSource<
     };
   }
 
+  if (implicitFormatDiagnostics.hasErrors) {
+    return {
+      ok: false,
+      diagnostics: implicitFormatDiagnostics,
+      stages: {
+        compile: stageSummary("compile", implicitFormatDiagnostics, "missing"),
+        project: stageSummary("project", implicitFormatDiagnostics, "missing"),
+      },
+      format: projectionFormat,
+    };
+  }
+
   if (input.definedProjection) {
     const definedProjectionInput = input.definedProjection.projection;
     const definedProjection = definedDocumentModel(definedProjectionInput);
