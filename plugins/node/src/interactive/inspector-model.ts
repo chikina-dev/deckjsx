@@ -161,7 +161,7 @@ const INTERACTIVE_COMMAND_HELP = [
   {
     method: "projection.inspect",
     shorthand: "projection [@slot] [slideIndex] [elementIndex]",
-    description: "Inspect retained PPTX projection slides and elements.",
+    description: "Inspect retained projection pages and elements.",
   },
   {
     method: "selection.resolve",
@@ -623,7 +623,7 @@ async function dispatchInteractiveCommand(
         ok: false,
         error: {
           code: "deckjsx.node.interactive.projectionUnavailable",
-          message: "projection.inspect requires a retained PPTX projection artifact.",
+          message: "projection.inspect requires a retained projection artifact.",
         },
       };
     }
@@ -637,7 +637,7 @@ async function dispatchInteractiveCommand(
         ok: false,
         error: {
           code: "deckjsx.node.interactive.projectionUnavailable",
-          message: "projection.inspect could not find the requested slide or element.",
+          message: "projection.inspect could not find the requested page or element.",
         },
       };
     }
@@ -1504,12 +1504,12 @@ function impactedProjectionElements(
   readonly element: unknown;
 }[] {
   const projection = target.projection;
-  const slides = propertyValue(projection, "slides");
-  if (!Array.isArray(slides)) {
+  const pages = projectionPages(projection);
+  if (!pages) {
     return [];
   }
-  return slides.flatMap((slide, slideIndex) =>
-    projectionSlideElements(slide).flatMap((element, elementIndex) =>
+  return pages.flatMap((page, slideIndex) =>
+    projectionPageElements(page).flatMap((element, elementIndex) =>
       elementReferencesGraphNode(element, graphNodeIds)
         ? [
             {
@@ -1575,28 +1575,28 @@ function inspectProjection(
 ): unknown {
   const projection = target.projection;
   const format = propertyValue(projection, "format");
-  if (typeof projection !== "object" || projection === null || format !== "pptx") {
+  if (typeof projection !== "object" || projection === null) {
     return undefined;
   }
-  const slides = propertyValue(projection, "slides");
-  if (!Array.isArray(slides)) {
+  const pages = projectionPages(projection);
+  if (!pages || (format !== "pptx" && format !== "pdf")) {
     return undefined;
   }
   if (slideIndex === undefined) {
     return {
       slot: target.slot,
       format,
-      slides: slides.map((slide, index) => summarizeProjectionSlide(slide, index)),
+      slides: pages.map((page, index) => summarizeProjectionPage(page, index)),
     };
   }
-  const slide = slides[slideIndex];
-  if (!slide) {
+  const page = pages[slideIndex];
+  if (!page) {
     return undefined;
   }
   if (elementIndex === undefined) {
-    return { slot: target.slot, slideIndex, slide: summarizeProjectionSlide(slide, slideIndex) };
+    return { slot: target.slot, slideIndex, slide: summarizeProjectionPage(page, slideIndex) };
   }
-  const elements = projectionSlideElements(slide);
+  const elements = projectionPageElements(page);
   const element = elements[elementIndex];
   if (!element) {
     return undefined;
@@ -1718,23 +1718,26 @@ function graphTargetIdFromString(target: string): string | undefined {
   return explicit ? explicit[1] : target;
 }
 
-function summarizeProjectionSlide(slide: unknown, slideIndex: number): unknown {
-  const payload = propertyObject(slide, "payload");
-  const elements = projectionSlideElements(slide);
+function summarizeProjectionPage(page: unknown, slideIndex: number): unknown {
+  const payload = propertyObject(page, "payload");
+  const elements = projectionPageElements(page);
+  const name = payload ? propertyValue(payload, "name") : propertyValue(page, "name");
   return {
     slideIndex,
-    ...(propertyValue(slide, "id") ? { partId: propertyValue(slide, "id") } : {}),
-    ...(propertyValue(slide, "path") ? { path: propertyValue(slide, "path") } : {}),
+    ...(propertyValue(page, "id") ? { partId: propertyValue(page, "id") } : {}),
+    ...(propertyValue(page, "path") ? { path: propertyValue(page, "path") } : {}),
     ...(payload && propertyValue(payload, "slideId")
       ? { slideId: propertyValue(payload, "slideId") }
       : {}),
-    ...(payload && propertyValue(payload, "name") ? { name: propertyValue(payload, "name") } : {}),
-    ...(propertyValue(slide, "origin") ? { origin: propertyValue(slide, "origin") } : {}),
+    ...(typeof name === "string" ? { name } : {}),
+    ...(propertyValue(page, "origin") ? { origin: propertyValue(page, "origin") } : {}),
     elementCount: elements.length,
   };
 }
 
 function summarizeProjectionElement(element: unknown): unknown {
+  const nestedText = propertyObject(element, "content")?.text;
+  const text = propertyValue(element, "text") ?? nestedText;
   return {
     ...(propertyValue(element, "id") ? { id: propertyValue(element, "id") } : {}),
     ...(propertyValue(element, "kind") ? { kind: propertyValue(element, "kind") } : {}),
@@ -1743,16 +1746,24 @@ function summarizeProjectionElement(element: unknown): unknown {
       : {}),
     ...(propertyValue(element, "origin") ? { origin: propertyValue(element, "origin") } : {}),
     ...(propertyValue(element, "frame") ? { frame: propertyValue(element, "frame") } : {}),
-    ...("content" in Object(element) && propertyObject(element, "content")?.text
-      ? { textPreview: String(propertyObject(element, "content")?.text).slice(0, 80) }
-      : {}),
+    ...(typeof text === "string" ? { textPreview: text.slice(0, 80) } : {}),
   };
 }
 
-function projectionSlideElements(slide: unknown): readonly unknown[] {
-  const payload = propertyObject(slide, "payload");
-  const drawing = payload ? propertyObject(payload, "drawing") : undefined;
-  const children = drawing ? propertyValue(drawing, "children") : undefined;
+function projectionPages(projection: unknown): readonly unknown[] | undefined {
+  const format = propertyValue(projection, "format");
+  const pages = propertyValue(projection, format === "pdf" ? "pages" : "slides");
+  return (format === "pdf" || format === "pptx") && Array.isArray(pages) ? pages : undefined;
+}
+
+function projectionPageElements(page: unknown): readonly unknown[] {
+  const visuals = propertyValue(page, "visuals");
+  if (Array.isArray(visuals)) {
+    return visuals;
+  }
+  const payload = propertyObject(page, "payload");
+  const drawing = payload ? propertyObject(payload, "drawing") : propertyObject(page, "drawing");
+  const children = drawing ? propertyValue(drawing, "children") : propertyValue(page, "children");
   return Array.isArray(children) ? children : [];
 }
 

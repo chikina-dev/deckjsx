@@ -92,6 +92,13 @@ export type DeckjsxDevOptions = {
   readonly interactive?: boolean;
 };
 
+export type DeckjsxCliOutputStream = {
+  readonly isTTY?: boolean;
+  write(chunk: string, callback: (error?: Error | null) => void): boolean;
+  once(event: "drain" | "error", listener: (...args: readonly unknown[]) => void): unknown;
+  off(event: "drain" | "error", listener: (...args: readonly unknown[]) => void): unknown;
+};
+
 export function parseDeckjsxNodeCliArgs(args: readonly string[]): DeckjsxNodeCliParseResult {
   const [command, ...commandArgs] = args;
   if (command !== "dev") {
@@ -287,16 +294,17 @@ export async function runDeckjsxDevCompilerHost(input: {
   readonly inspectionStore?: NodeDevInspectionStore;
   readonly interactiveLines?: AsyncIterable<string>;
   readonly interactiveWriteLine?: (line: string) => void;
+  readonly outputStream?: DeckjsxCliOutputStream;
 }): Promise<void> {
   const customOutputLine = input.writeLine;
-  const outputLine = customOutputLine ?? ((line: string) => console.error(line));
-  const colorDevConsole = customOutputLine ? false : Boolean(process.stderr.isTTY);
+  const outputStream = input.outputStream ?? process.stderr;
+  const outputQueue = customOutputLine ? undefined : createCliOutputQueue(outputStream);
+  const outputLine = customOutputLine ?? outputQueue!.writeLine;
+  const colorDevConsole = customOutputLine ? false : Boolean(outputStream.isTTY);
   const formatOptions = { color: colorDevConsole, ...(input.cwd ? { cwd: input.cwd } : {}) };
   const consoleCoordinator = createDevConsoleCoordinator({
     writeLine: outputLine,
-    ...(customOutputLine || !process.stderr.isTTY
-      ? {}
-      : { writeRaw: (text: string) => process.stderr.write(text) }),
+    ...(customOutputLine || !outputStream.isTTY ? {} : { writeRaw: outputQueue!.writeRaw }),
   });
   const writeConsoleLines = (lines: readonly string[]) => {
     consoleCoordinator.writeConsole(lines);
@@ -395,8 +403,99 @@ export async function runDeckjsxDevCompilerHost(input: {
     unsubscribe();
     interactiveSession?.close();
     stdinLines?.close();
-    await input.compiler.close();
+    try {
+      await input.compiler.close();
+    } finally {
+      await outputQueue?.flush();
+    }
   }
+}
+
+function createCliOutputQueue(stream: DeckjsxCliOutputStream): {
+  readonly writeLine: (line: string) => void;
+  readonly writeRaw: (text: string) => void;
+  flush(): Promise<void>;
+} {
+  let tail = Promise.resolve();
+  let failure: unknown;
+  const enqueue = (text: string) => {
+    tail = tail.then(async () => {
+      if (failure !== undefined) {
+        return;
+      }
+      try {
+        await writeCliOutputChunk(stream, text);
+      } catch (error) {
+        failure = error;
+      }
+    });
+  };
+  return {
+    writeLine(line) {
+      enqueue(`${line}\n`);
+    },
+    writeRaw(text) {
+      enqueue(text);
+    },
+    async flush() {
+      await tail;
+      if (failure !== undefined) {
+        throw failure;
+      }
+    },
+  };
+}
+
+function writeCliOutputChunk(stream: DeckjsxCliOutputStream, chunk: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let callbackComplete = false;
+    let drainComplete = false;
+    let settled = false;
+    const cleanup = () => {
+      stream.off("drain", onDrain);
+      stream.off("error", onError);
+    };
+    const finish = (error?: unknown) => {
+      if (settled) {
+        return;
+      }
+      if (error !== undefined) {
+        settled = true;
+        cleanup();
+        reject(error);
+        return;
+      }
+      if (callbackComplete && drainComplete) {
+        settled = true;
+        cleanup();
+        resolve();
+      }
+    };
+    const onDrain = () => {
+      drainComplete = true;
+      finish();
+    };
+    const onError = (error: unknown) => finish(error);
+    stream.once("drain", onDrain);
+    stream.once("error", onError);
+    try {
+      const accepted = stream.write(chunk, (error) => {
+        if (error) {
+          finish(error);
+          return;
+        }
+        callbackComplete = true;
+        finish();
+      });
+      if (accepted) {
+        drainComplete = true;
+        stream.off("drain", onDrain);
+        finish();
+      }
+    } catch (error) {
+      finish(error);
+    }
+  });
 }
 
 function createStdinLines(
@@ -522,16 +621,19 @@ function projectionCompletionTargets(
   for (const slot of inspection.retainedSlots()) {
     const projection = inspection.projectionForSlot(slot);
     targets.push({ insert: `@${slot}`, description: `Projection slot ${slot}` });
-    const slides = projectionSlides(projection);
-    slides.forEach((slide, slideIndex) => {
-      const slideName = projectionSlideName(slide);
+    const pages = projectionPages(projection);
+    const pageLabel = projectionPageLabel(projection);
+    pages.forEach((page, pageIndex) => {
+      const pageName = projectionPageName(page);
       targets.push({
-        insert: `@${slot} ${slideIndex}`,
-        description: slideName ? `Slide ${slideIndex}: ${slideName}` : `Slide ${slideIndex}`,
+        insert: `@${slot} ${pageIndex}`,
+        description: pageName
+          ? `${pageLabel} ${pageIndex}: ${pageName}`
+          : `${pageLabel} ${pageIndex}`,
       });
-      projectionSlideElements(slide).forEach((element, elementIndex) => {
+      projectionPageElements(page).forEach((element, elementIndex) => {
         targets.push({
-          insert: `@${slot} ${slideIndex} ${elementIndex}`,
+          insert: `@${slot} ${pageIndex} ${elementIndex}`,
           description: projectionElementDescription(element, elementIndex),
         });
       });
@@ -540,25 +642,40 @@ function projectionCompletionTargets(
   return targets.slice(0, 200);
 }
 
-function projectionSlides(projection: unknown): readonly unknown[] {
+function projectionPages(projection: unknown): readonly unknown[] {
   if (typeof projection !== "object" || projection === null) {
     return [];
   }
   const format = propertyValue(projection, "format");
-  const slides = propertyValue(projection, "slides");
-  return format === "pptx" && Array.isArray(slides) ? slides : [];
+  if (format === "pptx") {
+    const slides = propertyValue(projection, "slides");
+    return Array.isArray(slides) ? slides : [];
+  }
+  if (format === "pdf") {
+    const pages = propertyValue(projection, "pages");
+    return Array.isArray(pages) ? pages : [];
+  }
+  return [];
 }
 
-function projectionSlideElements(slide: unknown): readonly unknown[] {
-  const payload = propertyObject(slide, "payload");
-  const drawing = payload ? propertyObject(payload, "drawing") : undefined;
-  const children = drawing ? propertyValue(drawing, "children") : undefined;
+function projectionPageLabel(projection: unknown): "Page" | "Slide" {
+  return propertyValue(projection, "format") === "pptx" ? "Slide" : "Page";
+}
+
+function projectionPageElements(page: unknown): readonly unknown[] {
+  const visuals = propertyValue(page, "visuals");
+  if (Array.isArray(visuals)) {
+    return visuals;
+  }
+  const payload = propertyObject(page, "payload");
+  const drawing = payload ? propertyObject(payload, "drawing") : propertyObject(page, "drawing");
+  const children = drawing ? propertyValue(drawing, "children") : propertyValue(page, "children");
   return Array.isArray(children) ? children : [];
 }
 
-function projectionSlideName(slide: unknown): string | undefined {
-  const payload = propertyObject(slide, "payload");
-  const name = payload ? propertyValue(payload, "name") : undefined;
+function projectionPageName(page: unknown): string | undefined {
+  const payload = propertyObject(page, "payload");
+  const name = payload ? propertyValue(payload, "name") : propertyValue(page, "name");
   return typeof name === "string" ? name : undefined;
 }
 
@@ -614,16 +731,16 @@ export function devWatchFiles(input: {
 async function main(): Promise<void> {
   const parsed = parseDeckjsxNodeCliArgs(process.argv.slice(2));
   if (!parsed.ok) {
-    printDiagnostics(parsed.diagnostics);
+    await printDiagnostics(parsed.diagnostics);
     process.exitCode = 1;
     return;
   }
   if (parsed.command === "dev.help") {
-    formatDeckjsxDevHelp().forEach((line) => console.error(line));
+    await writeCliLines(formatDeckjsxDevHelp());
     return;
   }
   if (parsed.command === "dev.interactiveHelp") {
-    formatDeckjsxInteractiveHelp().forEach((line) => console.error(line));
+    await writeCliLines(formatDeckjsxInteractiveHelp());
     return;
   }
   if (parsed.command !== "dev") {
@@ -633,8 +750,14 @@ async function main(): Promise<void> {
   await runDeckjsxDev(parsed);
 }
 
-function printDiagnostics(diagnostics: readonly DeckjsxNodeCliDiagnostic[]): void {
-  formatDeckjsxNodeDiagnostics(diagnostics).forEach((line) => console.error(line));
+async function printDiagnostics(diagnostics: readonly DeckjsxNodeCliDiagnostic[]): Promise<void> {
+  await writeCliLines(formatDeckjsxNodeDiagnostics(diagnostics));
+}
+
+async function writeCliLines(lines: readonly string[]): Promise<void> {
+  const output = createCliOutputQueue(process.stderr);
+  lines.forEach(output.writeLine);
+  await output.flush();
 }
 
 function isDeckjsxNodeCliEntrypoint(): boolean {
@@ -649,8 +772,14 @@ function isDeckjsxNodeCliEntrypoint(): boolean {
 }
 
 if (isDeckjsxNodeCliEntrypoint()) {
-  void main().catch((error: unknown) => {
-    console.error(error);
-    process.exitCode = 1;
-  });
+  void main()
+    .catch(async (error: unknown) => {
+      process.exitCode = 1;
+      await writeCliLines([
+        error instanceof Error ? (error.stack ?? error.message) : String(error),
+      ]);
+    })
+    .catch(() => {
+      process.exitCode = 1;
+    });
 }

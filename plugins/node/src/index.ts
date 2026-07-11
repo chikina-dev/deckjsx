@@ -18,7 +18,9 @@ import type {
   AssetLoaderOutcome,
   AssetProbeResult,
   AssetSource,
+  AssetSourceField,
   DeckPlugin,
+  FontAssetRegistration,
   RenderPatchPlanPart,
 } from "deckjsx/integration";
 import {
@@ -132,6 +134,17 @@ export type NodeFileAssetLoaderOptions = {
   readonly resolverIdentity?: string;
 };
 
+/**
+ * Options for registering local font assets in a Node.js render.
+ *
+ * Relative font paths are resolved from `root`, or from the Node.js current working directory when
+ * `root` is omitted. The same root is used as a containment boundary for every registered path.
+ */
+export type NodeFontAssetsOptions = NodeFileAssetLoaderOptions & {
+  /** Font Asset registrations to make available to the render pipeline. */
+  readonly fontAssets: readonly FontAssetRegistration[];
+};
+
 type WriteLock = {
   readonly path: string;
   readonly handle: FileHandle;
@@ -158,6 +171,15 @@ const textEncoder = new TextEncoder();
  * asset paths; this loader only resolves local files.
  */
 export function createNodeFileAssetLoader(options: NodeFileAssetLoaderOptions = {}): AssetLoader {
+  return createSourceFieldAwareNodeFileAssetLoader(options, "all");
+}
+
+type NodeFileAssetLoaderScope = "all" | "font" | "media";
+
+function createSourceFieldAwareNodeFileAssetLoader(
+  options: NodeFileAssetLoaderOptions,
+  scope: NodeFileAssetLoaderScope,
+): AssetLoader {
   const normalizedOptions = {
     ...options,
     root: options.root ? path.resolve(options.root) : undefined,
@@ -166,6 +188,9 @@ export function createNodeFileAssetLoader(options: NodeFileAssetLoaderOptions = 
   return {
     resolverIdentity: options.resolverIdentity ?? nodeFileAssetResolverIdentity(normalizedOptions),
     async probe(context) {
+      if (!nodeFileAssetLoaderHandlesSourceField(scope, context.sourceField)) {
+        return undefined;
+      }
       const filePath = resolveNodeFileAssetPath({
         options: normalizedOptions,
         source: context.source,
@@ -175,6 +200,7 @@ export function createNodeFileAssetLoader(options: NodeFileAssetLoaderOptions = 
         return nodeFileAssetPathFailure<AssetProbeResult>({
           phase: "probe",
           source: context.source,
+          sourceField: context.sourceField,
           reason: filePath.reason,
         });
       }
@@ -192,11 +218,15 @@ export function createNodeFileAssetLoader(options: NodeFileAssetLoaderOptions = 
           phase: "probe",
           filePath: filePath.path,
           source: context.source,
+          sourceField: context.sourceField,
           error,
         });
       }
     },
     async load(context) {
+      if (!nodeFileAssetLoaderHandlesSourceField(scope, context.sourceField)) {
+        return undefined;
+      }
       const filePath = resolveNodeFileAssetPath({
         options: normalizedOptions,
         source: context.source,
@@ -206,6 +236,7 @@ export function createNodeFileAssetLoader(options: NodeFileAssetLoaderOptions = 
         return nodeFileAssetPathFailure<AssetLoadResult>({
           phase: "load",
           source: context.source,
+          sourceField: context.sourceField,
           reason: filePath.reason,
         });
       }
@@ -223,11 +254,19 @@ export function createNodeFileAssetLoader(options: NodeFileAssetLoaderOptions = 
           phase: "load",
           filePath: filePath.path,
           source: context.source,
+          sourceField: context.sourceField,
           error,
         });
       }
     },
   };
+}
+
+function nodeFileAssetLoaderHandlesSourceField(
+  scope: NodeFileAssetLoaderScope,
+  sourceField: AssetSourceField,
+): boolean {
+  return scope === "all" || (scope === "font" ? sourceField === "font" : sourceField !== "font");
 }
 
 /**
@@ -243,7 +282,33 @@ export function nodeAssets(options: NodeFileAssetLoaderOptions = {}): DeckPlugin
     name: "@deckjsx/node/assets",
     integration: {
       id: integrationContextId("@deckjsx/node/assets"),
-      assetLoaders: [createNodeFileAssetLoader(options)],
+      assetLoaders: [createSourceFieldAwareNodeFileAssetLoader(options, "media")],
+    },
+  };
+}
+
+/**
+ * Register local Font Assets for Node.js rendering.
+ *
+ * This plugin combines Font Asset registrations with a filesystem loader, so a registration such
+ * as `{ source: { kind: "path", path: "./fonts/Brand.ttf" } }` works for PDF rendering without
+ * authoring a custom loader. Paths remain constrained to `root`; when omitted, `root` defaults to
+ * the current working directory. Asset-load failures are returned as render diagnostics.
+ */
+export function nodeFontAssets(options: NodeFontAssetsOptions): DeckPlugin {
+  const root = options.root ?? process.cwd();
+  const loaderOptions: NodeFileAssetLoaderOptions = {
+    root,
+    ...(options.resolverIdentity ? { resolverIdentity: options.resolverIdentity } : {}),
+  };
+  return {
+    kind: "deckjsx.plugin",
+    id: "@deckjsx/node/fonts",
+    name: "@deckjsx/node/fonts",
+    integration: {
+      id: integrationContextId("@deckjsx/node/fonts"),
+      assetLoaders: [createSourceFieldAwareNodeFileAssetLoader(loaderOptions, "font")],
+      fontAssets: options.fontAssets,
     },
   };
 }
@@ -849,12 +914,18 @@ function authoredAssetSource(source: AssetSource): string {
   return source.kind === "path" ? source.path : JSON.stringify(source);
 }
 
+function nodeFileAssetKind(sourceField: AssetSourceField): "font" | "media" {
+  return sourceField === "font" ? "font" : "media";
+}
+
 function nodeFileAssetReadFailure<T>(input: {
   readonly phase: "load" | "probe";
   readonly filePath: string;
   readonly source: AssetSource;
+  readonly sourceField: AssetSourceField;
   readonly error: unknown;
 }): AssetLoaderOutcome<T> {
+  const assetKind = nodeFileAssetKind(input.sourceField);
   return {
     ok: false,
     diagnostics: [
@@ -862,17 +933,20 @@ function nodeFileAssetReadFailure<T>(input: {
         severity: "error",
         code: "E_NODE_FILE_ASSET_READ_FAILED",
         title: "node file asset could not be read",
-        message:
-          "@deckjsx/node resolved this media source to a local file, but could not read its bytes.",
+        message: `@deckjsx/node resolved this ${assetKind} source to a local file, but could not read its bytes.`,
         labels: [
           {
             path: input.filePath,
             message: errorMessage(input.error),
           },
         ],
-        notes: [`phase=${input.phase}`, `source=${authoredAssetSource(input.source)}`],
+        notes: [
+          `phase=${input.phase}`,
+          `sourceField=${input.sourceField}`,
+          `source=${authoredAssetSource(input.source)}`,
+        ],
         help: [
-          "Check that the media path exists relative to the importing slide/component module or configured node asset root.",
+          `Check that the ${assetKind} path exists relative to the importing module or configured node asset root.`,
         ],
       },
     ],
@@ -882,6 +956,7 @@ function nodeFileAssetReadFailure<T>(input: {
 function nodeFileAssetPathFailure<T>(input: {
   readonly phase: "load" | "probe";
   readonly source: AssetSource;
+  readonly sourceField: AssetSourceField;
   readonly reason: "missing-origin" | "outside-root";
 }): AssetLoaderOutcome<T> {
   return input.reason === "missing-origin"
@@ -892,8 +967,10 @@ function nodeFileAssetPathFailure<T>(input: {
 function nodeFileAssetOriginMissing<T>(input: {
   readonly phase: "load" | "probe";
   readonly source: AssetSource;
+  readonly sourceField: AssetSourceField;
 }): AssetLoaderOutcome<T> {
   const source = authoredAssetSource(input.source);
+  const assetKind = nodeFileAssetKind(input.sourceField);
   return {
     ok: false,
     diagnostics: [
@@ -901,18 +978,18 @@ function nodeFileAssetOriginMissing<T>(input: {
         severity: "error",
         code: "E_NODE_FILE_ASSET_ORIGIN_MISSING",
         title: "node file asset importer origin is missing",
-        message:
-          "@deckjsx/node received a relative media path but no importing module path or asset root was available.",
+        message: `@deckjsx/node received a relative ${assetKind} path but no importing module path or asset root was available.`,
         labels: [
           {
             path: source,
-            message:
-              "relative node asset paths require an importer origin or createNodeFileAssetLoader root",
+            message: `relative node ${assetKind} paths require an importer origin or createNodeFileAssetLoader root`,
           },
         ],
-        notes: [`phase=${input.phase}`, `source=${source}`],
+        notes: [`phase=${input.phase}`, `sourceField=${input.sourceField}`, `source=${source}`],
         help: [
-          "Pass mediaSourceOrigins metadata from JSX transforms or configure createNodeFileAssetLoader({ root }).",
+          assetKind === "font"
+            ? "Configure nodeFontAssets({ root, fontAssets }) or createNodeFileAssetLoader({ root })."
+            : "Pass mediaSourceOrigins metadata from JSX transforms or configure createNodeFileAssetLoader({ root }).",
         ],
       },
     ],
@@ -922,8 +999,10 @@ function nodeFileAssetOriginMissing<T>(input: {
 function nodeFileAssetOutsideRoot<T>(input: {
   readonly phase: "load" | "probe";
   readonly source: AssetSource;
+  readonly sourceField: AssetSourceField;
 }): AssetLoaderOutcome<T> {
   const source = authoredAssetSource(input.source);
+  const assetKind = nodeFileAssetKind(input.sourceField);
   return {
     ok: false,
     diagnostics: [
@@ -931,17 +1010,17 @@ function nodeFileAssetOutsideRoot<T>(input: {
         severity: "error",
         code: "E_NODE_FILE_ASSET_OUTSIDE_ROOT",
         title: "node file asset path escapes its allowed root",
-        message:
-          "@deckjsx/node refused to load a media path that resolves outside the importing module directory or configured node asset root.",
+        message: `@deckjsx/node refused to load a ${assetKind} path that resolves outside the importing module directory or configured node asset root.`,
         labels: [
           {
             path: source,
-            message:
-              "asset paths must stay within their importer directory or createNodeFileAssetLoader root",
+            message: `${assetKind} paths must stay within their importer directory or createNodeFileAssetLoader root`,
           },
         ],
-        notes: [`phase=${input.phase}`, `source=${source}`],
-        help: ["Move the asset under the allowed directory or use a non-traversing media path."],
+        notes: [`phase=${input.phase}`, `sourceField=${input.sourceField}`, `source=${source}`],
+        help: [
+          `Move the asset under the allowed directory or use a non-traversing ${assetKind} path.`,
+        ],
       },
     ],
   };

@@ -1,5 +1,21 @@
-const DECKJSX_AUTHORING_METADATA_IMPORT =
-  'import { authoringMetadata as __deckjsxAuthoringMetadata } from "deckjsx/integration";';
+import { parseAst } from "rolldown/parseAst";
+
+const AUTHORING_METADATA_MODULE = "deckjsx/integration";
+const AUTHORING_METADATA_EXPORT = "authoringMetadata";
+const AUTHORING_METADATA_LOCAL = "__deckjsxAuthoringMetadata";
+
+type AstNode = {
+  readonly type: string;
+  readonly start: number;
+  readonly end: number;
+  readonly [key: string]: unknown;
+};
+
+type TextEdit = {
+  readonly start: number;
+  readonly end: number;
+  readonly text: string;
+};
 
 export function isDeckjsxTransformableModule(id: string): boolean {
   return /\.[cm]?[jt]sx(?:\?.*)?$/.test(id) && !/(?:^|\/)node_modules\//.test(id);
@@ -10,37 +26,251 @@ export function transformDeckjsxMediaSourceOrigins(code: string, id: string): st
     return undefined;
   }
 
-  const transformed = transformMediaSourceOriginProps(code, id);
-  return transformed === code ? undefined : `${DECKJSX_AUTHORING_METADATA_IMPORT}\n${transformed}`;
-}
+  const filename = id.replace(/\?.*$/, "");
+  const program = parseAst(
+    code,
+    { lang: parserLanguage(filename), sourceType: "module" },
+    filename,
+  );
+  const nodes = collectAstNodes(program);
+  const importedMetadataBindings = authoringMetadataBindings(nodes);
+  const metadataBinding =
+    importedMetadataBindings.values().next().value ?? uniqueMetadataBinding(nodes);
+  const edits: TextEdit[] = [];
 
-function skipQuotedLiteral(code: string, start: number, quote: "'" | '"' | "`"): number {
-  let escaped = false;
-
-  for (let index = start + 1; index < code.length; index += 1) {
-    const char = code[index]!;
-    if (escaped) {
-      escaped = false;
+  for (const node of nodes) {
+    if (node.type !== "JSXOpeningElement") {
       continue;
     }
-    if (char === "\\") {
-      escaped = true;
-      continue;
-    }
-    if (char === quote) {
-      return index + 1;
+    const edit = mediaMetadataEdit({
+      code,
+      id,
+      input: node,
+      metadataBindings: importedMetadataBindings,
+      metadataBinding,
+    });
+    if (edit) {
+      edits.push(edit);
     }
   }
 
-  return code.length;
+  if (edits.length === 0) {
+    return undefined;
+  }
+  if (importedMetadataBindings.size === 0) {
+    const importOffset = importInsertionOffset(program);
+    edits.push({
+      start: importOffset,
+      end: importOffset,
+      text: `${importOffset === 0 ? "" : "\n"}import { ${AUTHORING_METADATA_EXPORT} as ${metadataBinding} } from ${JSON.stringify(AUTHORING_METADATA_MODULE)};\n`,
+    });
+  }
+  return applyTextEdits(code, edits);
 }
 
-function jsxStringAttributeValue(attributes: string, name: string): string | undefined {
-  const attribute = new RegExp(
-    `(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|\\{\\s*"([^"]*)"\\s*\\}|\\{\\s*'([^']*)'\\s*\\})`,
+function parserLanguage(filename: string): "js" | "jsx" | "ts" | "tsx" {
+  if (/tsx$/i.test(filename)) {
+    return "tsx";
+  }
+  if (/jsx$/i.test(filename)) {
+    return "jsx";
+  }
+  if (/ts$/i.test(filename)) {
+    return "ts";
+  }
+  return "js";
+}
+
+function collectAstNodes(root: unknown): AstNode[] {
+  const nodes: AstNode[] = [];
+  const pending: unknown[] = [root];
+  const visited = new Set<object>();
+
+  while (pending.length > 0) {
+    const value = pending.pop();
+    if (!value || typeof value !== "object" || visited.has(value)) {
+      continue;
+    }
+    visited.add(value);
+    if (Array.isArray(value)) {
+      pending.push(...value);
+      continue;
+    }
+    if (isAstNode(value)) {
+      nodes.push(value);
+    }
+    for (const [key, child] of Object.entries(value)) {
+      if (key !== "parent") {
+        pending.push(child);
+      }
+    }
+  }
+  return nodes;
+}
+
+function isAstNode(value: object): value is AstNode {
+  return (
+    "type" in value &&
+    typeof value.type === "string" &&
+    "start" in value &&
+    typeof value.start === "number" &&
+    "end" in value &&
+    typeof value.end === "number"
   );
-  const match = attribute.exec(attributes);
-  return match?.[1] ?? match?.[2] ?? match?.[3] ?? match?.[4];
+}
+
+function authoringMetadataBindings(nodes: readonly AstNode[]): Set<string> {
+  const bindings = new Set<string>();
+  for (const node of nodes) {
+    if (
+      node.type !== "ImportDeclaration" ||
+      stringLiteralValue(node.source) !== AUTHORING_METADATA_MODULE
+    ) {
+      continue;
+    }
+    for (const specifier of astNodeArray(node.specifiers)) {
+      if (
+        specifier.type === "ImportSpecifier" &&
+        identifierName(specifier.imported) === AUTHORING_METADATA_EXPORT
+      ) {
+        const local = identifierName(specifier.local);
+        if (local) {
+          bindings.add(local);
+        }
+      }
+    }
+  }
+  return bindings;
+}
+
+function uniqueMetadataBinding(nodes: readonly AstNode[]): string {
+  const identifiers = new Set(
+    nodes
+      .filter((node) => node.type === "Identifier" || node.type === "JSXIdentifier")
+      .map((node) => identifierName(node))
+      .filter((name): name is string => name !== undefined),
+  );
+  let candidate = AUTHORING_METADATA_LOCAL;
+  for (let suffix = 2; identifiers.has(candidate); suffix += 1) {
+    candidate = `${AUTHORING_METADATA_LOCAL}${suffix}`;
+  }
+  return candidate;
+}
+
+function mediaMetadataEdit(input: {
+  readonly code: string;
+  readonly id: string;
+  readonly input: AstNode;
+  readonly metadataBindings: ReadonlySet<string>;
+  readonly metadataBinding: string;
+}): TextEdit | undefined {
+  const tag = jsxElementName(input.input.name);
+  if (!tag) {
+    return undefined;
+  }
+  const attributes = astNodeArray(input.input.attributes);
+  if (
+    hasAuthoringMetadata(attributes, input.metadataBindings) ||
+    attributes.some(
+      (attribute) =>
+        attribute.type === "JSXAttribute" &&
+        identifierName(attribute.name) === "__deckjsxMediaSourceOrigins",
+    )
+  ) {
+    return undefined;
+  }
+
+  const isMediaIntrinsic = tag === "img" || tag === "video";
+  const isComponent = /^[A-Z]/.test(tag);
+  if (!isMediaIntrinsic && !isComponent) {
+    return undefined;
+  }
+
+  const mediaFields = [
+    mediaOriginField({
+      field: "src",
+      importer: input.id,
+      source: jsxStringAttributeValue(attributes, "src"),
+    }),
+    tag === "video" || isComponent
+      ? mediaOriginField({
+          field: "poster",
+          importer: input.id,
+          source: jsxStringAttributeValue(attributes, "poster"),
+        })
+      : undefined,
+  ].filter((field): field is string => field !== undefined);
+  const fields = [
+    mediaFields.length > 0 ? `mediaSourceOrigins: { ${mediaFields.join(", ")} }` : undefined,
+    isComponent
+      ? `componentProvenance: { stack: [{ name: ${JSON.stringify(tag)}, moduleId: ${JSON.stringify(input.id)}, sourceSpan: ${sourceSpanFor(input.code, input.input.start, input.id)} }] }`
+      : undefined,
+  ].filter((field): field is string => field !== undefined);
+  if (fields.length === 0) {
+    return undefined;
+  }
+
+  const name = astNode(input.input.name);
+  const typeArguments = astNode(input.input.typeArguments);
+  const offset = typeArguments?.end ?? name?.end;
+  return offset === undefined
+    ? undefined
+    : {
+        start: offset,
+        end: offset,
+        text: ` {...${input.metadataBinding}({ ${fields.join(", ")} })}`,
+      };
+}
+
+function hasAuthoringMetadata(
+  attributes: readonly AstNode[],
+  metadataBindings: ReadonlySet<string>,
+): boolean {
+  return attributes.some((attribute) => {
+    if (attribute.type !== "JSXSpreadAttribute") {
+      return false;
+    }
+    const argument = astNode(attribute.argument);
+    const callee = argument?.type === "CallExpression" ? astNode(argument.callee) : undefined;
+    return callee?.type === "Identifier" && metadataBindings.has(identifierName(callee) ?? "");
+  });
+}
+
+function jsxStringAttributeValue(attributes: readonly AstNode[], name: string): string | undefined {
+  const attribute = attributes.find(
+    (candidate) => candidate.type === "JSXAttribute" && identifierName(candidate.name) === name,
+  );
+  const value = astNode(attribute?.value);
+  if (!value) {
+    return undefined;
+  }
+  if (value.type === "Literal") {
+    return stringLiteralValue(value);
+  }
+  const expression =
+    value.type === "JSXExpressionContainer" ? astNode(value.expression) : undefined;
+  return expression?.type === "Literal" ? stringLiteralValue(expression) : undefined;
+}
+
+function jsxElementName(value: unknown): string | undefined {
+  const node = astNode(value);
+  if (!node) {
+    return undefined;
+  }
+  if (node.type === "JSXIdentifier") {
+    return identifierName(node);
+  }
+  if (node.type === "JSXMemberExpression") {
+    const object = jsxElementName(node.object);
+    const property = jsxElementName(node.property);
+    return object && property ? `${object}.${property}` : undefined;
+  }
+  if (node.type === "JSXNamespacedName") {
+    const namespace = jsxElementName(node.namespace);
+    const name = jsxElementName(node.name);
+    return namespace && name ? `${namespace}:${name}` : undefined;
+  }
+  return undefined;
 }
 
 function isLocalMediaPath(value: string): boolean {
@@ -57,116 +287,7 @@ function mediaOriginField(input: {
   if (!input.source || !isLocalMediaPath(input.source)) {
     return undefined;
   }
-
   return `${input.field}: { importer: ${JSON.stringify(input.importer)}, source: ${JSON.stringify(input.source)} }`;
-}
-
-function transformMediaSourceOriginProps(code: string, id: string): string {
-  let output = "";
-  let cursor = 0;
-  let index = 0;
-
-  while (index < code.length) {
-    const char = code[index]!;
-    const next = code[index + 1];
-
-    if (char === "/" && next === "/") {
-      const lineEnd = code.indexOf("\n", index + 2);
-      index = lineEnd < 0 ? code.length : lineEnd + 1;
-      continue;
-    }
-    if (char === "/" && next === "*") {
-      const blockEnd = code.indexOf("*/", index + 2);
-      index = blockEnd < 0 ? code.length : blockEnd + 2;
-      continue;
-    }
-    if (char === "'" || char === '"' || char === "`") {
-      index = skipQuotedLiteral(code, index, char);
-      continue;
-    }
-
-    const tag = char === "<" ? readJsxStartTag(code, index) : undefined;
-    if (!tag) {
-      index += 1;
-      continue;
-    }
-
-    const replacement = transformJsxStartTag(tag, code, id);
-    if (replacement !== tag.match) {
-      output += code.slice(cursor, index);
-      output += replacement;
-      cursor = tag.end;
-    }
-    index = tag.end;
-  }
-
-  return output ? output + code.slice(cursor) : code;
-}
-
-type JsxStartTag = {
-  readonly match: string;
-  readonly tag: string;
-  readonly attributes: string;
-  readonly closing: string;
-  readonly start: number;
-  readonly end: number;
-};
-
-function readJsxStartTag(code: string, start: number): JsxStartTag | undefined {
-  const tagMatch = /^<([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?)\b/.exec(code.slice(start));
-  if (!tagMatch?.[1]) {
-    return undefined;
-  }
-
-  let quote: "'" | '"' | undefined;
-  let braceDepth = 0;
-  for (let index = start + tagMatch[0].length; index < code.length; index += 1) {
-    const char = code[index]!;
-    if (quote) {
-      if (char === "\\") {
-        index += 1;
-      } else if (char === quote) {
-        quote = undefined;
-      }
-      continue;
-    }
-
-    if (char === "'" || char === '"') {
-      quote = char;
-      continue;
-    }
-    if (char === "{") {
-      braceDepth += 1;
-      continue;
-    }
-    if (char === "}") {
-      braceDepth = Math.max(0, braceDepth - 1);
-      continue;
-    }
-    if (char !== ">" || braceDepth > 0) {
-      continue;
-    }
-
-    const end = index + 1;
-    let closingStart = index;
-    if (code[index - 1] === "/") {
-      closingStart = index - 1;
-    }
-    while (closingStart > start && /\s/.test(code[closingStart - 1] ?? "")) {
-      closingStart -= 1;
-    }
-    const tagEnd = start + tagMatch[0].length;
-    return {
-      match: code.slice(start, end),
-      tag: tagMatch[1],
-      attributes: code.slice(tagEnd, closingStart),
-      closing: code.slice(closingStart, end),
-      start,
-      end,
-    };
-  }
-
-  return undefined;
 }
 
 function sourceSpanFor(code: string, offset: number, id: string): string {
@@ -180,50 +301,44 @@ function sourceSpanFor(code: string, offset: number, id: string): string {
       column += 1;
     }
   }
-
   return `{ file: ${JSON.stringify(id)}, line: ${line}, column: ${column} }`;
 }
 
-function componentProvenanceField(input: JsxStartTag, code: string, id: string): string {
-  return `componentProvenance: { stack: [{ name: ${JSON.stringify(input.tag)}, moduleId: ${JSON.stringify(id)}, sourceSpan: ${sourceSpanFor(code, input.start, id)} }] }`;
+function importInsertionOffset(program: ReturnType<typeof parseAst>): number {
+  let offset = program.hashbang?.end ?? 0;
+  for (const statement of program.body) {
+    if (statement.type !== "ExpressionStatement" || typeof statement.directive !== "string") {
+      break;
+    }
+    offset = statement.end;
+  }
+  return offset;
 }
 
-function transformJsxStartTag(input: JsxStartTag, code: string, id: string): string {
-  if (
-    input.attributes.includes("__deckjsxAuthoringMetadata") ||
-    input.attributes.includes("__deckjsxMediaSourceOrigins")
-  ) {
-    return input.match;
+function applyTextEdits(code: string, edits: readonly TextEdit[]): string {
+  let output = code;
+  for (const edit of [...edits].sort((left, right) => right.start - left.start)) {
+    output = output.slice(0, edit.start) + edit.text + output.slice(edit.end);
   }
-  const isMediaIntrinsic = input.tag === "img" || input.tag === "video";
-  const isComponent = /^[A-Z]/.test(input.tag);
-  if (!isMediaIntrinsic && !isComponent) {
-    return input.match;
-  }
+  return output;
+}
 
-  const mediaFields = [
-    mediaOriginField({
-      field: "src",
-      importer: id,
-      source: jsxStringAttributeValue(input.attributes, "src"),
-    }),
-    input.tag === "video" || isComponent
-      ? mediaOriginField({
-          field: "poster",
-          importer: id,
-          source: jsxStringAttributeValue(input.attributes, "poster"),
-        })
-      : undefined,
-  ].filter((field): field is string => field !== undefined);
+function astNode(value: unknown): AstNode | undefined {
+  return value && typeof value === "object" && isAstNode(value) ? value : undefined;
+}
 
-  const fields = [
-    mediaFields.length > 0 ? `mediaSourceOrigins: { ${mediaFields.join(", ")} }` : undefined,
-    isComponent ? componentProvenanceField(input, code, id) : undefined,
-  ].filter((field): field is string => field !== undefined);
+function astNodeArray(value: unknown): AstNode[] {
+  return Array.isArray(value)
+    ? value.map(astNode).filter((node): node is AstNode => node !== undefined)
+    : [];
+}
 
-  if (fields.length === 0) {
-    return input.match;
-  }
+function identifierName(value: unknown): string | undefined {
+  const node = astNode(value);
+  return node && typeof node.name === "string" ? node.name : undefined;
+}
 
-  return `<${input.tag} {...__deckjsxAuthoringMetadata({ ${fields.join(", ")} })}${input.attributes}${input.closing}`;
+function stringLiteralValue(value: unknown): string | undefined {
+  const node = astNode(value);
+  return node?.type === "Literal" && typeof node.value === "string" ? node.value : undefined;
 }

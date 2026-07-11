@@ -1,4 +1,4 @@
-import { watch as watchFileSystem, type FSWatcher } from "node:fs";
+import { unwatchFile, watchFile, type StatsListener } from "node:fs";
 import path from "node:path";
 import { rolldown, watch, type OutputChunk, type Plugin, type WatchOptions } from "rolldown";
 import { isDeckjsxRuntimeExternalId } from "./dev-executor";
@@ -94,10 +94,11 @@ function createRolldownRebuildAdapter(options: RolldownWatchAdapterOptions): Rol
   let rebuildRunning = false;
   let rebuildQueued = false;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+  let closePromise: Promise<void> | undefined;
 
   return {
     start() {
-      if (started) {
+      if (started || closed) {
         return;
       }
       started = true;
@@ -113,18 +114,24 @@ function createRolldownRebuildAdapter(options: RolldownWatchAdapterOptions): Rol
       }
       return new Promise((resolve) => pendingSourceSnapshots.push({ resolve }));
     },
-    async close() {
-      if (closed) {
-        return;
-      }
-      closed = true;
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
-      }
-      resolvePendingSourceSnapshots(pendingSourceSnapshots, closedSourceSnapshot());
-      closeSourceWatchers();
+    close() {
+      closePromise ??= closeAdapter();
+      return closePromise;
     },
   };
+
+  async function closeAdapter(): Promise<void> {
+    closed = true;
+    rebuildQueued = false;
+    changedSourceIds.clear();
+    queuedSourceSnapshots.length = 0;
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = undefined;
+    }
+    resolvePendingSourceSnapshots(pendingSourceSnapshots, closedSourceSnapshot());
+    closeSourceWatchers();
+  }
 
   async function rebuild(sourceIds: readonly string[]): Promise<void> {
     if (closed) {
@@ -141,13 +148,23 @@ function createRolldownRebuildAdapter(options: RolldownWatchAdapterOptions): Rol
       if (closed) {
         return;
       }
-      if (snapshot.status === "executable") {
-        updateSourceWatchers(snapshot.watchFiles.length ? snapshot.watchFiles : snapshot.moduleIds);
-      }
+      updateSourceWatchers(
+        snapshot.status === "executable"
+          ? snapshot.watchFiles.length
+            ? snapshot.watchFiles
+            : snapshot.moduleIds
+          : [
+              entry,
+              ...sourceWatchers.keys(),
+              ...snapshot.diagnostics.flatMap((diagnostic) =>
+                diagnostic.primary?.file ? [diagnostic.primary.file] : [],
+              ),
+            ],
+      );
       emitSourceSnapshot(snapshot);
     } finally {
       rebuildRunning = false;
-      if (rebuildQueued) {
+      if (!closed && rebuildQueued) {
         rebuildQueued = false;
         scheduleRebuild();
       }
@@ -155,6 +172,9 @@ function createRolldownRebuildAdapter(options: RolldownWatchAdapterOptions): Rol
   }
 
   function scheduleSourceChange(filePath: string): void {
+    if (closed) {
+      return;
+    }
     changedSourceIds.add(path.resolve(cwd, filePath));
     if (rebuildRunning) {
       rebuildQueued = true;
@@ -170,12 +190,18 @@ function createRolldownRebuildAdapter(options: RolldownWatchAdapterOptions): Rol
   }
 
   function scheduleRebuild(): void {
+    if (closed) {
+      return;
+    }
     const sourceIds = [...changedSourceIds].sort();
     changedSourceIds.clear();
     void rebuild(sourceIds);
   }
 
   function emitSourceSnapshot(result: RolldownWatchSourceSnapshot): void {
+    if (closed) {
+      return;
+    }
     const pending = pendingSourceSnapshots.shift();
     if (pending) {
       pending.resolve(result);
@@ -190,8 +216,8 @@ function createRolldownRebuildAdapter(options: RolldownWatchAdapterOptions): Rol
     );
     for (const [filePath, watcher] of sourceWatchers) {
       if (!nextFiles.has(filePath)) {
-        watcher.close();
         sourceWatchers.delete(filePath);
+        watcher.close();
       }
     }
     for (const filePath of nextFiles) {
@@ -199,10 +225,37 @@ function createRolldownRebuildAdapter(options: RolldownWatchAdapterOptions): Rol
         continue;
       }
       try {
-        sourceWatchers.set(
-          filePath,
-          createFileWatcher(filePath, () => scheduleSourceChange(filePath)),
-        );
+        let ready = false;
+        let changedWhileRegistering = false;
+        let registration: { readonly close: () => void } | undefined;
+        const watcher = createFileWatcher(filePath, () => {
+          if (!ready) {
+            changedWhileRegistering = true;
+            return;
+          }
+          if (!closed && sourceWatchers.get(filePath) === registration) {
+            scheduleSourceChange(filePath);
+          }
+        });
+        if (closed) {
+          watcher.close();
+          continue;
+        }
+        let active = true;
+        registration = {
+          close() {
+            if (!active) {
+              return;
+            }
+            active = false;
+            watcher.close();
+          },
+        };
+        sourceWatchers.set(filePath, registration);
+        ready = true;
+        if (changedWhileRegistering && sourceWatchers.get(filePath) === registration) {
+          scheduleSourceChange(filePath);
+        }
       } catch {
         // Rolldown may report virtual or transient files. A later rebuild can refresh the watch set.
       }
@@ -210,10 +263,11 @@ function createRolldownRebuildAdapter(options: RolldownWatchAdapterOptions): Rol
   }
 
   function closeSourceWatchers(): void {
-    for (const watcher of sourceWatchers.values()) {
+    const watchers = [...sourceWatchers.values()];
+    sourceWatchers.clear();
+    for (const watcher of watchers) {
       watcher.close();
     }
-    sourceWatchers.clear();
   }
 
   function isWatchableSourceFile(filePath: string): boolean {
@@ -243,6 +297,10 @@ function createRolldownEventWatchAdapter(
   let started = false;
   let closed = false;
   let skipInitialWatchBundleEnd = false;
+  let closePromise: Promise<void> | undefined;
+  let changeListener: ((...args: readonly unknown[]) => void) | undefined;
+  let eventListener: ((...args: readonly unknown[]) => void) | undefined;
+  const eventTasks = new Set<Promise<void>>();
 
   const emitSourceSnapshot = (result: RolldownWatchSourceSnapshot) => {
     if (closed) {
@@ -293,7 +351,7 @@ function createRolldownEventWatchAdapter(
 
   return {
     start() {
-      if (started) {
+      if (started || closed) {
         return;
       }
       started = true;
@@ -301,22 +359,34 @@ function createRolldownEventWatchAdapter(
         cwd,
         entry,
         onWatchChange(id) {
-          changedSourceIds.push(path.resolve(cwd, id));
+          if (!closed) {
+            changedSourceIds.push(path.resolve(cwd, id));
+          }
         },
         onBuildStart() {
-          watchModuleIds.length = 0;
+          if (!closed) {
+            watchModuleIds.length = 0;
+          }
         },
         onModuleId(id) {
-          watchModuleIds.push(path.resolve(cwd, id));
+          if (!closed) {
+            watchModuleIds.push(path.resolve(cwd, id));
+          }
         },
       });
       watcher = (options.watchFactory ?? watch)(watchOptions);
-      watcher.on("change", (id) => {
+      changeListener = (id) => {
+        if (closed) {
+          return;
+        }
         if (typeof id === "string") {
           changedSourceIds.push(path.resolve(cwd, id));
         }
-      });
-      watcher.on("event", (event) => {
+      };
+      eventListener = (event) => {
+        if (closed) {
+          return;
+        }
         const watchEvent = rolldownWatchEventFromUnknown(event);
         if (!watchEvent) {
           emitSourceSnapshot(
@@ -329,8 +399,19 @@ function createRolldownEventWatchAdapter(
           );
           return;
         }
-        void onEvent(watchEvent);
-      });
+        const task = onEvent(watchEvent);
+        eventTasks.add(task);
+        void task.then(
+          () => {
+            eventTasks.delete(task);
+          },
+          () => {
+            eventTasks.delete(task);
+          },
+        );
+      };
+      watcher.on("change", changeListener);
+      watcher.on("event", eventListener);
 
       if (!options.watchFactory) {
         skipInitialWatchBundleEnd = true;
@@ -356,15 +437,46 @@ function createRolldownEventWatchAdapter(
       }
       return new Promise((resolve) => pendingSourceSnapshots.push({ resolve }));
     },
-    async close() {
-      if (closed) {
-        return;
-      }
-      closed = true;
-      resolvePendingSourceSnapshots(pendingSourceSnapshots, closedSourceSnapshot());
-      await watcher?.close();
+    close() {
+      closePromise ??= closeAdapter();
+      return closePromise;
     },
   };
+
+  async function closeAdapter(): Promise<void> {
+    closed = true;
+    changedSourceIds.length = 0;
+    watchModuleIds.length = 0;
+    queuedSourceSnapshots.length = 0;
+    resolvePendingSourceSnapshots(pendingSourceSnapshots, closedSourceSnapshot());
+    if (watcher && changeListener) {
+      watcher.off?.("change", changeListener);
+    }
+    if (watcher && eventListener) {
+      watcher.off?.("event", eventListener);
+    }
+    if (watcher && !watcher.off) {
+      watcher.clear?.("change");
+      watcher.clear?.("event");
+    }
+
+    let watcherCloseError: unknown;
+    try {
+      await watcher?.close();
+    } catch (error) {
+      watcherCloseError = error;
+    }
+    const taskResults = await Promise.allSettled(eventTasks);
+    const taskErrors = taskResults.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    if (watcherCloseError !== undefined || taskErrors.length > 0) {
+      throw new AggregateError(
+        [...(watcherCloseError === undefined ? [] : [watcherCloseError]), ...taskErrors],
+        "Failed to close the Rolldown watch adapter.",
+      );
+    }
+  }
 
   function consumeChangedSourceIds(): readonly string[] {
     const ids = [...new Set(changedSourceIds)].sort();
@@ -400,10 +512,20 @@ function createNodeFileWatcher(
   filePath: string,
   onChange: () => void,
 ): { readonly close: () => void } {
-  const watcher: FSWatcher = watchFileSystem(filePath, { persistent: true }, onChange);
+  let active = true;
+  const listener: StatsListener = (current, previous) => {
+    if (active && (current.nlink !== 0 || previous.nlink !== 0)) {
+      onChange();
+    }
+  };
+  watchFile(filePath, { persistent: true, interval: 100 }, listener);
   return {
     close() {
-      watcher.close();
+      if (!active) {
+        return;
+      }
+      active = false;
+      unwatchFile(filePath, listener);
     },
   };
 }

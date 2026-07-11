@@ -5,7 +5,14 @@ import * as deckjsxRuntime from "deckjsx";
 import * as deckjsxAdapterRuntime from "deckjsx/adapter";
 import * as deckjsxJsxDevRuntime from "deckjsx/jsx-dev-runtime";
 import * as deckjsxJsxRuntime from "deckjsx/jsx-runtime";
-import { createNodeFileAssetLoader, inspectPatchablePptx, nodeAssets, write } from "./index";
+import { parseAst } from "rolldown/parseAst";
+import {
+  createNodeFileAssetLoader,
+  inspectPatchablePptx,
+  nodeAssets,
+  nodeFontAssets,
+  write,
+} from "./index";
 
 export type EntryExecutionHost = {
   execute(input: { readonly code: string }): Promise<void>;
@@ -29,6 +36,7 @@ export function createEntryExecutionHost(input: { readonly cwd: string }): Entry
           createNodeFileAssetLoader,
           inspectPatchablePptx,
           nodeAssets,
+          nodeFontAssets,
           write,
         };
         globalSlot()[deckjsxRuntimeKey] = {
@@ -41,21 +49,19 @@ export function createEntryExecutionHost(input: { readonly cwd: string }): Entry
         try {
           await import(
             executableDataUrl(
-              awaitCapturedDefaultExport(
-                captureDefaultExport(
-                  resolveDeckjsxExternalImports(executionInput.code, (specifier) =>
-                    specifier === "@deckjsx/node"
-                      ? nodeRuntimeDataUrl(nodeRuntimeKey)
-                      : (deckjsxRuntimeDataUrl(specifier, deckjsxRuntimeKey) ??
-                        resolveDeckjsxPackageImport(specifier, cwd)),
-                  ),
-                  defaultExportKey,
+              captureDefaultExport(
+                resolveDeckjsxExternalImports(executionInput.code, (specifier) =>
+                  specifier === "@deckjsx/node"
+                    ? nodeRuntimeDataUrl(nodeRuntimeKey)
+                    : (deckjsxRuntimeDataUrl(specifier, deckjsxRuntimeKey) ??
+                      resolveDeckjsxPackageImport(specifier, cwd)),
                 ),
                 defaultExportKey,
               ),
               serial,
             )
           );
+          await awaitDefaultExport(globalSlot()[defaultExportKey]);
         } finally {
           delete globalSlot()[defaultExportKey];
           delete globalSlot()[nodeRuntimeKey];
@@ -104,6 +110,7 @@ function deckjsxRuntimeDataUrl(specifier: string, key: string): string | undefin
     return executableDataUrl(
       [
         `const runtime = globalThis[${JSON.stringify(key)}].adapter;`,
+        "export const pdf = runtime.pdf;",
         "export const pptx = runtime.pptx;",
       ].join("\n"),
       0,
@@ -142,6 +149,7 @@ function nodeRuntimeDataUrl(key: string): string {
       "export const createNodeFileAssetLoader = runtime.createNodeFileAssetLoader;",
       "export const inspectPatchablePptx = runtime.inspectPatchablePptx;",
       "export const nodeAssets = runtime.nodeAssets;",
+      "export const nodeFontAssets = runtime.nodeFontAssets;",
       "export const write = runtime.write;",
     ].join("\n"),
     0,
@@ -152,142 +160,183 @@ function executableDataUrl(code: string, serial: number): string {
   return `data:text/javascript;base64,${Buffer.from(code).toString("base64")}#deckjsx-dev-${process.pid}-${Date.now()}-${serial}`;
 }
 
-function awaitCapturedDefaultExport(code: string, key: string): string {
-  const slot = `globalThis[${JSON.stringify(key)}]`;
-  return `${code}
-{
-  const __deckjsxDefaultExport = ${slot};
-  if (__deckjsxDefaultExport && typeof __deckjsxDefaultExport.then === "function") {
-    await __deckjsxDefaultExport;
+async function awaitDefaultExport(defaultExport: unknown): Promise<void> {
+  if (isPromiseLike(defaultExport)) {
+    await defaultExport;
   }
-}`;
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return (
+    (typeof value === "object" || typeof value === "function") &&
+    value !== null &&
+    "then" in value &&
+    typeof value.then === "function"
+  );
 }
 
 function resolveDeckjsxExternalImports(
   code: string,
   resolveSpecifier: (specifier: string) => string,
 ): string {
-  return code
-    .replaceAll(
-      /(from\s+)(["'])(deckjsx(?:\/[^"']*)?|@deckjsx\/node(?:\/[^"']*)?)\2/g,
-      (_match, prefix: string, quote: string, specifier: string) =>
-        `${prefix}${quote}${resolveSpecifier(specifier)}${quote}`,
-    )
-    .replaceAll(
-      /(\bimport\s+)(["'])(deckjsx(?:\/[^"']*)?|@deckjsx\/node(?:\/[^"']*)?)\2/g,
-      (_match, prefix: string, quote: string, specifier: string) =>
-        `${prefix}${quote}${resolveSpecifier(specifier)}${quote}`,
-    )
-    .replaceAll(
-      /(import\s*\(\s*)(["'])(deckjsx(?:\/[^"']*)?|@deckjsx\/node(?:\/[^"']*)?)\2/g,
-      (_match, prefix: string, quote: string, specifier: string) =>
-        `${prefix}${quote}${resolveSpecifier(specifier)}${quote}`,
-    );
+  const program = parseAst(code, { lang: "js", sourceType: "module" }, "deckjsx-dev-entry.mjs");
+  const edits: { readonly start: number; readonly end: number; readonly text: string }[] = [];
+  visitAst(program, (node) => {
+    const source = moduleSpecifierNode(node);
+    const specifier = source ? stringLiteralValue(source) : undefined;
+    if (!source || !specifier || !isDeckjsxExternalSpecifier(specifier)) {
+      return;
+    }
+    edits.push({
+      start: source.start,
+      end: source.end,
+      text: JSON.stringify(resolveSpecifier(specifier)),
+    });
+  });
+
+  let output = code;
+  for (const edit of edits.sort((left, right) => right.start - left.start)) {
+    output = output.slice(0, edit.start) + edit.text + output.slice(edit.end);
+  }
+  return output;
 }
 
-function captureDefaultExport(code: string, key: string): string {
-  const slot = `globalThis[${JSON.stringify(key)}]`;
-  let output = "";
-  let cursor = 0;
-  let index = 0;
+type EntryAstNode = {
+  readonly type: string;
+  readonly start: number;
+  readonly end: number;
+  readonly [key: string]: unknown;
+};
 
-  while (index < code.length) {
-    const skipped = skipNonSyntax(code, index);
-    if (skipped !== index) {
-      index = skipped;
+function visitAst(root: unknown, visitor: (node: EntryAstNode) => void): void {
+  const pending: unknown[] = [root];
+  const visited = new Set<object>();
+  while (pending.length > 0) {
+    const value = pending.pop();
+    if (!value || typeof value !== "object" || visited.has(value)) {
       continue;
     }
-
-    if (!startsWithKeyword(code, index, "export")) {
-      index += 1;
+    visited.add(value);
+    if (Array.isArray(value)) {
+      pending.push(...value);
       continue;
     }
-
-    const slice = code.slice(index);
-    const defaultMatch = /^export\s+default\s+/.exec(slice);
-    if (defaultMatch) {
-      output += code.slice(cursor, index);
-      output += `${slot} = `;
-      index += defaultMatch[0].length;
-      cursor = index;
-      continue;
+    if (isEntryAstNode(value)) {
+      visitor(value);
     }
-
-    const namedMatch = /^export\s*\{\s*([^}]+)\s*\}\s*;?/.exec(slice);
-    if (namedMatch?.[1]) {
-      const defaultLocal = defaultExportLocalName(namedMatch[1]);
-      if (defaultLocal) {
-        output += code.slice(cursor, index);
-        output += `${slot} = ${defaultLocal};`;
-        index += namedMatch[0].length;
-        cursor = index;
-        continue;
+    for (const [key, child] of Object.entries(value)) {
+      if (key !== "parent") {
+        pending.push(child);
       }
     }
-
-    index += 1;
   }
-
-  return output ? output + code.slice(cursor) : code;
 }
 
-function skipNonSyntax(code: string, index: number): number {
-  const char = code[index];
-  const next = code[index + 1];
-  if (char === "'" || char === '"' || char === "`") {
-    return skipQuotedLiteral(code, index, char);
-  }
-  if (char === "/" && next === "/") {
-    const lineEnd = code.indexOf("\n", index + 2);
-    return lineEnd < 0 ? code.length : lineEnd + 1;
-  }
-  if (char === "/" && next === "*") {
-    const blockEnd = code.indexOf("*/", index + 2);
-    return blockEnd < 0 ? code.length : blockEnd + 2;
-  }
-  return index;
-}
-
-function skipQuotedLiteral(code: string, start: number, quote: "'" | '"' | "`"): number {
-  let escaped = false;
-  for (let index = start + 1; index < code.length; index += 1) {
-    const char = code[index];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (char === "\\") {
-      escaped = true;
-      continue;
-    }
-    if (char === quote) {
-      return index + 1;
-    }
-  }
-  return code.length;
-}
-
-function startsWithKeyword(code: string, index: number, keyword: string): boolean {
+function isEntryAstNode(value: object): value is EntryAstNode {
   return (
-    code.startsWith(keyword, index) &&
-    !/[\w$]/.test(code[index - 1] ?? "") &&
-    !/[\w$]/.test(code[index + keyword.length] ?? "")
+    "type" in value &&
+    typeof value.type === "string" &&
+    "start" in value &&
+    typeof value.start === "number" &&
+    "end" in value &&
+    typeof value.end === "number"
   );
 }
 
-function defaultExportLocalName(specifiers: string): string | undefined {
-  for (const specifier of specifiers.split(",")) {
-    const match = specifier.trim().match(/^([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?$/);
-    if (!match) {
-      continue;
-    }
-    const local = match[1];
-    const exported = match[2] ?? match[1];
-    if (exported === "default") {
-      return local;
-    }
+function entryAstNode(value: unknown): EntryAstNode | undefined {
+  return value && typeof value === "object" && isEntryAstNode(value) ? value : undefined;
+}
+
+function moduleSpecifierNode(node: EntryAstNode): EntryAstNode | undefined {
+  if (
+    node.type === "ImportDeclaration" ||
+    node.type === "ExportNamedDeclaration" ||
+    node.type === "ExportAllDeclaration" ||
+    node.type === "ImportExpression"
+  ) {
+    const source = entryAstNode(node.source);
+    return source?.type === "Literal" ? source : undefined;
   }
   return undefined;
+}
+
+function stringLiteralValue(node: EntryAstNode): string | undefined {
+  return node.type === "Literal" && typeof node.value === "string" ? node.value : undefined;
+}
+
+function isDeckjsxExternalSpecifier(specifier: string): boolean {
+  return (
+    specifier === "deckjsx" ||
+    specifier.startsWith("deckjsx/") ||
+    specifier === "@deckjsx/node" ||
+    specifier.startsWith("@deckjsx/node/")
+  );
+}
+
+function captureDefaultExport(code: string, key: string): string {
+  const program = parseAst(code, { lang: "js", sourceType: "module" }, "deckjsx-dev-entry.mjs");
+  const slot = `globalThis[${JSON.stringify(key)}]`;
+  const edits: { readonly start: number; readonly end: number; readonly text: string }[] = [];
+
+  for (const statement of program.body) {
+    if (statement.type === "ExportDefaultDeclaration") {
+      edits.push({
+        start: statement.start,
+        end: statement.declaration.start,
+        text: `${slot} = `,
+      });
+      continue;
+    }
+    if (statement.type !== "ExportNamedDeclaration" || statement.source) {
+      continue;
+    }
+    let defaultIndex = -1;
+    for (let index = 0; index < statement.specifiers.length; index += 1) {
+      if (moduleExportName(statement.specifiers[index]?.exported) === "default") {
+        defaultIndex = index;
+        break;
+      }
+    }
+    const defaultSpecifier = statement.specifiers[defaultIndex];
+    const local = defaultSpecifier ? moduleExportName(defaultSpecifier.local) : undefined;
+    if (!local || !defaultSpecifier) {
+      continue;
+    }
+    if (statement.specifiers.length === 1) {
+      edits.push({ start: statement.start, end: statement.end, text: `${slot} = ${local};` });
+      continue;
+    }
+    const previous = statement.specifiers[defaultIndex - 1];
+    const next = statement.specifiers[defaultIndex + 1];
+    const removal = previous
+      ? { start: previous.end, end: defaultSpecifier.end, text: "" }
+      : next
+        ? { start: defaultSpecifier.start, end: next.start, text: "" }
+        : undefined;
+    if (!removal) {
+      continue;
+    }
+    edits.push(removal, {
+      start: statement.end,
+      end: statement.end,
+      text: `\n${slot} = ${local};`,
+    });
+  }
+
+  let output = code;
+  for (const edit of edits.sort((left, right) => right.start - left.start)) {
+    output = output.slice(0, edit.start) + edit.text + output.slice(edit.end);
+  }
+  return output;
+}
+
+function moduleExportName(value: unknown): string | undefined {
+  const node = entryAstNode(value);
+  return node && typeof node.name === "string"
+    ? node.name
+    : node?.type === "Literal" && typeof node.value === "string"
+      ? node.value
+      : undefined;
 }
 
 function resolveDeckjsxPackageImport(specifier: string, cwd: string): string {
