@@ -251,13 +251,13 @@ function textBodyAnchor(value: TextStyleIR["verticalAlign"]): "t" | "ctr" | "b" 
 }
 
 function textBodyInsets(value: TextStyleIR["paddingPt"]): {
-  tIns?: number;
-  rIns?: number;
-  bIns?: number;
-  lIns?: number;
+  tIns: number;
+  rIns: number;
+  bIns: number;
+  lIns: number;
 } {
   if (!value) {
-    return {};
+    return { tIns: 0, rIns: 0, bIns: 0, lIns: 0 };
   }
 
   if (!Array.isArray(value) || value.length !== 4) {
@@ -266,19 +266,15 @@ function textBodyInsets(value: TextStyleIR["paddingPt"]): {
 
   const [top, right, bottom, left] = value;
   return {
-    tIns: nonZeroPointToEmu(top, "text style.paddingPt.0"),
-    rIns: nonZeroPointToEmu(right, "text style.paddingPt.1"),
-    bIns: nonZeroPointToEmu(bottom, "text style.paddingPt.2"),
-    lIns: nonZeroPointToEmu(left, "text style.paddingPt.3"),
+    tIns: textBodyInsetToEmu(top, "text style.paddingPt.0"),
+    rIns: textBodyInsetToEmu(right, "text style.paddingPt.1"),
+    bIns: textBodyInsetToEmu(bottom, "text style.paddingPt.2"),
+    lIns: textBodyInsetToEmu(left, "text style.paddingPt.3"),
   };
 }
 
-function nonZeroPointToEmu(value: number | undefined, path: string): number | undefined {
-  if (value === undefined || value === 0) {
-    return undefined;
-  }
-
-  return pointToEmu(finiteNonNegativeNumber(value, path));
+function textBodyInsetToEmu(value: number | undefined, path: string): number {
+  return pointToEmu(finiteNonNegativeNumber(value ?? 0, path)) ?? 0;
 }
 
 function writeTextFit(writer: XmlChunkWriter, style: TextBodyStyle): void {

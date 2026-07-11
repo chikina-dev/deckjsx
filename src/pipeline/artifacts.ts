@@ -2,7 +2,7 @@ import { compositionRevisionForSource, type CompositionSource } from "../composi
 import { resolveComposition } from "../composition/resolve";
 import type { ComposedAuthorRoot } from "../composition/types";
 import type { DeckOptions } from "../authoring/options";
-import type { AssetLoadResult, AssetProbeResult, AssetSource } from "../assets";
+import type { AssetLoadResult, AssetProbeResult, AssetSource, AssetSourceField } from "../assets";
 import type { MediaSourceOrigin } from "../media-source-origin";
 import type { SourceInvalidation } from "../plugin";
 import { createDiagnostics, type Diagnostics } from "../diagnostics";
@@ -118,7 +118,7 @@ function projectionArtifactForModel(
 export type AssetArtifact = {
   readonly assetEntityId: AssetEntityId;
   readonly source: AssetSource;
-  readonly sourceField: AssetEntity["sourceField"];
+  readonly sourceField: AssetSourceField;
   readonly resolverIdentity?: string;
   readonly origin?: MediaSourceOrigin;
   readonly probe?: AssetProbeResult;
@@ -147,19 +147,21 @@ export function assetSourceCacheKey(
   source: AssetSource,
   resolverIdentity = "deckjsx:builtin",
   origin?: MediaSourceOrigin,
+  sourceField?: AssetSourceField,
 ): string {
+  const fieldKey = sourceField ? `:${sourceField}` : "";
   const originKey = origin
     ? `:${origin.sourceIdentity ?? ""}:${origin.importer ?? ""}:${origin.source ?? ""}`
     : "";
   switch (source.kind) {
     case "bytes":
-      return `${resolverIdentity}:bytes:${source.mediaType ?? ""}:${source.extension ?? ""}:${source.bytes.byteLength}:${fingerprintBytes(source.bytes)}`;
+      return `${resolverIdentity}${fieldKey}:bytes:${source.mediaType ?? ""}:${source.extension ?? ""}:${source.bytes.byteLength}:${fingerprintBytes(source.bytes)}`;
     case "data":
-      return `${resolverIdentity}:data:${source.data}`;
+      return `${resolverIdentity}${fieldKey}:data:${source.data}`;
     case "path":
-      return `${resolverIdentity}:path${originKey}:${source.path}`;
+      return `${resolverIdentity}${fieldKey}:path${originKey}:${source.path}`;
     case "url":
-      return `${resolverIdentity}:url:${source.url}`;
+      return `${resolverIdentity}${fieldKey}:url:${source.url}`;
   }
 }
 
@@ -212,6 +214,23 @@ function combineDiagnostics(...diagnostics: readonly Diagnostics[]): Diagnostics
   return createDiagnostics(diagnostics.flatMap((item) => item.items));
 }
 
+function mergeAssetDiagnostics(previous: Diagnostics, next: Diagnostics): Diagnostics {
+  const items = [...previous.items];
+  const seen = new Set(items.map(assetDiagnosticKey));
+  next.items.forEach((item) => {
+    const key = assetDiagnosticKey(item);
+    if (!seen.has(key)) {
+      seen.add(key);
+      items.push(item);
+    }
+  });
+  return createDiagnostics(items);
+}
+
+function assetDiagnosticKey(item: Diagnostics["items"][number]): string {
+  return JSON.stringify(item);
+}
+
 function sourceKeyFor(source: SourceOrigin | undefined): string {
   return !source || source.kind === "root" ? ROOT_SOURCE_ARTIFACT_KEY : source.sourceIdentity;
 }
@@ -261,13 +280,18 @@ function sourcePathResolve(importer: string, source: string): string {
   return sourcePathNormalize(`${sourcePathDirname(importer)}/${normalizedSource}`);
 }
 
-function originMatchesChangedSource(
-  source: AssetSource,
-  origin: MediaSourceOrigin | undefined,
+function assetMatchesChangedSource(
+  asset: AssetArtifact,
   changedSourceIds: ReadonlySet<string>,
 ): boolean {
+  const resolvedId = asset.load?.provenance?.resolvedId ?? asset.probe?.provenance?.resolvedId;
+  if (resolvedId && changedSourceIds.has(normalizedSourceId(resolvedId))) {
+    return true;
+  }
+
+  const { source, origin } = asset;
   if (!origin) {
-    return false;
+    return source.kind === "path" && changedSourceIds.has(normalizedSourceId(source.path));
   }
 
   const directMatches = [origin.importer, origin.source]
@@ -424,7 +448,7 @@ export class PipelineArtifactCollection {
 
     const staleAssetIds = new Set<AssetEntityId>();
     this.#assetsById.forEach((asset) => {
-      if (originMatchesChangedSource(asset.source, asset.origin, changedSourceIds)) {
+      if (assetMatchesChangedSource(asset, changedSourceIds)) {
         staleAssetIds.add(asset.assetEntityId);
       }
     });
@@ -440,7 +464,7 @@ export class PipelineArtifactCollection {
     this.#assetsBySourceCacheKey.clear();
     this.#assetsById.forEach((asset) => {
       this.#assetsBySourceCacheKey.set(
-        assetSourceCacheKey(asset.source, asset.resolverIdentity, asset.origin),
+        assetSourceCacheKey(asset.source, asset.resolverIdentity, asset.origin, asset.sourceField),
         asset,
       );
     });
@@ -659,14 +683,19 @@ export class PipelineArtifactCollection {
     const artifact = {
       ...previous,
       ...input,
-      diagnostics: combineDiagnostics(
+      diagnostics: mergeAssetDiagnostics(
         previous?.diagnostics ?? createDiagnostics(),
         input.diagnostics,
       ),
     };
     this.#assetsById.set(input.assetEntityId, artifact);
     this.#assetsBySourceCacheKey.set(
-      assetSourceCacheKey(artifact.source, artifact.resolverIdentity, artifact.origin),
+      assetSourceCacheKey(
+        artifact.source,
+        artifact.resolverIdentity,
+        artifact.origin,
+        artifact.sourceField,
+      ),
       artifact,
     );
   }

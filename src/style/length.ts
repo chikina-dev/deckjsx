@@ -1,10 +1,19 @@
 import type { DeckLength, DeckPointLength } from "./types";
 import { EMU_PER_INCH, PIXELS_PER_INCH, POINTS_PER_INCH } from "../types";
 
+export type TextFontMetrics = {
+  readonly family: string;
+  readonly weight: number;
+  readonly style: "normal" | "italic";
+  readonly data: Uint8Array;
+  readonly winAnsiWidths?: readonly number[];
+};
+
 export type LengthResolutionContext = {
   fontSizePt?: number;
   viewportWidthEmu?: number;
   viewportHeightEmu?: number;
+  fontMetrics?: readonly TextFontMetrics[];
 };
 
 const ROOT_FONT_SIZE_PX = 16;

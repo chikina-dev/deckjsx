@@ -4,6 +4,7 @@ import type { AssetEntity, SemanticAuthorGraph } from "../graph";
 import type { DeckIntegrationContext } from "../integration-context";
 import type { ProjectionFormat } from "../pipeline/public";
 import type { ResolvedStyleMap } from "../style/resolve";
+import { summarizePdfPageModel } from "./pdf/inspect";
 import type { PdfPageModel } from "./pdf/model";
 import { projectGraphToPartialPdfPageModel, projectGraphToPdfPageModel } from "./pdf/project";
 import { validatePdfPageModel } from "./pdf/validation";
@@ -90,7 +91,7 @@ const pdfProjectionCapability: ProjectionCapability<PdfPageModel> = {
   validateModel: validatePdfPageModel,
   projectPartial: projectGraphToPartialPdfPageModel,
   canSummarize: isPdfPageModelShape,
-  summarize: () => undefined,
+  summarize: summarizePdfPageModel,
 };
 
 function pdfUnsupportedContentDiagnostic(input: {
@@ -103,7 +104,7 @@ function pdfUnsupportedContentDiagnostic(input: {
     code: "E_PDF_UNSUPPORTED_AUTHOR_CONTENT",
     title: "authored content is not supported by PDF projection",
     message:
-      "PDF projection currently supports text content only; this authored node would be omitted.",
+      "PDF projection does not yet support this authored content, so this node would be omitted.",
     labels: [
       {
         path: input.path,
@@ -117,11 +118,14 @@ function pdfUnsupportedContentDiagnostic(input: {
 function collectPdfUnsupportedProjectionDiagnostics(input: {
   graph: SemanticAuthorGraph;
 }): Diagnostics {
-  const unsupportedKinds = new Set(["image", "shape", "table", "video"]);
   const issues: Diagnostic[] = [];
 
   input.graph.nodes.forEach((node, nodeId) => {
-    if (!unsupportedKinds.has(node.kind)) {
+    if (node.kind !== "video") {
+      return;
+    }
+
+    if (node.posterAssetRef) {
       return;
     }
 

@@ -6,6 +6,7 @@ import type {
   AssetResolutionHashSource,
   AssetResolutionProvenanceKind,
   AssetSource,
+  AssetSourceField,
 } from "./assets";
 import { createDiagnostics, diagnostic, type Diagnostics } from "./diagnostics";
 import type { AssetEntity, AssetEntityId } from "./graph";
@@ -224,7 +225,7 @@ export function missingRequiredAssetProbeDiagnostics(input: {
 
 export function missingAssetContextDiagnostics(input: {
   readonly source: AssetSource;
-  readonly sourceField: AssetEntity["sourceField"];
+  readonly sourceField: AssetSourceField;
   readonly assetEntityId: AssetEntityId;
 }): Diagnostics {
   return createDiagnostics([
@@ -336,6 +337,7 @@ export function normalizedAssetLoadResult(input: {
   readonly result: AssetLoadResult;
   readonly source: AssetSource;
   readonly resolverIdentity: string;
+  readonly stage?: "project" | "render";
   readonly assetEntityId?: AssetEntityId;
   readonly packagePartPath?: string;
 }):
@@ -350,8 +352,11 @@ export function normalizedAssetLoadResult(input: {
     return {
       ok: false,
       diagnostics: invalidAssetResultDiagnostics({
-        stage: "render",
-        code: "E_RENDER_ASSET_LOAD_INVALID",
+        stage: input.stage ?? "render",
+        code:
+          input.stage === "project"
+            ? "E_PROJECT_ASSET_LOAD_INVALID"
+            : "E_RENDER_ASSET_LOAD_INVALID",
         title: "asset load result is invalid",
         phase: "load",
         source: input.source,

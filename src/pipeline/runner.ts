@@ -32,6 +32,11 @@ import {
   type RenderExecution,
 } from "../render-execution";
 import {
+  fontAssetEntityId,
+  type DeckIntegrationContext,
+  type FontAssetRegistration,
+} from "../integration-context";
+import {
   attachArtifactWriteToken,
   claimIncrementalArtifactRenderSlot,
 } from "../incremental-artifact-session";
@@ -86,6 +91,7 @@ import {
   slideProjectionFingerprintSnapshots,
 } from "../projection/pptx/reuse";
 import type { SlideTemplateSet } from "../templates";
+import { pdfImageAssetLoadRequirements } from "../writers/pdf";
 import { pptxMediaAssetLoadRequirements } from "../writers/pptx";
 
 export { compileSource } from "../compile-runner";
@@ -103,6 +109,10 @@ function isDefinedPptxPackageModelArtifact(
 }
 
 function definedDocumentModel(value: unknown): ProjectedDocumentModel | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
   if (isPptxPackageModel(value as PptxPackageModelCandidate)) {
     return value as PptxPackageModel;
   }
@@ -119,11 +129,53 @@ function definedProjectionShapeDiagnostics(value: unknown): Diagnostics {
     return projectionShapeDiagnostics(value as PptxPackageModelCandidate);
   }
 
-  return emptyDiagnostics();
+  return createDiagnostics([
+    diagnostic({
+      severity: "error",
+      code: "E_DEFINE_PROJECTION_SHAPE",
+      title: "defined projection shape is invalid",
+      message: "defineProjection() requires a projected document model object.",
+      labels: [
+        {
+          path: "projection",
+          message: value === null ? "received null" : `received ${typeof value}`,
+          severity: "primary",
+        },
+      ],
+    }),
+  ]);
 }
 
 function combineDiagnostics(...diagnostics: readonly Diagnostics[]): Diagnostics {
-  return createDiagnostics(diagnostics.flatMap((item) => item.items));
+  const items: Diagnostics["items"][number][] = [];
+  const keysFromPreviousStages = new Set<string>();
+  diagnostics.forEach((stageDiagnostics) => {
+    const currentStageKeys = new Set<string>();
+    stageDiagnostics.items.forEach((item) => {
+      const key = JSON.stringify([
+        item.severity,
+        item.code,
+        item.title,
+        item.message,
+        item.labels.map((label) => [
+          label.path,
+          label.message,
+          label.severity,
+          label.sourceSpan?.file,
+          label.sourceSpan?.line,
+          label.sourceSpan?.column,
+        ]),
+        item.notes,
+        item.help,
+      ]);
+      if (!keysFromPreviousStages.has(key)) {
+        items.push(item);
+      }
+      currentStageKeys.add(key);
+    });
+    currentStageKeys.forEach((key) => keysFromPreviousStages.add(key));
+  });
+  return createDiagnostics(items);
 }
 
 function emptyDiagnostics(): Diagnostics {
@@ -493,6 +545,337 @@ async function loadBuiltInAssetSource(source: AssetSource): Promise<AssetLoadRes
   };
 }
 
+async function resolveFontAssetRegistration(input: {
+  readonly registration: FontAssetRegistration;
+  readonly loaders?: readonly AssetLoader[];
+  readonly artifacts?: PipelineArtifactCollection;
+  readonly origin?: MediaSourceOrigin;
+}): Promise<{
+  readonly registration: FontAssetRegistration;
+  readonly artifact: AssetArtifact;
+  readonly diagnostics: Diagnostics;
+}> {
+  const source = input.registration.source;
+  const assetEntityId = fontAssetEntityId(input.registration);
+  const loaders = assetLoadersWithIdentities(input.loaders);
+  let cached = input.artifacts?.assetsById.get(assetEntityId);
+  const cachedMatchesSource =
+    cached !== undefined &&
+    assetSourceCacheKey(
+      cached.source,
+      cached.resolverIdentity,
+      cached.origin,
+      cached.sourceField,
+    ) === assetSourceCacheKey(source, cached.resolverIdentity, input.origin, "font");
+  if (!cachedMatchesSource) {
+    cached = undefined;
+  }
+  if (!cached) {
+    for (const { resolverIdentity } of loaders) {
+      cached = input.artifacts?.assetsBySourceCacheKey.get(
+        assetSourceCacheKey(source, resolverIdentity, input.origin, "font"),
+      );
+      if (cached?.load) {
+        break;
+      }
+    }
+  }
+  cached ??= input.artifacts?.assetsBySourceCacheKey.get(
+    assetSourceCacheKey(source, BUILTIN_ASSET_RESOLVER_IDENTITY, input.origin, "font"),
+  );
+
+  if (cached?.load) {
+    const artifact = {
+      ...cached,
+      assetEntityId,
+      source,
+      sourceField: "font" as const,
+      ...(input.origin ? { origin: input.origin } : {}),
+    } satisfies AssetArtifact;
+    input.artifacts?.materializeAsset(artifact);
+    return {
+      registration: fontRegistrationWithLoad(input.registration, cached.load),
+      artifact,
+      diagnostics: artifact.diagnostics,
+    };
+  }
+
+  let probe = cached?.probe;
+  let load = cached?.load;
+  let resolverIdentity = cached?.resolverIdentity ?? BUILTIN_ASSET_RESOLVER_IDENTITY;
+  let diagnostics = cached?.diagnostics ?? emptyDiagnostics();
+  let resolutionStopped = false;
+  const scopedProbeLoader = cached?.resolverIdentity
+    ? assetLoaderForIdentity(loaders, cached.resolverIdentity)
+    : undefined;
+  const probeLoaders = cached?.resolverIdentity
+    ? scopedProbeLoader
+      ? [scopedProbeLoader]
+      : []
+    : loaders;
+
+  if (!probe) {
+    for (const { loader, resolverIdentity: loaderResolverIdentity } of probeLoaders) {
+      try {
+        const outcome = assetLoaderOutcomeValue({
+          outcome: await loader.probe?.({
+            source,
+            resolverIdentity: loaderResolverIdentity,
+            assetEntityId,
+            sourceField: "font",
+            ...(input.origin ? { origin: input.origin } : {}),
+          }),
+          stage: "project",
+          code: "E_PROJECT_ASSET_PROBE_OUTCOME_INVALID",
+          title: "asset probe outcome is invalid",
+          phase: "probe",
+          source,
+          resolverIdentity: loaderResolverIdentity,
+          assetEntityId,
+        });
+        if (outcome.kind === "failed") {
+          diagnostics = combineDiagnostics(diagnostics, outcome.diagnostics);
+          resolverIdentity = loaderResolverIdentity;
+          resolutionStopped = true;
+          break;
+        }
+        if (outcome.kind === "resolved") {
+          const normalized = normalizedAssetProbeResult({
+            result: outcome.value,
+            source,
+            resolverIdentity: loaderResolverIdentity,
+            assetEntityId,
+          });
+          if (!normalized.ok) {
+            diagnostics = combineDiagnostics(diagnostics, normalized.diagnostics);
+            continue;
+          }
+          probe = normalized.result;
+          resolverIdentity = loaderResolverIdentity;
+          diagnostics = combineDiagnostics(diagnostics, outcome.diagnostics);
+          break;
+        }
+      } catch (error) {
+        diagnostics = combineDiagnostics(
+          diagnostics,
+          assetDiagnosticFromError({
+            stage: "project",
+            code: "E_PROJECT_ASSET_PROBE_FAILED",
+            title: "asset probe failed",
+            phase: "probe",
+            source,
+            resolverIdentity: loaderResolverIdentity,
+            assetEntityId,
+            error,
+          }),
+        );
+      }
+    }
+  }
+
+  if (!probe && !resolutionStopped) {
+    try {
+      const builtIn = await probeBuiltInAssetSource(source);
+      if (builtIn) {
+        probe = builtIn.probe;
+        load = builtIn.load;
+        resolverIdentity = BUILTIN_ASSET_RESOLVER_IDENTITY;
+        diagnostics = combineDiagnostics(diagnostics, builtIn.diagnostics ?? emptyDiagnostics());
+        resolutionStopped = builtIn.diagnostics?.hasErrors ?? false;
+      }
+    } catch (error) {
+      diagnostics = combineDiagnostics(
+        diagnostics,
+        assetDiagnosticFromError({
+          stage: "project",
+          code: "E_PROJECT_ASSET_PROBE_FAILED",
+          title: "asset probe failed",
+          phase: "probe",
+          source,
+          resolverIdentity: BUILTIN_ASSET_RESOLVER_IDENTITY,
+          assetEntityId,
+          error,
+        }),
+      );
+    }
+  }
+
+  const resolvedLoader =
+    resolverIdentity === BUILTIN_ASSET_RESOLVER_IDENTITY
+      ? undefined
+      : assetLoaderForIdentity(loaders, resolverIdentity);
+  const loadLoaders = resolvedLoader ? [resolvedLoader] : loaders;
+
+  for (const { loader, resolverIdentity: loaderResolverIdentity } of loadLoaders) {
+    if (load || resolutionStopped) {
+      break;
+    }
+    try {
+      const outcome = assetLoaderOutcomeValue({
+        outcome: await loader.load?.({
+          source,
+          resolverIdentity: loaderResolverIdentity,
+          assetEntityId,
+          sourceField: "font",
+          ...(input.origin ? { origin: input.origin } : {}),
+        }),
+        stage: "project",
+        code: "E_PROJECT_ASSET_LOAD_OUTCOME_INVALID",
+        title: "asset load outcome is invalid",
+        phase: "load",
+        source,
+        resolverIdentity: loaderResolverIdentity,
+      });
+      if (outcome.kind === "failed") {
+        diagnostics = outcome.diagnostics;
+        resolverIdentity = loaderResolverIdentity;
+        resolutionStopped = true;
+        break;
+      }
+      if (outcome.kind === "resolved") {
+        const normalized = normalizedAssetLoadResult({
+          result: outcome.value,
+          source,
+          resolverIdentity: loaderResolverIdentity,
+          stage: "project",
+          assetEntityId,
+        });
+        if (!normalized.ok) {
+          diagnostics = combineDiagnostics(diagnostics, normalized.diagnostics);
+          continue;
+        }
+
+        load = normalized.result;
+        resolverIdentity = loaderResolverIdentity;
+        diagnostics = combineDiagnostics(diagnostics, outcome.diagnostics);
+        break;
+      }
+    } catch (error) {
+      diagnostics = combineDiagnostics(
+        diagnostics,
+        assetDiagnosticFromError({
+          stage: "project",
+          code: "E_PROJECT_ASSET_LOAD_FAILED",
+          title: "asset load failed",
+          phase: "load",
+          source,
+          resolverIdentity: loaderResolverIdentity,
+          error,
+        }),
+      );
+    }
+  }
+
+  if (!load && !resolutionStopped && resolverIdentity === BUILTIN_ASSET_RESOLVER_IDENTITY) {
+    try {
+      load = await loadBuiltInAssetSource(source);
+    } catch (error) {
+      diagnostics = combineDiagnostics(
+        diagnostics,
+        assetDiagnosticFromError({
+          stage: "project",
+          code: "E_PROJECT_ASSET_LOAD_FAILED",
+          title: "asset load failed",
+          phase: "load",
+          source,
+          resolverIdentity,
+          assetEntityId,
+          error,
+        }),
+      );
+    }
+  }
+
+  if (!load && !diagnostics.hasErrors && source.kind === "path") {
+    diagnostics = combineDiagnostics(
+      diagnostics,
+      missingAssetContextDiagnostics({ source, sourceField: "font", assetEntityId }),
+    );
+  }
+
+  const artifact = {
+    assetEntityId,
+    source,
+    sourceField: "font" as const,
+    resolverIdentity,
+    ...(input.origin ? { origin: input.origin } : {}),
+    ...(probe ? { probe } : {}),
+    ...(load ? { load } : {}),
+    diagnostics,
+  } satisfies AssetArtifact;
+  input.artifacts?.materializeAsset(artifact);
+
+  return {
+    registration: load ? fontRegistrationWithLoad(input.registration, load) : input.registration,
+    artifact,
+    diagnostics,
+  };
+}
+
+function fontRegistrationWithLoad(
+  registration: FontAssetRegistration,
+  load: AssetLoadResult,
+): FontAssetRegistration {
+  return {
+    ...registration,
+    source: {
+      kind: "bytes",
+      bytes: load.bytes,
+      ...(load.mediaType ? { mediaType: load.mediaType } : {}),
+      ...(load.extension ? { extension: load.extension } : {}),
+    },
+  };
+}
+
+async function resolveIntegrationFontAssets(input: {
+  readonly integrationContext?: DeckIntegrationContext;
+  readonly loaders?: readonly AssetLoader[];
+  readonly artifacts?: PipelineArtifactCollection;
+  readonly origin?: MediaSourceOrigin;
+}): Promise<{
+  readonly integrationContext?: DeckIntegrationContext;
+  readonly assetsById: ReadonlyMap<AssetEntityId, AssetArtifact>;
+  readonly diagnostics: Diagnostics;
+}> {
+  const fontAssets = input.integrationContext?.fontAssets;
+  if (!input.integrationContext || !fontAssets || fontAssets.length === 0) {
+    return {
+      integrationContext: input.integrationContext,
+      assetsById: new Map(),
+      diagnostics: emptyDiagnostics(),
+    };
+  }
+
+  const resolved: Awaited<ReturnType<typeof resolveFontAssetRegistration>>[] = [];
+  for (const registration of fontAssets) {
+    resolved.push(
+      await resolveFontAssetRegistration({
+        registration,
+        loaders: input.loaders,
+        artifacts: input.artifacts,
+        ...(input.origin ? { origin: input.origin } : {}),
+      }),
+    );
+  }
+  const nextFontAssets = resolved.map((entry) => entry.registration);
+  const assetsById = new Map(
+    resolved.map((entry) => [entry.artifact.assetEntityId, entry.artifact]),
+  );
+  const diagnostics = combineDiagnostics(...resolved.map((entry) => entry.diagnostics));
+  const changed = nextFontAssets.some((registration, index) => registration !== fontAssets[index]);
+
+  return {
+    integrationContext: changed
+      ? {
+          ...input.integrationContext,
+          fontAssets: nextFontAssets,
+        }
+      : input.integrationContext,
+    assetsById,
+    diagnostics,
+  };
+}
+
 async function resolveAssetArtifacts(input: {
   graph: SemanticAuthorGraph;
   loaders?: readonly AssetLoader[];
@@ -519,7 +902,7 @@ async function resolveAssetArtifacts(input: {
     if (!cached) {
       for (const { resolverIdentity } of loaders) {
         cached = input.artifacts?.assetsBySourceCacheKey.get(
-          assetSourceCacheKey(source, resolverIdentity, assetOrigin),
+          assetSourceCacheKey(source, resolverIdentity, assetOrigin, asset.sourceField),
         );
         if (cached?.probe) {
           break;
@@ -529,7 +912,12 @@ async function resolveAssetArtifacts(input: {
 
     if (!cached) {
       cached = input.artifacts?.assetsBySourceCacheKey.get(
-        assetSourceCacheKey(source, BUILTIN_ASSET_RESOLVER_IDENTITY, assetOrigin),
+        assetSourceCacheKey(
+          source,
+          BUILTIN_ASSET_RESOLVER_IDENTITY,
+          assetOrigin,
+          asset.sourceField,
+        ),
       );
     }
 
@@ -686,18 +1074,24 @@ async function loadAssetArtifacts(input: {
   artifacts?: PipelineArtifactCollection;
   loaders?: readonly AssetLoader[];
   mediaSourceOrigin?: MediaSourceOrigin;
-  projection: PptxPackageModel;
+  projection: ProjectedDocumentModel;
 }): Promise<Diagnostics> {
   if (!input.artifacts) {
     return emptyDiagnostics();
   }
 
   const diagnostics: Diagnostics[] = [];
-  const mediaPayloads = pptxMediaAssetLoadRequirements({
-    projection: input.projection,
-    assetsById: input.artifacts.assetsById,
-    buildArtifactsByPartId: input.artifacts.pptxBuildArtifactsByPartId,
-  });
+  const mediaPayloads =
+    input.projection.format === "pptx"
+      ? pptxMediaAssetLoadRequirements({
+          projection: input.projection,
+          assetsById: input.artifacts.assetsById,
+          buildArtifactsByPartId: input.artifacts.pptxBuildArtifactsByPartId,
+        })
+      : pdfImageAssetLoadRequirements({
+          projection: input.projection,
+          assetsById: input.artifacts.assetsById,
+        });
 
   mediaLoop: for (const media of mediaPayloads) {
     const current = input.artifacts.assetsById.get(media.assetEntityId);
@@ -705,8 +1099,18 @@ async function loadAssetArtifacts(input: {
     const loaders = assetLoadersWithIdentities(input.loaders);
     const currentMatchesSource =
       current !== undefined &&
-      assetSourceCacheKey(current.source, current.resolverIdentity, current.origin) ===
-        assetSourceCacheKey(media.source, current.resolverIdentity, current.origin);
+      assetSourceCacheKey(
+        current.source,
+        current.resolverIdentity,
+        current.origin,
+        current.sourceField,
+      ) ===
+        assetSourceCacheKey(
+          media.source,
+          current.resolverIdentity,
+          current.origin,
+          media.sourceField,
+        );
 
     if (currentMatchesSource && current.load) {
       continue;
@@ -714,7 +1118,7 @@ async function loadAssetArtifacts(input: {
 
     const currentResolverIdentity = currentMatchesSource ? current.resolverIdentity : undefined;
     const cached = input.artifacts.assetsBySourceCacheKey.get(
-      assetSourceCacheKey(media.source, currentResolverIdentity, mediaOrigin),
+      assetSourceCacheKey(media.source, currentResolverIdentity, mediaOrigin, media.sourceField),
     );
     if (cached?.load) {
       input.artifacts.materializeAsset({
@@ -736,7 +1140,7 @@ async function loadAssetArtifacts(input: {
 
     for (const { loader, resolverIdentity: loaderResolverIdentity } of scopedLoaders) {
       const loaderCached = input.artifacts.assetsBySourceCacheKey.get(
-        assetSourceCacheKey(media.source, loaderResolverIdentity, mediaOrigin),
+        assetSourceCacheKey(media.source, loaderResolverIdentity, mediaOrigin, media.sourceField),
       );
       if (loaderCached?.load) {
         input.artifacts.materializeAsset({
@@ -1332,13 +1736,22 @@ export async function projectSource<
       artifacts,
       mediaSourceOrigin: beforeAsset.context.mediaSourceOrigin,
     });
+    const fontAssetResult = await resolveIntegrationFontAssets({
+      integrationContext: beforeAsset.context.integrationContext ?? execution.integrationContext,
+      loaders: beforeAsset.context.assetLoaders,
+      artifacts,
+      ...(beforeAsset.context.mediaSourceOrigin
+        ? { origin: beforeAsset.context.mediaSourceOrigin }
+        : {}),
+    });
+    const resolvedAssetsById = new Map([...assetResult.assetsById, ...fontAssetResult.assetsById]);
     const afterAsset = applyPluginHooks(execution.plugins, "afterAsset", {
       stage: "asset" as const,
       phase: "after" as const,
       operation: "probe" as const,
       graph: compileResult.graph,
       resolvedStyles: compileResult.resolvedStyles,
-      assetsById: assetResult.assetsById,
+      assetsById: resolvedAssetsById,
       assetLoaders: beforeAsset.context.assetLoaders,
       mediaSourceOrigin: beforeAsset.context.mediaSourceOrigin,
       ...(beforeAsset.context.integrationContext
@@ -1346,12 +1759,13 @@ export async function projectSource<
         : {}),
     });
     const assetsById = afterAsset.context.assetsById;
-    if (assetsById !== assetResult.assetsById) {
+    if (assetsById !== resolvedAssetsById) {
       materializeAssetMap(artifacts, assetsById);
     }
     const assetDiagnostics = combineDiagnostics(
       beforeAssetDiagnostics,
       assetResult.diagnostics,
+      fontAssetResult.diagnostics,
       createDiagnostics(afterAsset.diagnostics),
     );
     const beforeProject = applyPluginHooks(execution.plugins, "beforeProject", {
@@ -1390,7 +1804,7 @@ export async function projectSource<
       resolvedStyles: projectResolvedStyles,
       options: input.options,
       assets: projectAssetsById,
-      integrationContext: afterAsset.context.integrationContext ?? execution.integrationContext,
+      integrationContext: fontAssetResult.integrationContext,
     });
     const reusedProjection =
       projected.format === "pptx"
@@ -1752,16 +2166,12 @@ export async function renderSource<
         format: adapter.format,
       });
     }
-    const assetLoadDiagnostics =
-      renderProjection.format === "pptx"
-        ? await loadAssetArtifacts({
-            artifacts,
-            loaders: beforeAssetLoad?.context.assetLoaders ?? execution.assetLoaders,
-            mediaSourceOrigin:
-              beforeAssetLoad?.context.mediaSourceOrigin ?? execution.mediaSourceOrigin,
-            projection: renderProjection,
-          })
-        : emptyDiagnostics();
+    const assetLoadDiagnostics = await loadAssetArtifacts({
+      artifacts,
+      loaders: beforeAssetLoad?.context.assetLoaders ?? execution.assetLoaders,
+      mediaSourceOrigin: beforeAssetLoad?.context.mediaSourceOrigin ?? execution.mediaSourceOrigin,
+      projection: renderProjection,
+    });
     const afterAssetLoad =
       graphArtifact && graphArtifact.graph && graphArtifact.resolvedStyles
         ? applyPluginHooks(execution.plugins, "afterAsset", {
@@ -1836,13 +2246,17 @@ export async function renderSource<
       });
     }
 
-    const summary = includeInspectionSummary(adapter.options.inspection)
-      ? adapterResult.summary
-      : undefined;
+    const artifactWasReplaced = artifact !== adapterResult.artifact;
+    const summary =
+      !artifactWasReplaced && includeInspectionSummary(adapter.options.inspection)
+        ? adapterResult.summary
+        : undefined;
     const patchPlan =
-      adapterResult.patchPlan && execution.sourceInvalidation
+      !artifactWasReplaced && adapterResult.patchPlan && execution.sourceInvalidation
         ? { ...adapterResult.patchPlan, sourceInvalidation: execution.sourceInvalidation }
-        : adapterResult.patchPlan;
+        : artifactWasReplaced
+          ? undefined
+          : adapterResult.patchPlan;
 
     return finishRender({
       ok: resultOk(renderDiagnostics),

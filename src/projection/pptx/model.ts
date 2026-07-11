@@ -5,6 +5,7 @@ import type {
   AssetResolutionHashSource,
   AssetResolutionProvenanceKind,
   AssetSource,
+  AssetSourceField,
 } from "../../assets";
 import type { Diagnostics } from "../../diagnostics";
 import type {
@@ -1073,7 +1074,11 @@ export type ProjectInspectionElementSummary = {
 
 export type ProjectInspectionTextMetrics = {
   readonly characterCount: number;
+  readonly textDirection?: TextStyleIR["textDirection"];
   readonly fontSizePt: number;
+  readonly requestedFontFamily?: string;
+  readonly projectedFontFamily?: string;
+  readonly fontResourceId?: string;
   readonly lineHeightPt: number;
   readonly availableWidthPt: number;
   readonly availableHeightPt: number;
@@ -1097,6 +1102,7 @@ export type ProjectInspectionMediaMetrics = {
 export type ProjectInspectionVisualCheck = {
   readonly severity: "info" | "warning";
   readonly code:
+    | "I_VISUAL_TEXT_FONT_SUBSTITUTED"
     | "I_VISUAL_MEDIA_CROPPED"
     | "W_VISUAL_MEDIA_SMALL"
     | "W_VISUAL_TEXT_MAY_OVERFLOW"
@@ -1185,7 +1191,7 @@ export type ProjectInspectionPackageDependencySummary = {
 export type ProjectInspectionAssetResolutionSummary = {
   readonly assetEntityId: AssetEntity["id"];
   readonly sourceKind: AssetSource["kind"];
-  readonly sourceField: AssetEntity["sourceField"];
+  readonly sourceField: AssetSourceField;
   readonly resolverIdentity?: string;
   readonly provenanceKind: AssetResolutionProvenanceKind;
   readonly resolvedId?: string;
@@ -1268,7 +1274,7 @@ export type ProjectInspectionUnsupportedSemanticRecord = PptxUnsupportedSemantic
 };
 
 export type ProjectInspectionComposedPaintOrderEntry = {
-  readonly source: "backgroundLayer" | "drawingNode" | "generatedStroke";
+  readonly source: "backgroundLayer" | "drawingNode" | "generatedStroke" | "visualElement";
   readonly order: number;
   readonly slidePartId: PackagePartId;
   readonly slideId: string;

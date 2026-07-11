@@ -1,4 +1,6 @@
 import type { AssetLoader, AssetSource } from "./assets";
+import { assetEntityId } from "./graph/identity";
+import type { AssetEntityId } from "./graph";
 import { validDeckPlugins } from "./plugin";
 import type { MediaSourceOrigin } from "./media-source-origin";
 
@@ -14,6 +16,10 @@ export type FontAssetRegistration = {
   readonly unicodeRange?: readonly string[];
   readonly source: AssetSource;
 };
+
+export function fontAssetEntityId(registration: FontAssetRegistration): AssetEntityId {
+  return assetEntityId(["font", registration.key]);
+}
 
 export type DeckIntegrationContext = {
   readonly id: IntegrationContextId;

@@ -1,6 +1,5 @@
-import { AsyncLocalStorage } from "node:async_hooks";
 import type { RenderExecutionContext } from "./render-execution";
-import type { RenderResult } from "./pipeline/runner";
+import type { RenderResult } from "./pipeline/results-public";
 import { PipelineArtifactCollection } from "./pipeline/artifacts";
 import type { SourceInvalidation } from "./plugin";
 import type { GraphNodeId } from "./graph";
@@ -92,10 +91,38 @@ type IncrementalArtifactCycleState = {
   readonly writes: IncrementalArtifactWriteRecord[];
 };
 
-const activeCycleStack = new AsyncLocalStorage<readonly IncrementalArtifactCycleState[]>();
+type AsyncCycleStorage<T> = {
+  getStore(): T | undefined;
+  run<TResult>(store: T, callback: () => TResult): TResult;
+};
+
+type AsyncLocalStorageRuntime = {
+  readonly AsyncLocalStorage: new <T>() => AsyncCycleStorage<T>;
+};
+
+let activeCycleStack: AsyncCycleStorage<readonly IncrementalArtifactCycleState[]> | undefined;
+let activeCycleStackPromise:
+  | Promise<AsyncCycleStorage<readonly IncrementalArtifactCycleState[]>>
+  | undefined;
+
+async function activeCycleStackStorage(): Promise<
+  AsyncCycleStorage<readonly IncrementalArtifactCycleState[]>
+> {
+  if (!activeCycleStackPromise) {
+    activeCycleStackPromise = (async () => {
+      // Incremental sessions are a Node integration feature. Keep the Node builtin out of the
+      // ordinary core Project/Render module graph and load it only when a session actually runs.
+      const specifier = ["node", "async_hooks"].join(":");
+      const runtime = (await import(specifier)) as AsyncLocalStorageRuntime;
+      activeCycleStack = new runtime.AsyncLocalStorage<readonly IncrementalArtifactCycleState[]>();
+      return activeCycleStack;
+    })();
+  }
+  return activeCycleStackPromise;
+}
 
 function currentActiveCycleStack(): readonly IncrementalArtifactCycleState[] {
-  return activeCycleStack.getStore() ?? [];
+  return activeCycleStack?.getStore() ?? [];
 }
 
 function currentActiveCycle(): IncrementalArtifactCycleState | undefined {
@@ -326,10 +353,11 @@ class IncrementalArtifactCycleImpl {
     if (this.#state.completed) {
       throw new Error(`Incremental artifact cycle ${this.#state.cycle} has already completed.`);
     }
+    const storage = await activeCycleStackStorage();
     this.#state.running = true;
     const stack = [...currentActiveCycleStack(), this.#state];
     try {
-      return await activeCycleStack.run(stack, callback);
+      return await storage.run(stack, callback);
     } finally {
       this.#state.running = false;
     }

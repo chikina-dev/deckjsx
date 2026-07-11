@@ -17,6 +17,7 @@ import {
   type SourceInvalidation,
 } from "./plugin";
 import type { Diagnostic } from "./diagnostics";
+import type { PdfPageModel } from "./projection/pdf/model";
 import type { PptxPackageModel } from "./projection/pptx/model";
 
 const RENDER_EXECUTION_CONTEXT = Symbol.for("deckjsx.renderExecutionContext");
@@ -30,7 +31,10 @@ export type RenderExecutionContext = {
   readonly sourceInvalidation?: SourceInvalidation;
 };
 
-export type RenderInputWithExecutionContext = RenderOptions | WriterAdapter<PptxPackageModel>;
+export type RenderInputWithExecutionContext =
+  | RenderOptions
+  | WriterAdapter<PdfPageModel>
+  | WriterAdapter<PptxPackageModel>;
 
 type RenderExecutionContextCarrier = {
   readonly [RENDER_EXECUTION_CONTEXT]?: RenderExecutionContext;
@@ -336,8 +340,7 @@ function isFontAssetRegistrationArray(value: unknown): boolean {
           (typeof asset.weight === "number" && Number.isFinite(asset.weight))) &&
         (asset.style === undefined || asset.style === "normal" || asset.style === "italic") &&
         (asset.unicodeRange === undefined || isStringArray(asset.unicodeRange)) &&
-        isAssetSource(asset.source) &&
-        asset.source.kind === "bytes",
+        isAssetSource(asset.source),
     )
   );
 }

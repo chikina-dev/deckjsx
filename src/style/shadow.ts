@@ -132,7 +132,7 @@ export function parseShadowShorthand(value?: string): ShadowIR | undefined {
     throw new Error(`Shadow requires 2 to 4 length values: ${value}`);
   }
 
-  const [offsetXPt, offsetYPt, blurPt = 0] = lengths;
+  const [offsetXPt, offsetYPt, blurPt = 0, spreadPt] = lengths;
   const offsetPt = Math.sqrt(offsetXPt ** 2 + offsetYPt ** 2);
   const angle = offsetPt === 0 ? 0 : (Math.atan2(-offsetYPt, offsetXPt) * 180) / Math.PI + 360;
 
@@ -141,6 +141,7 @@ export function parseShadowShorthand(value?: string): ShadowIR | undefined {
     color: parsedColor?.color ?? "000000",
     opacity: parsedColor?.alpha ?? 1,
     blurPt,
+    ...(spreadPt !== undefined ? { spreadPt } : {}),
     offsetPt,
     angle: angle % 360,
   };

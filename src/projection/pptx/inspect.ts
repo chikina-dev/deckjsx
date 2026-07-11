@@ -168,6 +168,9 @@ function summarizeTextMetricsFromInput(input: {
 
   return {
     characterCount: Array.from(input.text).length,
+    ...(input.style.textDirection !== undefined
+      ? { textDirection: input.style.textDirection }
+      : {}),
     fontSizePt,
     lineHeightPt: resolvedLineHeightPt,
     availableWidthPt,

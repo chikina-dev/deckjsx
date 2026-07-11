@@ -3,8 +3,8 @@ import type { Diagnostics } from "../diagnostics";
 /** Document model format produced by `deck.project()`. */
 export type ProjectionFormat = "pptx" | "pdf";
 
-/** Runtime artifact format produced by `deck.render(...)`. */
-export type OutputFormat = ProjectionFormat;
+/** Extensible runtime artifact format produced by `deck.render(...)`. */
+export type OutputFormat = ProjectionFormat | (string & {});
 
 /** Pipeline stage names exposed in compile/project/render result summaries. */
 export type StageName = "compile" | "project" | "render";

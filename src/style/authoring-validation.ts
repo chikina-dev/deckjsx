@@ -1,7 +1,9 @@
 import type { AuthorElementPropValue } from "../authoring/tree";
 import type { AuthoredTag } from "../authoring/tags";
 import { diagnostic, type Diagnostic } from "../diagnostics";
+import { fontFamilyList } from "../font/family";
 import { parseCssColor } from "./color";
+import type { StyleDeclarationForTarget, StyleDeclarationKey } from "./declaration";
 import { parseTransformShorthand } from "./transform";
 import {
   IMAGE_STYLE_KEYS,
@@ -546,6 +548,13 @@ function isPublicNonNegativeDeckLengthString(value: string): boolean {
   return (
     value === "0" ||
     /^(?:\d+(?:\.\d+)?|\.\d+)(?:in|cm|mm|q|pt|pc|px|%|em|rem|vh|vw|vmin|vmax|ch)$/.test(value)
+  );
+}
+
+function isPublicNonNegativeFilterLengthString(value: string): boolean {
+  return (
+    value === "0" ||
+    /^(?:\d+(?:\.\d+)?|\.\d+)(?:in|cm|mm|q|pt|pc|px|em|rem|vh|vw|vmin|vmax|ch)$/i.test(value)
   );
 }
 
@@ -1131,14 +1140,13 @@ function isPublicFilterValue(value: AuthorElementPropValue): boolean {
     return true;
   }
 
-  const functionMatches = [...normalized.matchAll(/([a-z-]+)\(([^()]*)\)/gi)];
+  const functionMatches = [...normalized.matchAll(/([a-z-]+)\(((?:[^()]|\([^()]*\))*)\)/gi)];
   if (functionMatches.length === 0) {
     return false;
   }
 
-  const rebuilt = functionMatches.map((match) => match[0]).join(" ");
   return (
-    rebuilt === normalized &&
+    cssFilterFunctionMatchesCoverValue(normalized, functionMatches) &&
     functionMatches.every((match) =>
       isPublicFilterFunctionValue({
         name: match[1]!.toLowerCase(),
@@ -1146,6 +1154,22 @@ function isPublicFilterValue(value: AuthorElementPropValue): boolean {
       }),
     )
   );
+}
+
+function cssFilterFunctionMatchesCoverValue(
+  value: string,
+  matches: readonly RegExpMatchArray[],
+): boolean {
+  let offset = 0;
+  for (const match of matches) {
+    const index = match.index ?? -1;
+    if (index < offset || value.slice(offset, index).trim().length > 0) {
+      return false;
+    }
+    offset = index + match[0].length;
+  }
+
+  return value.slice(offset).trim().length === 0;
 }
 
 function isPublicFilterNumberValue(value: string): boolean {
@@ -1166,7 +1190,7 @@ function isPublicFilterFunctionValue(input: {
 
   switch (input.name) {
     case "blur":
-      return isPublicNonNegativeDeckLengthString(input.args);
+      return isPublicNonNegativeFilterLengthString(input.args);
     case "hue-rotate":
       return isPublicFilterAngleValue(input.args);
     case "brightness":
@@ -1450,44 +1474,8 @@ function isPublicGridTemplateAreasValue(value: AuthorElementPropValue): boolean 
   return rows.length > 0 && rows.every((row) => isPublicGridTemplateAreaRow(row));
 }
 
-const GENERIC_FONT_FAMILY_VALUES = new Set([
-  "serif",
-  "sans-serif",
-  "monospace",
-  "cursive",
-  "fantasy",
-  "system-ui",
-  "ui-serif",
-  "ui-sans-serif",
-  "ui-monospace",
-  "ui-rounded",
-  "emoji",
-  "math",
-  "fangsong",
-]);
-
 function isPublicFontFamilyValue(value: AuthorElementPropValue): boolean {
-  if (typeof value !== "string") {
-    return false;
-  }
-
-  const normalized = value.trim();
-  if (normalized.length === 0) {
-    return false;
-  }
-
-  if (GENERIC_FONT_FAMILY_VALUES.has(normalized.toLowerCase())) {
-    return true;
-  }
-
-  if (
-    (normalized.startsWith('"') && normalized.endsWith('"')) ||
-    (normalized.startsWith("'") && normalized.endsWith("'"))
-  ) {
-    return normalized.slice(1, -1).trim().length > 0;
-  }
-
-  return /^[A-Za-z_][A-Za-z0-9_-]*(?:\s+[A-Za-z_][A-Za-z0-9_-]*)*$/.test(normalized);
+  return typeof value === "string" && fontFamilyList(value) !== undefined;
 }
 
 function isPublicBorderWidthToken(value: string): boolean {
@@ -2040,6 +2028,59 @@ export function validateSupportedStyleValue(input: {
   });
 }
 
+export type SupportedStyleValueValidationResult<
+  TTarget extends AuthoringStyleTarget,
+  TProperty extends keyof StyleDeclarationForTarget<TTarget> & StyleDeclarationKey,
+> =
+  | {
+      readonly ok: true;
+      readonly property: TProperty;
+      readonly value: StyleDeclarationForTarget<TTarget>[TProperty];
+    }
+  | { readonly ok: false; readonly diagnostic: Diagnostic };
+
+/**
+ * Validates a property and preserves its key/value correlation on success.
+ *
+ * This is the typed hand-off for runtime-originated declarations. The legacy diagnostic-only
+ * validator remains available for callers that do not need to retain the accepted value.
+ */
+export function validateSupportedStyleValueResult<
+  TTarget extends AuthoringStyleTarget,
+  TProperty extends keyof StyleDeclarationForTarget<TTarget> & StyleDeclarationKey,
+>(input: {
+  path: string;
+  property: TProperty;
+  tag: TTarget;
+  value: AuthorElementPropValue;
+}): SupportedStyleValueValidationResult<TTarget, TProperty> {
+  if (!supportedStyleNamesForAuthoredTag(input.tag).has(input.property)) {
+    return {
+      ok: false,
+      diagnostic: nonPublicStylePropDiagnostic(input),
+    };
+  }
+
+  const invalidValue = validateSupportedStyleValue(input);
+  if (invalidValue) {
+    return { ok: false, diagnostic: invalidValue };
+  }
+
+  return {
+    ok: true,
+    property: input.property,
+    value: input.value as StyleDeclarationForTarget<TTarget>[TProperty],
+  };
+}
+
+export type SupportedStyleDeclarationValidationResult<TTarget extends AuthoringStyleTarget> =
+  | {
+      readonly ok: true;
+      readonly style: Readonly<StyleDeclarationForTarget<TTarget>>;
+      readonly diagnostics: readonly [];
+    }
+  | { readonly ok: false; readonly diagnostics: readonly Diagnostic[] };
+
 export function validateSupportedStyleDeclaration(input: {
   path: string;
   tag: AuthoringStyleTarget;
@@ -2090,4 +2131,24 @@ export function validateSupportedStyleDeclaration(input: {
   });
 
   return diagnostics;
+}
+
+/** Validates a complete declaration and retains its target-specific style type on success. */
+export function validateSupportedStyleDeclarationResult<
+  TTarget extends AuthoringStyleTarget,
+>(input: {
+  path: string;
+  tag: TTarget;
+  style: Readonly<Record<string, AuthorElementPropValue>>;
+}): SupportedStyleDeclarationValidationResult<TTarget> {
+  const diagnostics = validateSupportedStyleDeclaration(input);
+  if (diagnostics.length > 0) {
+    return { ok: false, diagnostics };
+  }
+
+  return {
+    ok: true,
+    style: input.style as Readonly<StyleDeclarationForTarget<TTarget>>,
+    diagnostics: [],
+  };
 }

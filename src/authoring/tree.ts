@@ -499,8 +499,137 @@ export function createAuthorFragment(input: {
   };
 }
 
+function isSourceSpanValue(value: unknown): value is SourceSpan {
+  return (
+    isRecord(value) &&
+    (value.file === undefined || typeof value.file === "string") &&
+    (value.line === undefined || (Number.isInteger(value.line) && (value.line as number) > 0)) &&
+    (value.column === undefined || (Number.isInteger(value.column) && (value.column as number) > 0))
+  );
+}
+
+function isJsxKey(value: unknown): value is JsxKey {
+  return (
+    typeof value === "string" ||
+    typeof value === "bigint" ||
+    (typeof value === "number" && Number.isFinite(value) && Number.isInteger(value))
+  );
+}
+
+function isMediaSourceOriginValue(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Object.keys(value).every((key) =>
+      ["importer", "source", "sourceIdentity"].includes(String(key)),
+    ) &&
+    (value.importer === undefined || typeof value.importer === "string") &&
+    (value.source === undefined || typeof value.source === "string") &&
+    (value.sourceIdentity === undefined || typeof value.sourceIdentity === "string")
+  );
+}
+
+function isMediaSourceOriginsValue(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Object.keys(value).every((key) =>
+      ["src", "data", "poster", "posterData"].includes(String(key)),
+    ) &&
+    Object.values(value).every(isMediaSourceOriginValue)
+  );
+}
+
+function isComponentProvenanceValue(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.stack) &&
+    value.stack.every(
+      (frame) =>
+        isRecord(frame) &&
+        typeof frame.name === "string" &&
+        frame.name.length > 0 &&
+        (frame.moduleId === undefined || typeof frame.moduleId === "string") &&
+        (frame.key === undefined || isJsxKey(frame.key)) &&
+        (frame.sourceSpan === undefined || isSourceSpanValue(frame.sourceSpan)),
+    )
+  );
+}
+
+function hasValidAuthorNodeMetadata(value: Record<PropertyKey, AuthorElementPropValue>): boolean {
+  return (
+    (value.key === undefined || isJsxKey(value.key)) &&
+    (value.sourceSpan === undefined || isSourceSpanValue(value.sourceSpan))
+  );
+}
+
+function isAuthorTreeNodeWithSeen(
+  value: unknown,
+  seen: WeakSet<object>,
+  depth: number,
+): value is AuthorTreeNode {
+  if (
+    !isRecord(value) ||
+    value.$$typeof !== "deckjsx.author-tree" ||
+    seen.has(value) ||
+    depth >= MAX_AUTHOR_TREE_CHILD_DEPTH ||
+    !hasValidAuthorNodeMetadata(value)
+  ) {
+    return false;
+  }
+
+  seen.add(value);
+  let valid: boolean;
+  switch (value.kind) {
+    case "text":
+      valid =
+        typeof value.value === "string" ||
+        (typeof value.value === "number" && Number.isFinite(value.value));
+      break;
+    case "fragment":
+      valid =
+        Array.isArray(value.children) &&
+        value.children.every((child) => isAuthorTreeNodeWithSeen(child, seen, depth + 1));
+      break;
+    case "element": {
+      const source = value.source;
+      const validSource =
+        isRecord(source) &&
+        (source.kind === "slide" ||
+          (source.kind === "tag" &&
+            typeof source.tag === "string" &&
+            isIntrinsicViewTag(source.tag)) ||
+          (source.kind === "tag" &&
+            typeof source.tag === "string" &&
+            isIntrinsicTextTag(source.tag)) ||
+          (source.kind === "tag" &&
+            typeof source.tag === "string" &&
+            isIntrinsicTableTag(source.tag)) ||
+          (source.kind === "tag" &&
+            (source.tag === "span" ||
+              source.tag === "img" ||
+              source.tag === "video" ||
+              source.tag === "shape")));
+      valid =
+        validSource &&
+        isRecord(value.props) &&
+        isPlainRecord(value.props) &&
+        Object.values(value.props).every(isAuthorElementPropValue) &&
+        Array.isArray(value.children) &&
+        value.children.every((child) => isAuthorTreeNodeWithSeen(child, seen, depth + 1)) &&
+        (value.mediaSourceOrigins === undefined ||
+          isMediaSourceOriginsValue(value.mediaSourceOrigins)) &&
+        (value.componentProvenance === undefined ||
+          isComponentProvenanceValue(value.componentProvenance));
+      break;
+    }
+    default:
+      valid = false;
+  }
+  seen.delete(value);
+  return valid;
+}
+
 export function isAuthorTreeNode(value: unknown): value is AuthorTreeNode {
-  return isRecord(value) && value.$$typeof === "deckjsx.author-tree";
+  return isAuthorTreeNodeWithSeen(value, new WeakSet(), 0);
 }
 
 function isAuthorTreeChildWithSeen(

@@ -1,10 +1,17 @@
 import type { AssetLoader, AssetSource } from "./assets";
 import type { ComposedAuthorRoot } from "./composition/types";
 import type { Diagnostic } from "./diagnostics";
+import { clonePluginStageValue } from "./plugin-snapshot";
 import type { AssetEntityId, SemanticAuthorGraph } from "./graph";
 import type { DeckIntegrationContext } from "./integration-context";
 import type { MediaSourceOrigin } from "./media-source-origin";
 import type { RenderedArtifact } from "./pipeline/contract";
+import {
+  isComposedAuthorRootArray,
+  isResolvedStyleMap,
+  isSemanticAuthorGraph,
+} from "./pipeline/artifact-input";
+import { isRenderedArtifact } from "./pipeline/results-public";
 import type { ProjectionFormat } from "./pipeline/public";
 import type { AssetArtifact } from "./pipeline/artifacts";
 import { isPdfPageModel } from "./projection/pdf/model";
@@ -213,13 +220,13 @@ export function isDeckPlugin(value: unknown): value is DeckPlugin {
   return (
     isRecord(value) &&
     value.kind === "deckjsx.plugin" &&
-    typeof value.id === "string" &&
+    isNonEmptyString(value.id) &&
     deckPluginValidationMessage(value) === undefined
   );
 }
 
 function deckPluginValidationMessage(plugin: unknown): string | undefined {
-  if (!isRecord(plugin) || plugin.kind !== "deckjsx.plugin" || typeof plugin.id !== "string") {
+  if (!isRecord(plugin) || plugin.kind !== "deckjsx.plugin" || !isNonEmptyString(plugin.id)) {
     return 'Deck plugin must be an object with kind "deckjsx.plugin" and a string id.';
   }
 
@@ -280,8 +287,8 @@ function deckPluginIntegrationValidationMessage(integration: unknown): string | 
     }
   }
 
-  if (typeof integration.id !== "string") {
-    return "Deck plugin integration.id must be a string.";
+  if (!isNonEmptyString(integration.id)) {
+    return "Deck plugin integration.id must be a non-empty string.";
   }
 
   if (integration.assetLoaders !== undefined && !isAssetLoaderArray(integration.assetLoaders)) {
@@ -396,13 +403,24 @@ export function applyPluginHooks<TContext extends object>(
     if (invalidUpdateKeys.length > 0) {
       diagnostics.push(pluginHookInvalidUpdateDiagnostic({ plugin, hookName, invalidUpdateKeys }));
     }
+    const candidateUpdates = Object.fromEntries(
+      updateEntries.filter(([key]) => allowedUpdateKeys.includes(key)),
+    );
+    const candidateGraph = candidateUpdates.graph;
+    const validationContext = {
+      ...context,
+      ...candidateUpdates,
+      ...(candidateGraph !== undefined && !isSemanticAuthorGraph(candidateGraph)
+        ? { graph: isRecord(context) ? context.graph : undefined }
+        : {}),
+    };
     const allowedUpdates = Object.fromEntries(
       updateEntries.filter(([key, value]) => {
         if (!allowedUpdateKeys.includes(key)) {
           return false;
         }
         const validator = pluginHookUpdateValueValidators[hookName]?.[key];
-        if (!validator || validator(value, context)) {
+        if (!validator || validator(value, validationContext)) {
           return true;
         }
         diagnostics.push(
@@ -425,13 +443,13 @@ function snapshotPluginHookContext<TContext extends object>(context: TContext): 
     snapshot.roots = [...snapshot.roots];
   }
   if (isSemanticAuthorGraphValue(snapshot.graph)) {
-    snapshot.graph = snapshotSemanticAuthorGraph(snapshot.graph);
+    snapshot.graph = clonePluginStageValue(snapshot.graph);
   }
   if (snapshot.resolvedStyles instanceof Map) {
-    snapshot.resolvedStyles = new Map(snapshot.resolvedStyles);
+    snapshot.resolvedStyles = clonePluginStageValue(snapshot.resolvedStyles);
   }
   if (snapshot.assetsById instanceof Map) {
-    snapshot.assetsById = new Map(snapshot.assetsById);
+    snapshot.assetsById = clonePluginStageValue(snapshot.assetsById);
   }
   if (Array.isArray(snapshot.assetLoaders)) {
     snapshot.assetLoaders = [...snapshot.assetLoaders];
@@ -493,16 +511,6 @@ function isStringArray(value: unknown): value is readonly string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
-function snapshotSemanticAuthorGraph(graph: SemanticAuthorGraph): SemanticAuthorGraph {
-  return {
-    ...graph,
-    nodes: new Map(graph.nodes),
-    styles: new Map(graph.styles),
-    assets: new Map(graph.assets),
-    templates: new Map(graph.templates),
-  };
-}
-
 const allowedPluginHookUpdateKeys = {
   beforeTree: [],
   afterTree: ["roots"],
@@ -524,14 +532,14 @@ const pluginHookUpdateValueValidators: Record<
 > = {
   beforeTree: {},
   afterTree: {
-    roots: Array.isArray,
+    roots: isComposedAuthorRootArray,
   },
   beforeGraph: {
-    roots: Array.isArray,
+    roots: isComposedAuthorRootArray,
   },
   afterGraph: {
-    graph: isSemanticAuthorGraphValue,
-    resolvedStyles: isReadonlyMap,
+    graph: isSemanticAuthorGraph,
+    resolvedStyles: isResolvedStyleMapForContext,
   },
   beforeAsset: {
     assetLoaders: isAssetLoaderArray,
@@ -545,8 +553,8 @@ const pluginHookUpdateValueValidators: Record<
     integrationContext: isIntegrationContext,
   },
   beforeProject: {
-    graph: isSemanticAuthorGraphValue,
-    resolvedStyles: isReadonlyMap,
+    graph: isSemanticAuthorGraph,
+    resolvedStyles: isResolvedStyleMapForContext,
     assetsById: isAssetArtifactMap,
   },
   afterProject: {
@@ -556,12 +564,27 @@ const pluginHookUpdateValueValidators: Record<
     projection: isProjectedDocumentModelForActiveFormat,
   },
   afterRender: {
-    artifact: isRenderedArtifact,
+    artifact: isRenderedArtifactForActiveFormat,
   },
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object";
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isResolvedStyleMapForContext(value: unknown, context: object): boolean {
+  const graph =
+    isRecord(context) && isSemanticAuthorGraph(context.graph) ? context.graph : undefined;
+  return isResolvedStyleMap(value, graph);
+}
+
+function isRenderedArtifactForActiveFormat(value: unknown, context: object): boolean {
+  const format = isRecord(context) && isNonEmptyString(context.format) ? context.format : undefined;
+  return isRenderedArtifact(value, format);
 }
 
 function activeFormatFromContext(context: object): ProjectionFormat | undefined {
@@ -581,29 +604,16 @@ function isProjectedDocumentModelForActiveFormat(value: unknown, context: object
   return format === undefined || value.format === format;
 }
 
-function isReadonlyMap(value: unknown): value is ReadonlyMap<unknown, unknown> {
-  return value instanceof Map;
-}
-
 function isSemanticAuthorGraphValue(value: unknown): value is SemanticAuthorGraph {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  return (
-    typeof value.documentId === "string" &&
-    value.nodes instanceof Map &&
-    value.styles instanceof Map &&
-    value.assets instanceof Map &&
-    value.nodes.has(value.documentId)
-  );
+  return isSemanticAuthorGraph(value);
 }
 
 function isAssetArtifactMap(value: unknown): value is ReadonlyMap<AssetEntityId, AssetArtifact> {
   return (
     value instanceof Map &&
     [...value.entries()].every(
-      ([key, artifact]) => typeof key === "string" && isAssetArtifactValue(artifact),
+      ([key, artifact]) =>
+        isNonEmptyString(key) && isAssetArtifactValue(artifact) && artifact.assetEntityId === key,
     )
   );
 }
@@ -621,10 +631,10 @@ function isAssetArtifactValue(value: unknown): value is AssetArtifact {
       "load",
       "diagnostics",
     ]) &&
-    typeof value.assetEntityId === "string" &&
+    isNonEmptyString(value.assetEntityId) &&
     isAssetSource(value.source) &&
     isAssetSourceField(value.sourceField) &&
-    (value.resolverIdentity === undefined || typeof value.resolverIdentity === "string") &&
+    (value.resolverIdentity === undefined || isNonEmptyString(value.resolverIdentity)) &&
     (value.origin === undefined || isMediaSourceOrigin(value.origin)) &&
     (value.probe === undefined || isAssetProbeResult(value.probe)) &&
     (value.load === undefined || isAssetLoadResult(value.load)) &&
@@ -651,12 +661,15 @@ function isAssetProbeResultWithAllowedKeys(
   return (
     isRecord(value) &&
     hasOnlyKeys(value, allowedKeys) &&
-    (value.mediaType === undefined || typeof value.mediaType === "string") &&
-    (value.extension === undefined || typeof value.extension === "string") &&
-    (value.width === undefined || typeof value.width === "number") &&
-    (value.height === undefined || typeof value.height === "number") &&
-    (value.byteLength === undefined || typeof value.byteLength === "number") &&
-    (value.hash === undefined || typeof value.hash === "string") &&
+    (value.mediaType === undefined || isNonEmptyString(value.mediaType)) &&
+    (value.extension === undefined || isNonEmptyString(value.extension)) &&
+    (value.width === undefined ||
+      (typeof value.width === "number" && Number.isFinite(value.width) && value.width > 0)) &&
+    (value.height === undefined ||
+      (typeof value.height === "number" && Number.isFinite(value.height) && value.height > 0)) &&
+    (value.byteLength === undefined ||
+      (Number.isInteger(value.byteLength) && (value.byteLength as number) >= 0)) &&
+    (value.hash === undefined || isNonEmptyString(value.hash)) &&
     (value.provenance === undefined || isAssetResolutionProvenance(value.provenance))
   );
 }
@@ -674,7 +687,9 @@ function isAssetLoadResult(value: unknown): boolean {
       "bytes",
     ]) &&
     isRecord(value) &&
-    value.bytes instanceof Uint8Array
+    value.bytes instanceof Uint8Array &&
+    value.bytes.byteLength > 0 &&
+    (value.byteLength === undefined || value.byteLength === value.bytes.byteLength)
   );
 }
 
@@ -687,7 +702,7 @@ function isAssetResolutionProvenance(value: unknown): boolean {
       value.kind === "file" ||
       value.kind === "publicAsset" ||
       value.kind === "generatedAsset") &&
-    (value.resolvedId === undefined || typeof value.resolvedId === "string") &&
+    (value.resolvedId === undefined || isNonEmptyString(value.resolvedId)) &&
     (value.hashSource === undefined ||
       value.hashSource === "loader" ||
       value.hashSource === "bytes")
@@ -703,15 +718,16 @@ function isAssetSource(value: unknown): value is AssetSource {
       return (
         hasOnlyKeys(value, ["kind", "bytes", "mediaType", "extension"]) &&
         value.bytes instanceof Uint8Array &&
-        (value.mediaType === undefined || typeof value.mediaType === "string") &&
-        (value.extension === undefined || typeof value.extension === "string")
+        value.bytes.byteLength > 0 &&
+        (value.mediaType === undefined || isNonEmptyString(value.mediaType)) &&
+        (value.extension === undefined || isNonEmptyString(value.extension))
       );
     case "data":
-      return hasOnlyKeys(value, ["kind", "data"]) && typeof value.data === "string";
+      return hasOnlyKeys(value, ["kind", "data"]) && isNonEmptyString(value.data);
     case "url":
-      return hasOnlyKeys(value, ["kind", "url"]) && typeof value.url === "string";
+      return hasOnlyKeys(value, ["kind", "url"]) && isNonEmptyString(value.url);
     case "path":
-      return hasOnlyKeys(value, ["kind", "path"]) && typeof value.path === "string";
+      return hasOnlyKeys(value, ["kind", "path"]) && isNonEmptyString(value.path);
     default:
       return false;
   }
@@ -724,14 +740,13 @@ function isFontAssetRegistrationArray(value: unknown): boolean {
       (asset) =>
         isRecord(asset) &&
         hasOnlyKeys(asset, ["key", "family", "weight", "style", "unicodeRange", "source"]) &&
-        typeof asset.key === "string" &&
-        typeof asset.family === "string" &&
+        isNonEmptyString(asset.key) &&
+        isNonEmptyString(asset.family) &&
         (asset.weight === undefined ||
           (typeof asset.weight === "number" && Number.isFinite(asset.weight))) &&
         (asset.style === undefined || asset.style === "normal" || asset.style === "italic") &&
         (asset.unicodeRange === undefined || isStringArray(asset.unicodeRange)) &&
-        isAssetSource(asset.source) &&
-        asset.source.kind === "bytes",
+        isAssetSource(asset.source),
     )
   );
 }
@@ -757,7 +772,7 @@ function isAssetLoaderArray(value: unknown): value is readonly AssetLoader[] {
       (loader) =>
         isRecord(loader) &&
         hasOnlyKeys(loader, ["resolverIdentity", "probe", "load"]) &&
-        typeof loader.resolverIdentity === "string" &&
+        isNonEmptyString(loader.resolverIdentity) &&
         (loader.probe === undefined || typeof loader.probe === "function") &&
         (loader.load === undefined || typeof loader.load === "function"),
     )
@@ -768,9 +783,9 @@ function isMediaSourceOrigin(value: unknown): value is MediaSourceOrigin {
   return (
     isRecord(value) &&
     hasOnlyKeys(value, ["importer", "source", "sourceIdentity"]) &&
-    (value.importer === undefined || typeof value.importer === "string") &&
-    (value.source === undefined || typeof value.source === "string") &&
-    (value.sourceIdentity === undefined || typeof value.sourceIdentity === "string")
+    (value.importer === undefined || isNonEmptyString(value.importer)) &&
+    (value.source === undefined || isNonEmptyString(value.source)) &&
+    (value.sourceIdentity === undefined || isNonEmptyString(value.sourceIdentity))
   );
 }
 
@@ -778,7 +793,7 @@ function isIntegrationContext(value: unknown): value is DeckIntegrationContext {
   return (
     isRecord(value) &&
     hasOnlyKeys(value, ["id", "assetLoaders", "fontAssets", "mediaSourceOrigin"]) &&
-    typeof value.id === "string" &&
+    isNonEmptyString(value.id) &&
     (value.assetLoaders === undefined || isAssetLoaderArray(value.assetLoaders)) &&
     (value.fontAssets === undefined || isFontAssetRegistrationArray(value.fontAssets)) &&
     (value.mediaSourceOrigin === undefined || isMediaSourceOrigin(value.mediaSourceOrigin))
@@ -840,6 +855,45 @@ function isPdfRectangleValue(value: unknown): boolean {
   );
 }
 
+function isPdfPointValue(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.x === "number" &&
+    typeof value.y === "number" &&
+    Number.isFinite(value.x) &&
+    Number.isFinite(value.y)
+  );
+}
+
+function isPdfOpacityValue(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1)
+  );
+}
+
+function isPdfLineWidthValue(value: unknown): boolean {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function isPdfRotationValue(value: unknown): boolean {
+  return value === undefined || (typeof value === "number" && Number.isFinite(value));
+}
+
+function isPdfStrokeStyleValue(value: Readonly<Record<string, unknown>>): boolean {
+  return (
+    (value.dash === undefined || value.dash === "dash" || value.dash === "sysDot") &&
+    (value.lineCap === undefined ||
+      value.lineCap === "butt" ||
+      value.lineCap === "round" ||
+      value.lineCap === "square") &&
+    (value.lineJoin === undefined ||
+      value.lineJoin === "bevel" ||
+      value.lineJoin === "miter" ||
+      value.lineJoin === "round")
+  );
+}
+
 function isPdfResourceDictionaryValue(value: unknown): boolean {
   return (
     isRecord(value) &&
@@ -857,7 +911,78 @@ function isPdfContentOpValue(value: unknown): boolean {
 
   switch (value.op) {
     case "setFillColor":
+    case "setStrokeColor":
       return isPdfColorValue(value.color);
+    case "setLineWidth":
+      return isPdfLineWidthValue(value.width);
+    case "fillRect":
+    case "fillEllipse":
+      return (
+        isPdfRectangleValue(value.box) &&
+        isPdfRotationValue(value.rotation) &&
+        isPdfOpacityValue(value.opacity)
+      );
+    case "fillLinearGradientRect":
+    case "fillLinearGradientEllipse":
+    case "fillRadialGradientRect":
+    case "fillRadialGradientEllipse":
+      return (
+        typeof value.gradientId === "string" &&
+        isPdfRectangleValue(value.box) &&
+        isPdfRotationValue(value.rotation) &&
+        isPdfOpacityValue(value.opacity)
+      );
+    case "fillRoundRect":
+      return (
+        isPdfRectangleValue(value.box) &&
+        typeof value.radius === "number" &&
+        Number.isFinite(value.radius) &&
+        value.radius >= 0 &&
+        isPdfRotationValue(value.rotation) &&
+        isPdfOpacityValue(value.opacity)
+      );
+    case "fillLinearGradientRoundRect":
+    case "fillRadialGradientRoundRect":
+      return (
+        typeof value.gradientId === "string" &&
+        isPdfRectangleValue(value.box) &&
+        typeof value.radius === "number" &&
+        Number.isFinite(value.radius) &&
+        value.radius >= 0 &&
+        isPdfRotationValue(value.rotation) &&
+        isPdfOpacityValue(value.opacity)
+      );
+    case "strokeRect":
+    case "strokeEllipse":
+      return (
+        isPdfRectangleValue(value.box) &&
+        isPdfRotationValue(value.rotation) &&
+        (value.lineWidth === undefined || isPdfLineWidthValue(value.lineWidth)) &&
+        isPdfStrokeStyleValue(value) &&
+        isPdfOpacityValue(value.opacity)
+      );
+    case "strokeRoundRect":
+      return (
+        isPdfRectangleValue(value.box) &&
+        typeof value.radius === "number" &&
+        Number.isFinite(value.radius) &&
+        value.radius >= 0 &&
+        isPdfRotationValue(value.rotation) &&
+        (value.lineWidth === undefined || isPdfLineWidthValue(value.lineWidth)) &&
+        isPdfStrokeStyleValue(value) &&
+        isPdfOpacityValue(value.opacity)
+      );
+    case "strokeLine":
+      return (
+        isPdfPointValue(value.from) &&
+        isPdfPointValue(value.to) &&
+        isPdfColorValue(value.color) &&
+        isPdfLineWidthValue(value.lineWidth) &&
+        isPdfRotationValue(value.rotation) &&
+        (value.rotationBox === undefined || isPdfRectangleValue(value.rotationBox)) &&
+        isPdfStrokeStyleValue(value) &&
+        isPdfOpacityValue(value.opacity)
+      );
     case "text":
       return (
         typeof value.text === "string" &&
@@ -865,15 +990,30 @@ function isPdfContentOpValue(value: unknown): boolean {
         typeof value.y === "number" &&
         Number.isFinite(value.x) &&
         Number.isFinite(value.y) &&
+        (value.box === undefined || isPdfRectangleValue(value.box)) &&
         (value.fontId === undefined || typeof value.fontId === "string") &&
         (value.fontSize === undefined ||
           (typeof value.fontSize === "number" &&
             Number.isFinite(value.fontSize) &&
             value.fontSize > 0)) &&
-        (value.color === undefined || isPdfColorValue(value.color))
+        (value.charSpacing === undefined ||
+          (typeof value.charSpacing === "number" && Number.isFinite(value.charSpacing))) &&
+        (value.textRise === undefined ||
+          (typeof value.textRise === "number" && Number.isFinite(value.textRise))) &&
+        (value.color === undefined || isPdfColorValue(value.color)) &&
+        isPdfRotationValue(value.rotation) &&
+        isPdfOpacityValue(value.opacity)
       );
     case "image":
-      return typeof value.imageId === "string" && isPdfRectangleValue(value.box);
+      return (
+        typeof value.imageId === "string" &&
+        isPdfRectangleValue(value.box) &&
+        (value.clipBox === undefined || isPdfRectangleValue(value.clipBox)) &&
+        isPdfRotationValue(value.rotation) &&
+        (value.flipH === undefined || typeof value.flipH === "boolean") &&
+        (value.flipV === undefined || typeof value.flipV === "boolean") &&
+        isPdfOpacityValue(value.opacity)
+      );
     default:
       return false;
   }
@@ -915,17 +1055,6 @@ function isPdfImageResourceValue(value: unknown): boolean {
     (value.width === undefined || typeof value.width === "number") &&
     (value.height === undefined || typeof value.height === "number") &&
     (value.data === undefined || value.data instanceof Uint8Array)
-  );
-}
-
-function isRenderedArtifact(value: unknown): value is RenderedArtifact {
-  return (
-    isRecord(value) &&
-    hasOnlyKeys(value, ["format", "mediaType", "extension", "bytes"]) &&
-    typeof value.format === "string" &&
-    typeof value.mediaType === "string" &&
-    typeof value.extension === "string" &&
-    value.bytes instanceof Uint8Array
   );
 }
 
