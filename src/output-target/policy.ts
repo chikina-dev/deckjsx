@@ -120,7 +120,7 @@ export function writerAdapterFormatDiagnostics(input: {
 }): Diagnostics {
   const adapterFormat = input.adapter.format;
 
-  if (outputFormatsInclude(input.options, adapterFormat)) {
+  if (isProjectionFormat(adapterFormat) && outputFormatsInclude(input.options, adapterFormat)) {
     return emptyDiagnostics();
   }
 

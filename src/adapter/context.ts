@@ -1,9 +1,12 @@
 import type { WriterRenderContext } from "./public";
+import type { PdfWriterContext } from "../writers/pdf";
 import type { PptxWriterContext } from "../writers/pptx";
 
-const writerRenderContexts = new WeakMap<WriterRenderContext, PptxWriterContext>();
+export type InternalWriterContext = PdfWriterContext & PptxWriterContext;
 
-export function createWriterRenderContext(context: PptxWriterContext): WriterRenderContext {
+const writerRenderContexts = new WeakMap<WriterRenderContext, InternalWriterContext>();
+
+export function createWriterRenderContext(context: InternalWriterContext): WriterRenderContext {
   const writerContext: WriterRenderContext = {
     kind: "deckjsx.writerRenderContext",
   };
@@ -11,8 +14,14 @@ export function createWriterRenderContext(context: PptxWriterContext): WriterRen
   return writerContext;
 }
 
+export function writerContext(
+  context: WriterRenderContext | undefined,
+): InternalWriterContext | undefined {
+  return context ? writerRenderContexts.get(context) : undefined;
+}
+
 export function pptxWriterContext(
   context: WriterRenderContext | undefined,
 ): PptxWriterContext | undefined {
-  return context ? writerRenderContexts.get(context) : undefined;
+  return writerContext(context);
 }

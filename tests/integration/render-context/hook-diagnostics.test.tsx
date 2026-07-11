@@ -950,6 +950,179 @@ describe("deckjsx integration hook diagnostics", () => {
     );
   });
 
+  test("tree hook updates reject marker-only roots before graph construction", () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin({
+      kind: "deckjsx.plugin",
+      id: "test:marker-only-tree-root",
+      hooks: {
+        afterTree() {
+          return { roots: [{ $$typeof: "deckjsx.author-tree" }] } as never;
+        },
+      },
+    });
+    deck.slide({ name: "Marker-only root" }, () => <p>source</p>);
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.graph).toBeUndefined();
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        code: "E_PLUGIN_HOOK_INVALID_UPDATE_VALUE",
+        message: expect.stringContaining("roots"),
+      }),
+    );
+  });
+
+  test("graph hook updates reject malformed nested node references", () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin({
+      kind: "deckjsx.plugin",
+      id: "test:malformed-nested-graph-node",
+      hooks: {
+        afterGraph(context) {
+          if (!context.graph) {
+            return undefined;
+          }
+          const document = context.graph.nodes.get(context.graph.documentId);
+          return {
+            graph: {
+              ...context.graph,
+              nodes: new Map(context.graph.nodes).set(context.graph.documentId, {
+                ...document,
+                children: ["graph:missing-child" as never],
+              } as never),
+            },
+          } as never;
+        },
+      },
+    });
+    deck.slide({ name: "Malformed nested graph" }, () => <p>source</p>);
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        code: "E_PLUGIN_HOOK_INVALID_UPDATE_VALUE",
+        message: expect.stringContaining("graph"),
+      }),
+    );
+  });
+
+  test("graph hook updates reject malformed nested resolved styles", () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin({
+      kind: "deckjsx.plugin",
+      id: "test:malformed-resolved-style",
+      hooks: {
+        afterGraph(context) {
+          const firstNodeId = context.graph?.nodes.keys().next().value;
+          return (
+            firstNodeId
+              ? {
+                  resolvedStyles: new Map([
+                    [firstNodeId, { style: {}, properties: {}, appliedClasses: [] }],
+                  ]),
+                }
+              : undefined
+          ) as never;
+        },
+      },
+    });
+    deck.slide({ name: "Malformed resolved style" }, () => <p>source</p>);
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        code: "E_PLUGIN_HOOK_INVALID_UPDATE_VALUE",
+        message: expect.stringContaining("resolvedStyles"),
+      }),
+    );
+  });
+
+  test("asset hook updates correlate map keys with nested artifact identities", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin({
+      kind: "deckjsx.plugin",
+      id: "test:mismatched-asset-artifact-id",
+      hooks: {
+        afterAsset() {
+          return {
+            assetsById: new Map([
+              [
+                "asset:map-key",
+                {
+                  assetEntityId: "asset:nested-id",
+                  source: { kind: "data", data: "data:image/png;base64,AA==" },
+                  sourceField: "src",
+                  diagnostics: { items: [] },
+                },
+              ],
+            ]),
+          } as never;
+        },
+      },
+    });
+    deck.slide({ name: "Mismatched asset id" }, () => <p>source</p>);
+
+    const result = await deck.render(H.pptx());
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        code: "E_PLUGIN_HOOK_INVALID_UPDATE_VALUE",
+        message: expect.stringContaining("assetsById"),
+      }),
+    );
+  });
+
+  test.each([
+    ["empty format", { format: "" }],
+    ["mismatched format", { format: "pdf" }],
+    ["invalid media type", { mediaType: "application" }],
+    ["dotted extension", { extension: ".pptx" }],
+    ["empty bytes", { bytes: new Uint8Array() }],
+  ])(
+    "render hook updates reject %s artifacts",
+    async (
+      _name: string,
+      replacement: Partial<{
+        readonly format: string;
+        readonly mediaType: string;
+        readonly extension: string;
+        readonly bytes: Uint8Array;
+      }>,
+    ) => {
+      const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+      deck.plugin({
+        kind: "deckjsx.plugin",
+        id: `test:invalid-render-artifact-${_name}`,
+        hooks: {
+          afterRender(context) {
+            return context.artifact
+              ? { artifact: { ...context.artifact, ...replacement } }
+              : undefined;
+          },
+        },
+      });
+      deck.slide({ name: "Invalid rendered artifact" }, () => <p>source</p>);
+
+      const result = await deck.render(H.pptx());
+
+      expect(result.ok).toBe(false);
+      expect(result.diagnostics.items).toContainEqual(
+        expect.objectContaining({
+          code: "E_PLUGIN_HOOK_INVALID_UPDATE_VALUE",
+          message: expect.stringContaining("artifact"),
+        }),
+      );
+    },
+  );
+
   test("plugin hook context mutations do not leak without returned updates", async () => {
     const loader = {
       resolverIdentity: "test:snapshot-mutation-loader",

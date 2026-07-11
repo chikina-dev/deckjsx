@@ -16,10 +16,19 @@ import type {
   SourceContextValue,
 } from "./composition/public";
 import { createDiagnostics, type Diagnostics } from "./diagnostics";
-import type { SemanticAuthorGraph } from "./graph";
 import { resultOk, stageSummary } from "./pipeline/stage";
-import type { ProjectOptions, ProjectionFormat, StageArtifactStatus } from "./pipeline/contract";
-import type { DefinedGraphInput, DefinedProjectionInput } from "./pipeline/artifact-input";
+import type {
+  OutputFormat,
+  ProjectOptions,
+  ProjectionFormat,
+  StageArtifactStatus,
+} from "./pipeline/contract";
+import {
+  publicCompiledAuthorGraph,
+  semanticAuthorGraphFromCompiled,
+  type DefinedGraphInput,
+  type DefinedProjectionInput,
+} from "./pipeline/artifact-input";
 import { selectProjectOutputTarget, selectRenderOutputTarget } from "./output-target/policy";
 import { compileSource, defineGraphForSource } from "./compile-runner";
 import type {
@@ -122,6 +131,17 @@ function loadPipelineRunner(): Promise<PipelineRunnerModule> {
   return import("./pipeline/runner") as Promise<PipelineRunnerModule>;
 }
 
+function publicCompileResult(result: ReturnType<typeof compileSource>): CompileResult {
+  if (!("graph" in result) || result.graph === undefined) {
+    return result;
+  }
+
+  return {
+    ...result,
+    graph: publicCompiledAuthorGraph(result.graph),
+  };
+}
+
 function projectedArtifactStatus(value: undefined, diagnostics: Diagnostics): "missing";
 function projectedArtifactStatus<T>(value: T, diagnostics: Diagnostics): PresentStageArtifactStatus;
 function projectedArtifactStatus<T>(
@@ -213,7 +233,7 @@ export class BoundSource<
       };
     }
 
-    return compileSource(this);
+    return publicCompileResult(compileSource(this));
   }
 
   /**
@@ -237,6 +257,10 @@ export class BoundSource<
    * @param config - Render options for the default adapter, or an explicit Writer Adapter.
    * @returns A Promise resolving to render diagnostics, stage summaries, and an artifact when render succeeds.
    */
+  render<TProjection, TFormat extends OutputFormat>(
+    config: WriterAdapter<TProjection, TFormat>,
+  ): Promise<RenderResult<TFormat>>;
+  render(config?: RenderOptions): Promise<RenderResult>;
   render(config?: RenderOptions | WriterAdapter): Promise<RenderResult> {
     return loadPipelineRunner().then(({ renderSource }) =>
       renderSource({
@@ -463,12 +487,12 @@ export class Deck<
    * This is a low-level pipeline override for tools. It is not an authoring escape hatch and does
    * not widen public JSX props, public style keys, Theme defaults, or StyleSheet class styles.
    *
-   * @param graph - A compiled graph definition to use as this Deck's compiled state. Detailed
-   * internal graph shape is validated by lower-level pipeline stages.
+   * @param graph - A compiled graph definition to use as this Deck's compiled state. Its complete
+   * internal graph shape and references are validated before the override is accepted.
    * @returns This Deck, for fluent pipeline editing.
    */
   defineGraph(graph: CompiledAuthorGraph): this {
-    this.#definedGraph = defineGraphForSource(this, graph as SemanticAuthorGraph);
+    this.#definedGraph = defineGraphForSource(this, semanticAuthorGraphFromCompiled(graph));
     this.#definedProjection = undefined;
     this.#artifacts?.invalidateFromSource();
     return this;
@@ -525,12 +549,12 @@ export class Deck<
             projectedArtifactStatus(graphArtifact.graph, diagnostics),
           ),
         },
-        graph: graphArtifact.graph,
+        graph: publicCompiledAuthorGraph(graphArtifact.graph),
         resolvedStyles: graphArtifact.resolvedStyles,
       };
     }
 
-    return compileSource(this);
+    return publicCompileResult(compileSource(this));
   }
 
   /**
@@ -564,6 +588,11 @@ export class Deck<
    * @param config - Render options for the default adapter, or an explicit Writer Adapter.
    * @returns A Promise resolving to render diagnostics, stage summaries, and an artifact when render succeeds.
    */
+  render<TProjection, TFormat extends OutputFormat>(
+    this: Deck<void, TTemplates>,
+    config: WriterAdapter<TProjection, TFormat>,
+  ): Promise<RenderResult<TFormat>>;
+  render(this: Deck<void, TTemplates>, config?: RenderOptions): Promise<RenderResult>;
   render(
     this: Deck<void, TTemplates>,
     config?: RenderOptions | WriterAdapter,

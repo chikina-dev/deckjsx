@@ -48,6 +48,16 @@ export default defineConfig({
   },
   test: {
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
+    coverage: {
+      reporter: ["text-summary", "json-summary", "html"],
+      reportsDirectory: "coverage",
+      thresholds: {
+        statements: 50,
+        branches: 43,
+        functions: 55,
+        lines: 55,
+      },
+    },
   },
   pack: {
     entry: [
@@ -66,13 +76,25 @@ export default defineConfig({
     exports: false,
   },
   lint: {
-    ignorePatterns: [".deckjsx/**", "plugins/**", "sample/**", "tests/types/perf/**"],
+    ignorePatterns: [
+      ".deckjsx/**",
+      "coverage/**",
+      "plugins/**",
+      "sample/**",
+      "tests/types/perf/**",
+    ],
     options: {
       typeAware: true,
       typeCheck: true,
     },
   },
   fmt: {
-    ignorePatterns: [".deckjsx/**", "plugins/**", "sample/**", "tests/types/perf/**"],
+    ignorePatterns: [
+      ".deckjsx/**",
+      "coverage/**",
+      "plugins/**",
+      "sample/**",
+      "tests/types/perf/**",
+    ],
   },
 });

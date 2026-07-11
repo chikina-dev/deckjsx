@@ -1,9 +1,11 @@
 import type { DeckOptions } from "@/src/authoring/options";
 import type { Diagnostics } from "@/src/diagnostics";
 import type { AssetEntity, SemanticAuthorGraph } from "@/src/graph";
+import type { DeckIntegrationContext } from "@/src/integration-context";
 import { buildLayoutInputSnapshot } from "@/src/layout/input";
 import type { FrameIR } from "@/src/layout/projected";
 import { resolveProjectedLayout } from "@/src/layout/resolve";
+import { textFontMetricsFromRegistrations } from "@/src/layout/text-metrics";
 import type { ResolvedStyleMap } from "@/src/style/resolve";
 import { EMU_PER_INCH, POINTS_PER_INCH } from "@/src/types";
 import { withPackagePartFingerprints } from "./fingerprint";
@@ -40,6 +42,7 @@ function projectGraphToPptxPackageInternal(input: {
   options: DeckOptions;
   diagnostics?: Diagnostics;
   assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
+  integrationContext?: DeckIntegrationContext;
   partial?: boolean;
 }): PptxPackageModel {
   const size = sizeFromOptions(input.options);
@@ -63,7 +66,9 @@ function projectGraphToPptxPackageInternal(input: {
         meta: input.options.meta,
       });
   const projectedLayout = layoutInput
-    ? resolveProjectedLayout(input.options, layoutInput.snapshot)
+    ? resolveProjectedLayout(input.options, layoutInput.snapshot, {
+        fontMetrics: textFontMetricsFromRegistrations(input.integrationContext?.fontAssets),
+      })
     : undefined;
   const slideFrame: FrameIR = {
     xEmu: 0,
@@ -184,6 +189,7 @@ export function projectGraphToPptxPackage(input: {
   options: DeckOptions;
   diagnostics?: Diagnostics;
   assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
+  integrationContext?: DeckIntegrationContext;
 }): PptxPackageModel {
   return projectGraphToPptxPackageInternal(input);
 }
@@ -194,6 +200,7 @@ export function projectGraphToPartialPptxPackage(input: {
   options: DeckOptions;
   diagnostics?: Diagnostics;
   assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
+  integrationContext?: DeckIntegrationContext;
 }): PptxPackageModel {
   return projectGraphToPptxPackageInternal({ ...input, partial: true });
 }

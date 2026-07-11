@@ -16,6 +16,7 @@ export function isWriterAdapter(value: WriterAdapterInput): value is WriterAdapt
     typeof value.name === "string" &&
     (value.projectionFormat === "pptx" || value.projectionFormat === "pdf") &&
     typeof value.format === "string" &&
+    value.format.trim().length > 0 &&
     typeof value.options === "object" &&
     value.options !== null &&
     typeof value.render === "function"

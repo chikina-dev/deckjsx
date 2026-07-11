@@ -1,7 +1,10 @@
 import { diagnostic, type Diagnostic } from "../diagnostics";
 import type { SemanticNode, StyleEntity } from "../graph";
 import type { AuthoredTag } from "../authoring/tags";
-import { isAuthoringStyleRecord, validateSupportedStyleDeclaration } from "./authoring-validation";
+import {
+  isAuthoringStyleRecord,
+  validateSupportedStyleDeclarationResult,
+} from "./authoring-validation";
 import type { StyleSheetValue } from "./stylesheet/public";
 import type { StyleDeclaration } from "./declaration";
 import {
@@ -39,6 +42,7 @@ type RegisteredClass = {
 type RegisteredSelector = {
   readonly text: string;
   readonly selector: ParsedSelector;
+  readonly style: StyleDeclaration;
 };
 
 export type StyleClassRegistry = {
@@ -57,10 +61,6 @@ function isTargetedDefinition(
   definition: RuntimeStyleClassDefinition,
 ): definition is RuntimeTargetedStyleClassDefinition {
   return "style" in definition;
-}
-
-function styleObjectFor(definition: RuntimeStyleClassDefinition): StyleDeclaration {
-  return (isTargetedDefinition(definition) ? definition.style : definition) as StyleDeclaration;
 }
 
 function targetsFor(
@@ -128,12 +128,12 @@ function rightmostSelectorNamesAuthoredTag(selector: ParsedSelector): boolean {
   return selector.parts.at(-1)?.tag !== undefined;
 }
 
-function validateTargetedStyleForTag(input: {
+function validatedTargetedStyleForTag(input: {
   definition: RuntimeTargetedStyleClassDefinition;
   path: string;
   tag: AuthoredTag;
   diagnostics: Diagnostic[];
-}): boolean {
+}): StyleDeclaration | undefined {
   const style = input.definition.style;
   if (!isAuthoringStyleRecord(style)) {
     input.diagnostics.push(
@@ -145,16 +145,16 @@ function validateTargetedStyleForTag(input: {
         help: ['Use { target: "p.className", style: { color: "red" } }.'],
       }),
     );
-    return false;
+    return undefined;
   }
 
-  const declarationDiagnostics = validateSupportedStyleDeclaration({
+  const result = validateSupportedStyleDeclarationResult({
     path: `${input.path}.style`,
     tag: input.tag,
     style,
   });
-  input.diagnostics.push(...declarationDiagnostics);
-  return declarationDiagnostics.length === 0;
+  input.diagnostics.push(...result.diagnostics);
+  return result.ok ? result.style : undefined;
 }
 
 function invalidClassNameReason(name: string): string | undefined {
@@ -356,19 +356,25 @@ export function registerStylesheets(
         }
 
         const tag = selector.parts.at(-1)?.tag;
-        if (
-          isTargetedDefinition(definition) &&
-          tag !== undefined &&
-          !validateTargetedStyleForTag({ definition, path, tag, diagnostics })
-        ) {
-          hasTargetDiagnostics = true;
-          return;
+        let style: StyleDeclaration = {};
+        if (isTargetedDefinition(definition) && tag !== undefined) {
+          const validatedStyle = validatedTargetedStyleForTag({
+            definition,
+            path,
+            tag,
+            diagnostics,
+          });
+          if (!validatedStyle) {
+            hasTargetDiagnostics = true;
+            return;
+          }
+          style = validatedStyle;
         }
 
         collectSelectorConditionClassNames(className, selector).forEach((name) =>
           selectorConditionClassNames.add(name),
         );
-        selectors.push({ text: selectorText, selector });
+        selectors.push({ text: selectorText, selector, style });
       });
 
       const list = classes.get(className) ?? [];
@@ -424,7 +430,7 @@ export function resolveClassMatches(
     registrations.forEach((registration) => {
       hasTargetDiagnostics ||= registration.hasTargetDiagnostics;
 
-      registration.selectors.forEach(({ selector, text }) => {
+      registration.selectors.forEach(({ selector, style, text }) => {
         if (!selectorMatches(className, selector, node, activeClassNames, context)) {
           return;
         }
@@ -433,7 +439,7 @@ export function resolveClassMatches(
           registration,
           selector: text,
           specificity: selector.specificity,
-          style: styleObjectFor(registration.definition),
+          style,
         });
       });
     });

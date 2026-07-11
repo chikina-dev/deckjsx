@@ -327,6 +327,36 @@ describe("project/render package and inspection output", () => {
     );
   });
 
+  test("project inspection preserves text direction metrics", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Text direction inspection" }, () => (
+      <p
+        style={{
+          position: "absolute",
+          left: 1,
+          top: 1,
+          width: 2,
+          height: 2,
+          fontSize: 24,
+          writingMode: "vertical-rl",
+        }}
+      >
+        Tall
+      </p>
+    ));
+
+    const project = await deck.project({ inspection: "summary" });
+    const textSummary = project.summary?.slides[0]?.elements[0];
+
+    expect(project.ok).toBe(true);
+    expect(textSummary).toMatchObject({
+      kind: "text",
+      textMetrics: expect.objectContaining({
+        textDirection: "vert270",
+      }),
+    });
+  });
+
   test("project inspection handles visual review edge cases", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Visual edge cases" }, () => (

@@ -66,6 +66,12 @@ export type WriterRenderContext = {
   readonly kind: "deckjsx.writerRenderContext";
 };
 
+type ProjectionModelFormat<TProjection> = TProjection extends {
+  readonly format: infer TFormat extends ProjectionFormat;
+}
+  ? TFormat
+  : ProjectionFormat;
+
 /**
  * Public low-level contract for output writers.
  *
@@ -82,7 +88,7 @@ export type WriterAdapter<TProjection = unknown, TFormat extends OutputFormat = 
   /** Human-readable adapter name used by diagnostics and inspection. */
   readonly name: string;
   /** Projection format consumed by this adapter. */
-  readonly projectionFormat: ProjectionFormat;
+  readonly projectionFormat: ProjectionModelFormat<TProjection>;
   /** Artifact format produced by this adapter. */
   readonly format: TFormat;
   /** Adapter-specific render options captured when the adapter is created. */

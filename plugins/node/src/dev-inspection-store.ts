@@ -126,7 +126,7 @@ type ComponentRecord = {
   parentId?: string;
   childIds: string[];
   graphNodeIds: string[];
-  propsRaw: unknown;
+  propsSnapshot: unknown;
 };
 
 type MutableAttempt = {
@@ -155,16 +155,16 @@ export function createNodeDevInspectionStore(): NodeDevInspectionStore {
         linkParent(current, existing, input.parentId);
         return existing.id;
       }
-      const propsRaw = input.props ?? {};
+      const props = input.props ?? {};
       const record: ComponentRecord = {
         id,
         name: input.name,
         ...(input.key !== undefined ? { key: input.key } : {}),
-        ...(input.source ? { source: input.source } : {}),
-        propsSummary: propsSummary(propsRaw),
+        ...(input.source ? { source: { ...input.source } } : {}),
+        propsSummary: propsSummary(props),
         childIds: [],
         graphNodeIds: input.graphNodeId ? [input.graphNodeId] : [],
-        propsRaw,
+        propsSnapshot: snapshotInspectableProps(props),
       };
       current.components.push(record);
       linkParent(current, record, input.parentId);
@@ -237,11 +237,11 @@ export function createNodeDevInspectionStore(): NodeDevInspectionStore {
       if (!component) {
         return undefined;
       }
-      const value = path ? valueAtPath(component.propsRaw, path) : propsSummary(component.propsRaw);
+      const value = path ? valueAtPath(component.propsSnapshot, path) : component.propsSummary;
       return {
         target: component.id,
         ...(path ? { path } : {}),
-        value: sanitizeValueForPath(value, path),
+        value: cloneInspectionValue(sanitizeValueForPath(value, path)),
       };
     },
     diffComponents(target) {
@@ -251,17 +251,17 @@ export function createNodeDevInspectionStore(): NodeDevInspectionStore {
         if (!latest || !previous) {
           return { target, changes: [] };
         }
-        return {
+        return cloneInspectionValue({
           target: latest.id,
           changes: [
             ...componentRelationChanges(previous, latest),
-            ...diffObjectProperties(previous.propsRaw, latest.propsRaw, "props"),
+            ...diffObjectProperties(previous.propsSnapshot, latest.propsSnapshot, "props"),
           ],
-        };
+        });
       }
-      return {
+      return cloneInspectionValue({
         changes: componentSnapshotChanges(previousInspectable, latestInspectable),
-      };
+      });
     },
     inspectImpact(target) {
       const component = componentByTarget(latestInspectable, target);
@@ -279,13 +279,13 @@ export function createNodeDevInspectionStore(): NodeDevInspectionStore {
       if (!latest || !previous) {
         return { target, ...(path ? { path } : {}), changes: [] };
       }
-      const before = path ? valueAtPath(previous.propsRaw, path) : previous.propsRaw;
-      const after = path ? valueAtPath(latest.propsRaw, path) : latest.propsRaw;
-      return {
+      const before = path ? valueAtPath(previous.propsSnapshot, path) : previous.propsSnapshot;
+      const after = path ? valueAtPath(latest.propsSnapshot, path) : latest.propsSnapshot;
+      return cloneInspectionValue({
         target: latest.id,
         ...(path ? { path } : {}),
         changes: diffValues(before, after, path),
-      };
+      });
     },
   };
 }
@@ -339,6 +339,9 @@ function sanitizePropValue(key: string, value: unknown): SanitizedValue {
 }
 
 function sanitizeValue(value: unknown): SanitizedValue {
+  if (isSanitizedMarker(value)) {
+    return value;
+  }
   if (value === undefined) {
     return { kind: "undefined" };
   }
@@ -373,6 +376,81 @@ function sanitizeValue(value: unknown): SanitizedValue {
     return value.description ? `Symbol(${value.description})` : "Symbol()";
   }
   return { kind: "undefined" };
+}
+
+function isSanitizedMarker(value: unknown): value is Extract<SanitizedValue, object> {
+  if (!isRecord(value) || typeof value.kind !== "string") {
+    return false;
+  }
+  return ["array", "circular", "function", "instance", "object", "undefined"].includes(value.kind);
+}
+
+function snapshotInspectableProps(value: unknown): unknown {
+  if (!isRecord(value)) {
+    return snapshotInspectableValue(value);
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .slice(0, 30)
+      .map(([key, entry]) => [
+        key,
+        isSecretKey(key)
+          ? "[redacted]"
+          : typeof entry === "object" &&
+              entry !== null &&
+              !Array.isArray(entry) &&
+              (classInstanceName(entry) || hasCircularReference(entry))
+            ? sanitizeValue(entry)
+            : snapshotInspectableValue(entry, 1),
+      ]),
+  );
+}
+
+function snapshotInspectableValue(
+  value: unknown,
+  depth = 0,
+  ancestors: ReadonlySet<object> = new Set(),
+): unknown {
+  if (
+    value === undefined ||
+    value === null ||
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "string" ||
+    typeof value === "bigint" ||
+    typeof value === "symbol" ||
+    typeof value === "function"
+  ) {
+    return sanitizeValue(value);
+  }
+  if (ancestors.has(value)) {
+    return { kind: "circular", keys: Object.keys(value).slice(0, 30) } satisfies SanitizedValue;
+  }
+  if (depth >= 6) {
+    return sanitizeValue(value);
+  }
+  if (Array.isArray(value)) {
+    const nextAncestors = new Set(ancestors);
+    nextAncestors.add(value);
+    return value
+      .slice(0, 100)
+      .map((entry) => snapshotInspectableValue(entry, depth + 1, nextAncestors));
+  }
+  const instanceName = classInstanceName(value);
+  if (instanceName) {
+    return sanitizeValue(value);
+  }
+
+  const nextAncestors = new Set(ancestors);
+  nextAncestors.add(value);
+  return Object.fromEntries(
+    Object.entries(value)
+      .slice(0, 30)
+      .map(([key, entry]) => [
+        key,
+        isSecretKey(key) ? "[redacted]" : snapshotInspectableValue(entry, depth + 1, nextAncestors),
+      ]),
+  );
 }
 
 function sanitizeValueForPath(value: unknown, path: string | undefined): SanitizedValue {
@@ -439,7 +517,7 @@ function componentMatchesToken(component: ComponentRecord, token: string): boole
   }
   const propsPredicate = propsQueryPredicate(token);
   if (propsPredicate) {
-    return propValueMatches(component.propsRaw, propsPredicate);
+    return propValueMatches(component.propsSnapshot, propsPredicate);
   }
   const normalized = token.toLowerCase();
   return (
@@ -524,12 +602,16 @@ function publicComponentSnapshot(
     name: component.name,
     ...(component.key !== undefined ? { key: component.key } : {}),
     ...(snapshot ? { compilation: snapshot.compilation } : {}),
-    ...(component.source ? { source: component.source } : {}),
-    propsSummary: component.propsSummary,
+    ...(component.source ? { source: { ...component.source } } : {}),
+    propsSummary: cloneInspectionValue(component.propsSummary),
     ...(component.parentId ? { parentId: component.parentId } : {}),
     childIds: [...component.childIds],
     graphNodeIds: [...component.graphNodeIds],
   };
+}
+
+function cloneInspectionValue<T>(value: T): T {
+  return globalThis.structuredClone(value) as T;
 }
 
 function addGraphNodeId(component: ComponentRecord, graphNodeId: string | undefined): void {
@@ -640,8 +722,8 @@ function componentSnapshotChanges(
     }
     if (previousComponent && latestComponent) {
       return diffObjectProperties(
-        previousComponent.propsRaw,
-        latestComponent.propsRaw,
+        previousComponent.propsSnapshot,
+        latestComponent.propsSnapshot,
         `component.${id}.props`,
       );
     }

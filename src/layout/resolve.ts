@@ -22,6 +22,7 @@ import {
   type NormalizedTextProps,
   type NormalizedVideoProps,
   type NormalizedViewProps,
+  type TextNormalizationInput,
 } from "./normalization";
 import type {
   LayoutInputContentNode,
@@ -42,6 +43,7 @@ import { frameFromProps, inflateSpecifiedBoxSize, parseAspectRatio } from "./abs
 import { intersectClipRect, type ClipRect, type Frame, type Placement } from "./frame";
 import type {
   ProjectedLayoutGroup,
+  ProjectedLayoutId,
   ProjectedLayoutTable,
   ImageSourceIR,
   ProjectedLayoutClip,
@@ -59,6 +61,7 @@ import type {
   TextRunIR,
   TextStyleIR,
 } from "./projected";
+import { graphNodeId } from "../graph/identity";
 import type { DeckOptions } from "../authoring/options";
 import type {
   BorderWidthValue,
@@ -111,12 +114,13 @@ import {
   resolveBackgroundLayers,
   type BackgroundBoxFrames,
 } from "../style/background";
-import { normalizeColor } from "../style/color";
+import { alphaToTransparency, normalizeColor, parseCssColor } from "../style/color";
 import {
   isCssWideKeyword,
   parseLength,
   parsePointValue,
   type LengthResolutionContext,
+  type TextFontMetrics,
 } from "../style/length";
 import {
   authoredLengthOrUndefined,
@@ -145,15 +149,23 @@ import {
 } from "../style/typography";
 import { EMU_PER_INCH, POINTS_PER_INCH } from "../types";
 import { normalizeProjectedImageFit, unsupportedObjectFitSemantics } from "./image-fit";
+import {
+  textFontCharacterWidthUnits,
+  textFontKerningAdjustments,
+  textFontMetricsForStyleCandidates,
+  standardTextCharacterWidthUnits,
+  textFontShapedWidthUnits,
+} from "./text-metrics";
 import { unsupportedCssWideKeywordSemantic, unsupportedSemantic } from "./unsupported";
 
 type IdGenerator = {
-  nextSlide(): string;
-  nextNode(): string;
+  nextSlide(origin?: ProjectedLayoutOrigin): ProjectedLayoutId;
+  nextNode(kind: ProjectedLayoutNode["kind"], origin?: ProjectedLayoutOrigin): ProjectedLayoutId;
 };
 
 export type ProjectedLayoutResolutionOptions = {
   readonly origins?: WeakMap<object, ProjectedLayoutOrigin>;
+  readonly fontMetrics?: LengthResolutionContext["fontMetrics"];
 };
 
 type StackLayoutOptions = Pick<
@@ -223,6 +235,44 @@ type LayoutChildNode =
       siblingOrder: number;
       origin?: ProjectedLayoutOrigin;
     };
+
+type InheritedTableCellTextKey = keyof NormalizedTableCellProps & keyof TextNormalizationInput;
+
+const INHERITED_TABLE_CELL_TEXT_KEYS = [
+  "fontFamily",
+  "fontSize",
+  "fontWeight",
+  "fontStyle",
+  "textDecoration",
+  "textDecorationLine",
+  "textDecorationStyle",
+  "textDecorationColor",
+  "textTransform",
+  "direction",
+  "writingMode",
+  "color",
+  "textAlign",
+  "verticalAlign",
+  "lineHeight",
+  "paragraphSpacingBefore",
+  "paragraphSpacingAfter",
+  "textIndent",
+  "tabStops",
+  "letterSpacing",
+  "whiteSpace",
+  "wordBreak",
+  "overflowWrap",
+  "listStyleType",
+  "listStart",
+  "listIndent",
+  "superscript",
+  "subscript",
+  "textShadow",
+  "fit",
+] as const satisfies readonly InheritedTableCellTextKey[];
+
+const DEFAULT_PPTX_TABLE_CELL_TEXT_FONT_SIZE = 18;
+const DEFAULT_PPTX_TABLE_CELL_PADDING = [0, 0.1, 0, 0.1] as const;
 
 function errorReason(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -1330,11 +1380,15 @@ function backgroundInput(props: {
   readonly backgroundColor?: string;
   readonly backgroundImage?: string;
 }): { readonly property: string; readonly value?: string } {
-  if (props.backgroundColor !== undefined) {
-    return { property: "backgroundColor", value: props.backgroundColor };
+  const imageBackground = props.backgroundImage ?? props.background;
+  if (props.backgroundColor !== undefined && imageBackground !== undefined) {
+    return { property: "background", value: `${props.backgroundColor}, ${imageBackground}` };
   }
   if (props.backgroundImage !== undefined) {
     return { property: "backgroundImage", value: props.backgroundImage };
+  }
+  if (props.backgroundColor !== undefined) {
+    return { property: "backgroundColor", value: props.backgroundColor };
   }
   return { property: "background", value: props.background };
 }
@@ -1379,17 +1433,41 @@ const DEFAULT_TEXT_FONT_SIZE_PT = 18;
 const DEFAULT_NORMAL_LINE_HEIGHT_MULTIPLE = 1.2;
 
 function createIdGenerator(): IdGenerator {
-  let slideCount = 0;
-  let nodeCount = 0;
+  const anonymousCounts = new Map<string, number>();
+  const allocatedIds = new Map<ProjectedLayoutId, number>();
+
+  const allocate = (
+    scope: "slide" | "node",
+    kind: string,
+    origin: ProjectedLayoutOrigin | undefined,
+  ): ProjectedLayoutId => {
+    const semanticOwnerId = origin?.graphNodeIds?.[0];
+    const anonymousKey = `${scope}:${kind}`;
+    const anonymousIndex = anonymousCounts.get(anonymousKey) ?? 0;
+    const material = semanticOwnerId
+      ? ["projected-layout", scope, kind, "graph", semanticOwnerId]
+      : ["projected-layout", scope, kind, "anonymous", String(anonymousIndex)];
+
+    if (!semanticOwnerId) {
+      anonymousCounts.set(anonymousKey, anonymousIndex + 1);
+    }
+
+    const baseId = String(graphNodeId(material));
+    const collisionIndex = allocatedIds.get(baseId) ?? 0;
+    allocatedIds.set(baseId, collisionIndex + 1);
+    if (collisionIndex === 0) {
+      return baseId;
+    }
+
+    return String(graphNodeId([...material, "collision", String(collisionIndex)]));
+  };
 
   return {
-    nextSlide() {
-      slideCount += 1;
-      return `slide-${slideCount}`;
+    nextSlide(origin) {
+      return allocate("slide", "slide", origin);
     },
-    nextNode() {
-      nodeCount += 1;
-      return `node-${nodeCount}`;
+    nextNode(kind, origin) {
+      return allocate("node", kind, origin);
     },
   };
 }
@@ -1549,6 +1627,192 @@ function normalizeImagePropsWithIntrinsicAspectRatio(
     ...props,
     aspectRatio: width / height,
   };
+}
+
+function inheritTableCellTextProps(
+  cellProps: NormalizedTableCellProps,
+  textProps: TextNormalizationInput,
+): TextNormalizationInput {
+  let next: TextNormalizationInput | undefined;
+
+  for (const key of INHERITED_TABLE_CELL_TEXT_KEYS) {
+    const value = cellProps[key];
+    if (textProps[key] !== undefined || value === undefined) {
+      continue;
+    }
+
+    next ??= { ...textProps };
+    (next as Record<string, unknown>)[key] = value;
+  }
+
+  return next ?? textProps;
+}
+
+function authoredTextProp(
+  props: TextNormalizationInput,
+  key: keyof TextNormalizationInput,
+): unknown {
+  const style = props.style as Record<string, unknown> | undefined;
+  if (style?.[key] !== undefined) {
+    return style[key];
+  }
+
+  return (props as Record<string, unknown>)[key];
+}
+
+function tableCellTextCanFillCellHeight(textProps: TextNormalizationInput): boolean {
+  const authoredHeight = authoredTextProp(textProps, "height") as DeckLength | undefined;
+  const authoredInset = authoredTextProp(textProps, "inset") as DeckLength | undefined;
+  const authoredTop = authoredTextProp(textProps, "top") as DeckLength | undefined;
+  const authoredBottom = authoredTextProp(textProps, "bottom") as DeckLength | undefined;
+
+  return (
+    authoredTextProp(textProps, "position") !== "absolute" &&
+    authoredLengthOrUndefined(authoredHeight) === undefined &&
+    !(authoredInset !== undefined && !hasCssWideKeywordToken(authoredInset)) &&
+    authoredLengthOrUndefined(authoredTop) === undefined &&
+    authoredLengthOrUndefined(authoredBottom) === undefined
+  );
+}
+
+function mergedTableCellTextOrigin(
+  origins: readonly ProjectedLayoutOrigin[],
+): ProjectedLayoutOrigin | undefined {
+  if (origins.length === 0) {
+    return undefined;
+  }
+
+  const [first] = origins;
+  const graphNodeIds = [...new Set(origins.flatMap((origin) => origin.graphNodeIds ?? []))];
+  const styleEntityIds = [...new Set(origins.flatMap((origin) => origin.styleEntityIds ?? []))];
+  const assetEntityIds = [...new Set(origins.flatMap((origin) => origin.assetEntityIds ?? []))];
+
+  return {
+    ...(graphNodeIds.length > 0 ? { graphNodeIds } : {}),
+    ...(styleEntityIds.length > 0 ? { styleEntityIds } : {}),
+    ...(assetEntityIds.length > 0 ? { assetEntityIds } : {}),
+    ...(first?.source ? { source: first.source } : {}),
+    ...(first?.componentProvenance ? { componentProvenance: first.componentProvenance } : {}),
+    ...(first?.templateAreaRef ? { templateAreaRef: first.templateAreaRef } : {}),
+    ...(first?.templateAreaKind ? { templateAreaKind: first.templateAreaKind } : {}),
+  };
+}
+
+function tableCellPlainTextFragment(child: LayoutInputContentNode): LayoutInputText | undefined {
+  if (child.kind !== "text") {
+    return undefined;
+  }
+
+  const props = normalizeTextProps(child.props);
+  const runs = extractRichTextRuns(child.children, props.textTransform);
+  if (runs.some((run) => run.style || run.hyperlink)) {
+    return undefined;
+  }
+
+  return {
+    ...child,
+    props,
+    children: [runs.map((run) => run.text).join("")],
+  };
+}
+
+function normalizedTextPropsEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) {
+    return true;
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => normalizedTextPropsEqual(value, right[index]))
+    );
+  }
+  if (typeof left !== "object" || left === null || typeof right !== "object" || right === null) {
+    return false;
+  }
+
+  const leftRecord = left as Readonly<Record<string, unknown>>;
+  const rightRecord = right as Readonly<Record<string, unknown>>;
+  const keys = new Set([...Object.keys(leftRecord), ...Object.keys(rightRecord)]);
+  return [...keys].every((key) => normalizedTextPropsEqual(leftRecord[key], rightRecord[key]));
+}
+
+function coalesceTableCellPlainTextFragments(
+  children: ReadonlyArray<LayoutInputContentNode>,
+): ReadonlyArray<LayoutInputContentNode> {
+  const output: LayoutInputContentNode[] = [];
+  let pendingTextChildren: LayoutInputTextChild[] = [];
+  let pendingTextProps: TextNormalizationInput | undefined;
+  let pendingOrigins: ProjectedLayoutOrigin[] = [];
+
+  const flushPendingText = (): void => {
+    if (!pendingTextProps || pendingTextChildren.length === 0) {
+      return;
+    }
+
+    const origin = mergedTableCellTextOrigin(pendingOrigins);
+    output.push({
+      kind: "text",
+      props: pendingTextProps,
+      children: pendingTextChildren,
+      ...(origin ? { origin } : {}),
+    });
+    pendingTextChildren = [];
+    pendingTextProps = undefined;
+    pendingOrigins = [];
+  };
+
+  for (const child of children) {
+    const textFragment = tableCellPlainTextFragment(child);
+    if (!textFragment) {
+      flushPendingText();
+      output.push(child);
+      continue;
+    }
+
+    if (pendingTextProps && !normalizedTextPropsEqual(pendingTextProps, textFragment.props)) {
+      flushPendingText();
+    }
+    pendingTextProps ??= textFragment.props;
+    pendingTextChildren.push(...flattenTextChildren(textFragment.children));
+    if (textFragment.origin) {
+      pendingOrigins.push(textFragment.origin);
+    }
+  }
+
+  flushPendingText();
+  return output;
+}
+
+function tableCellChildrenWithInheritedTextStyle(
+  children: ReadonlyArray<LayoutInputContentNode>,
+  cellProps: NormalizedTableCellProps,
+): ReadonlyArray<LayoutInputContentNode> {
+  const coalescedChildren = coalesceTableCellPlainTextFragments(children);
+  const shouldFillSingleTextChild =
+    cellProps.verticalAlign !== undefined &&
+    coalescedChildren.length === 1 &&
+    coalescedChildren[0]?.kind === "text";
+
+  return coalescedChildren.map((child) => {
+    if (child.kind !== "text") {
+      return child;
+    }
+
+    let props = inheritTableCellTextProps(cellProps, child.props);
+    if (authoredTextProp(props, "fontSize") === undefined) {
+      props = { ...props, fontSize: DEFAULT_PPTX_TABLE_CELL_TEXT_FONT_SIZE };
+    }
+    if (authoredTextProp(props, "whiteSpace") === undefined) {
+      props = { ...props, whiteSpace: "nowrap" };
+    }
+    if (shouldFillSingleTextChild && tableCellTextCanFillCellHeight(props)) {
+      props = { ...props, height: "100%" };
+    }
+
+    return props === child.props ? child : { ...child, props };
+  });
 }
 
 function resolveCornerRadiusEmu(
@@ -1767,14 +2031,197 @@ function resolveTextLineHeightPt(
   });
 }
 
+function estimateLayoutCharacterWidthPt(
+  character: string,
+  fontSizePt: number,
+  fontMetrics: LengthResolutionContext["fontMetrics"] = [],
+  standardFontIsBold = false,
+): number {
+  for (const font of fontMetrics) {
+    const fontWidthUnits = textFontCharacterWidthUnits(character, font);
+    if (fontWidthUnits !== undefined) {
+      return (fontSizePt * fontWidthUnits) / 1000;
+    }
+  }
+
+  const standardWidthUnits = standardTextCharacterWidthUnits(character, standardFontIsBold);
+  if (standardWidthUnits !== undefined) {
+    return (fontSizePt * standardWidthUnits) / 1000;
+  }
+
+  if (/\s/u.test(character)) {
+    return fontSizePt * 0.278;
+  }
+  if (/[ilI.,'`!|]/u.test(character)) {
+    return fontSizePt * 0.25;
+  }
+  if (/[mwMW@%]/u.test(character)) {
+    return fontSizePt * 0.8;
+  }
+  if (/[A-Z]/u.test(character)) {
+    return fontSizePt * 0.65;
+  }
+  if (character.charCodeAt(0) > 0x7f) {
+    return fontSizePt;
+  }
+  return fontSizePt * 0.5;
+}
+
+function estimateLayoutTextWidthPt(
+  text: string,
+  fontSizePt: number,
+  fontMetrics: LengthResolutionContext["fontMetrics"] = [],
+  standardFontIsBold = false,
+  charSpacingPt = 0,
+): number {
+  const characterCount = Array.from(text).length;
+  const width = Array.from(text).reduce(
+    (total, character) =>
+      total +
+      estimateLayoutCharacterWidthPt(character, fontSizePt, fontMetrics, standardFontIsBold),
+    0,
+  );
+  const shapedWidthUnits =
+    fontMetrics.length === 1 ? textFontShapedWidthUnits(text, fontMetrics[0]) : {};
+  if (shapedWidthUnits.value !== undefined) {
+    return (
+      (fontSizePt * shapedWidthUnits.value) / 1000 + Math.max(0, characterCount - 1) * charSpacingPt
+    );
+  }
+  const kerning =
+    fontMetrics.length === 1 ? textFontKerningAdjustments(text, fontMetrics[0]) : undefined;
+  return (
+    width +
+    (kerning?.reduce((total, adjustment) => total + (fontSizePt * adjustment) / 1000, 0) ?? 0) +
+    Math.max(0, characterCount - 1) * charSpacingPt
+  );
+}
+
+type EstimatedTextRun = {
+  readonly text: string;
+  readonly fontSizePt: number;
+  readonly lineHeightPt: number;
+  readonly fonts?: readonly TextFontMetrics[];
+  readonly standardFontIsBold: boolean;
+  readonly charSpacingPt: number;
+};
+
+function estimateWrappedTextLineHeights(input: {
+  readonly runs: readonly EstimatedTextRun[];
+  readonly availableWidthPt: number;
+  readonly breakWords?: boolean;
+  readonly wrap?: boolean;
+}): readonly number[] {
+  const firstRun = input.runs[0];
+  const lineHeights: number[] = [firstRun?.lineHeightPt ?? 0];
+  let currentWidth = 0;
+  let hasContentOnLine = false;
+  let pendingSpaceWidth = 0;
+
+  const markCurrentLine = (lineHeightPt: number): void => {
+    const currentIndex = Math.max(0, lineHeights.length - 1);
+    lineHeights[currentIndex] = Math.max(lineHeights[currentIndex] ?? 0, lineHeightPt);
+  };
+  const nextLine = (lineHeightPt: number): void => {
+    lineHeights.push(lineHeightPt);
+    currentWidth = 0;
+    hasContentOnLine = false;
+    pendingSpaceWidth = 0;
+  };
+
+  if (input.runs.length === 0) {
+    return [0];
+  }
+
+  for (const run of input.runs) {
+    const fontMetrics = run.fonts ?? [];
+    for (const [lineIndex, line] of run.text.split("\n").entries()) {
+      if (lineIndex > 0) {
+        nextLine(run.lineHeightPt);
+      }
+
+      const tokens = line.match(/\s+|\S+/gu) ?? [];
+      for (const token of tokens) {
+        markCurrentLine(run.lineHeightPt);
+        if (/^\s+$/u.test(token)) {
+          pendingSpaceWidth += estimateLayoutTextWidthPt(
+            token,
+            run.fontSizePt,
+            fontMetrics,
+            run.standardFontIsBold,
+            run.charSpacingPt,
+          );
+          continue;
+        }
+
+        const wordWidth = estimateLayoutTextWidthPt(
+          token,
+          run.fontSizePt,
+          fontMetrics,
+          run.standardFontIsBold,
+          run.charSpacingPt,
+        );
+        const spaceWidth =
+          hasContentOnLine && pendingSpaceWidth > 0 ? pendingSpaceWidth + 2 * run.charSpacingPt : 0;
+        if (
+          input.wrap !== false &&
+          input.availableWidthPt > 0 &&
+          hasContentOnLine &&
+          currentWidth + spaceWidth + wordWidth > input.availableWidthPt &&
+          !(input.breakWords && wordWidth > input.availableWidthPt)
+        ) {
+          nextLine(run.lineHeightPt);
+        }
+
+        if (input.breakWords && input.availableWidthPt > 0 && wordWidth > input.availableWidthPt) {
+          if (hasContentOnLine && pendingSpaceWidth > 0) {
+            if (currentWidth + pendingSpaceWidth > input.availableWidthPt) {
+              nextLine(run.lineHeightPt);
+            } else {
+              currentWidth += pendingSpaceWidth;
+            }
+          }
+          pendingSpaceWidth = 0;
+          for (const character of Array.from(token)) {
+            const characterWidth =
+              estimateLayoutCharacterWidthPt(
+                character,
+                run.fontSizePt,
+                fontMetrics,
+                run.standardFontIsBold,
+              ) + (currentWidth > 0 ? run.charSpacingPt : 0);
+            if (
+              input.wrap !== false &&
+              currentWidth > 0 &&
+              currentWidth + characterWidth > input.availableWidthPt
+            ) {
+              nextLine(run.lineHeightPt);
+            }
+            currentWidth += characterWidth;
+            hasContentOnLine = true;
+            markCurrentLine(run.lineHeightPt);
+          }
+        } else {
+          currentWidth += spaceWidth + wordWidth;
+          hasContentOnLine = true;
+        }
+        pendingSpaceWidth = 0;
+      }
+    }
+  }
+
+  return lineHeights;
+}
+
 function estimateTextAutoContentSize(
   node: Extract<LayoutChildNode, { kind: "text" }>,
   dimension: "width" | "height",
   parent: Frame,
   context?: LengthResolutionContext,
+  placement?: Placement,
 ): number {
   const textContext = getTextLengthContext(node.props, context);
-  const [paddingTop, , paddingBottom] = parseSpacing(
+  const [paddingTop, paddingRight, paddingBottom, paddingLeft] = parseSpacing(
     node.props.padding,
     textContext,
     parent.widthEmu,
@@ -1784,10 +2231,209 @@ function estimateTextAutoContentSize(
     return parent.widthEmu;
   }
 
+  const fontSizePt = resolveTextFontSizePt(node.props, textContext);
+  const lineHeightPt = resolveTextLineHeightPt(node.props, textContext);
+  const charSpacingPt = resolveCharacterSpacing(node.props.charSpacing, textContext) ?? 0;
+  const authoredWidth = authoredLengthOrUndefined(node.props.width);
+  const specifiedWidthEmu =
+    authoredWidth === undefined
+      ? undefined
+      : parseLength(authoredWidth, parent.widthEmu, 0, textContext);
+  const outerWidthEmu = specifiedWidthEmu ?? placement?.widthEmu ?? parent.widthEmu;
+  const availableWidthEmu =
+    specifiedWidthEmu !== undefined && node.props.boxSizing === "content-box"
+      ? specifiedWidthEmu
+      : Math.max(outerWidthEmu - paddingLeft - paddingRight, 0);
+  const availableWidthPt = (availableWidthEmu / EMU_PER_INCH) * POINTS_PER_INCH;
+  const runs = extractRichTextRuns(node.source.children, node.props.textTransform, textContext);
+  const estimatedRuns: EstimatedTextRun[] = runs.map((run) => {
+    const runFontSizePt = run.style?.fontSizePt ?? fontSizePt;
+    const runFonts = textFontMetricsForStyleCandidates({
+      family: run.style?.fontFamily ?? node.props.fontFamily,
+      weight: run.style?.fontWeight ?? node.props.fontWeight,
+      style:
+        run.style?.italic === undefined
+          ? node.props.fontStyle
+          : run.style.italic
+            ? "italic"
+            : "normal",
+      metrics: textContext?.fontMetrics,
+    });
+    const runLineHeightPt =
+      run.style?.lineSpacing ??
+      (run.style?.lineSpacingMultiple !== undefined
+        ? runFontSizePt * run.style.lineSpacingMultiple
+        : run.style?.fontSizePt !== undefined
+          ? (runFontSizePt / fontSizePt) * lineHeightPt
+          : lineHeightPt);
+    return {
+      text: run.text,
+      fontSizePt: runFontSizePt,
+      lineHeightPt: runLineHeightPt,
+      standardFontIsBold:
+        run.style?.fontWeight === "bold" ||
+        (typeof run.style?.fontWeight === "number" && run.style.fontWeight >= 600) ||
+        (run.style?.fontWeight === undefined &&
+          (node.props.fontWeight === "bold" ||
+            (typeof node.props.fontWeight === "number" && node.props.fontWeight >= 600))),
+      charSpacingPt: run.style?.charSpacing ?? charSpacingPt,
+      ...(runFonts.length > 0 ? { fonts: runFonts } : {}),
+    };
+  });
+  const lineHeights = estimateWrappedTextLineHeights({
+    runs: estimatedRuns,
+    availableWidthPt,
+    wrap: node.props.wrap,
+    ...(node.props.wordBreak === "break-all" ||
+    node.props.wordBreak === "break-word" ||
+    node.props.overflowWrap === "break-word" ||
+    node.props.overflowWrap === "anywhere"
+      ? { breakWords: true }
+      : {}),
+  });
+
+  const textContentHeightPt =
+    lineHeights.length === 0
+      ? lineHeightPt
+      : lineHeights.slice(0, -1).reduce((total, height) => total + height, 0) +
+        (lineHeights.at(-1) ?? lineHeightPt);
+  const paragraphSpacingBeforePt =
+    node.props.paragraphSpacingBefore === undefined
+      ? 0
+      : parsePointValue(node.props.paragraphSpacingBefore, 0, textContext);
+  const paragraphSpacingAfterPt =
+    node.props.paragraphSpacingAfter === undefined
+      ? 0
+      : parsePointValue(node.props.paragraphSpacingAfter, 0, textContext);
+  const contentHeightPt = paragraphSpacingBeforePt + textContentHeightPt + paragraphSpacingAfterPt;
+  return (contentHeightPt / POINTS_PER_INCH) * EMU_PER_INCH + paddingTop + paddingBottom;
+}
+
+function textMayNeedWrappedMeasurement(text: string, props: NormalizedTextProps): boolean {
+  if (!text || props.wrap === false) {
+    return false;
+  }
+
+  return text.includes("\n") || text.trim().length > 80;
+}
+
+function unsupportedWrappedTextMeasurementSemantics(
+  props: NormalizedTextProps,
+  text: string,
+): readonly ProjectedUnsupportedSemantic[] {
+  if (!textMayNeedWrappedMeasurement(text, props)) {
+    return [];
+  }
+
+  const hasAuthoredHeight = authoredLengthOrUndefined(props.height) !== undefined;
+  const hasAuthoredInset = props.inset !== undefined && !hasCssWideKeywordToken(props.inset);
+  const hasAuthoredTop = authoredLengthOrUndefined(props.top) !== undefined;
+  const hasAuthoredBottom = authoredLengthOrUndefined(props.bottom) !== undefined;
+  if (hasAuthoredHeight || hasAuthoredInset || (hasAuthoredTop && hasAuthoredBottom)) {
+    return [];
+  }
+
+  const semantic = unsupportedSemantic({
+    feature: "layout",
+    property: "height",
+    value: "auto",
+    error: new Error(
+      "Auto-height wrapping uses deterministic deckjsx glyph-width estimates; exact font metrics and shaping remain outside the shared layout subset.",
+    ),
+    fallback: {
+      strategy: "synthesizeFallbackFrame",
+      preserves: [
+        "availableInlineSize",
+        "wrappedLineCount",
+        "lineHeightAutoHeight",
+        "characterSpacing",
+        "paragraphSpacing",
+      ],
+      missing: ["fontSpecificGlyphMetrics", "exactTextShaping"],
+    },
+  });
+  return semantic ? [semantic] : [];
+}
+
+function estimateViewAutoContentSize(
+  node: Extract<LayoutChildNode, { kind: "view" }>,
+  dimension: "width" | "height",
+  parent: Frame,
+  context?: LengthResolutionContext,
+): number {
+  const [paddingTop, paddingRight, paddingBottom, paddingLeft] = parseSpacing(
+    node.props.padding,
+    context,
+    parent.widthEmu,
+  );
+  const authoredWidth = authoredLengthOrUndefined(node.props.width);
+  const authoredHeight = authoredLengthOrUndefined(node.props.height);
+  const specifiedWidthEmu =
+    authoredWidth === undefined
+      ? undefined
+      : parseLength(authoredWidth, parent.widthEmu, 0, context);
+  const specifiedHeightEmu =
+    authoredHeight === undefined
+      ? undefined
+      : parseLength(authoredHeight, parent.heightEmu, 0, context);
+  const outerWidthEmu =
+    specifiedWidthEmu === undefined || node.props.boxSizing === "content-box"
+      ? (specifiedWidthEmu ?? parent.widthEmu) +
+        (specifiedWidthEmu === undefined ? 0 : paddingLeft + paddingRight)
+      : specifiedWidthEmu;
+  const outerHeightEmu =
+    specifiedHeightEmu === undefined || node.props.boxSizing === "content-box"
+      ? (specifiedHeightEmu ?? parent.heightEmu) +
+        (specifiedHeightEmu === undefined ? 0 : paddingTop + paddingBottom)
+      : specifiedHeightEmu;
+  const contentFrame: Frame = {
+    xEmu: parent.xEmu + paddingLeft,
+    yEmu: parent.yEmu + paddingTop,
+    widthEmu: Math.max(outerWidthEmu - paddingLeft - paddingRight, 0),
+    heightEmu: Math.max(outerHeightEmu - paddingTop - paddingBottom, 0),
+  };
+  const children = node.source.children
+    .map(
+      (child, siblingOrder): LayoutChildNode => layoutChildFromNode(child, siblingOrder, context),
+    )
+    .filter((child) => child.props.display !== "none" && !hasExplicitFrameInput(child));
+
+  if (children.length === 0) {
+    return dimension === "width" ? paddingLeft + paddingRight : paddingTop + paddingBottom;
+  }
+
+  const direction =
+    node.props.layout === "stack" ? (node.props.direction ?? "vertical") : "vertical";
+  const mainGapEmu = resolveMainGap(
+    direction,
+    node.props.gap,
+    node.props.rowGap,
+    node.props.columnGap,
+    context,
+    direction === "horizontal" ? contentFrame.widthEmu : contentFrame.heightEmu,
+  );
+
+  if (
+    (dimension === "height" && direction === "vertical") ||
+    (dimension === "width" && direction === "horizontal")
+  ) {
+    const usedMain =
+      children.reduce(
+        (sum, child) => sum + estimateChildMainSize(child, direction, contentFrame, context),
+        0,
+      ) +
+      Math.max(children.length - 1, 0) * mainGapEmu;
+    return (
+      usedMain + (dimension === "height" ? paddingTop + paddingBottom : paddingLeft + paddingRight)
+    );
+  }
+
+  const usedCross = children.reduce(
+    (max, child) => Math.max(max, estimateChildCrossSize(child, direction, contentFrame, context)),
+    0,
+  );
   return (
-    (resolveTextLineHeightPt(node.props, textContext) / POINTS_PER_INCH) * EMU_PER_INCH +
-    paddingTop +
-    paddingBottom
+    usedCross + (dimension === "height" ? paddingTop + paddingBottom : paddingLeft + paddingRight)
   );
 }
 
@@ -1823,6 +2469,10 @@ function estimateChildContentSize(
       return 0;
     }
     return estimateTextAutoContentSize(node, dimension, parent, context);
+  }
+
+  if (node.kind === "view") {
+    return estimateViewAutoContentSize(node, dimension, parent, context);
   }
 
   if (aspectRatio === undefined) {
@@ -2808,7 +3458,7 @@ function compileGroupNode(
   ];
 
   return {
-    id: idGenerator.nextNode(),
+    id: idGenerator.nextNode("group", node.origin),
     kind: "group",
     ...(node.origin ? { origin: node.origin } : {}),
     frame: visibleFrame,
@@ -3011,6 +3661,20 @@ function tableCellEdgeStrokesFromResolvedStrokes(input: {
   };
 }
 
+function defaultPptxTableStyleCellEdgeStrokes(sectionKind: "head" | "body" | "foot"): EdgeStrokeIR {
+  const stroke: StrokeIR = {
+    color: sectionKind === "head" ? "2563EB" : "111111",
+    widthPt: 0.75,
+  };
+
+  return {
+    top: stroke,
+    right: stroke,
+    bottom: stroke,
+    left: stroke,
+  };
+}
+
 function unsupportedTableLayoutSemantics(
   props: NormalizedTableProps,
 ): readonly ProjectedUnsupportedSemantic[] {
@@ -3088,13 +3752,39 @@ function compileTableNode(
     context,
   });
   const clip = clippingMetadata(originalFrame, clipRect, visibleFrame);
-  const unsupportedSemantics = unsupportedTableLayoutSemantics(props);
+  const shadow = parseShadowShorthandOrIgnore({ property: "boxShadow", value: props.boxShadow });
+  const tableStrokes = resolveNodeStrokesOrFallback(props, context);
+  const tableEdgeStrokes = tableCellEdgeStrokesFromResolvedStrokes(tableStrokes);
+  const outline = outlineStrokeOrFallback(props, context);
+  const tableBackground = resolveBackgroundLayersOrEmpty(
+    backgroundInput(props),
+    undefined,
+    {
+      widthEmu: visibleFrame.widthEmu,
+      heightEmu: visibleFrame.heightEmu,
+    },
+    visibleFrame,
+    resolveBackgroundBoxFrames(visibleFrame, tableStrokes.stroke, tableEdgeStrokes),
+    props.backgroundPosition,
+    props.backgroundSize,
+    props.backgroundRepeat,
+    props.backgroundOrigin,
+    props.backgroundClip,
+  );
+  const unsupportedSemantics = [
+    ...unsupportedTableLayoutSemantics(props),
+    ...unsupportedCompositingSemantics(props),
+    ...shadow.unsupportedSemantics,
+    ...(tableBackground.unsupportedSemantics ?? []),
+    ...tableStrokes.unsupportedSemantics,
+    ...outline.unsupportedSemantics,
+  ];
   const rowSpanOccupancy = Array.from({ length: columnCount }, () => 0);
   let rowIndex = 0;
   let yEmu = visibleFrame.yEmu;
 
   return {
-    id: idGenerator.nextNode(),
+    id: idGenerator.nextNode("table", node.origin),
     kind: "table",
     ...(node.origin ? { origin: node.origin } : {}),
     frame: visibleFrame,
@@ -3103,116 +3793,213 @@ function compileTableNode(
     opacity: resolved.opacity,
     rotation: resolved.rotation,
     zIndex: resolved.zIndex,
+    ...(shadow.shadow ? { shadow: shadow.shadow } : {}),
+    fill: tableBackground.fill,
+    ...(tableBackground.backgroundLayers
+      ? { backgroundLayers: tableBackground.backgroundLayers }
+      : {}),
+    ...(tableEdgeStrokes ? { edgeStrokes: tableEdgeStrokes } : {}),
+    ...(outline.outline ? { outline: outline.outline } : {}),
+    radiusEmu: resolveCornerRadiusEmu(props.borderRadius, visibleFrame, context),
     ...(unsupportedSemantics.length ? { unsupportedSemantics } : {}),
     ...(props.visibility !== undefined ? { visibility: props.visibility } : {}),
     flipH: resolved.flipH,
     flipV: resolved.flipV,
-    sections: sections.map((section) => ({
-      kind: "tableSection",
-      sectionKind: section.source.sectionKind,
-      ...(section.source.origin ? { origin: section.source.origin } : {}),
-      rows: section.rows.map((row) => {
-        const rowHeight = rowHeights[rowIndex] ?? 0;
-        let xEmu = visibleFrame.xEmu;
-        let columnIndex = 0;
-        const advancePastOccupiedColumns = () => {
-          while (rowSpanOccupancy[columnIndex] && columnIndex < columnCount) {
-            xEmu += columnWidths[columnIndex] ?? 0;
-            columnIndex += 1;
-          }
-        };
-        const rowFrame = {
-          xEmu: visibleFrame.xEmu,
-          yEmu,
-          widthEmu: visibleFrame.widthEmu,
-          heightEmu: rowHeight,
-        };
-        const projectedRow = {
-          kind: "tableRow" as const,
-          ...(row.source.origin ? { origin: row.source.origin } : {}),
-          frame: rowFrame,
-          cells: row.cells.map((cell) => {
-            advancePastOccupiedColumns();
-            const gridColumnIndex = columnIndex;
-            const colSpan = Math.max(1, cell.source.colSpan);
-            const cellWidth = columnWidths
-              .slice(columnIndex, columnIndex + colSpan)
-              .reduce((total, width) => total + width, 0);
-            const cellFrame = {
-              xEmu,
-              yEmu,
-              widthEmu: cellWidth,
-              heightEmu: rowHeight * Math.max(1, cell.source.rowSpan),
-            };
-            const textLengthContext = getTextLengthContext(cell.props, context);
-            const cellStrokes = resolveNodeStrokesOrFallback(cell.props, textLengthContext);
-            const cellEdgeStrokes = tableCellEdgeStrokesFromResolvedStrokes(cellStrokes);
-            const cellBackground = resolveBackgroundLayersOrEmpty(
-              backgroundInput(cell.props),
-              undefined,
-              {
-                widthEmu: cellFrame.widthEmu,
-                heightEmu: cellFrame.heightEmu,
-              },
-              cellFrame,
-              resolveBackgroundBoxFrames(
-                cellFrame,
-                cellStrokes.stroke,
-                cellEdgeStrokes,
-                parseSpacing(cell.props.padding, textLengthContext, cellFrame.widthEmu),
-              ),
-              cell.props.backgroundPosition,
-              cell.props.backgroundSize,
-              cell.props.backgroundRepeat,
-              cell.props.backgroundOrigin,
-              cell.props.backgroundClip,
-            );
-            if (cell.source.rowSpan > 1) {
-              for (
-                let offset = 0;
-                offset < colSpan && gridColumnIndex + offset < rowSpanOccupancy.length;
-                offset += 1
-              ) {
-                rowSpanOccupancy[gridColumnIndex + offset] = Math.max(
-                  rowSpanOccupancy[gridColumnIndex + offset] ?? 0,
-                  cell.source.rowSpan,
-                );
-              }
+    sections: sections.map((section) => {
+      const sectionHeight = rowHeights
+        .slice(rowIndex, rowIndex + section.rows.length)
+        .reduce((total, height) => total + height, 0);
+      const sectionFrame = {
+        xEmu: visibleFrame.xEmu,
+        yEmu,
+        widthEmu: visibleFrame.widthEmu,
+        heightEmu: sectionHeight,
+      };
+      const sectionBackground = resolveBackgroundLayersOrEmpty(
+        backgroundInput(section.source.props),
+        undefined,
+        {
+          widthEmu: sectionFrame.widthEmu,
+          heightEmu: sectionFrame.heightEmu,
+        },
+        sectionFrame,
+        resolveBackgroundBoxFrames(sectionFrame),
+        section.source.props.backgroundPosition,
+        section.source.props.backgroundSize,
+        section.source.props.backgroundRepeat,
+        section.source.props.backgroundOrigin,
+        section.source.props.backgroundClip,
+      );
+      const sectionUnsupportedSemantics = [
+        ...unsupportedCompositingSemantics(section.source.props),
+        ...(sectionBackground.unsupportedSemantics ?? []),
+      ];
+      return {
+        kind: "tableSection",
+        sectionKind: section.source.sectionKind,
+        frame: sectionFrame,
+        ...(section.source.origin ? { origin: section.source.origin } : {}),
+        opacity: section.source.props.opacity,
+        fill: sectionBackground.fill,
+        ...(sectionBackground.backgroundLayers
+          ? { backgroundLayers: sectionBackground.backgroundLayers }
+          : {}),
+        ...(sectionUnsupportedSemantics.length
+          ? { unsupportedSemantics: sectionUnsupportedSemantics }
+          : {}),
+        rows: section.rows.map((row) => {
+          const rowHeight = rowHeights[rowIndex] ?? 0;
+          let xEmu = visibleFrame.xEmu;
+          let columnIndex = 0;
+          const advancePastOccupiedColumns = () => {
+            while (rowSpanOccupancy[columnIndex] && columnIndex < columnCount) {
+              xEmu += columnWidths[columnIndex] ?? 0;
+              columnIndex += 1;
             }
-            xEmu += cellWidth;
-            columnIndex += colSpan;
-            return {
-              kind: "tableCell" as const,
-              cellKind: cell.source.cellKind,
-              gridColumnIndex,
-              colSpan: cell.source.colSpan,
-              rowSpan: cell.source.rowSpan,
-              ...(cell.source.origin ? { origin: cell.source.origin } : {}),
-              frame: cellFrame,
-              fill: cellBackground.fill,
-              ...(cellEdgeStrokes ? { edgeStrokes: cellEdgeStrokes } : {}),
-              style: textStyleFromProps(cell.props, textLengthContext),
-              children: compileChildren(
-                cell.source.children,
+          };
+          const rowFrame = {
+            xEmu: visibleFrame.xEmu,
+            yEmu,
+            widthEmu: visibleFrame.widthEmu,
+            heightEmu: rowHeight,
+          };
+          const rowBackground = resolveBackgroundLayersOrEmpty(
+            backgroundInput(row.props),
+            undefined,
+            {
+              widthEmu: rowFrame.widthEmu,
+              heightEmu: rowFrame.heightEmu,
+            },
+            rowFrame,
+            resolveBackgroundBoxFrames(rowFrame),
+            row.props.backgroundPosition,
+            row.props.backgroundSize,
+            row.props.backgroundRepeat,
+            row.props.backgroundOrigin,
+            row.props.backgroundClip,
+          );
+          const rowUnsupportedSemantics = [
+            ...unsupportedCompositingSemantics(row.props),
+            ...(rowBackground.unsupportedSemantics ?? []),
+          ];
+          const projectedRow = {
+            kind: "tableRow" as const,
+            ...(row.source.origin ? { origin: row.source.origin } : {}),
+            frame: rowFrame,
+            opacity: row.props.opacity,
+            fill: rowBackground.fill,
+            ...(rowBackground.backgroundLayers
+              ? { backgroundLayers: rowBackground.backgroundLayers }
+              : {}),
+            ...(rowUnsupportedSemantics.length
+              ? { unsupportedSemantics: rowUnsupportedSemantics }
+              : {}),
+            cells: row.cells.map((cell) => {
+              advancePastOccupiedColumns();
+              const gridColumnIndex = columnIndex;
+              const colSpan = Math.max(1, cell.source.colSpan);
+              const cellWidth = columnWidths
+                .slice(columnIndex, columnIndex + colSpan)
+                .reduce((total, width) => total + width, 0);
+              const cellFrame = {
+                xEmu,
+                yEmu,
+                widthEmu: cellWidth,
+                heightEmu: rowHeight * Math.max(1, cell.source.rowSpan),
+              };
+              const textLengthContext = getTextLengthContext(cell.props, context);
+              const cellStrokes = resolveNodeStrokesOrFallback(cell.props, textLengthContext);
+              const cellEdgeStrokes =
+                tableCellEdgeStrokesFromResolvedStrokes(cellStrokes) ??
+                (!hasAuthoredStrokeInput(props) &&
+                !isStrokeIntentionallyNone(props) &&
+                !hasAuthoredStrokeInput(cell.props) &&
+                !isStrokeIntentionallyNone(cell.props)
+                  ? defaultPptxTableStyleCellEdgeStrokes(section.source.sectionKind)
+                  : undefined);
+              const cellHyperlink = cell.props.href
+                ? {
+                    url: cell.props.href,
+                    ...(cell.props.tooltip ? { tooltip: cell.props.tooltip } : {}),
+                  }
+                : undefined;
+              const cellBackground = resolveBackgroundLayersOrEmpty(
+                backgroundInput(cell.props),
+                undefined,
+                {
+                  widthEmu: cellFrame.widthEmu,
+                  heightEmu: cellFrame.heightEmu,
+                },
                 cellFrame,
-                idGenerator,
-                "block",
-                {},
-                clipRect,
-                context,
-                resolutionOptions,
-              ),
-            };
-          }),
-        };
-        for (let index = 0; index < rowSpanOccupancy.length; index += 1) {
-          rowSpanOccupancy[index] = Math.max(0, (rowSpanOccupancy[index] ?? 0) - 1);
-        }
-        rowIndex += 1;
-        yEmu += rowHeight;
-        return projectedRow;
-      }),
-    })),
+                resolveBackgroundBoxFrames(
+                  cellFrame,
+                  cellStrokes.stroke,
+                  cellEdgeStrokes,
+                  parseSpacing(cell.props.padding, textLengthContext, cellFrame.widthEmu),
+                ),
+                cell.props.backgroundPosition,
+                cell.props.backgroundSize,
+                cell.props.backgroundRepeat,
+                cell.props.backgroundOrigin,
+                cell.props.backgroundClip,
+              );
+              const cellUnsupportedSemantics = unsupportedCompositingSemantics(cell.props);
+              const cellLayoutPadding = cell.props.padding ?? DEFAULT_PPTX_TABLE_CELL_PADDING;
+              if (cell.source.rowSpan > 1) {
+                for (
+                  let offset = 0;
+                  offset < colSpan && gridColumnIndex + offset < rowSpanOccupancy.length;
+                  offset += 1
+                ) {
+                  rowSpanOccupancy[gridColumnIndex + offset] = Math.max(
+                    rowSpanOccupancy[gridColumnIndex + offset] ?? 0,
+                    cell.source.rowSpan,
+                  );
+                }
+              }
+              xEmu += cellWidth;
+              columnIndex += colSpan;
+              return {
+                kind: "tableCell" as const,
+                cellKind: cell.source.cellKind,
+                gridColumnIndex,
+                colSpan: cell.source.colSpan,
+                rowSpan: cell.source.rowSpan,
+                ...(cell.source.origin ? { origin: cell.source.origin } : {}),
+                frame: cellFrame,
+                opacity: cell.props.opacity,
+                ...(cellUnsupportedSemantics.length
+                  ? { unsupportedSemantics: cellUnsupportedSemantics }
+                  : {}),
+                fill: cellBackground.fill,
+                ...(cellBackground.backgroundLayers
+                  ? { backgroundLayers: cellBackground.backgroundLayers }
+                  : {}),
+                ...(cellEdgeStrokes ? { edgeStrokes: cellEdgeStrokes } : {}),
+                style: textStyleFromProps(cell.props, textLengthContext),
+                ...(cellHyperlink ? { hyperlink: cellHyperlink } : {}),
+                children: compileChildren(
+                  tableCellChildrenWithInheritedTextStyle(cell.source.children, cell.props),
+                  cellFrame,
+                  idGenerator,
+                  "block",
+                  { padding: cellLayoutPadding },
+                  clipRect,
+                  context,
+                  resolutionOptions,
+                ),
+              };
+            }),
+          };
+          for (let index = 0; index < rowSpanOccupancy.length; index += 1) {
+            rowSpanOccupancy[index] = Math.max(0, (rowSpanOccupancy[index] ?? 0) - 1);
+          }
+          rowIndex += 1;
+          yEmu += rowHeight;
+          return projectedRow;
+        }),
+      };
+    }),
   };
 }
 
@@ -3226,6 +4013,10 @@ function textStyleFromProps(
     ? (resolveUnderlineStyle(props.textDecorationStyle) ?? "sng")
     : resolveUnderlineStyle(props.textDecorationStyle);
   const underlineColor = normalizeColor(props.textDecorationColor);
+  const underlineTransparency = alphaToTransparency(
+    parseCssColor(props.textDecorationColor)?.alpha,
+  );
+  const colorTransparency = alphaToTransparency(parseCssColor(props.color)?.alpha);
   const textDirection = resolveTextDirection(props.writingMode);
   const tabStops = resolveTabStops(props.tabStops, textLengthContext);
   const fontSizePt =
@@ -3241,8 +4032,10 @@ function textStyleFromProps(
     underline: props.underline,
     ...(underlineStyle ? { underlineStyle } : {}),
     ...(underlineColor ? { underlineColor } : {}),
+    ...(underlineTransparency !== undefined ? { underlineTransparency } : {}),
     strike: props.strike,
     color: normalizeColor(props.color),
+    ...(colorTransparency !== undefined ? { colorTransparency } : {}),
     textAlign: props.textAlign,
     verticalAlign: props.verticalAlign,
     paddingPt: parseSpacingInPoints(props.padding, textLengthContext),
@@ -3266,6 +4059,13 @@ function textStyleFromProps(
     ...(list ? { list } : {}),
     fit: props.fit,
     wrap: props.wrap,
+    overflow: props.overflow,
+    ...(props.wordBreak === "break-all" ||
+    props.wordBreak === "break-word" ||
+    props.overflowWrap === "break-word" ||
+    props.overflowWrap === "anywhere"
+      ? { breakWords: true }
+      : {}),
     ...(props.direction === "rtl" ? { rtlMode: true } : {}),
     ...(textDirection ? { textDirection } : {}),
     ...(props.superscript ? { superscript: true } : {}),
@@ -3289,10 +4089,19 @@ function extractRichTextRuns(
   textLengthContext?: LengthResolutionContext,
 ): TextRunIR[] {
   const runs: TextRunIR[] = [];
+  const pushRun = (run: TextRunIR): void => {
+    const previous = runs.at(-1);
+    if (previous && !previous.style && !previous.hyperlink && !run.style && !run.hyperlink) {
+      runs[runs.length - 1] = { text: `${previous.text}${run.text}` };
+      return;
+    }
+
+    runs.push(run);
+  };
 
   for (const child of flattenTextChildren(children)) {
     if (typeof child === "string" || typeof child === "number") {
-      runs.push({ text: extractText([child], textTransform) });
+      pushRun({ text: extractText([child], textTransform) });
       continue;
     }
 
@@ -3300,6 +4109,12 @@ function extractRichTextRuns(
       const props = normalizeTextProps(child.props);
       const childLengthContext = getTextLengthContext(props, textLengthContext);
       const style = textStyleFromProps(props, childLengthContext);
+      const hyperlink = props.href
+        ? {
+            url: props.href,
+            ...(props.tooltip ? { tooltip: props.tooltip } : {}),
+          }
+        : undefined;
       const text = extractRichTextRuns(
         child.children,
         props.textTransform ?? textTransform,
@@ -3307,9 +4122,10 @@ function extractRichTextRuns(
       )
         .map((run) => run.text)
         .join("");
-      runs.push({
+      pushRun({
         text,
         ...(!isEmptyRunStyle(style) ? { style } : {}),
+        ...(hyperlink ? { hyperlink } : {}),
       });
       continue;
     }
@@ -3349,10 +4165,12 @@ function clippingMetadata(
 }
 
 function textFramePropsWithFallback(
-  props: NormalizedTextProps,
+  node: Extract<LayoutChildNode, { kind: "text" }>,
+  parentFrame: Frame,
   placement: Placement | undefined,
   context?: LengthResolutionContext,
 ): NormalizedTextProps {
+  const { props } = node;
   let resolved = props;
   const hasAuthoredWidth = authoredLengthOrUndefined(props.width) !== undefined;
   const hasAuthoredHeight = authoredLengthOrUndefined(props.height) !== undefined;
@@ -3378,65 +4196,20 @@ function textFramePropsWithFallback(
     !hasAuthoredInset &&
     !(hasAuthoredTop && hasAuthoredBottom)
   ) {
+    const autoHeightEmu = estimateTextAutoContentSize(
+      node,
+      "height",
+      parentFrame,
+      context,
+      placement,
+    );
     resolved = {
       ...resolved,
-      height: `${resolveTextLineHeightPt(props, context)}pt`,
+      height: `${(autoHeightEmu / EMU_PER_INCH) * POINTS_PER_INCH}pt`,
     };
   }
 
   return resolved;
-}
-
-function usesTextLineHeightFallback(
-  props: NormalizedTextProps,
-  placement: Placement | undefined,
-): boolean {
-  const hasAuthoredHeight = authoredLengthOrUndefined(props.height) !== undefined;
-  const hasAuthoredInset = props.inset !== undefined && !hasCssWideKeywordToken(props.inset);
-  const hasAuthoredTop = authoredLengthOrUndefined(props.top) !== undefined;
-  const hasAuthoredBottom = authoredLengthOrUndefined(props.bottom) !== undefined;
-  return (
-    placement?.heightEmu === undefined &&
-    !hasAuthoredHeight &&
-    !hasAuthoredInset &&
-    !(hasAuthoredTop && hasAuthoredBottom)
-  );
-}
-
-function textMayNeedWrappedMeasurement(text: string, props: NormalizedTextProps): boolean {
-  if (!text || props.wrap === false) {
-    return false;
-  }
-
-  return text.includes("\n") || text.trim().length > 80;
-}
-
-function unsupportedWrappedTextMeasurementSemantics(input: {
-  readonly props: NormalizedTextProps;
-  readonly placement?: Placement;
-  readonly text: string;
-}): readonly ProjectedUnsupportedSemantic[] {
-  if (
-    !usesTextLineHeightFallback(input.props, input.placement) ||
-    !textMayNeedWrappedMeasurement(input.text, input.props)
-  ) {
-    return [];
-  }
-
-  const semantic = unsupportedSemantic({
-    feature: "layout",
-    property: "height",
-    value: "auto",
-    error: new Error(
-      "Exact wrapped text measurement is not part of the v0.8.2 layout subset; deckjsx uses a line-height based auto-height fallback.",
-    ),
-    fallback: {
-      strategy: "preserveAuthoredValueOnly",
-      preserves: ["availableInlineSize", "lineHeightAutoHeight"],
-      missing: ["wrappedTextMeasurement"],
-    },
-  });
-  return semantic ? [semantic] : [];
 }
 
 function compileTextNode(
@@ -3449,7 +4222,7 @@ function compileTextNode(
 ): ProjectedLayoutText | null {
   const { props } = node;
   const textLengthContext = getTextLengthContext(props, context);
-  const frameProps = textFramePropsWithFallback(props, placement, textLengthContext);
+  const frameProps = textFramePropsWithFallback(node, parentFrame, placement, textLengthContext);
   const resolved = frameFromProps(frameProps, parentFrame, placement, textLengthContext);
   const strokes = resolveNodeStrokesOrFallback(props, textLengthContext);
   const shadowValue: string | undefined =
@@ -3515,11 +4288,7 @@ function compileTextNode(
       flipH: resolved.flipH,
       flipV: resolved.flipV,
     }),
-    ...unsupportedWrappedTextMeasurementSemantics({
-      props,
-      placement,
-      text,
-    }),
+    ...unsupportedWrappedTextMeasurementSemantics(props, text),
     ...strokes.unsupportedSemantics,
     ...outline.unsupportedSemantics,
     ...shadow.unsupportedSemantics,
@@ -3527,7 +4296,7 @@ function compileTextNode(
   ];
 
   return {
-    id: idGenerator.nextNode(),
+    id: idGenerator.nextNode("text", node.origin),
     kind: "text",
     ...(node.origin ? { origin: node.origin } : {}),
     frame: visibleFrame,
@@ -3626,7 +4395,7 @@ function compileImageNode(
   ];
 
   return {
-    id: idGenerator.nextNode(),
+    id: idGenerator.nextNode("image", node.origin),
     kind: "image",
     ...(node.origin ? { origin: node.origin } : {}),
     frame: visibleFrame,
@@ -3787,7 +4556,7 @@ function compileVideoNode(
   const posterSource = videoPosterSourceFromProps(props);
 
   return {
-    id: idGenerator.nextNode(),
+    id: idGenerator.nextNode("video", node.origin),
     kind: "video",
     ...(node.origin ? { origin: node.origin } : {}),
     frame: visibleFrame,
@@ -3881,7 +4650,7 @@ function compileShapeNode(
   ];
 
   return {
-    id: idGenerator.nextNode(),
+    id: idGenerator.nextNode("shape", node.origin),
     kind: "shape",
     ...(node.origin ? { origin: node.origin } : {}),
     shape: props.shape,
@@ -4001,7 +4770,7 @@ function compileSlide(
   );
 
   return {
-    id: idGenerator.nextSlide(),
+    id: idGenerator.nextSlide(root.origin),
     name: slideProps.name,
     ...(root.origin ? { origin: root.origin } : {}),
     background: backgroundFill.fill,
@@ -4015,6 +4784,7 @@ function compileSlide(
 export function resolveProjectedLayout(
   options: DeckOptions,
   input: LayoutInputDocument,
+  resolutionOptions: ProjectedLayoutResolutionOptions = {},
 ): ProjectedLayoutDocument {
   const idGenerator = createIdGenerator();
   const slideSize = input.size
@@ -4038,6 +4808,7 @@ export function resolveProjectedLayout(
   const lengthContext: LengthResolutionContext = {
     viewportWidthEmu: slideFrame.widthEmu,
     viewportHeightEmu: slideFrame.heightEmu,
+    ...(resolutionOptions.fontMetrics ? { fontMetrics: resolutionOptions.fontMetrics } : {}),
   };
 
   return {

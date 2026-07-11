@@ -40,7 +40,16 @@ function createTableHeavyDeck(): Deck {
     >
       Table heavy deck
     </h1>,
-    <table style={{ position: "absolute", left: 0.7, top: 1.3, width: 8.4, height: 3.2 }}>
+    <table
+      style={{
+        position: "absolute",
+        left: 0.7,
+        top: 1.3,
+        width: 8.4,
+        height: 3.2,
+        tableLayout: "fixed",
+      }}
+    >
       <thead>
         <tr>
           <th>Region</th>
@@ -77,6 +86,22 @@ export const heavyScenarioFixtures: readonly RenderConfidenceFixture[] = [
       requiredTexts: ["Image heavy deck"],
       requireImageRelationship: true,
     },
+    pdfAssertions: {
+      expectedPages: 1,
+      minimumImageClipVisuals: 3,
+      minimumImageVisuals: 6,
+      requiredTexts: ["Image heavy deck"],
+      requireImageResource: true,
+      requiredImageFitVisuals: [
+        { fit: "cover", minimum: 3 },
+        { fit: "contain", minimum: 3 },
+      ],
+      rasterTolerance: {
+        maxMeanAbsoluteChannelDifference: 4,
+        maxChannelDifference: 255,
+        maxChangedPixelRatio: 0.03,
+      },
+    },
     createDeck: createImageHeavyDeck,
   },
   {
@@ -89,6 +114,19 @@ export const heavyScenarioFixtures: readonly RenderConfidenceFixture[] = [
       expectedSlides: 1,
       requiredTexts: ["Table heavy deck", "Region", "ARR", "Pipeline", "LATAM"],
       requireTableSignal: true,
+    },
+    pdfAssertions: {
+      expectedPages: 1,
+      minimumTableBorderVisuals: 80,
+      requiredTexts: ["Table heavy deck", "Region", "ARR", "Pipeline", "LATAM"],
+      requireTableCellVisuals: true,
+      requireTableText: true,
+      requiredTableTexts: ["Region", "ARR", "Pipeline", "LATAM"],
+      rasterTolerance: {
+        maxMeanAbsoluteChannelDifference: 7,
+        maxChannelDifference: 255,
+        maxChangedPixelRatio: 0.06,
+      },
     },
     createDeck: createTableHeavyDeck,
   },

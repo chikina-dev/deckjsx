@@ -103,10 +103,20 @@ describe("style resolution theme and inheritance", () => {
   });
 
   test("cyclic graph style inheritance is diagnosed instead of overflowing the stack", async () => {
+    const documentId = "document" as never;
     const nodeId = "cycle" as never;
     const cyclicGraph = {
-      documentId: nodeId,
+      documentId,
       nodes: new Map([
+        [
+          documentId,
+          {
+            id: documentId,
+            kind: "document",
+            origin: { kind: "implicit", path: "graph.nodes.document" },
+            children: [nodeId],
+          },
+        ],
         [
           nodeId,
           {

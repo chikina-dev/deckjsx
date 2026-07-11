@@ -191,6 +191,36 @@ export type CompiledAuthorGraph = {
   readonly templates: ReadonlyMap<string, unknown>;
 };
 
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+/** Runtime guard for artifacts returned across adapter and plugin boundaries. */
+export function isRenderedArtifact(
+  value: unknown,
+  expectedFormat?: OutputFormat,
+): value is RenderedArtifact {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const artifact = value as Record<string, unknown>;
+  return (
+    Object.keys(artifact).every((key) =>
+      ["format", "mediaType", "extension", "bytes"].includes(key),
+    ) &&
+    isNonEmptyString(artifact.format) &&
+    (expectedFormat === undefined || artifact.format === expectedFormat) &&
+    isNonEmptyString(artifact.mediaType) &&
+    /^[^\s/]+\/[^\s/]+$/u.test(artifact.mediaType) &&
+    isNonEmptyString(artifact.extension) &&
+    /^[A-Za-z0-9][A-Za-z0-9._+-]*$/u.test(artifact.extension) &&
+    !artifact.extension.startsWith(".") &&
+    artifact.bytes instanceof Uint8Array &&
+    artifact.bytes.byteLength > 0
+  );
+}
+
 /**
  * Lightweight public style resolution handle returned by `deck.compile()`.
  *
@@ -309,10 +339,12 @@ export type ProjectResultWithoutProjection = {
  * contains runtime-neutral bytes; filesystem writes belong to integration packages such as
  * `@deckjsx/node`. When `artifact` is absent, inspect `diagnostics` and `stages`.
  */
-export type RenderResult = RenderResultWithArtifact | RenderResultWithoutArtifact;
+export type RenderResult<TFormat extends OutputFormat = OutputFormat> =
+  | RenderResultWithArtifact<TFormat>
+  | RenderResultWithoutArtifact<TFormat>;
 
 /** Render result with runtime-neutral output bytes. */
-export type RenderResultWithArtifact = {
+export type RenderResultWithArtifact<TFormat extends OutputFormat = OutputFormat> = {
   /** Whether compile, project, and render completed without error diagnostics. */
   readonly ok: boolean;
   /** Combined diagnostics from compile, project, and render. */
@@ -324,9 +356,9 @@ export type RenderResultWithArtifact = {
     PresentStageArtifactStatus
   >;
   /** Output artifact format. */
-  readonly format: OutputFormat;
+  readonly format: TFormat;
   /** Runtime-neutral rendered bytes. */
-  readonly artifact: RenderedArtifact;
+  readonly artifact: RenderedArtifact<TFormat>;
   /** Optional patch plan for integrations that can update existing artifacts. */
   readonly patchPlan?: RenderPatchPlan;
   /** Optional lightweight render inspection summary. */
@@ -334,7 +366,7 @@ export type RenderResultWithArtifact = {
 };
 
 /** Render result without output bytes. */
-export type RenderResultWithoutArtifact = {
+export type RenderResultWithoutArtifact<TFormat extends OutputFormat = OutputFormat> = {
   /** Always false when the rendered artifact is missing. */
   readonly ok: boolean;
   /** Combined diagnostics explaining why render output is absent. */
@@ -342,7 +374,7 @@ export type RenderResultWithoutArtifact = {
   /** Stage statuses with `render.artifact: "missing"`. */
   readonly stages: RenderStages<StageArtifactStatus, StageArtifactStatus, "missing">;
   /** Output format that was requested. */
-  readonly format: OutputFormat;
+  readonly format: TFormat;
   /** Absent when render cannot produce output bytes. */
   readonly artifact?: undefined;
   /** Absent when render cannot produce output bytes. */

@@ -1,6 +1,6 @@
 export type PdfDocumentId = `pdf:document:${string}`;
 export type PdfPageId = `pdf:page:${string}:${number}`;
-export type PdfResourceKind = "font" | "image";
+export type PdfResourceKind = "font" | "gradient" | "image";
 export type PdfResourceId = `pdf:resource:${PdfResourceKind}:${string}`;
 
 function identitySegment(value: string): string {

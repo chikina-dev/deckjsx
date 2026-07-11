@@ -1035,6 +1035,83 @@ describe("@deckjsx/node cli", () => {
     expect(lines.join("\n")).not.toContain("\u001b[");
   });
 
+  test("flushes every stderr chunk before the compiler host exits under backpressure", async () => {
+    const chunks: string[] = [];
+    const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
+    let blockedCallback: ((error?: Error | null) => void) | undefined;
+    let writeCount = 0;
+    const outputStream = {
+      isTTY: false,
+      write(chunk: string, callback: (error?: Error | null) => void) {
+        chunks.push(chunk);
+        writeCount += 1;
+        if (writeCount === 1) {
+          blockedCallback = callback;
+          return false;
+        }
+        queueMicrotask(callback);
+        return true;
+      },
+      once(event: string, listener: (...args: unknown[]) => void) {
+        const eventListeners = listeners.get(event) ?? new Set();
+        eventListeners.add(listener);
+        listeners.set(event, eventListeners);
+        return outputStream;
+      },
+      off(event: string, listener: (...args: unknown[]) => void) {
+        listeners.get(event)?.delete(listener);
+        return outputStream;
+      },
+    };
+    let hostSettled = false;
+    const host = runDeckjsxDevCompilerHost({
+      entry: "src/main.tsx",
+      maxCompilations: 1,
+      outputStream,
+      compiler: {
+        on() {
+          return () => undefined;
+        },
+        start() {},
+        invalidate() {},
+        async runNextCompilation() {
+          return asCompilationResult({
+            ok: true,
+            status: "artifactUpdated",
+            compilation: 1,
+            diagnostics: [],
+            sourceSnapshot: {
+              status: "executable",
+              code: "",
+              watchFiles: [],
+              moduleIds: [],
+              changedSourceIds: [],
+            },
+            writes: [],
+            retainedSlots: [],
+          });
+        },
+        async close() {},
+      },
+    }).finally(() => {
+      hostSettled = true;
+    });
+
+    await Promise.resolve();
+    expect(chunks).toHaveLength(1);
+    expect(hostSettled).toBe(false);
+
+    blockedCallback?.();
+    for (const listener of listeners.get("drain") ?? []) {
+      listener();
+    }
+    await host;
+
+    expect(chunks.join("")).toContain("[deckjsx] dev started");
+    expect(chunks.join("")).toContain("[deckjsx] ready");
+    expect(chunks.every((chunk) => chunk.endsWith("\n"))).toBe(true);
+  });
+
   test("hosts the dev compiler and prints concise lifecycle output", async () => {
     const lines: string[] = [];
 
@@ -1444,6 +1521,41 @@ describe("@deckjsx/node cli", () => {
     expect(context.diagnosticTargets).toEqual([
       { index: 0, code: "E_HEADER", title: "Header failed" },
       { index: 1, code: "W_LAYOUT", title: "Layout fallback" },
+    ]);
+  });
+
+  test("builds PDF projection completion targets from page visuals", () => {
+    const artifactSession = {
+      inspectArtifacts() {
+        return {
+          retainedSlots() {
+            return [2];
+          },
+          projectionForSlot() {
+            return {
+              format: "pdf",
+              pages: [
+                {
+                  name: "Overview",
+                  visuals: [
+                    { id: "title", kind: "text" },
+                    { id: "rule", kind: "line" },
+                  ],
+                },
+              ],
+            };
+          },
+        };
+      },
+    } as unknown as IncrementalArtifactSession;
+
+    expect(
+      completionContextFromInspectionState(undefined, artifactSession).projectionTargets,
+    ).toEqual([
+      { insert: "@2", description: "Projection slot 2" },
+      { insert: "@2 0", description: "Page 0: Overview" },
+      { insert: "@2 0 0", description: "Element 0: text title" },
+      { insert: "@2 0 1", description: "Element 1: line rule" },
     ]);
   });
 });

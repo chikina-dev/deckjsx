@@ -1,7 +1,7 @@
 import type { PptxPackageModel } from "../projection/pptx/model";
 import type { PdfDocumentModel } from "../projection/pdf/model";
 import type { PdfRenderOptions, PptxRenderOptions, WriterAdapter } from "./public";
-import { pptxWriterContext } from "./context";
+import { pptxWriterContext, writerContext } from "./context";
 import { renderPdfDocument } from "../writers/pdf";
 import { renderPptxPackage } from "../writers/pptx";
 
@@ -54,8 +54,8 @@ export function pdf(options: PdfRenderOptions = {}): WriterAdapter<PdfDocumentMo
     projectionFormat: "pdf",
     format: "pdf",
     options,
-    async render(projection) {
-      return renderPdfDocument(projection, options);
+    async render(projection, context) {
+      return renderPdfDocument(projection, options, writerContext(context));
     },
   };
 }

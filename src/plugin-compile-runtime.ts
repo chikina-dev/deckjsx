@@ -1,6 +1,12 @@
 import type { Diagnostic } from "./diagnostics";
+import { clonePluginStageValue } from "./plugin-snapshot";
 import type { SemanticAuthorGraph } from "./graph/types";
 import type { AssetSource } from "./assets";
+import {
+  isComposedAuthorRootArray,
+  isResolvedStyleMap,
+  isSemanticAuthorGraph,
+} from "./pipeline/artifact-input";
 
 export type CompilePluginHookName = "afterGraph" | "afterTree" | "beforeGraph" | "beforeTree";
 
@@ -65,7 +71,7 @@ const deckPluginHookKeys = [
   "afterRender",
 ] as const;
 
-type CompilePluginHookUpdateValueValidator = (value: unknown) => boolean;
+type CompilePluginHookUpdateValueValidator = (value: unknown, context: object) => boolean;
 
 const compilePluginHookUpdateValueValidators: Record<
   CompilePluginHookName,
@@ -73,14 +79,14 @@ const compilePluginHookUpdateValueValidators: Record<
 > = {
   beforeTree: {},
   afterTree: {
-    roots: Array.isArray,
+    roots: isComposedAuthorRootArray,
   },
   beforeGraph: {
-    roots: Array.isArray,
+    roots: isComposedAuthorRootArray,
   },
   afterGraph: {
-    graph: isSemanticAuthorGraphValue,
-    resolvedStyles: isReadonlyMap,
+    graph: isSemanticAuthorGraph,
+    resolvedStyles: isResolvedStyleMapForContext,
   },
 };
 
@@ -157,13 +163,25 @@ export function applyCompilePluginHooks<TContext extends object>(
       diagnostics.push(pluginHookInvalidUpdateDiagnostic({ plugin, hookName, invalidUpdateKeys }));
     }
 
+    const candidateUpdates = Object.fromEntries(
+      updateEntries.filter(([key]) => allowedUpdateKeys.includes(key)),
+    );
+    const candidateGraph = candidateUpdates.graph;
+    const validationContext = {
+      ...context,
+      ...candidateUpdates,
+      ...(candidateGraph !== undefined && !isSemanticAuthorGraph(candidateGraph)
+        ? { graph: isRecord(context) ? context.graph : undefined }
+        : {}),
+    };
+
     const allowedUpdates = Object.fromEntries(
       updateEntries.filter(([key, value]) => {
         if (!allowedUpdateKeys.includes(key)) {
           return false;
         }
         const validator = compilePluginHookUpdateValueValidators[hookName]?.[key];
-        if (!validator || validator(value)) {
+        if (!validator || validator(value, validationContext)) {
           return true;
         }
         diagnostics.push(
@@ -293,10 +311,10 @@ function snapshotCompilePluginHookContext<TContext extends object>(context: TCon
     snapshot.roots = [...snapshot.roots];
   }
   if (isSemanticAuthorGraphValue(snapshot.graph)) {
-    snapshot.graph = snapshotSemanticAuthorGraph(snapshot.graph);
+    snapshot.graph = clonePluginStageValue(snapshot.graph);
   }
   if (snapshot.resolvedStyles instanceof Map) {
-    snapshot.resolvedStyles = new Map(snapshot.resolvedStyles);
+    snapshot.resolvedStyles = clonePluginStageValue(snapshot.resolvedStyles);
   }
   return snapshot as TContext;
 }
@@ -363,32 +381,14 @@ function includesString(values: readonly string[], value: string): boolean {
   return values.includes(value);
 }
 
-function isReadonlyMap(value: unknown): value is ReadonlyMap<unknown, unknown> {
-  return value instanceof Map;
-}
-
 function isSemanticAuthorGraphValue(value: unknown): value is SemanticAuthorGraph {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  return (
-    typeof value.documentId === "string" &&
-    value.nodes instanceof Map &&
-    value.styles instanceof Map &&
-    value.assets instanceof Map &&
-    value.nodes.has(value.documentId)
-  );
+  return isSemanticAuthorGraph(value);
 }
 
-function snapshotSemanticAuthorGraph(graph: SemanticAuthorGraph): SemanticAuthorGraph {
-  return {
-    ...graph,
-    nodes: new Map(graph.nodes),
-    styles: new Map(graph.styles),
-    assets: new Map(graph.assets),
-    templates: new Map(graph.templates),
-  };
+function isResolvedStyleMapForContext(value: unknown, context: object): boolean {
+  const graph =
+    isRecord(context) && isSemanticAuthorGraph(context.graph) ? context.graph : undefined;
+  return isResolvedStyleMap(value, graph);
 }
 
 function isAssetLoaderArray(value: unknown): boolean {
@@ -441,8 +441,7 @@ function isFontAssetRegistrationArray(value: unknown): boolean {
           (typeof asset.weight === "number" && Number.isFinite(asset.weight))) &&
         (asset.style === undefined || asset.style === "normal" || asset.style === "italic") &&
         (asset.unicodeRange === undefined || isStringArray(asset.unicodeRange)) &&
-        isAssetSource(asset.source) &&
-        asset.source.kind === "bytes",
+        isAssetSource(asset.source),
     )
   );
 }

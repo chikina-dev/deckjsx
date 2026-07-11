@@ -75,6 +75,31 @@ describe("project/render defined projection and package features", () => {
     );
   });
 
+  test("defineGraph rejects casted facade values that are not complete semantic graphs", () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const malformedGraph = {
+      documentId: "graph:document",
+      nodes: new Map([
+        [
+          "graph:document",
+          {
+            id: "graph:document",
+            kind: "document",
+            origin: { kind: "implicit", path: "graph.nodes.document" },
+            children: ["graph:missing-child"],
+          },
+        ],
+      ]),
+      styles: new Map(),
+      assets: new Map(),
+      templates: new Map(),
+    };
+
+    expect(() => deck.defineGraph(malformedGraph as never)).toThrow(
+      "Deck#defineGraph requires a complete valid compiled Semantic Author Graph.",
+    );
+  });
+
   test("projected package identities remain distinct from package paths", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Identity" }, () => (

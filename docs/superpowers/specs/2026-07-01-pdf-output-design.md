@@ -2,14 +2,16 @@
 
 ## Status
 
-Implemented as an initial vertical slice. The current implementation covers the public `pdf()`
-adapter, `deck.project({ format: "pdf" })`, a deckjsx-owned PDF Page Model, text projection, a
-minimal direct PDF writer, byte-backed font asset registration, ordinary `@deckjsx/node write()` PDF
-artifact writes, and structure/text verification tests.
+Implemented as a production-shaped PDF path that is still expanding toward full static fidelity. The
+current implementation covers the public `pdf()` adapter, `deck.project({ format: "pdf" })`, a
+deckjsx-owned PDF Page Model, visual projection, a direct PDF writer, byte-backed font asset
+registration, ordinary `@deckjsx/node write()` PDF artifact writes, inspection summaries, and
+structure/text verification tests.
 
-This is not yet a complete static-fidelity PDF renderer. The current slice proves the runtime-neutral
-format boundary and minimal writer path; broad visual parity with PPTX/LibreOffice PDF output remains
-future work.
+This is not yet a complete static-fidelity PDF renderer. The current path proves the runtime-neutral
+format boundary and a deckjsx-owned writer for the main static surface; broad visual parity with
+PPTX/LibreOffice PDF output remains future work, while representative raster-oracle coverage is now
+part of verification.
 
 ## Goals
 
@@ -147,35 +149,68 @@ Style remains CSS-like:
 ```
 
 Core should not resolve CSS `url(...)`, open filesystem paths, or read system fonts. If a font
-family reference cannot be matched to a registered usable Font Asset, PDF projection/render should
-emit a stable warning and use a standard PDF fallback font initially. Verification and CI can treat
-that warning as a failure without adding a dedicated `fontPolicy` option.
+family reference cannot be matched to a registered usable Font Asset, ASCII/WinAnsi text can use a
+standard PDF fallback font with a stable warning. Text containing glyphs outside that encoding must
+produce `E_PDF_UNRESOLVED_FONT_GLYPH` and no rendered artifact; callers must register an embeddable
+Font Asset with the necessary glyph coverage. This makes missing Unicode coverage explicit without
+adding a dedicated `fontPolicy` option.
 
-The first implemented slice accepts runtime-neutral byte font sources in `fontAssets`. Path, URL,
-and CSS `url(...)` font sources remain future work until font asset loading is deliberately routed
-through the Asset Loading Boundary without Node-only assumptions.
+The current font integration accepts runtime-neutral byte font sources directly in `fontAssets` and
+routes non-byte sources through the Asset Loading Boundary. Core never opens filesystem paths or
+looks up system fonts itself. Node applications can register local path-backed assets with
+`nodeFontAssets()` from `@deckjsx/node`; its Node loader resolves relative paths from a configured
+root and constrains them to that root. URL and CSS `url(...)` font sources remain future work.
 
-The first implemented slice does not embed registered font bytes into the PDF. Registered font
-assets are accepted and matched so the data flow is in place, but PDF projection still emits a
-standard Helvetica fallback resource with a stable `W_PDF_FONT_FALLBACK` warning until font
-embedding, subsetting, encodings, and ToUnicode maps are implemented.
+Registered font bytes are embedded when the font data is usable and the requested glyphs can be
+mapped. PDF projection emits a stable `W_PDF_FONT_FALLBACK` warning and uses a standard Helvetica
+fallback resource when compatible WinAnsi text has no exact registered match. It emits
+`E_PDF_UNRESOLVED_FONT_GLYPH` instead when no registered Unicode font can map a required glyph, so
+non-ASCII text is never silently substituted or dropped.
+
+OpenType shaping and bidirectional analysis are isolated behind deckjsx-owned `ShapedText`,
+`ShapedTextGlyph`, and visual-run boundaries. The current implementation uses `fontkit` for shaping
+and `bidi-js` for UAX #9 analysis, but no external `Font`, `GlyphRun`, or bidi-analysis object crosses
+into layout or the PDF Page Model. Engine failures are returned as `W_FONT_SHAPING_FALLBACK` or
+`W_TEXT_BIDI_FALLBACK` diagnostics; the existing deterministic TrueType metrics path remains
+available when shaping is unavailable. This keeps both engines replaceable without changing public
+or writer-facing model types. Supported shaped output includes LTR substitutions, mark positioning,
+mixed RTL/LTR runs with number and bracket reordering, and visual-run script segmentation for Latin,
+Greek, Cyrillic, Armenian, Georgian, Hebrew, Arabic, major Indic scripts, Thai, Lao, Myanmar, and
+Khmer. When visual glyph order differs, logical source text is retained as PDF `ActualText` for copy
+and extraction.
 
 ## Current Initial-Slice Limitations
 
 The current implementation intentionally stops short of full static visual fidelity:
 
-- PDF projection is text-centric. Authored images, shapes, tables, and videos are reported as
-  unsupported PDF content instead of being silently omitted or approximated.
-- The writer emits a minimal PDF object graph: catalog, pages, page resource dictionaries, Type1 font
-  resources, content streams, xref, trailer, and metadata.
-- Registered font assets are not embedded yet. Matching a registered font still renders through a
-  Helvetica fallback resource and emits a `W_PDF_FONT_FALLBACK` warning.
-- Non-ASCII text and metadata are rejected for now because the minimal writer does not yet emit font
-  encodings or ToUnicode maps that would make UTF-8 text reliable in PDF viewers.
-- Text shaping, font metrics, measured line breaking, overflow handling, rich text run positioning,
-  and sandbox-explainable text layout decisions remain future work.
-- Fills, strokes, backgrounds, clipping, transforms, opacity, gradients, z-order fidelity, image
-  XObjects, and table geometry are not implemented in the PDF writer yet.
+- PDF projection now covers the main static visual surface, but it still records structured fallback
+  semantics for authored CSS-like behavior that PDF projection cannot faithfully reproduce.
+- The writer emits a direct PDF object graph for pages, resource dictionaries, fonts, images,
+  gradients, content streams, annotations, xref, trailer, and metadata.
+- Registered font assets can be embedded when usable data is available. Missing or unusable font
+  requests use fallback resources only for WinAnsi-compatible text; unresolved Unicode glyphs fail
+  PDF projection with `E_PDF_UNRESOLVED_FONT_GLYPH` and do not produce an artifact.
+- Registered non-ASCII text is projected through Identity-H Unicode font resources and ToUnicode maps
+  where the model provides the required font/encoding contract. Direct model writes still reject
+  unsupported text unless callers declare `textEncoding: "utf16be"` with an Identity-H font resource.
+- Registered TrueType font glyph widths drive shared layout and PDF text measurement for wrapping,
+  word breaking, shrink-to-fit, justification, and tab alignment, including following inline runs.
+  Legacy TrueType
+  kern pairs and OpenType GPOS `kern` pair-adjustment lookups (simple and class-based) drive
+  matching PDF TJ text output. OpenType substitutions, x/y-positioned marks, UAX #9 visual-order bidi
+  runs, and selected script-specific segmentation can now be emitted as deckjsx glyph runs with
+  CID/ToUnicode mappings. Full shaping remains incomplete for scripts outside the supported
+  segmentation map and other GPOS lookups;
+  scrolling/ellipsis overflow modes, rich text run positioning, and
+  sandbox-explainable text layout decisions remain future work. Text inherited from an
+  overflow-hidden parent retains its source coordinates and is clipped to the parent frame; self
+  overflow-hidden text is clipped to its own frame in PDF output, including underline and strike
+  decorations. Overflow clip frames remain
+  axis-aligned and are applied before text or decoration transforms; clipped text hyperlink
+  annotations are restricted to the visible intersection.
+- Fills, strokes, backgrounds, clipping, transforms, opacity, blend modes, gradients, image XObjects,
+  z-order, links, and table geometry are implemented for the supported subset, with remaining gaps
+  surfaced through diagnostics and inspection summaries.
 - The LibreOffice-derived verification path is a direction and fixture strategy, not proof of broad
   visual parity in this initial slice.
 
@@ -251,10 +286,9 @@ or depend on process execution.
    Research official PDF/font/CSS references, define the initial emitted PDF profile, create the
    deckjsx-owned model, validation rules, and structure-level tests.
 
-4. Minimal writer vertical slice:
-   Emit valid PDF bytes for pages, metadata, text with registered fonts or fallback fonts, and simple
-   text operations from the PDF Page Model. Image operations are modeled but rejected by validation
-   until image XObject resources and streams are implemented.
+4. Direct writer vertical slice:
+   Emit valid PDF bytes for pages, metadata, text with registered fonts or fallback fonts, images,
+   shapes, gradients, annotations, and visual operations from the PDF Page Model.
 
 5. Node write support:
    Allow `@deckjsx/node write()` to write PDF artifacts as normal bytes while preserving PPTX patch
@@ -270,11 +304,12 @@ or depend on process execution.
 
 Current implementation status:
 
-- Completed: public PDF plumbing, PDF Specification Profile and Page Model, text projection, minimal
-  PDF writer, byte-backed font asset registration, Node PDF writes, and structure/text verification.
-- Deferred: image XObject writing, shape/stroke/fill/background/table projection, font
-  subsetting/embedding, PDF text encodings and ToUnicode maps, measured line breaking and overflow,
-  full rich-text run positioning, raster comparison, and the sandbox UI.
+- Completed: public PDF plumbing, PDF Specification Profile and Page Model, direct writer,
+  byte-backed font asset registration, text/images/shapes/fills/strokes/backgrounds/tables/static
+  video poster projection, links, opacity/blend mode support, inspection summaries, Node PDF writes,
+  and structure/text verification.
+- Deferred: complete PowerPoint visual parity, full text shaping, exhaustive measured line breaking,
+  richer raster comparison, and the sandbox UI.
 
 ## Open Design Risks
 

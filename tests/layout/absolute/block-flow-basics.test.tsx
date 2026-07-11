@@ -27,7 +27,7 @@ describe("absolute layout block flow basics", () => {
     ]);
   });
 
-  test("render records wrapped text measurement fallback for long auto-height text", async () => {
+  test("measures long auto-height text using its wrapped line count", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
     deck.slide({ name: "Wrapped text fallback" }, () => (
@@ -40,17 +40,113 @@ describe("absolute layout block flow basics", () => {
     const [text] = H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children;
 
     expect(text?.kind).toBe("text");
-    expect(text?.unsupportedSemantics).toContainEqual(
+    expect(text?.unsupportedSemantics ?? []).toContainEqual(
       expect.objectContaining({
         feature: "layout",
         property: "height",
         value: "auto",
         fallback: expect.objectContaining({
-          preserves: ["availableInlineSize", "lineHeightAutoHeight"],
-          missing: ["wrappedTextMeasurement"],
+          strategy: "synthesizeFallbackFrame",
+          preserves: [
+            "availableInlineSize",
+            "wrappedLineCount",
+            "lineHeightAutoHeight",
+            "characterSpacing",
+            "paragraphSpacing",
+          ],
+          missing: ["fontSpecificGlyphMetrics", "exactTextShaping"],
         }),
       }),
     );
+    expect(text?.frame.heightEmu).toBeGreaterThan(0.3 * H.EMU_PER_INCH);
+  });
+
+  test("uses the standard Helvetica width table for unregistered auto-height text", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Standard fallback widths" }, () => (
+      <p
+        style={{
+          position: "absolute",
+          left: 1,
+          top: 1,
+          width: "240pt",
+          fontSize: 100,
+          overflowWrap: "anywhere",
+        }}
+      >
+        {"W".repeat(81)}
+      </p>
+    ));
+
+    const [text] = H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children;
+
+    expect(text?.kind).toBe("text");
+    expect(text?.frame.heightEmu).toBeCloseTo(41 * 120 * 12700, 5);
+  });
+
+  test("includes character spacing when wrapping auto-height text", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Character spacing" }, () => (
+      <>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 1,
+            width: "120pt",
+            fontSize: 20,
+            overflowWrap: "anywhere",
+          }}
+        >
+          WWWWWW
+        </p>
+        <p
+          style={{
+            position: "absolute",
+            left: 1,
+            top: 2,
+            width: "120pt",
+            fontSize: 20,
+            letterSpacing: "2pt",
+            overflowWrap: "anywhere",
+          }}
+        >
+          WWWWWW
+        </p>
+      </>
+    ));
+
+    const [plain, spaced] = H.expectPptxProjection(await deck.project()).slides[0].payload.drawing
+      .children;
+
+    expect(plain?.frame.heightEmu).toBeCloseTo(24 * 12700, 5);
+    expect(spaced?.frame.heightEmu).toBeCloseTo(48 * 12700, 5);
+  });
+
+  test("includes paragraph spacing before and after in auto-height text", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Paragraph spacing" }, () => (
+      <p
+        style={{
+          position: "absolute",
+          left: 1,
+          top: 1,
+          width: "200pt",
+          fontSize: 20,
+          paragraphSpacingBefore: "10pt",
+          paragraphSpacingAfter: "14pt",
+        }}
+      >
+        Paragraph
+      </p>
+    ));
+
+    const [text] = H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children;
+
+    expect(text?.frame.heightEmu).toBeCloseTo(48 * 12700, 5);
   });
 
   test("render flows unpositioned block text inside absolute containers", async () => {

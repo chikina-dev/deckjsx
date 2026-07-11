@@ -12,6 +12,14 @@ import type { ComponentProvenance } from "../authoring-metadata";
 import type { SemanticTemplateAreaRef } from "../graph/types";
 import type { TemplateAreaKind } from "../templates";
 
+/**
+ * Opaque identity of a projected layout entity.
+ *
+ * Canonical projections derive this value from semantic graph identity. Callers should compare it
+ * for identity only and must not infer paint order or array position from its representation.
+ */
+export type ProjectedLayoutId = string;
+
 export type ProjectedLayoutOrigin = {
   readonly graphNodeIds?: readonly GraphNodeId[];
   readonly styleEntityIds?: readonly StyleEntityId[];
@@ -92,7 +100,7 @@ export type ProjectedUnsupportedSemantic = {
 };
 
 export type ProjectedLayoutSlide = {
-  id: string;
+  id: ProjectedLayoutId;
   name?: string;
   origin?: ProjectedLayoutOrigin;
   background?: FillIR;
@@ -109,7 +117,7 @@ export type ProjectedLayoutNode =
   | ProjectedLayoutShape;
 
 export type ProjectedLayoutBaseNode = {
-  id: string;
+  id: ProjectedLayoutId;
   origin?: ProjectedLayoutOrigin;
   frame: FrameIR;
   siblingOrder: number;
@@ -128,6 +136,7 @@ export type ShadowIR = {
   color: string;
   opacity: number;
   blurPt: number;
+  spreadPt?: number;
   offsetPt: number;
   angle: number;
 };
@@ -163,12 +172,23 @@ export type ProjectedLayoutGroup = ProjectedLayoutBaseNode & {
 
 export type ProjectedLayoutTable = ProjectedLayoutBaseNode & {
   kind: "table";
+  shadow?: ShadowIR;
+  fill?: FillIR;
+  backgroundLayers?: ReadonlyArray<BackgroundLayerIR>;
+  edgeStrokes?: EdgeStrokeIR;
+  outline?: StrokeIR;
+  radiusEmu?: number;
   sections: ReadonlyArray<ProjectedLayoutTableSection>;
 };
 
 export type ProjectedLayoutTableSection = {
   kind: "tableSection";
   sectionKind: "head" | "body" | "foot";
+  frame: FrameIR;
+  opacity?: number;
+  unsupportedSemantics?: ReadonlyArray<ProjectedUnsupportedSemantic>;
+  fill?: FillIR;
+  backgroundLayers?: ReadonlyArray<BackgroundLayerIR>;
   rows: ReadonlyArray<ProjectedLayoutTableRow>;
   origin?: ProjectedLayoutOrigin;
 };
@@ -176,6 +196,10 @@ export type ProjectedLayoutTableSection = {
 export type ProjectedLayoutTableRow = {
   kind: "tableRow";
   frame: FrameIR;
+  opacity?: number;
+  unsupportedSemantics?: ReadonlyArray<ProjectedUnsupportedSemantic>;
+  fill?: FillIR;
+  backgroundLayers?: ReadonlyArray<BackgroundLayerIR>;
   cells: ReadonlyArray<ProjectedLayoutTableCell>;
   origin?: ProjectedLayoutOrigin;
 };
@@ -187,9 +211,13 @@ export type ProjectedLayoutTableCell = {
   colSpan: number;
   rowSpan: number;
   frame: FrameIR;
+  opacity?: number;
+  unsupportedSemantics?: ReadonlyArray<ProjectedUnsupportedSemantic>;
   fill?: FillIR;
+  backgroundLayers?: ReadonlyArray<BackgroundLayerIR>;
   edgeStrokes?: EdgeStrokeIR;
   style: TextStyleIR;
+  hyperlink?: HyperlinkIR;
   children: ReadonlyArray<ProjectedLayoutNode>;
   origin?: ProjectedLayoutOrigin;
 };
@@ -324,6 +352,7 @@ export type TextContentIR = {
 export type TextRunIR = {
   text: string;
   style?: TextStyleIR;
+  hyperlink?: HyperlinkIR;
 };
 
 export type TextTabStopIR = {
@@ -358,12 +387,14 @@ export type TextStyleIR = {
   underline?: boolean;
   underlineStyle?: "dash" | "dbl" | "dotted" | "none" | "sng" | "wavy";
   underlineColor?: string;
+  underlineTransparency?: number;
   strike?: boolean;
   rtlMode?: boolean;
   textDirection?: "horz" | "vert" | "vert270";
   superscript?: boolean;
   subscript?: boolean;
   color?: string;
+  colorTransparency?: number;
   textAlign?: "left" | "center" | "right" | "justify";
   verticalAlign?: VerticalAlign;
   paddingPt?: [number, number, number, number];
@@ -377,6 +408,8 @@ export type TextStyleIR = {
   list?: TextListIR;
   fit?: TextFit;
   wrap?: boolean;
+  breakWords?: boolean;
+  overflow?: "hidden" | "visible";
 };
 
 export type ImageSourceIR =

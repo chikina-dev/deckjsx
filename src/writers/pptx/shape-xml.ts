@@ -248,12 +248,13 @@ function writeTableCellBorder(
 }
 
 function writeTableCellProperties(writer: XmlChunkWriter, cell: TableCellXmlInput): void {
+  const [top, right, bottom, left] = cell.style.paddingPt ?? [0, 7.2, 0, 7.2];
   writer.open("a:tcPr", {
     anchor: tableVerticalAlign(cell.style.verticalAlign),
-    marL: pointToEmu(cell.style.paddingPt?.[3], "table cell left padding"),
-    marR: pointToEmu(cell.style.paddingPt?.[1], "table cell right padding"),
-    marT: pointToEmu(cell.style.paddingPt?.[0], "table cell top padding"),
-    marB: pointToEmu(cell.style.paddingPt?.[2], "table cell bottom padding"),
+    marL: pointToEmu(left, "table cell left padding"),
+    marR: pointToEmu(right, "table cell right padding"),
+    marT: pointToEmu(top, "table cell top padding"),
+    marB: pointToEmu(bottom, "table cell bottom padding"),
   });
   writeFill(writer, cell.fill);
   writeTableCellBorder(writer, "a:lnL", cell.edgeStrokes?.left);

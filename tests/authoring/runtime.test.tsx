@@ -9,6 +9,41 @@ import { createElementWithMetadata } from "@/src/jsx.ts";
 import { expectPptxProjection } from "../helpers";
 
 describe("authoring and JSX runtime", () => {
+  test("author tree guards reject marker-only and malformed union branches", () => {
+    expect(isAuthorTreeNode({ $$typeof: "deckjsx.author-tree" })).toBe(false);
+    expect(
+      isAuthorTreeNode({
+        $$typeof: "deckjsx.author-tree",
+        kind: "text",
+        value: Number.NaN,
+      }),
+    ).toBe(false);
+    expect(
+      isAuthorTreeNode({
+        $$typeof: "deckjsx.author-tree",
+        kind: "fragment",
+        children: ["primitive children are not normalized nodes"],
+      }),
+    ).toBe(false);
+    expect(
+      isAuthorTreeNode({
+        $$typeof: "deckjsx.author-tree",
+        kind: "element",
+        source: { kind: "tag", tag: "unknown" },
+        props: {},
+        children: [],
+      }),
+    ).toBe(false);
+
+    const cyclic = {
+      $$typeof: "deckjsx.author-tree",
+      kind: "fragment",
+      children: [] as unknown[],
+    };
+    cyclic.children.push(cyclic);
+    expect(isAuthorTreeNode(cyclic)).toBe(false);
+  });
+
   test("JSX primitives produce nested Author Tree nodes", async () => {
     const node = (
       <div key="outer" style={{ position: "absolute", left: 1, top: 2 }}>

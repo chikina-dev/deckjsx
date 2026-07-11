@@ -168,6 +168,14 @@ describe("project/render pipeline artifacts", () => {
     expect(first).not.toBe(second);
   });
 
+  test("asset cache keys distinguish source fields handled by the same resolver", () => {
+    const source = { kind: "path", path: "./shared.asset" } as const;
+    const media = H.assetSourceCacheKey(source, "test:shared-loader", undefined, "src");
+    const font = H.assetSourceCacheKey(source, "test:shared-loader", undefined, "font");
+
+    expect(media).not.toBe(font);
+  });
+
   test("projection artifacts expose stable slide package part fingerprints", async () => {
     async function projectDeck(firstSlideText: string) {
       const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });

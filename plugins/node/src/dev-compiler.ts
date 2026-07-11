@@ -15,7 +15,7 @@ import { runDeckjsxDevCompilation, type DeckjsxDevCompilationResult } from "./de
 /**
  * Options for the `@deckjsx/node/dev` incremental compiler.
  *
- * The compiler bundles one deckjsx entry module, executes it in Node, writes tracked PPTX outputs,
+ * The compiler bundles one deckjsx entry module, executes it in Node, writes tracked render outputs,
  * and emits events for CLI or editor integrations. Most callers provide `entry`, `cwd`, and `out`;
  * the remaining fields are integration hooks for tests, custom source providers, or embedded tools.
  */
@@ -24,7 +24,7 @@ export type DeckjsxDevCompilerOptions = {
   readonly entry: string;
   /** Working directory for bundling, execution, file watching, and output path resolution. */
   readonly cwd?: string;
-  /** Primary PPTX output path, resolved relative to `cwd` when it is not absolute. */
+  /** Primary render output path, resolved relative to `cwd` when it is not absolute. */
   readonly out: string;
   /** Additional output paths that may be retained or tracked during incremental dev cycles. */
   readonly outputs?: readonly string[];
@@ -181,7 +181,7 @@ export function createDeckjsxDevCompiler(options: DeckjsxDevCompilerOptions): De
     });
     result.diagnostics.forEach((diagnostic) => emit({ type: "diagnostic", diagnostic }));
     emit({ type: "compilationFinished", result });
-    if (result.status === "artifactUpdated") {
+    if (result.status === "artifactUpdated" || result.status === "outputBlocked") {
       scheduler.commitExecutableSnapshot({
         graph: result.graph,
         sourceSnapshot: result.sourceSnapshot,

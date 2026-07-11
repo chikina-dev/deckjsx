@@ -39,6 +39,39 @@ describe("@deckjsx/node dev inspection store", () => {
     });
   });
 
+  test("retains a sanitized immutable props snapshot", () => {
+    const store = createNodeDevInspectionStore();
+    const props = {
+      title: "Before",
+      nested: { value: "original", token: "secret" },
+      items: ["one"],
+    };
+
+    store.beginAttempt({ compilation: 1 });
+    const componentId = store.recordComponent({ name: "Header", props });
+    props.title = "After";
+    props.nested.value = "mutated";
+    props.nested.token = "mutated-secret";
+    props.items.push("two");
+    store.finishAttempt({ devStatus: "artifactUpdated", boundary: "projection" });
+
+    expect(store.inspectProps(componentId, "title")?.value).toBe("Before");
+    expect(store.inspectProps(componentId, "nested.value")?.value).toBe("original");
+    expect(store.inspectProps(componentId, "nested.token")?.value).toBe("[redacted]");
+    expect(store.inspectProps(componentId, "items.0")?.value).toBe("one");
+    expect(store.inspectProps(componentId, "items.1")?.value).toEqual({ kind: "undefined" });
+
+    const publicSummary = store.componentTree().items[0]?.propsSummary;
+    const publicItems = publicSummary?.items as { length: number } | undefined;
+    if (publicItems) {
+      publicItems.length = 99;
+    }
+    expect(store.componentTree().items[0]?.propsSummary.items).toEqual({
+      kind: "array",
+      length: 1,
+    });
+  });
+
   test("searches components and inspects props paths", () => {
     const store = createNodeDevInspectionStore();
 

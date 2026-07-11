@@ -469,6 +469,22 @@ describe("direct pptx writer text output", () => {
     expect(slideXml).toContain('bIns="76200"');
   });
 
+  test("output explicitly clears default PowerPoint text body insets", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "zero text padding output" }, () => (
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 1 }}>Unpadded text</p>
+    ));
+
+    const content = await H.renderDeckBytes(deck);
+    const slideXml = H.zipEntry(H.unzipSync(content), "ppt/slides/slide1.xml");
+
+    expect(slideXml).toContain('tIns="0"');
+    expect(slideXml).toContain('rIns="0"');
+    expect(slideXml).toContain('bIns="0"');
+    expect(slideXml).toContain('lIns="0"');
+  });
+
   test("output maps CSS textAlign values to PPTX paragraph alignment values", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 

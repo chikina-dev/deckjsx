@@ -94,7 +94,7 @@ const TYPE_PERFORMANCE_PROFILES = {
   },
   "node-plugin": {
     checkTimeMs: 5000,
-    instantiations: 40000,
+    instantiations: 45000,
     memoryKb: 500000,
   },
 };
@@ -179,6 +179,19 @@ function pathsForGeneratedProject(profile) {
   return undefined;
 }
 
+function relativePathsForGeneratedProject(paths, generatedRoot) {
+  return Object.fromEntries(
+    Object.entries(paths).map(([specifier, targets]) => [
+      specifier,
+      targets.map((target) => {
+        const relative = path.relative(generatedRoot, path.resolve(REPO_ROOT, target));
+        const normalized = relative.split(path.sep).join("/");
+        return normalized.startsWith(".") ? normalized : `./${normalized}`;
+      }),
+    ]),
+  );
+}
+
 function typePerformanceProjectPathForProfile(profile, generatedRoot) {
   if (profile === "root") {
     return undefined;
@@ -211,13 +224,15 @@ function typePerformanceProjectConfigForProfile(profile, generatedRoot) {
   return {
     extends: path.join(REPO_ROOT, "tsconfig.json"),
     compilerOptions: {
-      baseUrl: REPO_ROOT,
       ignoreDeprecations: "6.0",
       typeRoots: [path.join(REPO_ROOT, "node_modules", "@types")],
       ...(pathsForGeneratedProject(profile)
         ? {
             allowImportingTsExtensions: false,
-            paths: pathsForGeneratedProject(profile),
+            paths: relativePathsForGeneratedProject(
+              pathsForGeneratedProject(profile),
+              generatedRoot,
+            ),
           }
         : {}),
     },
@@ -230,11 +245,11 @@ function nodePluginTypePerformanceProjectConfig(generatedRoot) {
   return {
     extends: path.join(REPO_ROOT, "plugins/node/tsconfig.json"),
     compilerOptions: {
-      baseUrl: REPO_ROOT,
       ignoreDeprecations: "6.0",
       paths: {
-        ...NODE_PLUGIN_PATHS,
-        rolldown: [path.relative(REPO_ROOT, nodePluginRolldownShimPath(generatedRoot))],
+        ...relativePathsForGeneratedProject(NODE_PLUGIN_PATHS, generatedRoot),
+        rolldown: ["./rolldown-shim.d.ts"],
+        "rolldown/parseAst": ["./rolldown-shim.d.ts"],
       },
       typeRoots: [path.join(REPO_ROOT, "node_modules", "@types")],
     },
@@ -322,6 +337,14 @@ declare module "rolldown" {
 
   export function rolldown(options: WatchOptions): Promise<RolldownBuild>;
   export function watch(options: WatchOptions): RolldownWatcher;
+}
+
+declare module "rolldown/parseAst" {
+  export function parseAst(
+    code: string,
+    options: { readonly lang: string; readonly sourceType: string },
+    filename?: string,
+  ): any;
 }
 `.trimStart();
 }

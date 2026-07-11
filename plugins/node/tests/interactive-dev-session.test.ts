@@ -1557,6 +1557,89 @@ describe("@deckjsx/node interactive dev session", () => {
     });
   });
 
+  test("projection.inspect reads retained PDF pages, visuals, and text content", async () => {
+    const { compiler } = createFakeCompiler();
+    const artifactSession = createFakeArtifactSession([
+      {
+        slot: 0,
+        artifacts: {
+          graphsBySourceKey: new Map(),
+          projection: {
+            projection: {
+              format: "pdf",
+              pages: [
+                {
+                  id: "pdf:page:overview:0",
+                  index: 0,
+                  name: "Overview",
+                  content: [{ op: "text", text: "Revenue", x: 10, y: 20 }],
+                  visuals: [
+                    {
+                      kind: "text",
+                      text: "Revenue",
+                      origin: { graphNodeIds: ["text-node"] },
+                    },
+                    { kind: "line", origin: { graphNodeIds: ["line-node"] } },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+    ]);
+    const session = createInteractiveDevSession({ compiler, artifactSession });
+
+    await expect(session.dispatch({ method: "projection.inspect" })).resolves.toEqual({
+      ok: true,
+      result: {
+        slot: 0,
+        format: "pdf",
+        slides: [
+          {
+            slideIndex: 0,
+            partId: "pdf:page:overview:0",
+            name: "Overview",
+            elementCount: 2,
+          },
+        ],
+      },
+    });
+    await expect(
+      session.dispatch({ method: "projection.inspect", params: { slideIndex: 0 } }),
+    ).resolves.toEqual({
+      ok: true,
+      result: {
+        slot: 0,
+        slideIndex: 0,
+        slide: {
+          slideIndex: 0,
+          partId: "pdf:page:overview:0",
+          name: "Overview",
+          elementCount: 2,
+        },
+      },
+    });
+    await expect(
+      session.dispatch({
+        method: "projection.inspect",
+        params: { slideIndex: 0, elementIndex: 0 },
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      result: {
+        slot: 0,
+        slideIndex: 0,
+        elementIndex: 0,
+        element: {
+          kind: "text",
+          origin: { graphNodeIds: ["text-node"] },
+          textPreview: "Revenue",
+        },
+      },
+    });
+  });
+
   test("projection.inspect can target a retained projection slot", async () => {
     const { compiler } = createFakeCompiler();
     const artifactSession = createFakeArtifactSession([

@@ -1119,6 +1119,16 @@ describe("style values outside the public authoring API", () => {
             filter: "blur(1banana)" as never,
           }}
         />
+        <div
+          style={{
+            position: "absolute",
+            left: 4.25,
+            top: 3.5,
+            width: 3,
+            height: 2,
+            filter: "blur(10%)" as never,
+          }}
+        />
       </>
     ));
     const invalidFilterLiteralResult = await invalidFilterLiteral.project();
@@ -1127,7 +1137,7 @@ describe("style values outside the public authoring API", () => {
       invalidFilterLiteralResult.diagnostics.items.filter(
         (item) => item.code === "E_COMPILE_INVALID_STYLE_VALUE",
       ),
-    ).toHaveLength(3);
+    ).toHaveLength(4);
     expect(invalidFilterLiteralResult.diagnostics.items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

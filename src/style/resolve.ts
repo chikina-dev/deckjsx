@@ -17,10 +17,11 @@ import {
 import type { SelectorContext } from "./selectors";
 import type { StyleSheetValue } from "./stylesheet/public";
 import { isTheme, themeDiagnostics, themeInput } from "./theme/runtime";
-import type { StyleDeclaration, StyleDeclarationValue } from "./declaration";
+import type { StyleDeclaration, StyleDeclarationKey, StyleDeclarationValue } from "./declaration";
 
 export type ResolvedStyleDeclaration = StyleDeclaration;
-export type ResolvedStyleValue = StyleDeclarationValue;
+export type ResolvedStyleValue<TProperty extends StyleDeclarationKey = StyleDeclarationKey> =
+  StyleDeclarationValue<TProperty>;
 
 export type ResolvedStyleLayer = "default" | "inherited" | "theme" | "class" | "style";
 
@@ -37,20 +38,24 @@ export type ResolvedStyleSource =
     }
   | { readonly layer: "style" };
 
-export type ResolvedStyleProperty = {
-  readonly value: ResolvedStyleValue;
+export type ResolvedStyleProperty<TProperty extends StyleDeclarationKey = StyleDeclarationKey> = {
+  readonly value: ResolvedStyleValue<TProperty>;
   readonly source: ResolvedStyleSource;
 };
 
-export type ResolvedStylePropertyTraceCandidate = {
-  readonly value: ResolvedStyleValue;
+export type ResolvedStylePropertyTraceCandidate<
+  TProperty extends StyleDeclarationKey = StyleDeclarationKey,
+> = {
+  readonly value: ResolvedStyleValue<TProperty>;
   readonly source: ResolvedStyleSource;
   readonly applied: boolean;
 };
 
-export type ResolvedStylePropertyTrace = {
-  readonly property: string;
-  readonly candidates: readonly ResolvedStylePropertyTraceCandidate[];
+export type ResolvedStylePropertyTrace<
+  TProperty extends StyleDeclarationKey = StyleDeclarationKey,
+> = {
+  readonly property: TProperty;
+  readonly candidates: readonly ResolvedStylePropertyTraceCandidate<TProperty>[];
 };
 
 export type ResolvedStyle = {
@@ -59,6 +64,24 @@ export type ResolvedStyle = {
   readonly appliedClasses: readonly ResolvedStyleSource[];
   readonly propertyTraces: Readonly<Record<string, ResolvedStylePropertyTrace>>;
 };
+
+/** Property-aware access to a resolved declaration without repeating downstream casts. */
+export function resolvedStyleProperty<TProperty extends StyleDeclarationKey>(
+  resolved: ResolvedStyle,
+  property: TProperty,
+): ResolvedStyleProperty<TProperty> | undefined {
+  const properties: Readonly<Record<string, unknown>> = resolved.properties;
+  return properties[property] as ResolvedStyleProperty<TProperty> | undefined;
+}
+
+/** Property-aware access to a resolved declaration trace. */
+export function resolvedStylePropertyTrace<TProperty extends StyleDeclarationKey>(
+  resolved: ResolvedStyle,
+  property: TProperty,
+): ResolvedStylePropertyTrace<TProperty> | undefined {
+  const traces: Readonly<Record<string, unknown>> = resolved.propertyTraces;
+  return traces[property] as ResolvedStylePropertyTrace<TProperty> | undefined;
+}
 
 export type ResolvedStyleMap = ReadonlyMap<GraphNodeId, ResolvedStyle>;
 
@@ -159,7 +182,7 @@ function propertyTracesFor(
     Object.entries(traceCandidates).map(([property, candidates]) => [
       property,
       {
-        property,
+        property: property as StyleDeclarationKey,
         candidates: candidates.map((candidate, index) => ({
           value: candidate.value,
           source: candidate.source,

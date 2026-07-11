@@ -80,4 +80,69 @@ describe("@deckjsx/node media source transform", () => {
 
     expect(transformed).toBeUndefined();
   });
+
+  test("only transforms JSX syntax inside template expressions", () => {
+    const source = [
+      'const raw = `<img src="./raw.png" />`;',
+      'const actual = `prefix ${<Card src={"./actual.png"} />} suffix`;',
+    ].join("\n");
+
+    const transformed = transformDeckjsxMediaSourceOrigins(source, "/project/src/template.tsx");
+
+    expect(transformed).toContain('const raw = `<img src="./raw.png" />`;');
+    expect(transformed).toContain(
+      '<Card {...__deckjsxAuthoringMetadata({ mediaSourceOrigins: { src: { importer: "/project/src/template.tsx", source: "./actual.png" } }, componentProvenance:',
+    );
+  });
+
+  test("does not confuse similar attributes, tags, or helper identifiers", () => {
+    const source = [
+      'const __deckjsxAuthoringMetadata = "user value";',
+      'const ignored = <><image src="./vector.svg" /><img data-src="./lazy.png" srcSet="./set.png" /></>;',
+      'const actual = <Card src="./card.png" />;',
+    ].join("\n");
+
+    const transformed = transformDeckjsxMediaSourceOrigins(source, "/project/src/similar.tsx");
+
+    expect(transformed).toContain('const __deckjsxAuthoringMetadata = "user value";');
+    expect(transformed).toContain('<image src="./vector.svg" />');
+    expect(transformed).toContain('<img data-src="./lazy.png" srcSet="./set.png" />');
+    expect(transformed).toContain("authoringMetadata as __deckjsxAuthoringMetadata2");
+    expect(transformed).toContain("<Card {...__deckjsxAuthoringMetadata2(");
+  });
+
+  test("handles member components, type arguments, comments, and multiple elements", () => {
+    const source = [
+      "const first = <UI.Card<Model> /* keep */ src={'./first.png'} />;",
+      'const second = <img /* keep */ src="./second.png" />;',
+      'const third = <video src="./third.mp4" poster="./third.png" />;',
+    ].join("\n");
+
+    const transformed = transformDeckjsxMediaSourceOrigins(source, "/project/src/multiple.tsx");
+
+    expect(transformed).toContain("<UI.Card<Model> {...__deckjsxAuthoringMetadata(");
+    expect(transformed).toContain("/* keep */ src={'./first.png'}");
+    expect(transformed?.match(/\.\.\.__deckjsxAuthoringMetadata\(/g)).toHaveLength(3);
+  });
+
+  test("reuses an existing metadata import and does not duplicate annotated elements", () => {
+    const source = [
+      'import { authoringMetadata as metadata } from "deckjsx/integration";',
+      'const card = <Card {...metadata({ componentProvenance: { stack: [] } })} src="./card.png" />;',
+    ].join("\n");
+
+    const transformed = transformDeckjsxMediaSourceOrigins(source, "/project/src/annotated.tsx");
+
+    expect(transformed).toBeUndefined();
+  });
+
+  test("keeps directive prologues ahead of the injected import", () => {
+    const source = ['"use client";', 'export const image = <img src="./hero.png" />;'].join("\n");
+
+    const transformed = transformDeckjsxMediaSourceOrigins(source, "/project/src/client.tsx");
+
+    expect(transformed).toMatch(
+      /^"use client";\nimport \{ authoringMetadata as __deckjsxAuthoringMetadata \}/,
+    );
+  });
 });

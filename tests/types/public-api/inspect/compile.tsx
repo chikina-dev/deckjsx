@@ -49,6 +49,16 @@ deck.slide(() => (
 const graph = deck.compile().graph!;
 graph satisfies NonNullable<CompileResult["graph"]>;
 graph.documentId satisfies string;
+const forgedGraphFacade = {
+  documentId: "graph:document",
+  nodes: [],
+  styles: new Map<PropertyKey, never>(),
+  assets: new Map<PropertyKey, never>(),
+  templates: new Map<string, unknown>(),
+};
+// @ts-expect-error defineGraph requires the complete compiled graph facade, including map-backed nodes.
+deck.defineGraph(forgedGraphFacade);
+deck.defineGraph(graph);
 // @ts-expect-error root CompileResult graph is a public compile summary, not the detailed inspect graph.
 graph satisfies I.SemanticAuthorGraph;
 // @ts-expect-error root CompileResult graph ids are public strings, not inspect-owned branded ids.

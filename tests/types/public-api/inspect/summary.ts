@@ -1,6 +1,18 @@
 import type * as I from "deckjsx/inspect";
+import { isPdfPageModel } from "deckjsx/inspect";
 
 declare const projectSummary: I.ProjectInspectionSummary;
+declare const pdfModel: I.PdfPageModel;
+declare const pdfContent: I.PdfContentOp;
+declare const pdfVisual: I.PdfVisualElement;
+
+pdfModel.format satisfies "pdf";
+pdfModel.documentId satisfies I.PdfDocumentId;
+pdfModel.pages satisfies readonly I.PdfPage[];
+pdfModel.pages[0]?.id satisfies I.PdfPageId | undefined;
+pdfContent.op satisfies string;
+pdfVisual.kind satisfies "image" | "line" | "shape" | "text";
+isPdfPageModel(pdfModel) satisfies boolean;
 
 projectSummary.pptx.packageParts satisfies readonly I.ProjectInspectionPartSummary[];
 projectSummary.pptx.relationshipCount satisfies number;
@@ -61,6 +73,7 @@ projectSummary.details?.composedPaintOrder[0]?.entries[0]?.source satisfies
   | "backgroundLayer"
   | "drawingNode"
   | "generatedStroke"
+  | "visualElement"
   | undefined;
 projectSummary.details?.composedPaintOrder[0]?.entries[0]?.order satisfies number | undefined;
 projectSummary.details?.composedPaintOrder[0]?.entries[0]?.siblingPath satisfies
