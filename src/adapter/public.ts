@@ -41,9 +41,10 @@ export type RenderOptions = PptxRenderOptions | PdfRenderOptions;
 /**
  * Result returned by a Writer Adapter implementation.
  *
- * Adapter results keep diagnostics and artifacts separate: ordinary authoring or projection
- * failures are reported through diagnostics instead of throwing, while successful renders provide a
- * runtime-neutral artifact that integration packages such as `@deckjsx/node` can write.
+ * Adapter results keep diagnostics and artifacts separate: ordinary authoring, projection, or
+ * adapter failures are reported through diagnostics instead of requiring deckjsx users to catch
+ * thrown errors, while successful renders provide a runtime-neutral artifact that integration
+ * packages such as `@deckjsx/node` can write.
  */
 export type WriterAdapterResult<TFormat extends OutputFormat = OutputFormat> = {
   /** Diagnostics produced while adapting the projected document model to the output format. */
@@ -96,8 +97,8 @@ export type WriterAdapter<TProjection = unknown, TFormat extends OutputFormat = 
   /**
    * Render a projected document model into an output artifact.
    *
-   * Implementations should report expected authoring/projection failures in `diagnostics` and avoid
-   * throwing except for unexpected runtime failures.
+   * Implementations should report expected authoring/projection failures in `diagnostics`.
+   * Thrown adapter failures are treated as Integration Boundary failures by the pipeline.
    */
   render(
     projection: TProjection,

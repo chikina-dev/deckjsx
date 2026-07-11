@@ -51,7 +51,7 @@ export function assetSourceDiagnosticValue(source: AssetSource): string {
   }
 }
 
-export function assetDiagnosticFromError(input: {
+export function assetDiagnostic(input: {
   readonly stage: "project" | "render";
   readonly code: string;
   readonly title: string;
@@ -60,15 +60,14 @@ export function assetDiagnosticFromError(input: {
   readonly resolverIdentity: string;
   readonly assetEntityId?: AssetEntityId;
   readonly packagePartPath?: string;
-  readonly error: unknown;
+  readonly message: string;
 }): Diagnostics {
-  const message = input.error instanceof Error ? input.error.message : String(input.error);
   return createDiagnostics([
     diagnostic({
       severity: "error",
       code: input.code,
       title: input.title,
-      message,
+      message: input.message,
       labels: [
         {
           path: input.packagePartPath ?? `asset.${input.phase}`,
@@ -85,6 +84,17 @@ export function assetDiagnosticFromError(input: {
       ].filter((note): note is string => note !== undefined),
     }),
   ]);
+}
+
+export function assetDiagnosticFromError(
+  input: Omit<Parameters<typeof assetDiagnostic>[0], "message"> & {
+    readonly error: unknown;
+  },
+): Diagnostics {
+  return assetDiagnostic({
+    ...input,
+    message: input.error instanceof Error ? input.error.message : String(input.error),
+  });
 }
 
 function invalidAssetResultDiagnostics(input: {
@@ -191,6 +201,83 @@ export function assetLoaderOutcomeValue<T>(input: {
     value: input.outcome.value,
     diagnostics: createDiagnostics(input.outcome.diagnostics ?? []),
   };
+}
+
+export async function assetLoaderBoundaryOutcome<T>(input: {
+  readonly invoke: () => AssetLoaderOutcome<T> | Promise<AssetLoaderOutcome<T>>;
+  readonly stage: "project" | "render";
+  readonly code: string;
+  readonly title: string;
+  readonly failureCode?: string;
+  readonly failureTitle?: string;
+  readonly phase: "load" | "probe";
+  readonly source: AssetSource;
+  readonly resolverIdentity: string;
+  readonly assetEntityId?: AssetEntityId;
+  readonly packagePartPath?: string;
+}): Promise<ReturnType<typeof assetLoaderOutcomeValue<T>>> {
+  try {
+    return assetLoaderOutcomeValue({
+      outcome: await input.invoke(),
+      stage: input.stage,
+      code: input.code,
+      title: input.title,
+      phase: input.phase,
+      source: input.source,
+      resolverIdentity: input.resolverIdentity,
+      assetEntityId: input.assetEntityId,
+      packagePartPath: input.packagePartPath,
+    });
+  } catch (error) {
+    return {
+      kind: "failed",
+      diagnostics: assetDiagnosticFromError({
+        stage: input.stage,
+        code: input.failureCode ?? input.code,
+        title: input.failureTitle ?? input.title,
+        phase: input.phase,
+        source: input.source,
+        resolverIdentity: input.resolverIdentity,
+        assetEntityId: input.assetEntityId,
+        packagePartPath: input.packagePartPath,
+        error,
+      }),
+    };
+  }
+}
+
+export async function assetDependencyBoundaryValue<T>(input: {
+  readonly invoke: () => T | Promise<T>;
+  readonly stage: "project" | "render";
+  readonly code: string;
+  readonly title: string;
+  readonly phase: "load" | "probe";
+  readonly source: AssetSource;
+  readonly resolverIdentity: string;
+  readonly assetEntityId?: AssetEntityId;
+  readonly packagePartPath?: string;
+}): Promise<
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly diagnostics: Diagnostics }
+> {
+  try {
+    return { ok: true, value: await input.invoke() };
+  } catch (error) {
+    return {
+      ok: false,
+      diagnostics: assetDiagnosticFromError({
+        stage: input.stage,
+        code: input.code,
+        title: input.title,
+        phase: input.phase,
+        source: input.source,
+        resolverIdentity: input.resolverIdentity,
+        assetEntityId: input.assetEntityId,
+        packagePartPath: input.packagePartPath,
+        error,
+      }),
+    };
+  }
 }
 
 export function missingRequiredAssetProbeDiagnostics(input: {

@@ -273,6 +273,31 @@ function positioningRequiresPositionDiagnostic(input: {
   });
 }
 
+function mutuallyExclusiveTextScriptDiagnostic(input: {
+  path: string;
+  tag: AuthoringStyleTarget;
+}): Diagnostic {
+  return diagnostic({
+    severity: "error",
+    code: "E_COMPILE_INVALID_STYLE_VALUE",
+    title: "style value is not part of the public authoring API",
+    message: "Text cannot be both superscript and subscript.",
+    labels: [
+      {
+        path: `${input.path}.superscript`,
+        message: `superscript conflicts with subscript for ${input.tag}.`,
+        severity: "primary",
+      },
+      {
+        path: `${input.path}.subscript`,
+        message: `subscript conflicts with superscript for ${input.tag}.`,
+        severity: "secondary",
+      },
+    ],
+    help: ["Use either superscript or subscript, or omit both for ordinary baseline text."],
+  });
+}
+
 function isPublicGridAreaLine(value: string): boolean {
   return /^(?:auto|[1-9]\d*|span\s+[1-9]\d*)$/i.test(value.trim());
 }
@@ -2129,6 +2154,15 @@ export function validateSupportedStyleDeclaration(input: {
       );
     }
   });
+
+  if (
+    supportedStyleNames.has("superscript") &&
+    supportedStyleNames.has("subscript") &&
+    input.style.superscript === true &&
+    input.style.subscript === true
+  ) {
+    diagnostics.push(mutuallyExclusiveTextScriptDiagnostic({ path: input.path, tag: input.tag }));
+  }
 
   return diagnostics;
 }

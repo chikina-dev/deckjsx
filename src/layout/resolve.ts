@@ -156,7 +156,13 @@ import {
   standardTextCharacterWidthUnits,
   textFontShapedWidthUnits,
 } from "./text-metrics";
-import { unsupportedCssWideKeywordSemantic, unsupportedSemantic } from "./unsupported";
+import {
+  errorReason,
+  throwableResult,
+  unsupportedCssWideKeywordSemantic,
+  unsupportedSemantic,
+  unsupportedSemanticFromReason,
+} from "./unsupported";
 
 type IdGenerator = {
   nextSlide(origin?: ProjectedLayoutOrigin): ProjectedLayoutId;
@@ -274,44 +280,38 @@ const INHERITED_TABLE_CELL_TEXT_KEYS = [
 const DEFAULT_PPTX_TABLE_CELL_TEXT_FONT_SIZE = 18;
 const DEFAULT_PPTX_TABLE_CELL_PADDING = [0, 0.1, 0, 0.1] as const;
 
-function errorReason(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function parseShadowShorthandOrIgnore(input: { property: string; value?: string }): {
   readonly shadow?: ShadowIR;
   readonly unsupportedSemantics: readonly ProjectedUnsupportedSemantic[];
 } {
-  try {
-    const shadow = parseShadowShorthand(input.value);
-    const unsupported = hasShadowSpreadRadius(input.value)
-      ? unsupportedSemantic({
-          feature: "shadow",
-          property: input.property,
-          value: input.value,
-          error: new Error(
-            `CSS shadow spread radius is not projected by the current PPTX shadow model: ${input.value}`,
-          ),
-          fallback: {
-            strategy: "preserveAuthoredValueOnly",
-            preserves: ["projectedShadowWithoutSpread"],
-            missing: ["cssShadowSpreadRadius"],
-          },
-        })
-      : undefined;
-    return {
-      shadow,
-      unsupportedSemantics: unsupported ? [unsupported] : [],
-    };
-  } catch (error) {
-    const unsupported = unsupportedSemantic({
+  const parsed = throwableResult(() => parseShadowShorthand(input.value));
+  if (!parsed.ok) {
+    const unsupported = unsupportedSemanticFromReason({
       feature: "shadow",
       property: input.property,
       value: input.value,
-      error,
+      reason: parsed.reason,
     });
     return { unsupportedSemantics: unsupported ? [unsupported] : [] };
   }
+
+  const unsupported = hasShadowSpreadRadius(input.value)
+    ? unsupportedSemanticFromReason({
+        feature: "shadow",
+        property: input.property,
+        value: input.value,
+        reason: `CSS shadow spread radius is not projected by the current PPTX shadow model: ${input.value}`,
+        fallback: {
+          strategy: "preserveAuthoredValueOnly",
+          preserves: ["projectedShadowWithoutSpread"],
+          missing: ["cssShadowSpreadRadius"],
+        },
+      })
+    : undefined;
+  return {
+    shadow: parsed.value,
+    unsupportedSemantics: unsupported ? [unsupported] : [],
+  };
 }
 
 type StrokeProjectionProps = {
@@ -483,26 +483,30 @@ function resolveNodeStrokesOrFallback(
   readonly edgeStrokes?: EdgeStrokeIR;
   readonly unsupportedSemantics: readonly ProjectedUnsupportedSemantic[];
 } {
-  try {
-    const strokes = resolveNodeStrokes(props as Parameters<typeof resolveNodeStrokes>[0], context);
-    if (
-      !strokes.stroke &&
-      !strokes.edgeStrokes &&
-      hasAuthoredStrokeInput(props) &&
-      !isStrokeIntentionallyNone(props)
-    ) {
-      const semantic = unsupportedStrokeFallback(
-        props,
-        new Error("No PPTX stroke could be produced from the authored stroke input."),
-      );
-      return { ...strokes, unsupportedSemantics: semantic ? [semantic] : [] };
-    }
+  const resolved = throwableResult(() =>
+    resolveNodeStrokes(props as Parameters<typeof resolveNodeStrokes>[0], context),
+  );
 
-    return { ...strokes, unsupportedSemantics: [] };
-  } catch (error) {
-    const semantic = unsupportedStrokeFallback(props, error);
+  if (!resolved.ok) {
+    const semantic = unsupportedStrokeFallback(props, resolved.reason);
     return { unsupportedSemantics: semantic ? [semantic] : [] };
   }
+
+  const strokes = resolved.value;
+  if (
+    !strokes.stroke &&
+    !strokes.edgeStrokes &&
+    hasAuthoredStrokeInput(props) &&
+    !isStrokeIntentionallyNone(props)
+  ) {
+    const semantic = unsupportedStrokeFallback(
+      props,
+      "No PPTX stroke could be produced from the authored stroke input.",
+    );
+    return { ...strokes, unsupportedSemantics: semantic ? [semantic] : [] };
+  }
+
+  return { ...strokes, unsupportedSemantics: [] };
 }
 
 function outlineStrokeOrFallback(
@@ -516,9 +520,9 @@ function outlineStrokeOrFallback(
     return { unsupportedSemantics: [] };
   }
 
-  try {
+  const resolved = throwableResult(() => {
     const outlineInput = parseOutlineShorthand(props.outline);
-    const outline = toStroke(
+    return toStroke(
       props.outlineColor ?? outlineInput.outlineColor,
       props.outlineWidth ?? outlineInput.outlineWidth,
       props.outlineStyle ?? outlineInput.outlineStyle,
@@ -528,29 +532,15 @@ function outlineStrokeOrFallback(
       undefined,
       context,
     );
-    if (outline) {
-      return { outline, unsupportedSemantics: [] };
-    }
+  });
+
+  if (!resolved.ok) {
     const input = outlineFallbackInput(props);
-    const semantic = unsupportedSemantic({
+    const semantic = unsupportedSemanticFromReason({
       feature: "outline",
       property: input.property,
       value: input.value,
-      error: new Error(OUTLINE_FALLBACK_REASON),
-      fallback: {
-        strategy: "preserveAuthoredValueOnly",
-        preserves: ["authoredOutlineInput"],
-        missing: ["pptxOutline"],
-      },
-    });
-    return { unsupportedSemantics: semantic ? [semantic] : [] };
-  } catch (error) {
-    const input = outlineFallbackInput(props);
-    const semantic = unsupportedSemantic({
-      feature: "outline",
-      property: input.property,
-      value: input.value,
-      error: new Error(`${OUTLINE_FALLBACK_REASON} ${errorReason(error)}`),
+      reason: `${OUTLINE_FALLBACK_REASON} ${resolved.reason}`,
       fallback: {
         strategy: "preserveAuthoredValueOnly",
         preserves: ["authoredOutlineInput"],
@@ -559,6 +549,24 @@ function outlineStrokeOrFallback(
     });
     return { unsupportedSemantics: semantic ? [semantic] : [] };
   }
+
+  if (resolved.value) {
+    return { outline: resolved.value, unsupportedSemantics: [] };
+  }
+
+  const input = outlineFallbackInput(props);
+  const semantic = unsupportedSemanticFromReason({
+    feature: "outline",
+    property: input.property,
+    value: input.value,
+    reason: OUTLINE_FALLBACK_REASON,
+    fallback: {
+      strategy: "preserveAuthoredValueOnly",
+      preserves: ["authoredOutlineInput"],
+      missing: ["pptxOutline"],
+    },
+  });
+  return { unsupportedSemantics: semantic ? [semantic] : [] };
 }
 
 function resolveBackgroundLayersOrEmpty(
@@ -575,8 +583,8 @@ function resolveBackgroundLayersOrEmpty(
 ): ReturnType<typeof resolveBackgroundLayers> & {
   readonly unsupportedSemantics?: readonly ProjectedUnsupportedSemantic[];
 } {
-  try {
-    return resolveBackgroundLayers(
+  const resolved = throwableResult(() =>
+    resolveBackgroundLayers(
       input.value,
       transparency,
       context,
@@ -587,21 +595,24 @@ function resolveBackgroundLayersOrEmpty(
       backgroundRepeat,
       backgroundOrigin,
       backgroundClip,
-    );
-  } catch (error) {
-    const unsupported = unsupportedSemantic({
-      feature: "background",
-      property: input.property,
-      value: input.value,
-      error,
-      fallback: {
-        strategy: "preserveAuthoredValueOnly",
-        preserves: ["authoredBackgroundInput"],
-        missing: ["pptxBackgroundLayer"],
-      },
-    });
-    return unsupported ? { unsupportedSemantics: [unsupported] } : {};
+    ),
+  );
+  if (resolved.ok) {
+    return resolved.value;
   }
+
+  const unsupported = unsupportedSemanticFromReason({
+    feature: "background",
+    property: input.property,
+    value: input.value,
+    reason: resolved.reason,
+    fallback: {
+      strategy: "preserveAuthoredValueOnly",
+      preserves: ["authoredBackgroundInput"],
+      missing: ["pptxBackgroundLayer"],
+    },
+  });
+  return unsupported ? { unsupportedSemantics: [unsupported] } : {};
 }
 
 function unsupportedTransformSemantics(props: {
@@ -609,30 +620,31 @@ function unsupportedTransformSemantics(props: {
   readonly transformOrigin?: string;
 }): readonly ProjectedUnsupportedSemantic[] {
   const unsupported: ProjectedUnsupportedSemantic[] = [];
-  try {
-    parseTransformShorthand(props.transform);
-  } catch (error) {
-    const semantic = unsupportedSemantic({
+  const transform = throwableResult(() => parseTransformShorthand(props.transform));
+  if (!transform.ok) {
+    const semantic = unsupportedSemanticFromReason({
       feature: "transform",
       property: "transform",
       value: props.transform,
-      error,
+      reason: transform.reason,
     });
     if (semantic) {
       unsupported.push(semantic);
     }
   }
-  try {
+
+  const origin = throwableResult(() =>
     parseTransformOrigin(props.transformOrigin, {
       widthEmu: EMU_PER_INCH,
       heightEmu: EMU_PER_INCH,
-    });
-  } catch (error) {
-    const semantic = unsupportedSemantic({
+    }),
+  );
+  if (!origin.ok) {
+    const semantic = unsupportedSemanticFromReason({
       feature: "transform",
       property: "transformOrigin",
       value: props.transformOrigin,
-      error,
+      reason: origin.reason,
     });
     if (semantic) {
       unsupported.push(semantic);
@@ -1288,14 +1300,8 @@ function unsupportedClippedImageSourceRectTransformSemantics(input: {
 function unsupportedTransformStackingContextSemantics(props: {
   readonly transform?: string;
 }): readonly ProjectedUnsupportedSemantic[] {
-  let operations: ReturnType<typeof parseTransformShorthand>;
-  try {
-    operations = parseTransformShorthand(props.transform);
-  } catch {
-    return [];
-  }
-
-  if (!operations?.length) {
+  const operations = throwableResult(() => parseTransformShorthand(props.transform));
+  if (!operations.ok || !operations.value?.length) {
     return [];
   }
 

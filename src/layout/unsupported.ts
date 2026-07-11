@@ -1,7 +1,19 @@
 import type { ProjectedUnsupportedSemantic } from "./projected";
 
-function errorReason(error: unknown): string {
+export function errorReason(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+export type ThrowableResult<T> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly reason: string };
+
+export function throwableResult<T>(run: () => T): ThrowableResult<T> {
+  try {
+    return { ok: true, value: run() };
+  } catch (error) {
+    return { ok: false, reason: errorReason(error) };
+  }
 }
 
 function semanticValue(value: unknown): string {
@@ -30,6 +42,16 @@ export function unsupportedSemantic(input: {
     reason: errorReason(input.error),
     ...(input.fallback ? { fallback: input.fallback } : {}),
   };
+}
+
+export function unsupportedSemanticFromReason(input: {
+  feature: ProjectedUnsupportedSemantic["feature"];
+  property: string;
+  value: unknown;
+  reason: string;
+  fallback?: ProjectedUnsupportedSemantic["fallback"];
+}): ProjectedUnsupportedSemantic | undefined {
+  return unsupportedSemantic({ ...input, error: input.reason });
 }
 
 export function unsupportedCssWideKeywordSemantic(
