@@ -39,7 +39,9 @@ export default defineConfig({
   },
   pack: {
     entry: ["src/index.ts", "src/dev.ts", "src/cli.ts"],
-    dts: true,
+    dts: {
+      tsgo: true,
+    },
     exports: false,
   },
   lint: {
