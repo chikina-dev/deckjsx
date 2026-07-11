@@ -225,6 +225,92 @@ describe("deckjsx integration plugin lifecycle", () => {
     );
   });
 
+  test("project lifecycle hooks accept every canonical pdf gradient content operation", async () => {
+    const linearGradientId = "pdf:resource:gradient:linear" as const;
+    const radialGradientId = "pdf:resource:gradient:radial" as const;
+    const box = { x: 10, y: 10, width: 100, height: 80 };
+    const stops = [
+      { color: { r: 1, g: 0, b: 0 }, position: 0 },
+      { color: { r: 0, g: 0, b: 1 }, position: 1 },
+    ];
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin({
+      kind: "deckjsx.plugin",
+      id: "test:pdf-gradient-content-transform",
+      name: "test:pdf-gradient-content-transform",
+      hooks: {
+        afterProject(context) {
+          const projection = context.projection as unknown as PdfPageModel;
+          return {
+            projection: {
+              ...projection,
+              pages: projection.pages.map((page, index) =>
+                index === 0
+                  ? {
+                      ...page,
+                      resources: {
+                        ...page.resources,
+                        gradients: [linearGradientId, radialGradientId],
+                      },
+                      content: [
+                        { op: "fillLinearGradientRect", gradientId: linearGradientId, box },
+                        { op: "fillLinearGradientEllipse", gradientId: linearGradientId, box },
+                        {
+                          op: "fillLinearGradientRoundRect",
+                          gradientId: linearGradientId,
+                          box,
+                          radius: 8,
+                        },
+                        { op: "fillRadialGradientRect", gradientId: radialGradientId, box },
+                        { op: "fillRadialGradientEllipse", gradientId: radialGradientId, box },
+                        {
+                          op: "fillRadialGradientRoundRect",
+                          gradientId: radialGradientId,
+                          box,
+                          radius: 8,
+                        },
+                      ],
+                    }
+                  : page,
+              ),
+              resources: {
+                ...projection.resources,
+                gradients: [
+                  {
+                    id: linearGradientId,
+                    name: "Linear",
+                    kind: "linear-gradient",
+                    angle: 90,
+                    box,
+                    stops,
+                  },
+                  {
+                    id: radialGradientId,
+                    name: "Radial",
+                    kind: "radial-gradient",
+                    shape: "ellipse",
+                    center: { x: 0.5, y: 0.5 },
+                    radius: { x: 0.5, y: 0.5 },
+                    box,
+                    stops,
+                  },
+                ],
+              },
+            } satisfies PdfPageModel,
+          };
+        },
+      },
+    });
+    deck.slide({ name: "Gradient operations" }, () => <p>gradient operations</p>);
+
+    const project = await deck.project({ format: "pdf", inspection: "none" });
+
+    expect(project.ok).toBe(true);
+    expect(project.diagnostics.items.map((item) => item.code)).not.toContain(
+      "E_PLUGIN_HOOK_INVALID_UPDATE_VALUE",
+    );
+  });
+
   test("project lifecycle hooks reject projection updates with the wrong active format", async () => {
     const pptxDeck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     pptxDeck.slide({ name: "PPTX Source" }, () => <p>pptx source</p>);
@@ -365,5 +451,62 @@ describe("deckjsx integration plugin lifecycle", () => {
     expect(render.ok).toBe(true);
     expect(render.artifact?.bytes).toEqual(new Uint8Array([1, 2, 3]));
     expect(events).toEqual(["beforeRender", "afterRender"]);
+  });
+
+  test("afterRender artifact replacements clear metadata derived from the original bytes", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin({
+      kind: "deckjsx.plugin",
+      id: "test:replace-render-artifact",
+      hooks: {
+        afterRender(context) {
+          return context.artifact
+            ? {
+                artifact: {
+                  ...context.artifact,
+                  bytes: new Uint8Array([9, 8, 7]),
+                },
+              }
+            : undefined;
+        },
+      },
+    });
+    deck.slide({ name: "Replacement" }, () => (
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>replacement</p>
+    ));
+
+    const render = await deck.render(H.pptx({ inspection: "summary" }));
+
+    expect(render.ok).toBe(true);
+    expect(render.artifact?.bytes).toEqual(new Uint8Array([9, 8, 7]));
+    expect(render.summary).toBeUndefined();
+    expect(render.patchPlan).toBeUndefined();
+  });
+
+  test("plugin stage snapshots cannot mutate pipeline-owned graph nodes", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin({
+      kind: "deckjsx.plugin",
+      id: "test:immutable-stage-snapshot",
+      hooks: {
+        beforeProject(context) {
+          const textRun = [...context.graph.nodes.values()].find((node) => node.kind === "textRun");
+          if (textRun?.kind === "textRun") {
+            (textRun as { text: string }).text = "mutated by plugin";
+          }
+        },
+      },
+    });
+    deck.slide({ name: "Immutable snapshot" }, () => (
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>original text</p>
+    ));
+
+    const project = await deck.project({ inspection: "none" });
+    const projection = H.expectPptxProjection(project);
+    const slide = projection.slides[0]?.payload;
+
+    expect(project.ok).toBe(true);
+    expect(JSON.stringify(slide)).toContain("original text");
+    expect(JSON.stringify(slide)).not.toContain("mutated by plugin");
   });
 });

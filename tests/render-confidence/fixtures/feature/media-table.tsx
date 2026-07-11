@@ -64,6 +64,7 @@ function createMediaTableDeck(): RenderConfidenceDeck {
         top: 3.2,
         width: 7.2,
         height: 1.2,
+        tableLayout: "fixed",
       }}
     >
       <thead>
@@ -110,6 +111,41 @@ export const featureMediaTableFixtures: readonly RenderConfidenceFixture[] = [
       requireShadowSignal: true,
       requireTableSignal: true,
       requireTemplateLayoutTopology: true,
+    },
+    pdfAssertions: {
+      expectedPages: 1,
+      requiredTexts: [
+        "Media table confidence",
+        "Template body text",
+        "Segment",
+        "Revenue",
+        "Enterprise",
+        "$420k",
+      ],
+      requireGradientResource: true,
+      requireGradientVisual: true,
+      requiredGradientVisuals: [
+        {
+          angle: 45,
+          kind: "linear-gradient",
+          stops: [
+            { color: "#EF4444", offset: 0 },
+            { color: "#F59E0B", offset: 1 },
+          ],
+        },
+      ],
+      requireImageClip: true,
+      requireImageResource: true,
+      requiredImageClipBoxes: [{ x: 507.6, y: 118.8, width: 201.6, height: 100.8 }],
+      minimumShadowVisuals: 4,
+      requireShadowVisual: true,
+      requireTableText: true,
+      requiredTableTexts: ["Segment", "Revenue", "Enterprise"],
+      rasterTolerance: {
+        maxMeanAbsoluteChannelDifference: 6,
+        maxChannelDifference: 255,
+        maxChangedPixelRatio: 0.04,
+      },
     },
     createDeck: createMediaTableDeck,
   },

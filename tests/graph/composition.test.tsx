@@ -600,6 +600,30 @@ describe("composition", () => {
     expect(String(spanRun?.id)).toContain("slot:note");
   });
 
+  test("authored graph identities retain content for JSX keys with slug collisions", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide(() => (
+      <>
+        <p key="a b">SPACED</p>
+        <p key="a@b">AT_SIGN</p>
+        <p key="a_b">UNDERSCORED</p>
+      </>
+    ));
+
+    const graph = deck.compile().graph!;
+    const slide = values(graph.nodes).find((node) => node.kind === "slide");
+    if (slide?.kind !== "slide") {
+      throw new Error("Expected slide node");
+    }
+    const runs = values(graph.nodes).filter((node) => node.kind === "textRun");
+
+    expect(new Set(slide.children).size).toBe(3);
+    expect(new Set(runs.map((node) => node.id)).size).toBe(3);
+    expect(runs.map((node) => node.text)).toEqual(
+      expect.arrayContaining(["SPACED", "AT_SIGN", "UNDERSCORED"]),
+    );
+  });
+
   test("mounted source graph identities distinguish source keys with slug collisions", async () => {
     const spaced = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     spaced.slide({ name: "Spaced" }, () => (

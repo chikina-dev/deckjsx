@@ -212,8 +212,7 @@ The checks are review hints, not compile failures. A deck can be structurally va
 human pass for Japanese line wrapping, figure legibility, margins, and the balance between title,
 body, and footer.
 
-For fast visual review of text-heavy decks, the built-in PDF adapter can produce a simple PDF
-artifact:
+For fast visual review and lightweight sharing, the built-in PDF adapter can produce a PDF artifact:
 
 ```tsx
 import { pdf, pptx } from "deckjsx/adapter";
@@ -223,9 +222,35 @@ await write(await deck.render(pdf()), "quarterly-review.review.pdf");
 await write(await deck.render(pptx()), "quarterly-review.pptx");
 ```
 
-The PDF writer is intentionally minimal today: it is useful as a quick text/layout check, but it does
-not replace reviewing the generated PPTX or a full PPTX-to-PDF/raster verification path for final
-slides with images, shapes, tables, or precise PowerPoint text wrapping.
+When a PDF needs an embeddable local font, keep the CSS-like family reference in the text style and
+register the file through the Node runtime boundary:
+
+```tsx
+import { nodeFontAssets } from "@deckjsx/node";
+
+deck.plugin(
+  nodeFontAssets({
+    root: process.cwd(),
+    fontAssets: [
+      {
+        key: "brand-regular",
+        family: "Brand",
+        source: { kind: "path", path: "./fonts/Brand.ttf" },
+      },
+    ],
+  }),
+);
+```
+
+`nodeFontAssets()` resolves relative paths within `root` and reports read, containment, and font
+coverage failures through normal render diagnostics. Core PDF rendering remains runtime-neutral: it
+does not read filesystem paths or choose OS fonts itself.
+
+The PDF writer is deckjsx-owned and does not depend on PowerPoint or LibreOffice. It covers the main
+static deck surface such as text, font assets, images, shapes, fills, strokes, gradients, opacity,
+blend modes, clipping, transforms, links, and tables. It is still a direct PDF renderer rather than a
+PowerPoint compatibility engine, so final slide delivery should keep a human visual pass and, when
+needed, a PPTX-to-PDF/raster verification path for exact PowerPoint parity.
 
 ## JSX elements
 

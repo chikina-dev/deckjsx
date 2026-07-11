@@ -430,6 +430,30 @@ describe("project/render table output", () => {
     expect(slideXml).toContain('<a:srgbClr val="FFFFFF"/>');
   });
 
+  test("render explicitly emits deckjsx default table cell margins", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Default table margins" }, () => (
+      <table style={{ position: "absolute", left: 1, top: 1, width: 4, height: 1 }}>
+        <tbody>
+          <tr>
+            <td>Default margins</td>
+          </tr>
+        </tbody>
+      </table>
+    ));
+
+    const render = await deck.render();
+    const slideXml = new TextDecoder().decode(
+      H.unzipSync(render.artifact?.bytes ?? new Uint8Array())["ppt/slides/slide1.xml"],
+    );
+
+    expect(render.ok).toBe(true);
+    expect(slideXml).toContain('marL="91440"');
+    expect(slideXml).toContain('marR="91440"');
+    expect(slideXml).toContain('marT="0"');
+    expect(slideXml).toContain('marB="0"');
+  });
+
   test("project and render expose structured table style support payload", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Table styles" }, () => (

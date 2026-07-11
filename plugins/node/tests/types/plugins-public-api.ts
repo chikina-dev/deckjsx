@@ -1,5 +1,6 @@
 import type {
   NodeFileAssetLoaderOptions,
+  NodeFontAssetsOptions,
   PatchablePptxInspectionResult,
   PatchablePptxPartInspection,
   PatchablePptxPartInspectionStatus,
@@ -17,7 +18,13 @@ import type {
   DeckjsxDevSourceSnapshot,
   DevSourceProvider,
 } from "@deckjsx/node/dev";
-import { createNodeFileAssetLoader, inspectPatchablePptx, nodeAssets, write } from "@deckjsx/node";
+import {
+  createNodeFileAssetLoader,
+  inspectPatchablePptx,
+  nodeAssets,
+  nodeFontAssets,
+  write,
+} from "@deckjsx/node";
 import { createDeckjsxDevCompiler } from "@deckjsx/node/dev";
 import { Deck } from "deckjsx";
 import type { RenderedArtifact, RenderResult } from "deckjsx";
@@ -57,6 +64,19 @@ nodeLoader satisfies AssetLoader;
 
 const nodeAssetsExtension = nodeAssets(nodeLoaderOptions);
 nodeAssetsExtension satisfies DeckPlugin;
+
+const nodeFontAssetsOptions = {
+  root: "/project",
+  fontAssets: [
+    {
+      key: "brand",
+      family: "Brand",
+      source: { kind: "path", path: "./Brand.ttf" },
+    },
+  ],
+} satisfies NodeFontAssetsOptions;
+const nodeFontAssetsExtension = nodeFontAssets(nodeFontAssetsOptions);
+nodeFontAssetsExtension satisfies DeckPlugin;
 
 const deckWithNodeAssets = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 deckWithNodeAssets.plugin(nodeAssetsExtension);

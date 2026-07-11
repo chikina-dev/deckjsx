@@ -11,7 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { unzipSync, zipSync } from "fflate";
-import { pptx, type WriterAdapter } from "deckjsx/adapter";
+import { pdf, pptx, type WriterAdapter } from "deckjsx/adapter";
 import { describe, expect, test, vi } from "vite-plus/test";
 import { Deck, StyleSheet, type TextStyle } from "deckjsx";
 import {
@@ -22,7 +22,13 @@ import {
   type DeckPlugin,
 } from "deckjsx/integration";
 import type { PptxPackageModel } from "deckjsx/inspect";
-import { createNodeFileAssetLoader, inspectPatchablePptx, nodeAssets, write } from "@/src/index.ts";
+import {
+  createNodeFileAssetLoader,
+  inspectPatchablePptx,
+  nodeAssets,
+  nodeFontAssets,
+  write,
+} from "@/src/index.ts";
 import { withDeckjsxDevAssetObserver } from "@/src/dev-asset-observer.ts";
 
 const textDecoder = new TextDecoder();
@@ -422,6 +428,160 @@ test("nodeAssets resolves local media through the deck lifecycle", async () => {
   expect(result.artifact).toBeDefined();
   const zip = unzipSync(result.artifact!.bytes);
   expect(Array.from(zip["ppt/media/media1.png"] ?? [])).toEqual(Array.from(bytes));
+});
+
+test("nodeFontAssets resolves local font registrations for PDF projection", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "deckjsx-node-font-assets-"));
+  const fontBytes = new Uint8Array([0, 1, 0, 0]);
+  await writeFile(path.join(root, "Brand.ttf"), fontBytes);
+
+  const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+  deck.plugin(
+    nodeFontAssets({
+      root,
+      fontAssets: [
+        {
+          key: "brand-regular",
+          family: "Brand",
+          source: { kind: "path", path: "./Brand.ttf" },
+        },
+      ],
+    }),
+  );
+  deck.slide({ name: "Node font" }, () => (
+    <p
+      style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.6, fontFamily: "Brand" }}
+    >
+      Brand font
+    </p>
+  ));
+
+  const result = await deck.project({ format: "pdf", inspection: "none" });
+
+  expect(result.ok).toBe(true);
+  expect(result.projection).toEqual(
+    expect.objectContaining({
+      resources: expect.objectContaining({
+        fonts: expect.arrayContaining([
+          expect.objectContaining({ family: "Brand", sourceKey: "brand-regular", data: fontBytes }),
+        ]),
+      }),
+    }),
+  );
+});
+
+test.each(["media-first", "font-first"] as const)(
+  "nodeAssets and nodeFontAssets compose when registered %s",
+  async (order) => {
+    const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-asset-order-"));
+    const mediaRoot = path.join(directory, "media");
+    const fontRoot = path.join(directory, "fonts");
+    const mediaBytes = pngHeaderBytes(3, 2, 17);
+    const fontBytes = new Uint8Array([0, 1, 0, 0]);
+    await mkdir(mediaRoot, { recursive: true });
+    await mkdir(fontRoot, { recursive: true });
+    await writeFile(path.join(mediaRoot, "chart.png"), mediaBytes);
+    await writeFile(path.join(fontRoot, "Brand.ttf"), fontBytes);
+
+    const mediaPlugin = nodeAssets({ root: mediaRoot });
+    const fontPlugin = nodeFontAssets({
+      root: fontRoot,
+      fontAssets: [
+        {
+          key: "brand-regular",
+          family: "Brand",
+          source: { kind: "path", path: "./Brand.ttf" },
+        },
+      ],
+    });
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    for (const plugin of order === "media-first"
+      ? [mediaPlugin, fontPlugin]
+      : [fontPlugin, mediaPlugin]) {
+      deck.plugin(plugin);
+    }
+    deck.slide({ name: "Ordered node assets" }, () => (
+      <main style={{ width: 9, height: 4.5, display: "flex", gap: 0.25 }}>
+        <img src="chart.png" style={{ width: 1, height: 1 }} />
+        <p style={{ width: 3, height: 0.5, fontFamily: "Brand" }}>Brand font</p>
+      </main>
+    ));
+
+    const result = await deck.project({ format: "pdf", inspection: "none" });
+
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics.items).toEqual([
+      expect.objectContaining({ code: "W_FONT_SHAPING_FALLBACK", severity: "warning" }),
+    ]);
+    expect(result.projection).toEqual(
+      expect.objectContaining({
+        resources: expect.objectContaining({
+          fonts: expect.arrayContaining([
+            expect.objectContaining({
+              family: "Brand",
+              sourceKey: "brand-regular",
+              data: fontBytes,
+            }),
+          ]),
+        }),
+      }),
+    );
+  },
+);
+
+test("node asset plugins decline unrelated source fields and report field-aware diagnostics", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-asset-fields-"));
+  const mediaLoader = nodeAssets({ root: path.join(directory, "media") }).integration
+    ?.assetLoaders?.[0];
+  const fontLoader = nodeFontAssets({
+    root: path.join(directory, "fonts"),
+    fontAssets: [],
+  }).integration?.assetLoaders?.[0];
+  expect(mediaLoader).toBeDefined();
+  expect(fontLoader).toBeDefined();
+
+  const mediaContext = {
+    source: { kind: "path", path: "./missing.png" },
+    sourceField: "src",
+    resolverIdentity: mediaLoader!.resolverIdentity,
+    assetEntityId: "asset:missing",
+  } as const;
+  const fontContext = {
+    source: { kind: "path", path: "./Missing.ttf" },
+    sourceField: "font",
+    resolverIdentity: fontLoader!.resolverIdentity,
+    assetEntityId: "font:missing",
+  } as const;
+
+  expect(await mediaLoader!.load?.(fontContext)).toBeUndefined();
+  expect(await fontLoader!.load?.(mediaContext)).toBeUndefined();
+
+  const mediaFailure = await mediaLoader!.load?.(mediaContext);
+  const fontFailure = await fontLoader!.load?.(fontContext);
+  expect(mediaFailure).toEqual(
+    expect.objectContaining({
+      ok: false,
+      diagnostics: [
+        expect.objectContaining({
+          code: "E_NODE_FILE_ASSET_READ_FAILED",
+          message: expect.stringContaining("media source"),
+          notes: expect.arrayContaining(["sourceField=src"]),
+        }),
+      ],
+    }),
+  );
+  expect(fontFailure).toEqual(
+    expect.objectContaining({
+      ok: false,
+      diagnostics: [
+        expect.objectContaining({
+          code: "E_NODE_FILE_ASSET_READ_FAILED",
+          message: expect.stringContaining("font source"),
+          notes: expect.arrayContaining(["sourceField=font"]),
+        }),
+      ],
+    }),
+  );
 });
 
 test("node file asset loader reports observed files only inside a dev asset observer scope", async () => {
@@ -839,6 +999,31 @@ describe("@deckjsx/node write", () => {
     });
     expect(Array.from(output)).toEqual(Array.from(render.artifact?.bytes ?? []));
     expect(await fileExists(lockPathFor(outputPath))).toBe(false);
+  });
+
+  test("writes a real PDF render through the public Node API", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-write-"));
+    const outputPath = path.join(directory, "real.pdf");
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Node PDF" }, () => (
+      <p style={{ position: "absolute", left: 1, top: 1, width: 5, height: 0.6 }}>Node PDF smoke</p>
+    ));
+
+    const render = await deck.render(pdf({ inspection: "none" }));
+    const result = await write(render, outputPath);
+    const output = await readFile(outputPath);
+
+    expect(render.ok).toBe(true);
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: true,
+        path: outputPath,
+        status: "written",
+        strategy: "write-file",
+      }),
+    );
+    expect(textDecoder.decode(output.subarray(0, 8))).toBe("%PDF-1.7");
+    expect(textDecoder.decode(output)).toContain("Node PDF smoke");
   });
 
   test("returns result-first diagnostics without touching the target for unsupported artifact formats", async () => {

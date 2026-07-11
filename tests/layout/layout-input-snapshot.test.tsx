@@ -223,4 +223,37 @@ describe("layout input snapshot", () => {
       gridColumnIndex: 1,
     });
   });
+
+  test("keeps adjacent table-cell text fragments separate when normalized props change", () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Cell text styles" }, () => (
+      <table style={{ position: "absolute", left: 1, top: 1, width: 6, height: 2 }}>
+        <tbody>
+          <tr>
+            <td>
+              <p style={{ fontSize: 12 }}>Small</p>
+              <p style={{ fontSize: 24 }}>Large</p>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    ));
+    const compiled = deck.compile();
+    const snapshot = buildLayoutInputSnapshot({
+      graph: compiled.graph!,
+      resolvedStyles: compiled.resolvedStyles!,
+      deckSize: { widthEmu: 9144000, heightEmu: 5143500 },
+    }).snapshot;
+    const table = resolveProjectedLayout(
+      { layout: { width: 10, height: 5.625, unit: "in" } },
+      snapshot,
+    ).slides[0]?.nodes[0];
+    const children =
+      table?.kind === "table" ? table.sections[0]?.rows[0]?.cells[0]?.children : undefined;
+
+    expect(children).toMatchObject([
+      { kind: "text", content: { text: "Small" }, style: { fontSizePt: 12 } },
+      { kind: "text", content: { text: "Large" }, style: { fontSizePt: 24 } },
+    ]);
+  });
 });

@@ -276,7 +276,7 @@ describe("project/render asset diagnostics", () => {
                 width: 1,
                 height: 1,
               },
-              diagnostics: [probeWarning],
+              diagnostics: [{ ...probeWarning }],
             }
           : undefined;
       },
@@ -344,7 +344,7 @@ describe("project/render asset diagnostics", () => {
                 byteLength: pngBytes.byteLength,
                 bytes: pngBytes,
               },
-              diagnostics: [loadWarning],
+              diagnostics: [{ ...loadWarning }],
             }
           : undefined;
       },
@@ -367,5 +367,116 @@ describe("project/render asset diagnostics", () => {
     expect(render.ok).toBe(true);
     expect(H.diagnosticCodeCount(render.diagnostics.items, "W_TEST_ASSET_PROBE")).toBe(1);
     expect(H.diagnosticCodeCount(render.diagnostics.items, "W_TEST_ASSET_LOAD")).toBe(1);
+  });
+
+  test("cached project and render reuse does not amplify asset diagnostics", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const pngBytes = H.pngHeaderBytes(1, 1);
+    const probeWarning: H.Diagnostic = {
+      severity: "warning",
+      code: "W_TEST_ASSET_CACHE",
+      title: "test cached asset warning",
+      labels: [],
+    };
+    const loadWarning: H.Diagnostic = {
+      severity: "warning",
+      code: "W_TEST_ASSET_CACHE_LOAD",
+      title: "test cached asset load warning",
+      labels: [],
+    };
+    const loader: H.AssetLoader = {
+      resolverIdentity: "diagnostic-cache-assets",
+      async probe({ source }) {
+        return source.kind === "path"
+          ? {
+              ok: true,
+              value: {
+                mediaType: "image/png",
+                extension: "png",
+                width: 1,
+                height: 1,
+                byteLength: pngBytes.byteLength,
+              },
+              diagnostics: [probeWarning],
+            }
+          : undefined;
+      },
+      async load({ source }) {
+        return source.kind === "path"
+          ? {
+              ok: true,
+              value: {
+                mediaType: "image/png",
+                extension: "png",
+                width: 1,
+                height: 1,
+                byteLength: pngBytes.byteLength,
+                bytes: pngBytes,
+              },
+              diagnostics: [loadWarning],
+            }
+          : undefined;
+      },
+    };
+    deck.slide({ name: "Cached warning" }, () => (
+      <img
+        src="/public/cache-warning.png"
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
+    ));
+
+    const projectArtifacts = new H.PipelineArtifactCollection();
+    const projectWarningCounts: number[] = [];
+    for (let index = 0; index < 4; index += 1) {
+      const project = await H.projectSource({
+        source: deck,
+        options: deck.options,
+        artifacts: projectArtifacts,
+        assetLoaders: [loader],
+      });
+      projectWarningCounts.push(
+        H.diagnosticCodeCount(project.diagnostics.items, "W_TEST_ASSET_CACHE"),
+      );
+    }
+
+    const renderArtifacts = new H.PipelineArtifactCollection();
+    const renderProbeWarningCounts: number[] = [];
+    const renderLoadWarningCounts: number[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      const render = await H.renderSource({
+        source: deck,
+        options: deck.options,
+        artifacts: renderArtifacts,
+        assetLoaders: [loader],
+      });
+      renderProbeWarningCounts.push(
+        H.diagnosticCodeCount(render.diagnostics.items, "W_TEST_ASSET_CACHE"),
+      );
+      renderLoadWarningCounts.push(
+        H.diagnosticCodeCount(render.diagnostics.items, "W_TEST_ASSET_CACHE_LOAD"),
+      );
+    }
+
+    expect(projectWarningCounts).toEqual([1, 1, 1, 1]);
+    expect(renderProbeWarningCounts).toEqual([1, 1, 1]);
+    expect(renderLoadWarningCounts).toEqual([1, 1, 1]);
+    expect(
+      H.diagnosticCodeCount(
+        [...projectArtifacts.assetsById.values()][0]?.diagnostics.items ?? [],
+        "W_TEST_ASSET_CACHE",
+      ),
+    ).toBe(1);
+    expect(
+      H.diagnosticCodeCount(
+        [...renderArtifacts.assetsById.values()][0]?.diagnostics.items ?? [],
+        "W_TEST_ASSET_CACHE",
+      ),
+    ).toBe(1);
+    expect(
+      H.diagnosticCodeCount(
+        [...renderArtifacts.assetsById.values()][0]?.diagnostics.items ?? [],
+        "W_TEST_ASSET_CACHE_LOAD",
+      ),
+    ).toBe(1);
   });
 });

@@ -125,6 +125,37 @@ export const featureTextLayoutFixtures: readonly RenderConfidenceFixture[] = [
       requireRichTextRunSignal: true,
       requiredXmlSnippets: ["DC2626"],
     },
+    pdfAssertions: {
+      expectedPages: 1,
+      orderedTextSignals: ["Back label", "Front label"],
+      orderedVisualSignals: [
+        { kind: "text", text: "Back label" },
+        { kind: "shape", shape: "rect" },
+        { kind: "text", text: "Front label" },
+      ],
+      requiredTexts: [
+        "Text layout confidence",
+        "Styled callout signal",
+        "Centered paragraph with ",
+        "rich red",
+        "run",
+        "Back label",
+        "Front label",
+        "Bullet item",
+      ],
+      requireShapeVisual: true,
+      requiredTextColorSignals: [{ text: "rich red", color: "#DC2626" }],
+      requiredTextFontSizeSignals: [
+        { text: "Text layout confidence", fontSize: 28 },
+        { text: "Styled callout signal", fontSize: 18 },
+        { text: "rich red", fontSize: 17 },
+      ],
+      rasterTolerance: {
+        maxMeanAbsoluteChannelDifference: 10,
+        maxChannelDifference: 255,
+        maxChangedPixelRatio: 0.08,
+      },
+    },
     createDeck: createTextLayoutDeck,
   },
 ];

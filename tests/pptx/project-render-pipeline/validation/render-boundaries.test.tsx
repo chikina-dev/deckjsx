@@ -89,6 +89,19 @@ describe("project/render validation render boundaries", () => {
     expect(renderResult.artifact).toBeUndefined();
   });
 
+  test("defineProjection diagnoses non-object runtime input", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.defineProjection(null as never);
+
+    const project = await deck.project();
+
+    expect(project.ok).toBe(false);
+    expect(project.projection).toBeUndefined();
+    expect(project.diagnostics.items).toContainEqual(
+      expect.objectContaining({ code: "E_DEFINE_PROJECTION_SHAPE", severity: "error" }),
+    );
+  });
+
   test("project validates defined projection package consistency before render", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Broken package" }, () => <></>);

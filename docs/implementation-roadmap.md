@@ -6365,10 +6365,10 @@ The detailed HTML/CSS compatibility audit for this scope is recorded in
   `position: "absolute"` plus CSS positioning properties remains the slide-oriented opt-in for
   local absolute positioning.
 - Completed for the current slice: add the v0.8.2 `auto`/intrinsic sizing subset. Unspecified block
-  inline size stretches to available content width; simple text has a line-height based intrinsic
-  block size; images use probed intrinsic dimensions and natural aspect ratio where available.
-  Exact wrapped text measurement, full CSS intrinsic keywords, and intrinsic contribution to every
-  layout mode remain future work.
+  inline size stretches to available content width; text uses deterministic wrapped-line estimates
+  for its intrinsic block size; images use probed intrinsic dimensions and natural aspect ratio where
+  available. Exact font-specific wrapped measurement, full CSS intrinsic keywords, and intrinsic
+  contribution to every layout mode remain future work.
 - Completed for the current slice: audit numeric public style handling against CSS. Unitless numbers
   remain valid for numeric CSS domains such as `lineHeight`, `flexGrow`, `flexShrink`, opacity,
   order, and ratios. CSS-like length-capable fields now share the documented legacy compatibility
@@ -6812,7 +6812,8 @@ Implemented in the current v0.9 line:
   AssetLoader, Render Patch Plan, and incremental artifact session contracts for runtime packages.
 - `plugins/node` provides `@deckjsx/node` with `write(RenderResult, path)`, Patchable PPTX
   inspection, in-place package patching, file locking, whole-archive rewrite fallback, result-first
-  diagnostics, a Node local file AssetLoader, and a `deckjsx dev` compiler loop.
+  diagnostics, Node local media and Font Asset loaders (`nodeAssets()` and `nodeFontAssets()`), and a
+  `deckjsx dev` compiler loop.
 - The Node dev compiler uses Rolldown-backed source snapshots, externalizes deckjsx runtime packages
   and Node built-ins, annotates module-local `img.src`, `video.src`, `video.poster`, and forwarded
   component media props, filters tracked `--out` writes, and retains only the tracked Render Slot.

@@ -1,4 +1,4 @@
-import { readFile, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vite-plus/test";
 
@@ -94,10 +94,22 @@ describe("public surface", () => {
     expect(render.artifact?.bytes.subarray(0, 2).toString()).toBe("80,75");
   });
 
-  test("core package manifest publishes a dependency-free runtime", async () => {
+  test("built core runtime has no static Node builtin dependency", async () => {
+    const dist = new URL("../../dist/", import.meta.url);
+    const modules = (await readdir(dist)).filter((path) => path.endsWith(".mjs"));
+
+    for (const path of modules) {
+      const source = await readFile(new URL(path, dist), "utf8");
+      expect(source, `${path} statically imports a Node builtin`).not.toMatch(
+        /(?:from\s*|import\s*\()\s*["']node:/,
+      );
+    }
+  });
+
+  test("core package manifest publishes only intentional runtime dependencies", async () => {
     const pkg = await readPackageJson();
 
-    expect(pkg.dependencies).toEqual({});
+    expect(pkg.dependencies).toEqual({ "bidi-js": "^1.0.3", fontkit: "^2.0.4" });
   });
 
   test("plugin package manifests use peer dependencies instead of repo file dependencies", async () => {

@@ -126,6 +126,18 @@ export const businessScenarioFixtures: readonly RenderConfidenceFixture[] = [
       expectedSlides: 1,
       requiredTexts: ["Quarterly business report", "$1.2M", "Expansion revenue"],
     },
+    pdfAssertions: {
+      expectedPages: 1,
+      minimumShapeVisuals: 1,
+      requiredTexts: ["Quarterly business report", "$1.2M", "Expansion revenue"],
+      requiredShapeFillColorSignals: [{ color: "#ECFDF5", shape: "rect" }],
+      requiredTextColorSignals: [{ text: "$1.2M", color: "#0F766E" }],
+      rasterTolerance: {
+        maxMeanAbsoluteChannelDifference: 10,
+        maxChannelDifference: 255,
+        maxChangedPixelRatio: 0.07,
+      },
+    },
     createDeck: createBusinessReportDeck,
   },
   {
@@ -138,6 +150,17 @@ export const businessScenarioFixtures: readonly RenderConfidenceFixture[] = [
       expectedSlides: 1,
       requiredTexts: ["Launch plan for enterprise teams", "Faster reviews"],
     },
+    pdfAssertions: {
+      expectedPages: 1,
+      minimumShapeVisuals: 1,
+      requiredTexts: ["Launch plan for enterprise teams", "Faster reviews"],
+      requiredShapeVisualKinds: ["roundRect"],
+      rasterTolerance: {
+        maxMeanAbsoluteChannelDifference: 12,
+        maxChannelDifference: 255,
+        maxChangedPixelRatio: 0.095,
+      },
+    },
     createDeck: createSalesDeck,
   },
   {
@@ -149,6 +172,16 @@ export const businessScenarioFixtures: readonly RenderConfidenceFixture[] = [
     assertions: {
       expectedSlides: 1,
       requiredTexts: ["Product roadmap", "Q1 Authoring", "Q2 Render", "Q3 Publish"],
+    },
+    pdfAssertions: {
+      expectedPages: 1,
+      minimumShapeVisuals: 3,
+      requiredTexts: ["Product roadmap", "Q1 Authoring", "Q2 Render", "Q3 Publish"],
+      rasterTolerance: {
+        maxMeanAbsoluteChannelDifference: 6,
+        maxChannelDifference: 255,
+        maxChangedPixelRatio: 0.05,
+      },
     },
     createDeck: createProductRoadmapDeck,
   },
