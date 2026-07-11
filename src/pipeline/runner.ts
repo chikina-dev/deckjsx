@@ -1754,8 +1754,8 @@ export async function projectSource<
       assetsById: resolvedAssetsById,
       assetLoaders: beforeAsset.context.assetLoaders,
       mediaSourceOrigin: beforeAsset.context.mediaSourceOrigin,
-      ...(beforeAsset.context.integrationContext
-        ? { integrationContext: beforeAsset.context.integrationContext }
+      ...(fontAssetResult.integrationContext
+        ? { integrationContext: fontAssetResult.integrationContext }
         : {}),
     });
     const assetsById = afterAsset.context.assetsById;
@@ -1804,7 +1804,7 @@ export async function projectSource<
       resolvedStyles: projectResolvedStyles,
       options: input.options,
       assets: projectAssetsById,
-      integrationContext: fontAssetResult.integrationContext,
+      integrationContext: afterAsset.context.integrationContext,
     });
     const reusedProjection =
       projected.format === "pptx"

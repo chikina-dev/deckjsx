@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 import { zlibSync } from "fflate";
-import { renderPdfPageModel } from "@/src/writers/pdf";
+import { pdfImageAssetLoadRequirements, renderPdfPageModel } from "@/src/writers/pdf";
 import { contentOpsFromPdfVisuals } from "@/src/projection/pdf/lower";
 import { pdfGraphicsStateName, renderPdfContentStream } from "@/src/writers/pdf/content";
 import { contentStreamObject, pdfXrefEntries, writePdfDocument } from "@/src/writers/pdf/document";
@@ -11,7 +11,8 @@ import {
   pdfTextString,
   pdfUtf16BeHex,
 } from "@/src/writers/pdf/objects";
-import { graphNodeId } from "@/src/graph/identity";
+import { assetEntityId, graphNodeId } from "@/src/graph/identity";
+import { createDiagnostics } from "@/src/diagnostics";
 import { pdfDocumentId, pdfPageId, pdfResourceId } from "@/src/projection/pdf/identity";
 import type {
   PdfContentOp,
@@ -713,6 +714,99 @@ describe("PDF writer", () => {
     expect(pdf).toContain("beginbfchar");
     expect(pdf).toContain("<3053> <3053>");
     expect(pdf).toContain("<30533093306B3061306F> Tj");
+  });
+
+  test("uses compact CIDs for implicit first-page embedded Identity-H fonts", async () => {
+    const fontId = pdfResourceId("font", "Implicit Embedded Unicode");
+    const model = onePageModel("ignored");
+    const result = await renderPdfPageModel(
+      {
+        ...model,
+        pages: [
+          {
+            ...model.pages[0]!,
+            resources: { fonts: [fontId], images: [] },
+            content: [
+              {
+                op: "text",
+                text: "A",
+                textEncoding: "utf16be",
+                x: 72,
+                y: 96,
+                fontSize: 12,
+              },
+            ],
+          },
+        ],
+        resources: {
+          fonts: [
+            {
+              id: fontId,
+              name: "FImplicitUnicode",
+              family: "Inter",
+              encoding: "identity-h",
+              data: minimalTrueTypeWithABWidths(),
+            },
+          ],
+          images: [],
+        },
+      },
+      { inspection: "none" },
+    );
+    const pdf = decodePdf(result.artifact?.bytes ?? new Uint8Array());
+
+    expect(result.diagnostics.items).toEqual([]);
+    expect(pdf).toContain("<0001> <0041>");
+    expect(pdf).toContain("<0001> Tj");
+    expect(pdf).not.toContain("<0041> Tj");
+  });
+
+  test("reloads a reused PDF image asset id when its source changes", () => {
+    const imageId = pdfResourceId("image", "Deferred image");
+    const entityId = assetEntityId(["shared-image"]);
+    const model = onePageModel("ignored");
+    const projection: PdfPageModel = {
+      ...model,
+      pages: [
+        {
+          ...model.pages[0]!,
+          resources: { fonts: [], images: [imageId] },
+          content: [{ op: "image", imageId, box: { x: 0, y: 0, width: 10, height: 10 } }],
+        },
+      ],
+      resources: {
+        fonts: [],
+        images: [
+          {
+            id: imageId,
+            name: "ImDeferred",
+            assetEntityId: entityId,
+            source: { kind: "path", path: "./new.png" },
+            sourceField: "src",
+          },
+        ],
+      },
+    };
+    const cached = new Map([
+      [
+        entityId,
+        {
+          assetEntityId: entityId,
+          source: { kind: "path" as const, path: "./old.png" },
+          sourceField: "src" as const,
+          load: { ok: true as const, bytes: new Uint8Array([1]), byteLength: 1 },
+          diagnostics: createDiagnostics(),
+        },
+      ],
+    ]);
+
+    expect(pdfImageAssetLoadRequirements({ projection, assetsById: cached })).toEqual([
+      expect.objectContaining({
+        assetEntityId: entityId,
+        source: { kind: "path", path: "./new.png" },
+        sourceField: "src",
+      }),
+    ]);
   });
 
   test("splits large ToUnicode bfchar maps into PDF-sized blocks", async () => {

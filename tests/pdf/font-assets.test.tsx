@@ -302,6 +302,44 @@ function withTemporaryPdf<T>(
 }
 
 describe("PDF font asset registration", () => {
+  test("projects font registrations returned by an afterAsset hook", async () => {
+    const bytes = minimalTrueTypeWithFormat4ABWidths();
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin({
+      kind: "deckjsx.plugin",
+      id: "test:after-asset-font",
+      hooks: {
+        afterAsset() {
+          return {
+            integrationContext: {
+              id: integrationContextId("test:after-asset-font"),
+              fontAssets: [
+                {
+                  key: "after-asset-regular",
+                  family: "After Asset",
+                  source: { kind: "bytes", bytes, mediaType: "font/ttf" },
+                },
+              ],
+            },
+          };
+        },
+      },
+    });
+    deck.slide({ name: "After asset font" }, () => <p style={{ fontFamily: "After Asset" }}>AB</p>);
+
+    const result = await deck.project({ format: "pdf", inspection: "none" });
+    const projection = expectPdfPageModel(result.projection);
+
+    expect(result.ok).toBe(true);
+    expect(projection.resources.fonts).toContainEqual(
+      expect.objectContaining({
+        family: "After Asset",
+        sourceKey: "after-asset-regular",
+        data: bytes,
+      }),
+    );
+  });
+
   test("embeds registered plugin font asset bytes in PDF font resources", async () => {
     const plugin: DeckPlugin = {
       kind: "deckjsx.plugin",

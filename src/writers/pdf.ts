@@ -1,5 +1,5 @@
 import { createDiagnostics, diagnostic, type Diagnostic } from "../diagnostics";
-import type { AssetArtifact } from "../pipeline/artifacts";
+import { assetSourceCacheKey, type AssetArtifact } from "../pipeline/artifacts";
 import type { RenderedArtifact, RenderInspectionSummary } from "../pipeline/public";
 import type { PdfDocumentModel, PdfImageResource } from "../projection/pdf/model";
 import { pdfEmbeddableJpegImage } from "../projection/pdf/jpeg";
@@ -24,6 +24,31 @@ export type PdfImageAssetLoadRequirement = {
   readonly sourceField: NonNullable<PdfImageResource["sourceField"]>;
 };
 
+function loadedAssetMatchesImage(
+  artifact: AssetArtifact | undefined,
+  image: PdfImageResource,
+): artifact is AssetArtifact & { readonly load: NonNullable<AssetArtifact["load"]> } {
+  if (!artifact?.load || !image.source || !image.sourceField) {
+    return false;
+  }
+
+  return (
+    artifact.sourceField === image.sourceField &&
+    assetSourceCacheKey(
+      artifact.source,
+      artifact.resolverIdentity,
+      artifact.origin,
+      artifact.sourceField,
+    ) ===
+      assetSourceCacheKey(
+        image.source,
+        artifact.resolverIdentity,
+        artifact.origin,
+        image.sourceField,
+      )
+  );
+}
+
 export function pdfImageAssetLoadRequirements(input: {
   readonly projection: PdfDocumentModel;
   readonly assetsById?: ReadonlyMap<NonNullable<PdfImageResource["assetEntityId"]>, AssetArtifact>;
@@ -34,7 +59,7 @@ export function pdfImageAssetLoadRequirements(input: {
     }
 
     const current = input.assetsById?.get(image.assetEntityId);
-    if (current?.load) {
+    if (loadedAssetMatchesImage(current, image)) {
       return [];
     }
 
@@ -57,10 +82,11 @@ function imageResourceWithLoadedAsset(
     return image;
   }
 
-  const load = context?.assetsById?.get(image.assetEntityId)?.load;
-  if (!load) {
+  const artifact = context?.assetsById?.get(image.assetEntityId);
+  if (!loadedAssetMatchesImage(artifact, image)) {
     return image;
   }
+  const load = artifact.load;
 
   return {
     ...image,

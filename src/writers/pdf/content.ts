@@ -875,8 +875,8 @@ export function renderPdfContentStream(
                 if (operation.textRise !== undefined) {
                   lines.push(`${pdfNumber(operation.textRise)} Ts`);
                 }
-                const identityHTextEncoding = operation.fontId
-                  ? options.identityHTextEncodings?.get(operation.fontId)
+                const identityHTextEncoding = font?.id
+                  ? options.identityHTextEncodings?.get(font.id)
                   : undefined;
                 const positionedGlyphOperators = pdfPositionedGlyphOperators({
                   page,
