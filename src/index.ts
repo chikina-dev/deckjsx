@@ -139,7 +139,7 @@ export type {
   StageArtifactStatus,
   StageName,
   StageSummary,
-} from "./pipeline/contract";
+} from "./pipeline/public";
 export type { ThemeDefaults } from "./style/public";
 export type {
   BoundSource,

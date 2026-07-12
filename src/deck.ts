@@ -22,7 +22,7 @@ import type {
   ProjectOptions,
   ProjectionFormat,
   StageArtifactStatus,
-} from "./pipeline/contract";
+} from "./pipeline/public";
 import {
   publicCompiledAuthorGraph,
   semanticAuthorGraphFromCompiled,
@@ -334,9 +334,9 @@ export class Deck<
 
   [COMPOSITION_SOURCE](): CompositionSourceInternals<TSourceContext, TTemplates> {
     return {
-      entries: this.#entries,
-      stylesheets: this.#stylesheets,
-      plugins: this.#plugins,
+      entries: Object.freeze([...this.#entries]),
+      stylesheets: Object.freeze([...this.#stylesheets]),
+      plugins: Object.freeze([...this.#plugins]),
       ...(this.#options.theme !== undefined ? { theme: this.#options.theme } : {}),
       ...(this.#options.templates !== undefined ? { templates: this.#options.templates } : {}),
       cycleId: this,

@@ -6,7 +6,7 @@ import type {
   RenderedArtifact,
   RenderInspectionSummary,
   RenderPatchPlan,
-} from "../pipeline/contract";
+} from "../pipeline/public";
 
 /**
  * Public render options for deckjsx's built-in PPTX writer.

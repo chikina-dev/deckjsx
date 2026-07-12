@@ -1,10 +1,6 @@
-import { compositionRevisionForSource, type CompositionSource } from "../composition/source";
-import { resolveComposition } from "../composition/resolve";
 import type { ComposedAuthorRoot } from "../composition/types";
 import type { DeckOptions } from "../authoring/options";
-import type { AssetLoadResult, AssetProbeResult, AssetSource, AssetSourceField } from "../assets";
-import type { MediaSourceOrigin } from "../media-source-origin";
-import type { SourceInvalidation } from "../plugin";
+import type { SourceInvalidation } from "../source-invalidation";
 import { createDiagnostics, type Diagnostics } from "../diagnostics";
 import type {
   AssetEntityId,
@@ -23,63 +19,47 @@ import type {
 } from "../projection/pptx/model";
 import { isPptxPackageModel } from "../projection/pptx/model";
 import { isPdfPageModel, type PdfPageModel } from "../projection/pdf/model";
+import { pptxProjectionArtifact, projectionShapeDiagnostics } from "../projection/pptx/artifact";
+import type { ResolvedStyle, ResolvedStyleMap } from "../style/resolve";
 import {
-  pptxProjectionArtifact,
-  projectionShapeDiagnostics,
-  type PackageDependencyEdge,
-  type PackageDependencyReason,
-  type PackageDependencySnapshot,
+  assetSourceCacheKey,
+  ROOT_SOURCE_ARTIFACT_KEY,
+  type AssetArtifact,
+  type DefinedGraphArtifact,
+  type DefinedProjectionArtifact,
+  type GraphArtifactReplacement,
+  type IncrementalProjectionReuseSnapshot,
   type ProjectionArtifact,
+  type PptxPackageBuildArtifact,
   type PptxProjectionArtifact,
+  type SourceArtifact,
+  type SourceGraphArtifactSlice,
   type SlideProjectionFingerprintSnapshot,
-} from "../projection/pptx/artifact";
-import { resolveStyles, type ResolvedStyle, type ResolvedStyleMap } from "../style/resolve";
-import type { SlideTemplateSet } from "../templates";
-import type { SourceContextValue } from "../composition/public";
+} from "./artifact-contract";
 
-export type DefinedGraphArtifact = {
-  readonly sourceKey: string;
-  readonly source?: SourceOrigin;
-  readonly graph: SemanticAuthorGraph;
-  readonly graphSlice: SourceGraphArtifactSlice;
-  readonly resolvedStyles: ResolvedStyleMap;
-  readonly graphNodeIds: readonly GraphNodeId[];
-  readonly styleEntityIds: readonly StyleEntityId[];
-  readonly assetEntityIds: readonly AssetEntityId[];
-  readonly diagnostics: Diagnostics;
-  readonly compositionRevision?: string;
-};
-
-export type SourceGraphArtifactSlice = {
-  readonly nodes: ReadonlyMap<GraphNodeId, SemanticNode>;
-  readonly styles: ReadonlyMap<StyleEntityId, StyleEntity>;
-  readonly assets: ReadonlyMap<AssetEntityId, AssetEntity>;
-  readonly resolvedStyles: ResolvedStyleMap;
-};
-
-export type SourceArtifact = {
-  readonly sourceKey: string;
-  readonly source?: SourceOrigin;
-  readonly rootCount: number;
-  readonly rootPaths: readonly string[];
-  readonly diagnostics: Diagnostics;
-};
+export {
+  assetSourceCacheKey,
+  fingerprintBytes,
+  ROOT_SOURCE_ARTIFACT_KEY,
+  type AssetArtifact,
+  type AssetArtifactStore,
+  type DefinedGraphArtifact,
+  type DefinedProjectionArtifact,
+  type GraphArtifactReplacement,
+  type IncrementalProjectionReuseSnapshot,
+  type PptxPackageBuildNote,
+  type PptxPackageBuildReason,
+  type PptxPackageBuildArtifact,
+  type PptxProjectionArtifact,
+  type SourceArtifact,
+  type SourceGraphArtifactSlice,
+  type SlideProjectionFingerprintSnapshot,
+} from "./artifact-contract";
 
 type ProjectionArtifactIndexes = Omit<
   PptxProjectionArtifact<PptxPackageModelCandidate>,
   keyof ProjectionArtifact<PptxPackageModelCandidate>
 >;
-export type DefinedProjectionArtifact = ProjectionArtifact<
-  PptxPackageModelCandidate | PdfPageModel
-> &
-  ProjectionArtifactIndexes;
-export type {
-  PackageDependencyEdge,
-  PackageDependencyReason,
-  PackageDependencySnapshot,
-  ProjectionArtifact,
-  PptxProjectionArtifact,
-};
 
 function emptyProjectionArtifactIndexes(): ProjectionArtifactIndexes {
   return {
@@ -113,105 +93,6 @@ function projectionArtifactForModel(
         diagnostics,
         ...emptyProjectionArtifactIndexes(),
       };
-}
-
-export type AssetArtifact = {
-  readonly assetEntityId: AssetEntityId;
-  readonly source: AssetSource;
-  readonly sourceField: AssetSourceField;
-  readonly resolverIdentity?: string;
-  readonly origin?: MediaSourceOrigin;
-  readonly probe?: AssetProbeResult;
-  readonly load?: AssetLoadResult;
-  readonly diagnostics: Diagnostics;
-};
-
-export type IncrementalProjectionReuseSnapshot = {
-  readonly graph: DefinedGraphArtifact;
-  readonly projection: DefinedProjectionArtifact;
-  readonly options: DeckOptions;
-  readonly assetsById: ReadonlyMap<AssetEntityId, AssetArtifact>;
-  readonly staleAssetEntityIds: ReadonlySet<AssetEntityId>;
-};
-
-export function fingerprintBytes(bytes: Uint8Array): string {
-  let hash = 0x811c9dc5;
-  for (const byte of bytes) {
-    hash ^= byte;
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, "0")}`;
-}
-
-export function assetSourceCacheKey(
-  source: AssetSource,
-  resolverIdentity = "deckjsx:builtin",
-  origin?: MediaSourceOrigin,
-  sourceField?: AssetSourceField,
-): string {
-  const fieldKey = sourceField ? `:${sourceField}` : "";
-  const originKey = origin
-    ? `:${origin.sourceIdentity ?? ""}:${origin.importer ?? ""}:${origin.source ?? ""}`
-    : "";
-  switch (source.kind) {
-    case "bytes":
-      return `${resolverIdentity}${fieldKey}:bytes:${source.mediaType ?? ""}:${source.extension ?? ""}:${source.bytes.byteLength}:${fingerprintBytes(source.bytes)}`;
-    case "data":
-      return `${resolverIdentity}${fieldKey}:data:${source.data}`;
-    case "path":
-      return `${resolverIdentity}${fieldKey}:path${originKey}:${source.path}`;
-    case "url":
-      return `${resolverIdentity}${fieldKey}:url:${source.url}`;
-  }
-}
-
-export type PptxPackageBuildReason =
-  | "dependencyFingerprintChanged"
-  | "emitterFingerprintChanged"
-  | "mediaBytesChanged"
-  | "missingArtifact"
-  | "orderKeyChanged"
-  | "packagePartIdChanged"
-  | "partFingerprintChanged"
-  | "pathChanged"
-  | "writerFingerprintChanged";
-
-export type PptxPackageBuildNote = {
-  readonly kind: "packagePartBytesBuilt";
-  readonly reason: PptxPackageBuildReason;
-  readonly partKind: string;
-  readonly byteLength: number;
-  readonly partFingerprint: string;
-  readonly writerFingerprint: string;
-  readonly emitterFingerprint?: string;
-  readonly dependencyFingerprintCount: number;
-  readonly mediaByteFingerprint?: string;
-  readonly mediaByteFingerprintSource?: "byteHash" | "loadedAssetHash" | "projectedMetadataHash";
-  readonly diagnosticCodes: readonly string[];
-};
-
-export type PptxPackageBuildArtifact = {
-  readonly packagePartId: PackagePartId;
-  readonly path: string;
-  readonly orderKey?: string;
-  readonly bytes: Uint8Array;
-  readonly partFingerprint: string;
-  readonly dependencyFingerprints?: readonly {
-    readonly packagePartId: PackagePartId;
-    readonly fingerprint: string;
-  }[];
-  readonly writerFingerprint: string;
-  readonly emitterFingerprint?: string;
-  readonly mediaByteFingerprint?: string;
-  readonly mediaByteFingerprintSource?: "byteHash" | "loadedAssetHash" | "projectedMetadataHash";
-  readonly buildNotes: readonly PptxPackageBuildNote[];
-  readonly diagnostics: Diagnostics;
-};
-
-export const ROOT_SOURCE_ARTIFACT_KEY = "deck:root";
-
-function combineDiagnostics(...diagnostics: readonly Diagnostics[]): Diagnostics {
-  return createDiagnostics(diagnostics.flatMap((item) => item.items));
 }
 
 function mergeAssetDiagnostics(previous: Diagnostics, next: Diagnostics): Diagnostics {
@@ -714,22 +595,10 @@ export class PipelineArtifactCollection {
     this.#pptxBuildArtifactsByPartId.clear();
   }
 
-  replaceGraphArtifact<
-    TSourceContext extends SourceContextValue | void,
-    TTemplates extends SlideTemplateSet,
-  >(source: CompositionSource<TSourceContext, TTemplates>, graph: SemanticAuthorGraph): void {
-    const composition = resolveComposition(source);
-    const styleResult = resolveStyles(graph, composition.roots ?? []);
-    const diagnostics = combineDiagnostics(composition.diagnostics, styleResult.diagnostics);
+  replaceGraphArtifact(input: GraphArtifactReplacement): void {
     this.invalidateFromGraph();
-    this.materializeComposition(composition.roots, composition.diagnostics);
-    this.materializeGraphFromComposition({
-      graph,
-      resolvedStyles: styleResult.resolvedStyles,
-      roots: composition.roots ?? [],
-      diagnostics,
-      compositionRevision: compositionRevisionForSource(source),
-    });
+    this.materializeComposition(input.roots, input.compositionDiagnostics);
+    this.materializeGraphFromComposition(input);
     this.#projection = undefined;
     this.#projectionOptions = undefined;
     this.clearIncrementalProjectionReuseSnapshot();

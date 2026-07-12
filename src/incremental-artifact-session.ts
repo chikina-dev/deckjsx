@@ -1,7 +1,7 @@
 import type { RenderExecutionContext } from "./render-execution";
 import type { RenderResult } from "./pipeline/results-public";
 import { PipelineArtifactCollection } from "./pipeline/artifacts";
-import type { SourceInvalidation } from "./plugin";
+import type { SourceInvalidation } from "./source-invalidation";
 import type { GraphNodeId } from "./graph";
 
 const ARTIFACT_WRITE_TOKEN = Symbol.for("deckjsx.artifactWriteToken");

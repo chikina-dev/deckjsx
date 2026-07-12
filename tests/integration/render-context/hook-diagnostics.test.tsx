@@ -99,7 +99,7 @@ describe("deckjsx integration hook diagnostics", () => {
       expect.objectContaining({
         code: "E_PLUGIN_INVALID",
         title: "deck plugin is not part of the public authoring API",
-        message: "Deck plugin integration.id must be a string.",
+        message: "Deck plugin integration.id must be a non-empty string.",
       }),
     ]);
   });

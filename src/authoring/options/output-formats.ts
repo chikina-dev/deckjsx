@@ -1,4 +1,4 @@
-import type { ProjectionFormat } from "../../pipeline/contract";
+import type { ProjectionFormat } from "../../pipeline/public";
 
 export const DEFAULT_OUTPUT_FORMATS = ["pptx"] as const satisfies readonly ProjectionFormat[];
 

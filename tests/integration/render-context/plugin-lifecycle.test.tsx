@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 import * as H from "./helpers.tsx";
 import type { PdfPageModel } from "@/src/projection/pdf/model";
+import { Theme } from "@/src/style/theme/public";
 
 describe("deckjsx integration plugin lifecycle", () => {
   test("runs plugin hooks across the deck lifecycle cycle", async () => {
@@ -508,5 +509,151 @@ describe("deckjsx integration plugin lifecycle", () => {
     expect(project.ok).toBe(true);
     expect(JSON.stringify(slide)).toContain("original text");
     expect(JSON.stringify(slide)).not.toContain("mutated by plugin");
+  });
+
+  test("tree stage snapshots isolate composed roots and authored props", () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin({
+      kind: "deckjsx.plugin",
+      id: "test:immutable-tree-snapshot",
+      hooks: {
+        beforeGraph(context) {
+          const root = context.roots[0]?.root;
+          if (root) {
+            (root.props as { name?: string }).name = "mutated by plugin";
+            (root.children as unknown as unknown[]).length = 0;
+          }
+        },
+      },
+    });
+    deck.slide({ name: "Original root" }, () => (
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>original</p>
+    ));
+
+    const compile = deck.compile();
+    const slide = [...(compile.graph?.nodes.values() ?? [])].find((node) => node.kind === "slide");
+    const textRun = [...(compile.graph?.nodes.values() ?? [])].find(
+      (node) => node.kind === "textRun",
+    );
+
+    expect(compile.ok).toBe(true);
+    expect(slide?.kind === "slide" ? slide.name : undefined).toBe("Original root");
+    expect(textRun?.kind === "textRun" ? textRun.text : undefined).toBe("original");
+  });
+
+  test("tree stage snapshots preserve built-in value internal slots", () => {
+    let observedByteLength = 0;
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const theme = new Theme({
+      defaults: {},
+      bytes: new Uint8Array([1, 2, 3]),
+    } as never);
+    deck.plugin({
+      kind: "deckjsx.plugin",
+      id: "test:tree-snapshot-builtins",
+      hooks: {
+        afterTree(context) {
+          return {
+            roots: context.roots.map((root) => ({
+              ...root,
+              theme,
+            })),
+          };
+        },
+        beforeGraph(context) {
+          const theme = context.roots[0]?.theme as { bytes?: Uint8Array } | undefined;
+          observedByteLength = theme?.bytes?.byteLength ?? 0;
+        },
+      },
+    });
+    deck.slide({ name: "Built-in snapshot" }, () => <p>snapshot</p>);
+
+    const compile = deck.compile();
+
+    expect(compile.ok).toBe(true);
+    expect(observedByteLength).toBe(3);
+  });
+
+  test("deck preserves accessor-backed plugin instances", () => {
+    const events: string[] = [];
+    class AccessorPlugin {
+      get kind() {
+        return "deckjsx.plugin" as const;
+      }
+
+      get id() {
+        return "test:accessor-plugin";
+      }
+
+      get hooks() {
+        return {
+          beforeTree() {
+            events.push("beforeTree");
+          },
+        };
+      }
+    }
+
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin(new AccessorPlugin());
+    deck.slide({ name: "Accessor plugin" }, () => <p>plugin</p>);
+
+    const compile = deck.compile();
+
+    expect(compile.ok).toBe(true);
+    expect(events).toEqual(["beforeTree"]);
+  });
+
+  test("projection and artifact hook snapshots do not leak direct mutations", async () => {
+    let writerProjectionName: string | undefined;
+    class SnapshotWriter implements H.WriterAdapter<H.PptxPackageModel, "pptx"> {
+      readonly kind = "deckjsx.writerAdapter";
+      readonly name = "test-snapshot-writer";
+      readonly projectionFormat = "pptx";
+      readonly format = "pptx";
+      readonly options = {};
+
+      async render(projection: H.PptxPackageModel) {
+        writerProjectionName = projection.slides[0]?.payload.name;
+        return {
+          diagnostics: H.createDiagnostics(),
+          artifact: {
+            format: "pptx" as const,
+            mediaType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            extension: "pptx",
+            bytes: new Uint8Array([1, 2, 3]),
+          },
+        };
+      }
+    }
+
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin({
+      kind: "deckjsx.plugin",
+      id: "test:projection-artifact-snapshots",
+      hooks: {
+        beforeRender(context) {
+          const projection = context.projection as H.PptxPackageModel;
+          const slide = projection.slides[0] as { payload: { name?: string } } | undefined;
+          if (slide) {
+            slide.payload.name = "mutated by plugin";
+          }
+        },
+        afterRender(context) {
+          if (context.artifact) {
+            context.artifact.bytes[0] = 99;
+          }
+        },
+      },
+    });
+    deck.slide({ name: "Original slide" }, () => (
+      <p style={{ position: "absolute", left: 1, top: 1, width: 3, height: 0.5 }}>snapshot</p>
+    ));
+
+    const render = await deck.render(new SnapshotWriter());
+
+    expect(render.ok).toBe(true);
+    expect(writerProjectionName).toBe("Original slide");
+    expect(render.artifact?.bytes).toEqual(new Uint8Array([1, 2, 3]));
   });
 });

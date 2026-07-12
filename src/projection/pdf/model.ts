@@ -1,4 +1,4 @@
-import type { ProjectionFormat } from "../../pipeline/contract";
+import type { ProjectionFormat } from "../../pipeline/public";
 import type { AssetSource, AssetSourceField } from "../../assets";
 import type { AssetEntity } from "../../graph";
 import type {

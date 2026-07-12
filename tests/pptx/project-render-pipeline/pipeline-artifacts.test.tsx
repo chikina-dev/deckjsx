@@ -1,4 +1,8 @@
 import { describe, expect, test } from "vite-plus/test";
+import { compositionRevisionForSource } from "@/src/composition/source.ts";
+import { resolveComposition } from "@/src/composition/resolve.ts";
+import { createDiagnostics } from "@/src/diagnostics/index.ts";
+import { resolveStyles } from "@/src/style/resolve.ts";
 import * as H from "./helpers.tsx";
 
 describe("project/render pipeline artifacts", () => {
@@ -9,7 +13,19 @@ describe("project/render pipeline artifacts", () => {
     const projection = (await deck.project()).projection!;
     const artifacts = new H.PipelineArtifactCollection();
 
-    artifacts.replaceGraphArtifact(deck, graph);
+    const composition = resolveComposition(deck);
+    const styleResult = resolveStyles(graph, composition.roots ?? []);
+    artifacts.replaceGraphArtifact({
+      graph,
+      resolvedStyles: styleResult.resolvedStyles,
+      roots: composition.roots ?? [],
+      compositionDiagnostics: composition.diagnostics,
+      diagnostics: createDiagnostics([
+        ...composition.diagnostics.items,
+        ...styleResult.diagnostics.items,
+      ]),
+      compositionRevision: compositionRevisionForSource(deck),
+    });
 
     expect(artifacts.sourcesByKey.get("deck:root")?.rootCount).toBe(1);
     expect(artifacts.graph?.sourceKey).toBe("deck:root");
@@ -66,7 +82,19 @@ describe("project/render pipeline artifacts", () => {
     expect(artifacts.pptxBuildArtifactsByPartId.size).toBe(0);
 
     materializeBuildArtifacts();
-    artifacts.replaceGraphArtifact(deck, graph);
+    const composition = resolveComposition(deck);
+    const styleResult = resolveStyles(graph, composition.roots ?? []);
+    artifacts.replaceGraphArtifact({
+      graph,
+      resolvedStyles: styleResult.resolvedStyles,
+      roots: composition.roots ?? [],
+      compositionDiagnostics: composition.diagnostics,
+      diagnostics: createDiagnostics([
+        ...composition.diagnostics.items,
+        ...styleResult.diagnostics.items,
+      ]),
+      compositionRevision: compositionRevisionForSource(deck),
+    });
     expect(artifacts.pptxBuildArtifactsByPartId.size).toBe(0);
 
     materializeBuildArtifacts();

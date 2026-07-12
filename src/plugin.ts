@@ -1,11 +1,10 @@
 import type { AssetLoader, AssetSource } from "./assets";
-import type { ComposedAuthorRoot } from "./composition/types";
 import type { Diagnostic } from "./diagnostics";
+import { snapshotComposedAuthorRoots } from "./composition/snapshot";
 import { clonePluginStageValue } from "./plugin-snapshot";
 import type { AssetEntityId, SemanticAuthorGraph } from "./graph";
 import type { DeckIntegrationContext } from "./integration-context";
 import type { MediaSourceOrigin } from "./media-source-origin";
-import type { RenderedArtifact } from "./pipeline/contract";
 import {
   isComposedAuthorRootArray,
   isResolvedStyleMap,
@@ -17,204 +16,44 @@ import type { AssetArtifact } from "./pipeline/artifacts";
 import { isPdfPageModel } from "./projection/pdf/model";
 import type { ProjectedDocumentModel } from "./projection/registry";
 import { isPptxPackageModel, type PptxPackageModel } from "./projection/pptx/model";
-import type { ResolvedStyleMap } from "./style/resolve";
+import type {
+  DeckPlugin,
+  DeckPluginHooks,
+  PluginHookResult,
+  ValidatedPluginSnapshot,
+} from "./plugin-contract";
 
-export type SourceInvalidation = {
-  readonly changedSourceIds: readonly string[];
-};
-
-export type PluginHookResult<TUpdate extends object = object> =
-  | void
-  | (Partial<TUpdate> & {
-      readonly diagnostics?: readonly Diagnostic[];
-    });
-
-export type TreeLifecycleSnapshot = {
-  readonly stage: "tree";
-  readonly phase: "before" | "after";
-  readonly rootCount?: number;
-};
-
-export type BeforeTreeLifecycleContext = {
-  readonly stage: "tree";
-  readonly phase: "before";
-};
-
-export type AfterTreeLifecycleContext = {
-  readonly stage: "tree";
-  readonly phase: "after";
-  readonly roots: readonly ComposedAuthorRoot[];
-};
-
-export type AfterTreeLifecycleUpdate = {
-  readonly roots: readonly ComposedAuthorRoot[];
-};
-
-export type GraphLifecycleSnapshot = {
-  readonly stage: "graph";
-  readonly phase: "before" | "after";
-  readonly nodeCount?: number;
-  readonly assetCount?: number;
-  readonly styleCount?: number;
-};
-
-export type BeforeGraphLifecycleContext = {
-  readonly stage: "graph";
-  readonly phase: "before";
-  readonly roots: readonly ComposedAuthorRoot[];
-};
-
-export type BeforeGraphLifecycleUpdate = {
-  readonly roots: readonly ComposedAuthorRoot[];
-};
-
-export type AfterGraphLifecycleContext = {
-  readonly stage: "graph";
-  readonly phase: "after";
-  readonly roots: readonly ComposedAuthorRoot[];
-  readonly graph?: SemanticAuthorGraph;
-  readonly resolvedStyles?: ResolvedStyleMap;
-};
-
-export type AfterGraphLifecycleUpdate = {
-  readonly graph: SemanticAuthorGraph;
-  readonly resolvedStyles: ResolvedStyleMap;
-};
-
-export type AssetLifecycleSnapshot = {
-  readonly stage: "asset";
-  readonly phase: "before" | "after";
-  readonly assetCount?: number;
-};
-
-export type BeforeAssetLifecycleContext = {
-  readonly stage: "asset";
-  readonly phase: "before";
-  readonly operation: "probe" | "load";
-  readonly graph: SemanticAuthorGraph;
-  readonly resolvedStyles: ResolvedStyleMap;
-  readonly assetLoaders?: readonly AssetLoader[];
-  readonly mediaSourceOrigin?: MediaSourceOrigin;
-  readonly integrationContext?: DeckIntegrationContext;
-};
-
-export type BeforeAssetLifecycleUpdate = {
-  readonly assetLoaders?: readonly AssetLoader[];
-  readonly mediaSourceOrigin?: MediaSourceOrigin;
-  readonly integrationContext?: DeckIntegrationContext;
-};
-
-export type AfterAssetLifecycleContext = {
-  readonly stage: "asset";
-  readonly phase: "after";
-  readonly operation: "probe" | "load";
-  readonly graph: SemanticAuthorGraph;
-  readonly resolvedStyles: ResolvedStyleMap;
-  readonly assetsById: ReadonlyMap<AssetEntityId, AssetArtifact>;
-  readonly assetLoaders?: readonly AssetLoader[];
-  readonly mediaSourceOrigin?: MediaSourceOrigin;
-  readonly integrationContext?: DeckIntegrationContext;
-};
-
-export type AfterAssetLifecycleUpdate = {
-  readonly assetsById: ReadonlyMap<AssetEntityId, AssetArtifact>;
-  readonly assetLoaders?: readonly AssetLoader[];
-  readonly mediaSourceOrigin?: MediaSourceOrigin;
-  readonly integrationContext?: DeckIntegrationContext;
-};
-
-export type ProjectLifecycleSnapshot = {
-  readonly stage: "project";
-  readonly phase: "before" | "after";
-  readonly format: string;
-  readonly partCount?: number;
-};
-
-export type BeforeProjectLifecycleContext = {
-  readonly stage: "project";
-  readonly phase: "before";
-  readonly format: string;
-  readonly graph: SemanticAuthorGraph;
-  readonly resolvedStyles: ResolvedStyleMap;
-  readonly assetsById: ReadonlyMap<AssetEntityId, AssetArtifact>;
-};
-
-export type BeforeProjectLifecycleUpdate = {
-  readonly graph: SemanticAuthorGraph;
-  readonly resolvedStyles: ResolvedStyleMap;
-  readonly assetsById: ReadonlyMap<AssetEntityId, AssetArtifact>;
-};
-
-export type AfterProjectLifecycleContext = {
-  readonly stage: "project";
-  readonly phase: "after";
-  readonly format: string;
-  readonly graph: SemanticAuthorGraph;
-  readonly resolvedStyles: ResolvedStyleMap;
-  readonly assetsById: ReadonlyMap<AssetEntityId, AssetArtifact>;
-  readonly projection: ProjectedDocumentModel;
-};
-
-export type AfterProjectLifecycleUpdate = {
-  readonly projection: ProjectedDocumentModel;
-};
-
-export type RenderLifecycleSnapshot = {
-  readonly stage: "render";
-  readonly phase: "before" | "after";
-  readonly format: string;
-  readonly artifactByteLength?: number;
-};
-
-export type BeforeRenderLifecycleContext = {
-  readonly stage: "render";
-  readonly phase: "before";
-  readonly format: string;
-  readonly projection: ProjectedDocumentModel;
-};
-
-export type BeforeRenderLifecycleUpdate = {
-  readonly projection: ProjectedDocumentModel;
-};
-
-export type AfterRenderLifecycleContext = {
-  readonly stage: "render";
-  readonly phase: "after";
-  readonly format: string;
-  readonly projection: ProjectedDocumentModel;
-  readonly artifact?: RenderedArtifact;
-};
-
-export type AfterRenderLifecycleUpdate = {
-  readonly artifact?: RenderedArtifact;
-};
-
-export type DeckPluginHooks = {
-  beforeTree?(context: BeforeTreeLifecycleContext): PluginHookResult;
-  afterTree?(context: AfterTreeLifecycleContext): PluginHookResult<AfterTreeLifecycleUpdate>;
-  beforeGraph?(context: BeforeGraphLifecycleContext): PluginHookResult<BeforeGraphLifecycleUpdate>;
-  afterGraph?(context: AfterGraphLifecycleContext): PluginHookResult<AfterGraphLifecycleUpdate>;
-  beforeAsset?(context: BeforeAssetLifecycleContext): PluginHookResult<BeforeAssetLifecycleUpdate>;
-  afterAsset?(context: AfterAssetLifecycleContext): PluginHookResult<AfterAssetLifecycleUpdate>;
-  beforeProject?(
-    context: BeforeProjectLifecycleContext,
-  ): PluginHookResult<BeforeProjectLifecycleUpdate>;
-  afterProject?(
-    context: AfterProjectLifecycleContext,
-  ): PluginHookResult<AfterProjectLifecycleUpdate>;
-  beforeRender?(
-    context: BeforeRenderLifecycleContext,
-  ): PluginHookResult<BeforeRenderLifecycleUpdate>;
-  afterRender?(context: AfterRenderLifecycleContext): PluginHookResult<AfterRenderLifecycleUpdate>;
-};
-
-export type DeckPlugin = {
-  readonly kind: "deckjsx.plugin";
-  readonly id: string;
-  readonly name?: string;
-  readonly integration?: DeckIntegrationContext;
-  readonly hooks?: DeckPluginHooks;
-};
+export type {
+  AfterAssetLifecycleContext,
+  AfterAssetLifecycleUpdate,
+  AfterGraphLifecycleContext,
+  AfterGraphLifecycleUpdate,
+  AfterProjectLifecycleContext,
+  AfterProjectLifecycleUpdate,
+  AfterRenderLifecycleContext,
+  AfterRenderLifecycleUpdate,
+  AfterTreeLifecycleContext,
+  AfterTreeLifecycleUpdate,
+  AssetLifecycleSnapshot,
+  BeforeAssetLifecycleContext,
+  BeforeAssetLifecycleUpdate,
+  BeforeGraphLifecycleContext,
+  BeforeGraphLifecycleUpdate,
+  BeforeProjectLifecycleContext,
+  BeforeProjectLifecycleUpdate,
+  BeforeRenderLifecycleContext,
+  BeforeRenderLifecycleUpdate,
+  BeforeTreeLifecycleContext,
+  DeckPlugin,
+  DeckPluginHooks,
+  GraphLifecycleSnapshot,
+  PluginHookResult,
+  ProjectLifecycleSnapshot,
+  RenderLifecycleSnapshot,
+  TreeLifecycleSnapshot,
+  ValidatedPluginSnapshot,
+} from "./plugin-contract";
+export type { SourceInvalidation } from "./source-invalidation";
 
 export function isDeckPlugin(value: unknown): value is DeckPlugin {
   return (
@@ -352,6 +191,12 @@ export function validDeckPlugins(plugins: unknown): readonly DeckPlugin[] {
   return Array.isArray(plugins) ? plugins.filter(isDeckPlugin) : [];
 }
 
+export function createValidatedPluginSnapshot(
+  plugins: readonly DeckPlugin[],
+): ValidatedPluginSnapshot {
+  return { plugins: Object.freeze([...plugins]) };
+}
+
 export function mergeAssetLoaders(
   ...groups: readonly (readonly AssetLoader[] | undefined)[]
 ): readonly AssetLoader[] | undefined {
@@ -440,7 +285,9 @@ export function applyPluginHooks<TContext extends object>(
 function snapshotPluginHookContext<TContext extends object>(context: TContext): TContext {
   const snapshot = { ...context } as Record<string, unknown>;
   if (Array.isArray(snapshot.roots)) {
-    snapshot.roots = [...snapshot.roots];
+    snapshot.roots = isComposedAuthorRootArray(snapshot.roots)
+      ? snapshotComposedAuthorRoots(snapshot.roots)
+      : [...snapshot.roots];
   }
   if (isSemanticAuthorGraphValue(snapshot.graph)) {
     snapshot.graph = clonePluginStageValue(snapshot.graph);
@@ -451,10 +298,31 @@ function snapshotPluginHookContext<TContext extends object>(context: TContext): 
   if (snapshot.assetsById instanceof Map) {
     snapshot.assetsById = clonePluginStageValue(snapshot.assetsById);
   }
+  if (isProjectedDocumentModelValue(snapshot.projection)) {
+    snapshot.projection = clonePluginStageValue(snapshot.projection);
+  }
+  if (isRenderedArtifact(snapshot.artifact)) {
+    snapshot.artifact = clonePluginStageValue(snapshot.artifact);
+  }
+  if (isIntegrationContext(snapshot.integrationContext)) {
+    snapshot.integrationContext = snapshotIntegrationContext(snapshot.integrationContext);
+  }
+  if (isMediaSourceOrigin(snapshot.mediaSourceOrigin)) {
+    snapshot.mediaSourceOrigin = { ...snapshot.mediaSourceOrigin };
+  }
   if (Array.isArray(snapshot.assetLoaders)) {
     snapshot.assetLoaders = [...snapshot.assetLoaders];
   }
   return snapshot as TContext;
+}
+
+function snapshotIntegrationContext(context: DeckIntegrationContext): DeckIntegrationContext {
+  return {
+    id: context.id,
+    ...(context.assetLoaders ? { assetLoaders: [...context.assetLoaders] } : {}),
+    ...(context.fontAssets ? { fontAssets: clonePluginStageValue(context.fontAssets) } : {}),
+    ...(context.mediaSourceOrigin ? { mediaSourceOrigin: { ...context.mediaSourceOrigin } } : {}),
+  };
 }
 
 function isHookResultObject(result: unknown): result is Partial<object> & {
