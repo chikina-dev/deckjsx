@@ -13,12 +13,13 @@ import {
 import { createDiagnostics, type Diagnostics } from "./diagnostics";
 import { buildSemanticAuthorGraph } from "./graph";
 import {
-  applyCompilePluginHooks,
-  validateCompileDeckPlugins,
-  validCompileDeckPlugins,
-} from "./plugin-compile-runtime";
+  applyPluginHooks,
+  validateDeckPlugins,
+  validDeckPlugins,
+  type ValidatedPluginSnapshot,
+} from "./plugin";
 import { resultOk, stageSummary } from "./pipeline/stage";
-import type { StageArtifactStatus } from "./pipeline/contract";
+import type { StageArtifactStatus } from "./pipeline/public";
 import type { DefinedGraphInput } from "./pipeline/artifact-input";
 import type { InternalCompileResult } from "./pipeline/compile-result";
 import type { PresentStageArtifactStatus } from "./pipeline/results-public";
@@ -71,6 +72,10 @@ function projectedArtifactStatus<T>(
   return diagnostics.hasErrors ? "partial" : "available";
 }
 
+type CompilePluginInput =
+  | { readonly kind: "raw"; readonly plugins: readonly unknown[] }
+  | { readonly kind: "validated"; readonly snapshot: ValidatedPluginSnapshot };
+
 export function compileSource<
   TSourceContext extends SourceContextValue | void,
   TTemplates extends SlideTemplateSet,
@@ -80,9 +85,49 @@ export function compileSource<
   plugins: readonly unknown[] = directPluginsForSource(source),
   authoringRuntimeObservers?: readonly AuthoringRuntimeObserver[],
 ): InternalCompileResult {
-  const pluginDiagnostics = createDiagnostics(validateCompileDeckPlugins(plugins));
-  const validPlugins = validCompileDeckPlugins(plugins);
-  const beforeTree = applyCompilePluginHooks(validPlugins, "beforeTree", {
+  return compileSourceInternal(
+    source,
+    artifacts,
+    { kind: "raw", plugins },
+    authoringRuntimeObservers,
+  );
+}
+
+export function compileSourceWithValidatedPlugins<
+  TSourceContext extends SourceContextValue | void,
+  TTemplates extends SlideTemplateSet,
+>(
+  source: CompositionSource<TSourceContext, TTemplates>,
+  artifacts: CompileArtifactSink | undefined,
+  plugins: ValidatedPluginSnapshot,
+  authoringRuntimeObservers?: readonly AuthoringRuntimeObserver[],
+): InternalCompileResult {
+  return compileSourceInternal(
+    source,
+    artifacts,
+    { kind: "validated", snapshot: plugins },
+    authoringRuntimeObservers,
+  );
+}
+
+function compileSourceInternal<
+  TSourceContext extends SourceContextValue | void,
+  TTemplates extends SlideTemplateSet,
+>(
+  source: CompositionSource<TSourceContext, TTemplates>,
+  artifacts: CompileArtifactSink | undefined,
+  pluginInput: CompilePluginInput,
+  authoringRuntimeObservers?: readonly AuthoringRuntimeObserver[],
+): InternalCompileResult {
+  const pluginDiagnostics =
+    pluginInput.kind === "raw"
+      ? createDiagnostics(validateDeckPlugins(pluginInput.plugins))
+      : emptyDiagnostics();
+  const validPlugins =
+    pluginInput.kind === "raw"
+      ? validDeckPlugins(pluginInput.plugins)
+      : pluginInput.snapshot.plugins;
+  const beforeTree = applyPluginHooks(validPlugins, "beforeTree", {
     stage: "tree" as const,
     phase: "before" as const,
   });
@@ -90,7 +135,7 @@ export function compileSource<
   const composition = withAuthoringRuntimeObservers(authoringRuntimeObservers, () =>
     resolveComposition(source),
   );
-  const afterTree = applyCompilePluginHooks(validPlugins, "afterTree", {
+  const afterTree = applyPluginHooks(validPlugins, "afterTree", {
     stage: "tree" as const,
     phase: "after" as const,
     roots: composition.roots ?? [],
@@ -115,7 +160,7 @@ export function compileSource<
     };
   }
 
-  const beforeGraph = applyCompilePluginHooks(validPlugins, "beforeGraph", {
+  const beforeGraph = applyPluginHooks(validPlugins, "beforeGraph", {
     stage: "graph" as const,
     phase: "before" as const,
     roots,
@@ -124,7 +169,7 @@ export function compileSource<
   const beforeGraphDiagnostics = createDiagnostics(beforeGraph.diagnostics);
   const result = buildSemanticAuthorGraph(graphRoots);
   const styleResult = result.graph ? resolveStyles(result.graph, graphRoots) : undefined;
-  const afterGraph = applyCompilePluginHooks(validPlugins, "afterGraph", {
+  const afterGraph = applyPluginHooks(validPlugins, "afterGraph", {
     stage: "graph" as const,
     phase: "after" as const,
     roots: graphRoots,

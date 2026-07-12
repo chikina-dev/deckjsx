@@ -1,5 +1,5 @@
 import type { ThemeValue } from "../../style/theme/public";
-import type { ProjectionFormat } from "../../pipeline/contract";
+import type { ProjectionFormat } from "../../pipeline/public";
 import type { EmptySlideTemplateSet, SlideTemplateSet } from "../../templates";
 
 /**

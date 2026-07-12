@@ -7,13 +7,18 @@ import {
 } from "./authoring-runtime-observer";
 import type { AssetLoader, AssetSource } from "./assets";
 import type { DeckIntegrationContext } from "./integration-context";
-import { integrationContextFromPlugins, mergeIntegrationContexts } from "./integration-context";
+import {
+  integrationContextFromValidatedPlugins,
+  mergeIntegrationContexts,
+} from "./integration-context";
 import type { MediaSourceOrigin } from "./media-source-origin";
 import {
+  createValidatedPluginSnapshot,
   mergeAssetLoaders,
   validateDeckPlugins,
   validDeckPlugins,
   type DeckPlugin,
+  type ValidatedPluginSnapshot,
   type SourceInvalidation,
 } from "./plugin";
 import type { Diagnostic } from "./diagnostics";
@@ -47,6 +52,7 @@ type RenderExecutionContextDiagnosticsCarrier = {
 export type RenderExecution = {
   readonly authoringRuntimeObservers?: readonly AuthoringRuntimeObserver[];
   readonly plugins: readonly DeckPlugin[];
+  readonly pluginSnapshot: ValidatedPluginSnapshot;
   readonly diagnostics: readonly Diagnostic[];
   readonly integrationContext?: DeckIntegrationContext;
   readonly assetLoaders?: readonly AssetLoader[];
@@ -136,7 +142,7 @@ export function createRenderExecution(input: {
       ? renderExecutionContext?.sourceInvalidation
       : undefined;
   const integrationContext = mergeIntegrationContexts(
-    [integrationContextFromPlugins(plugins), validRenderContextIntegration].filter(
+    [integrationContextFromValidatedPlugins(plugins), validRenderContextIntegration].filter(
       (context): context is DeckIntegrationContext => context !== undefined,
     ),
   );
@@ -148,6 +154,7 @@ export function createRenderExecution(input: {
       ? { authoringRuntimeObservers }
       : {}),
     plugins,
+    pluginSnapshot: createValidatedPluginSnapshot(plugins),
     diagnostics,
     ...(integrationContext ? { integrationContext } : {}),
     ...(assetLoaders ? { assetLoaders } : {}),

@@ -1,5 +1,5 @@
 import type { Diagnostics } from "../diagnostics";
-import type { StageArtifactStatus, StageName, StageSummary } from "./contract";
+import type { StageArtifactStatus, StageName, StageSummary } from "./public";
 
 export function resultOk(diagnostics: Diagnostics): boolean {
   return !diagnostics.hasErrors;

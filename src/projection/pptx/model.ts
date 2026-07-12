@@ -36,7 +36,7 @@ import type {
   TextStyleIR,
   ProjectedLayoutTableSection,
 } from "../../layout/projected";
-import type { ProjectionFormat } from "../../pipeline/contract";
+import type { ProjectionFormat } from "../../pipeline/public";
 import type { StyleDeclarationValue } from "../../style/declaration";
 import type { CssVisibility } from "../../style/types";
 import type { TemplateAreaKind } from "../../templates";

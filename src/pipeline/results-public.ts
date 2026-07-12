@@ -9,7 +9,7 @@ import type {
   RenderPatchPlan,
   RenderStages,
   StageArtifactStatus,
-} from "./contract";
+} from "./public";
 
 /** Stage artifact states where an inspectable artifact exists. */
 export type PresentStageArtifactStatus = Exclude<StageArtifactStatus, "missing">;

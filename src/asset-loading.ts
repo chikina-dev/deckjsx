@@ -12,8 +12,9 @@ import { createDiagnostics, diagnostic, type Diagnostics } from "./diagnostics";
 import type { AssetEntity, AssetEntityId } from "./graph";
 import type { AssetArtifact } from "./pipeline/artifacts";
 import type { ProjectInspectionAssetResolutionSummary } from "./projection/pptx/model";
+import { BUILTIN_ASSET_RESOLVER_IDENTITY } from "./asset-builtins";
 
-export const BUILTIN_ASSET_RESOLVER_IDENTITY = "deckjsx:builtin";
+export { BUILTIN_ASSET_RESOLVER_IDENTITY } from "./asset-builtins";
 
 export type AssetLoaderWithIdentity = {
   readonly loader: AssetLoader;
