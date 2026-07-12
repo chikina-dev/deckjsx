@@ -1,6 +1,6 @@
 # deckjsx
 
-deckjsx is a JSX authoring system for presentations. Its language centers on author intent first, then projects that intent into concrete presentation outputs such as PPTX.
+deckjsx is a JSX authoring system for generated presentation documents. Its language centers on making PDF, PPTX, and similar outputs feel as approachable to author as web UI, with author intent projected into concrete document formats.
 
 ## Language
 
@@ -22,6 +22,19 @@ _Avoid_: Author Tree, layout input snapshot, public authoring model
 The user-facing vocabulary for writing decks with deckjsx, including Deck, JSX authoring elements, Theme, StyleSheet, diagnostics that authors handle, and the type helpers needed to author slides. It should not make graph internals, legacy output projections, or concrete output adapters look like ordinary authoring concepts.
 It is not a public surface for directly constructing or inspecting Author Tree nodes.
 _Avoid_: root export as every public type, graph inspection surface, legacy output surface
+
+**Diagnostics**:
+The author-facing explanation of problems, warnings, and blocked generation across deckjsx stages. Diagnostics are how deckjsx guides authors and integrations through document-generation failures without making generated-output authoring feel like manual renderer debugging.
+Authors may still use JavaScript error handling around their own programs, but expected deckjsx generation problems should flow through Diagnostics rather than requiring users to catch deckjsx-thrown errors.
+_Avoid_: exception-driven authoring flow, writer log, renderer stack trace
+
+**Dependency Boundary**:
+The isolation boundary around foreign document, runtime, or rendering dependencies whose failure vocabulary does not match deckjsx. It translates dependency-shaped failures into Diagnostics so dependency behavior does not leak into the Authoring Interface.
+_Avoid_: user-facing Error handling, dependency exception flow, scattered adapter try-catch
+
+**Integration Boundary**:
+The contract boundary where user code or Runtime Integration Packages participate in deckjsx through plugins, asset loaders, writer adapters, or runtime services. Expected integration failures should be expressed with Diagnostics or Result-like outcomes rather than JavaScript Error handling.
+_Avoid_: Dependency Boundary, exception-driven generation contract, dependency wrapper
 
 **Slide Declaration**:
 The author-facing page boundary created by a Deck when an author declares one slide and supplies its content factory. Slide identity, slide-level metadata, and active Slide Template selection belong to the Slide Declaration rather than to a public JSX `Slide` root element.
@@ -346,7 +359,7 @@ Loader success value fields are validated at the boundary: media type, extension
 Loader-provided diagnostics should flow through Project Result or Render Result diagnostics. A loader returning `undefined` means it did not handle the source, while a loader that handled a source but found a problem should return a Result-like failed outcome with diagnostics through the Asset Loading Boundary.
 Asset loader operations are asynchronous, but their resolved value should distinguish successful handled results, not-handled, and handled failed results. Both probing and loading should use this Result-like outcome vocabulary with `ok: true` and `ok: false` cases. This is an outcome shape returned by the Promise, not an extension of JavaScript Promise behavior itself.
 A handled failed result means the loader has claimed the source and resolution should stop for that source rather than falling through to later loaders or built-in handling.
-Expected loader failures should be represented as diagnostics so callers can inspect and manage them; thrown errors are reserved for unexpected loader execution failures rather than normal project asset problems.
+Expected loader failures should be represented as diagnostics so callers can inspect and manage them; unexpected loader execution failures are Integration Boundary failures and should be translated into diagnostics before they reach stage callers.
 Loader failed outcomes should carry diagnostic item arrays from the loader, including at least one error diagnostic, while Project and Render wrap those items into stage `Diagnostics` when integrating them into results. Warning-only diagnostics belong on successful handled outcomes.
 Asset Probe Result and Asset Load Result are success-value shapes and should not carry diagnostics fields themselves; success warnings and failed errors belong to the surrounding Result-like loader outcome.
 AssetLoader Context should include the authored source, optional Media Source Origin, Resolver Identity, Asset Entity id, and required Asset Source Field so loaders can produce precise diagnostics and trace output. Asset Entity id and Asset Source Field are explanatory context, not resolver cache identity.
@@ -1065,7 +1078,7 @@ Domain expert: No. Composition errors mean graph input sources were not resolved
 
 Developer: Is one generic compile Error enough?
 
-Domain expert: No. Throw specific Diagnostic Error subclasses so callers can branch by failure category, while the attached Diagnostics explain every problem in detail.
+Domain expert: No. Use specific diagnostic codes, stage summaries, and Result-like outcome shapes so callers can branch by failure category while Diagnostics explain every problem in detail.
 
 Developer: Can project() just use the last graph that compile() produced?
 
@@ -1201,7 +1214,7 @@ Domain expert: Not in v0.3. Source Context Mappers are synchronous composition l
 
 Developer: Should a Source Context Mapper failure throw the user's raw error?
 
-Domain expert: No. Mapper failures should be wrapped in composition diagnostics. Strict compile throws a composition Diagnostic Error, while inspect mode returns the diagnostics.
+Domain expert: No. Mapper failures should be wrapped in composition diagnostics so Compile Result callers see deckjsx diagnostics rather than the user's raw error.
 
 Developer: Should undefined returned from a Source Context Mapper always be invalid?
 

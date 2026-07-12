@@ -16,7 +16,13 @@ import { createDiagnostics, diagnostic, type Diagnostics } from "@/src/diagnosti
 import type { SemanticAuthorGraph, SemanticNode } from "@/src/graph";
 import type { Frame } from "@/src/layout/frame";
 import type { EdgeStrokeIR, StrokeIR } from "@/src/layout/projected";
-import { unsupportedCssWideKeywordSemantic, unsupportedSemantic } from "@/src/layout/unsupported";
+import {
+  errorReason,
+  throwableResult,
+  unsupportedCssWideKeywordSemantic,
+  unsupportedSemantic,
+  unsupportedSemanticFromReason,
+} from "@/src/layout/unsupported";
 import type {
   PptxPackageModel,
   PptxUnsupportedSemantic,
@@ -197,44 +203,38 @@ export function shapeFillInputFor(
   );
 }
 
-function errorReason(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 export function parseShadowSafely(input: { property: string; value: string | undefined }): {
   readonly shadow?: ReturnType<typeof parseShadowShorthand>;
   readonly unsupportedSemantics: readonly PptxUnsupportedSemantic[];
 } {
-  try {
-    const shadow = parseShadowShorthand(input.value);
-    const unsupported = hasShadowSpreadRadius(input.value)
-      ? unsupportedSemantic({
-          feature: "shadow",
-          property: input.property,
-          value: input.value,
-          error: new Error(
-            `CSS shadow spread radius is not projected by the current PPTX shadow model: ${input.value}`,
-          ),
-          fallback: {
-            strategy: "preserveAuthoredValueOnly",
-            preserves: ["projectedShadowWithoutSpread"],
-            missing: ["cssShadowSpreadRadius"],
-          },
-        })
-      : undefined;
-    return {
-      shadow,
-      unsupportedSemantics: unsupported ? [unsupported] : [],
-    };
-  } catch (error) {
-    const unsupported = unsupportedSemantic({
+  const parsed = throwableResult(() => parseShadowShorthand(input.value));
+  if (!parsed.ok) {
+    const unsupported = unsupportedSemanticFromReason({
       feature: "shadow",
       property: input.property,
       value: input.value,
-      error,
+      reason: parsed.reason,
     });
     return { unsupportedSemantics: unsupported ? [unsupported] : [] };
   }
+
+  const unsupported = hasShadowSpreadRadius(input.value)
+    ? unsupportedSemanticFromReason({
+        feature: "shadow",
+        property: input.property,
+        value: input.value,
+        reason: `CSS shadow spread radius is not projected by the current PPTX shadow model: ${input.value}`,
+        fallback: {
+          strategy: "preserveAuthoredValueOnly",
+          preserves: ["projectedShadowWithoutSpread"],
+          missing: ["cssShadowSpreadRadius"],
+        },
+      })
+    : undefined;
+  return {
+    shadow: parsed.value,
+    unsupportedSemantics: unsupported ? [unsupported] : [],
+  };
 }
 
 type PptxStrokeProjectionProps = {
@@ -444,35 +444,38 @@ export function resolveNodeStrokesSafely(
   readonly unsupportedSemantics: readonly PptxUnsupportedSemantic[];
 } {
   const cssWideSemantics = unsupportedStrokeCssWideKeywordSemantics(props);
+  const resolved = throwableResult(() =>
+    resolveNodeStrokes(props as Parameters<typeof resolveNodeStrokes>[0], context),
+  );
 
-  try {
-    const strokes = resolveNodeStrokes(props as Parameters<typeof resolveNodeStrokes>[0], context);
-    if (
-      !strokes.stroke &&
-      !strokes.edgeStrokes &&
-      hasAuthoredStrokeInput(props) &&
-      !isStrokeIntentionallyNone(props)
-    ) {
-      const semantic = unsupportedStrokeFallback(
-        props,
-        new Error("No PPTX stroke could be produced from the authored stroke input."),
-      );
-      return {
-        ...strokes,
-        unsupportedSemantics: semantic ? [semantic, ...cssWideSemantics] : cssWideSemantics,
-      };
-    }
-
-    return {
-      ...strokes,
-      unsupportedSemantics: cssWideSemantics,
-    };
-  } catch (error) {
-    const semantic = unsupportedStrokeFallback(props, error);
+  if (!resolved.ok) {
+    const semantic = unsupportedStrokeFallback(props, resolved.reason);
     return {
       unsupportedSemantics: semantic ? [semantic, ...cssWideSemantics] : cssWideSemantics,
     };
   }
+
+  const strokes = resolved.value;
+  if (
+    !strokes.stroke &&
+    !strokes.edgeStrokes &&
+    hasAuthoredStrokeInput(props) &&
+    !isStrokeIntentionallyNone(props)
+  ) {
+    const semantic = unsupportedStrokeFallback(
+      props,
+      "No PPTX stroke could be produced from the authored stroke input.",
+    );
+    return {
+      ...strokes,
+      unsupportedSemantics: semantic ? [semantic, ...cssWideSemantics] : cssWideSemantics,
+    };
+  }
+
+  return {
+    ...strokes,
+    unsupportedSemantics: cssWideSemantics,
+  };
 }
 
 export function outlineStrokeSafely(
@@ -487,10 +490,9 @@ export function outlineStrokeSafely(
   }
 
   const cssWideSemantics = unsupportedOutlineCssWideKeywordSemantics(props);
-
-  try {
+  const resolved = throwableResult(() => {
     const outlineInput = parseOutlineShorthand(props.outline);
-    const outline = toStroke(
+    return toStroke(
       props.outlineColor ?? outlineInput.outlineColor,
       props.outlineWidth ?? outlineInput.outlineWidth,
       props.outlineStyle ?? outlineInput.outlineStyle,
@@ -500,31 +502,15 @@ export function outlineStrokeSafely(
       undefined,
       context,
     );
-    if (outline) {
-      return { outline, unsupportedSemantics: cssWideSemantics };
-    }
+  });
+
+  if (!resolved.ok) {
     const input = outlineFallbackInput(props);
-    const semantic = unsupportedSemantic({
+    const semantic = unsupportedSemanticFromReason({
       feature: "outline",
       property: input.property,
       value: input.value,
-      error: new Error(OUTLINE_FALLBACK_REASON),
-      fallback: {
-        strategy: "preserveAuthoredValueOnly",
-        preserves: ["authoredOutlineInput"],
-        missing: ["pptxOutline"],
-      },
-    });
-    return {
-      unsupportedSemantics: semantic ? [semantic, ...cssWideSemantics] : cssWideSemantics,
-    };
-  } catch (error) {
-    const input = outlineFallbackInput(props);
-    const semantic = unsupportedSemantic({
-      feature: "outline",
-      property: input.property,
-      value: input.value,
-      error: new Error(`${OUTLINE_FALLBACK_REASON} ${errorReason(error)}`),
+      reason: `${OUTLINE_FALLBACK_REASON} ${resolved.reason}`,
       fallback: {
         strategy: "preserveAuthoredValueOnly",
         preserves: ["authoredOutlineInput"],
@@ -535,6 +521,25 @@ export function outlineStrokeSafely(
       unsupportedSemantics: semantic ? [semantic, ...cssWideSemantics] : cssWideSemantics,
     };
   }
+
+  if (resolved.value) {
+    return { outline: resolved.value, unsupportedSemantics: cssWideSemantics };
+  }
+  const input = outlineFallbackInput(props);
+  const semantic = unsupportedSemanticFromReason({
+    feature: "outline",
+    property: input.property,
+    value: input.value,
+    reason: OUTLINE_FALLBACK_REASON,
+    fallback: {
+      strategy: "preserveAuthoredValueOnly",
+      preserves: ["authoredOutlineInput"],
+      missing: ["pptxOutline"],
+    },
+  });
+  return {
+    unsupportedSemantics: semantic ? [semantic, ...cssWideSemantics] : cssWideSemantics,
+  };
 }
 
 export function unsupportedTransformSemantics(props: {
@@ -542,31 +547,31 @@ export function unsupportedTransformSemantics(props: {
   readonly transformOrigin?: string;
 }): readonly PptxUnsupportedSemantic[] {
   const unsupported: PptxUnsupportedSemantic[] = [];
-  try {
-    parseTransformShorthand(props.transform);
-  } catch (error) {
-    const semantic = unsupportedSemantic({
+  const transform = throwableResult(() => parseTransformShorthand(props.transform));
+  if (!transform.ok) {
+    const semantic = unsupportedSemanticFromReason({
       feature: "transform",
       property: "transform",
       value: props.transform,
-      error,
+      reason: transform.reason,
     });
     if (semantic) {
       unsupported.push(semantic);
     }
   }
 
-  try {
+  const origin = throwableResult(() =>
     parseTransformOrigin(props.transformOrigin, {
       widthEmu: EMU_PER_INCH,
       heightEmu: EMU_PER_INCH,
-    });
-  } catch (error) {
-    const semantic = unsupportedSemantic({
+    }),
+  );
+  if (!origin.ok) {
+    const semantic = unsupportedSemanticFromReason({
       feature: "transform",
       property: "transformOrigin",
       value: props.transformOrigin,
-      error,
+      reason: origin.reason,
     });
     if (semantic) {
       unsupported.push(semantic);
@@ -639,14 +644,8 @@ export function unsupportedOpacityStackingContextSemantics(props: {
 export function unsupportedTransformStackingContextSemantics(props: {
   readonly transform?: string;
 }): readonly PptxUnsupportedSemantic[] {
-  let operations: ReturnType<typeof parseTransformShorthand>;
-  try {
-    operations = parseTransformShorthand(props.transform);
-  } catch {
-    return [];
-  }
-
-  if (!operations?.length) {
+  const operations = throwableResult(() => parseTransformShorthand(props.transform));
+  if (!operations.ok || !operations.value?.length) {
     return [];
   }
 
@@ -740,8 +739,8 @@ export function resolveBackgroundLayersSafely(
 ): ReturnType<typeof resolveBackgroundLayers> & {
   readonly unsupportedSemantics?: readonly PptxUnsupportedSemantic[];
 } {
-  try {
-    return resolveBackgroundLayers(
+  const resolved = throwableResult(() =>
+    resolveBackgroundLayers(
       input.value,
       transparency,
       context,
@@ -752,21 +751,24 @@ export function resolveBackgroundLayersSafely(
       backgroundRepeat,
       backgroundOrigin,
       backgroundClip,
-    );
-  } catch (error) {
-    const unsupported = unsupportedSemantic({
-      feature: "background",
-      property: input.property,
-      value: input.value,
-      error,
-      fallback: {
-        strategy: "preserveAuthoredValueOnly",
-        preserves: ["authoredBackgroundInput"],
-        missing: ["pptxBackgroundLayer"],
-      },
-    });
-    return unsupported ? { unsupportedSemantics: [unsupported] } : {};
+    ),
+  );
+  if (resolved.ok) {
+    return resolved.value;
   }
+
+  const unsupported = unsupportedSemanticFromReason({
+    feature: "background",
+    property: input.property,
+    value: input.value,
+    reason: resolved.reason,
+    fallback: {
+      strategy: "preserveAuthoredValueOnly",
+      preserves: ["authoredBackgroundInput"],
+      missing: ["pptxBackgroundLayer"],
+    },
+  });
+  return unsupported ? { unsupportedSemantics: [unsupported] } : {};
 }
 
 function unsupportedSemanticsForGraphNode(
@@ -781,141 +783,137 @@ function unsupportedSemanticsForGraphNode(
     heightEmu: EMU_PER_INCH,
   };
 
-  try {
-    switch (node.kind) {
-      case "container": {
-        const props = normalizeViewProps(viewStyleFor(node, resolvedStyles));
-        const strokes = resolveNodeStrokesSafely(props);
-        const outline = outlineStrokeSafely(props);
-        const backgroundInput = backgroundInputFor(resolved, props);
-        const background = resolveBackgroundLayersSafely(
-          { property: backgroundInput?.property ?? "background", value: backgroundInput?.value },
-          undefined,
-          { widthEmu: frame.widthEmu, heightEmu: frame.heightEmu },
-          frame,
-          { borderBox: frame, paddingBox: frame, contentBox: frame },
-          props.backgroundPosition,
-          props.backgroundSize,
-          props.backgroundRepeat,
-          props.backgroundOrigin,
-          props.backgroundClip,
-        );
-        return [
-          ...unsupportedTransformSemantics(props),
-          ...unsupportedCompositingSemantics(props),
-          ...unsupportedGroupOpacitySemantics(props),
-          ...strokes.unsupportedSemantics,
-          ...outline.unsupportedSemantics,
-          ...parseShadowSafely({ property: "boxShadow", value: props.boxShadow })
-            .unsupportedSemantics,
-          ...(background.unsupportedSemantics ?? []),
-        ];
-      }
-      case "text": {
-        const props = normalizeTextProps(textStyleFor(node, resolvedStyles));
-        const strokes = resolveNodeStrokesSafely(props);
-        const outline = outlineStrokeSafely(props);
-        const backgroundInput = backgroundInputFor(resolved, props);
-        const background = resolveBackgroundLayersSafely(
-          { property: backgroundInput?.property ?? "background", value: backgroundInput?.value },
-          undefined,
-          { widthEmu: frame.widthEmu, heightEmu: frame.heightEmu },
-          frame,
-          { borderBox: frame, paddingBox: frame, contentBox: frame },
-          props.backgroundPosition,
-          props.backgroundSize,
-          props.backgroundRepeat,
-          props.backgroundOrigin,
-          props.backgroundClip,
-        );
-        const shadowValue: string | undefined =
-          (props.textShadow as string | undefined) ?? (props.boxShadow as string | undefined);
-        return [
-          ...unsupportedTransformSemantics(props),
-          ...unsupportedCompositingSemantics(props),
-          ...strokes.unsupportedSemantics,
-          ...outline.unsupportedSemantics,
-          ...parseShadowSafely({
-            property: props.textShadow !== undefined ? "textShadow" : "boxShadow",
-            value: shadowValue,
-          }).unsupportedSemantics,
-          ...(background.unsupportedSemantics ?? []),
-        ];
-      }
-      case "image": {
-        const props = normalizeImageProps(imageStyleFor(node, resolvedStyles));
-        return [
-          ...unsupportedTransformSemantics(props),
-          ...unsupportedCompositingSemantics(props),
-          ...parseShadowSafely({ property: "boxShadow", value: props.boxShadow })
-            .unsupportedSemantics,
-        ];
-      }
-      case "video": {
-        const props = normalizeVideoProps(videoStyleFor(node, resolvedStyles));
-        return [
-          ...unsupportedTransformSemantics(props),
-          ...unsupportedCompositingSemantics(props),
-          ...parseShadowSafely({ property: "boxShadow", value: props.boxShadow })
-            .unsupportedSemantics,
-        ];
-      }
-      case "shape": {
-        const props = normalizeShapeProps({
-          ...shapeStyleFor(node, resolvedStyles, node.shape),
-        });
-        const strokes = resolveNodeStrokesSafely(props);
-        const outline = outlineStrokeSafely(props);
-        const fillInput = shapeFillInputFor(resolved, props);
-        const fill = resolveBackgroundLayersSafely(
-          { property: fillInput?.property ?? "fill", value: fillInput?.value },
-          undefined,
-          { widthEmu: frame.widthEmu, heightEmu: frame.heightEmu },
-          frame,
-          { borderBox: frame, paddingBox: frame, contentBox: frame },
-          props.backgroundPosition,
-          props.backgroundSize,
-          props.backgroundRepeat,
-          props.backgroundOrigin,
-          props.backgroundClip,
-        );
-        return [
-          ...unsupportedTransformSemantics(props),
-          ...unsupportedCompositingSemantics(props),
-          ...strokes.unsupportedSemantics,
-          ...outline.unsupportedSemantics,
-          ...parseShadowSafely({ property: "boxShadow", value: props.boxShadow })
-            .unsupportedSemantics,
-          ...(fill.unsupportedSemantics ?? []),
-        ];
-      }
-      case "slide": {
-        const props = normalizeSlideProps(slideStyleFor(node, resolvedStyles));
-        const backgroundInput = backgroundInputFor(resolved, props);
-        const background = resolveBackgroundLayersSafely(
-          { property: backgroundInput?.property ?? "background", value: backgroundInput?.value },
-          undefined,
-          { widthEmu: frame.widthEmu, heightEmu: frame.heightEmu },
-          frame,
-          { borderBox: frame, paddingBox: frame, contentBox: frame },
-          props.backgroundPosition,
-          props.backgroundSize,
-          props.backgroundRepeat,
-          props.backgroundOrigin,
-          props.backgroundClip,
-        );
-        return background.unsupportedSemantics ?? [];
-      }
-      case "document":
-      case "table":
-      case "tableSection":
-      case "tableRow":
-      case "tableCell":
-      case "textRun":
-        return [];
+  switch (node.kind) {
+    case "container": {
+      const props = normalizeViewProps(viewStyleFor(node, resolvedStyles));
+      const strokes = resolveNodeStrokesSafely(props);
+      const outline = outlineStrokeSafely(props);
+      const backgroundInput = backgroundInputFor(resolved, props);
+      const background = resolveBackgroundLayersSafely(
+        { property: backgroundInput?.property ?? "background", value: backgroundInput?.value },
+        undefined,
+        { widthEmu: frame.widthEmu, heightEmu: frame.heightEmu },
+        frame,
+        { borderBox: frame, paddingBox: frame, contentBox: frame },
+        props.backgroundPosition,
+        props.backgroundSize,
+        props.backgroundRepeat,
+        props.backgroundOrigin,
+        props.backgroundClip,
+      );
+      return [
+        ...unsupportedTransformSemantics(props),
+        ...unsupportedCompositingSemantics(props),
+        ...unsupportedGroupOpacitySemantics(props),
+        ...strokes.unsupportedSemantics,
+        ...outline.unsupportedSemantics,
+        ...parseShadowSafely({ property: "boxShadow", value: props.boxShadow })
+          .unsupportedSemantics,
+        ...(background.unsupportedSemantics ?? []),
+      ];
     }
-  } catch {
-    return [];
+    case "text": {
+      const props = normalizeTextProps(textStyleFor(node, resolvedStyles));
+      const strokes = resolveNodeStrokesSafely(props);
+      const outline = outlineStrokeSafely(props);
+      const backgroundInput = backgroundInputFor(resolved, props);
+      const background = resolveBackgroundLayersSafely(
+        { property: backgroundInput?.property ?? "background", value: backgroundInput?.value },
+        undefined,
+        { widthEmu: frame.widthEmu, heightEmu: frame.heightEmu },
+        frame,
+        { borderBox: frame, paddingBox: frame, contentBox: frame },
+        props.backgroundPosition,
+        props.backgroundSize,
+        props.backgroundRepeat,
+        props.backgroundOrigin,
+        props.backgroundClip,
+      );
+      const shadowValue: string | undefined =
+        (props.textShadow as string | undefined) ?? (props.boxShadow as string | undefined);
+      return [
+        ...unsupportedTransformSemantics(props),
+        ...unsupportedCompositingSemantics(props),
+        ...strokes.unsupportedSemantics,
+        ...outline.unsupportedSemantics,
+        ...parseShadowSafely({
+          property: props.textShadow !== undefined ? "textShadow" : "boxShadow",
+          value: shadowValue,
+        }).unsupportedSemantics,
+        ...(background.unsupportedSemantics ?? []),
+      ];
+    }
+    case "image": {
+      const props = normalizeImageProps(imageStyleFor(node, resolvedStyles));
+      return [
+        ...unsupportedTransformSemantics(props),
+        ...unsupportedCompositingSemantics(props),
+        ...parseShadowSafely({ property: "boxShadow", value: props.boxShadow })
+          .unsupportedSemantics,
+      ];
+    }
+    case "video": {
+      const props = normalizeVideoProps(videoStyleFor(node, resolvedStyles));
+      return [
+        ...unsupportedTransformSemantics(props),
+        ...unsupportedCompositingSemantics(props),
+        ...parseShadowSafely({ property: "boxShadow", value: props.boxShadow })
+          .unsupportedSemantics,
+      ];
+    }
+    case "shape": {
+      const props = normalizeShapeProps({
+        ...shapeStyleFor(node, resolvedStyles, node.shape),
+      });
+      const strokes = resolveNodeStrokesSafely(props);
+      const outline = outlineStrokeSafely(props);
+      const fillInput = shapeFillInputFor(resolved, props);
+      const fill = resolveBackgroundLayersSafely(
+        { property: fillInput?.property ?? "fill", value: fillInput?.value },
+        undefined,
+        { widthEmu: frame.widthEmu, heightEmu: frame.heightEmu },
+        frame,
+        { borderBox: frame, paddingBox: frame, contentBox: frame },
+        props.backgroundPosition,
+        props.backgroundSize,
+        props.backgroundRepeat,
+        props.backgroundOrigin,
+        props.backgroundClip,
+      );
+      return [
+        ...unsupportedTransformSemantics(props),
+        ...unsupportedCompositingSemantics(props),
+        ...strokes.unsupportedSemantics,
+        ...outline.unsupportedSemantics,
+        ...parseShadowSafely({ property: "boxShadow", value: props.boxShadow })
+          .unsupportedSemantics,
+        ...(fill.unsupportedSemantics ?? []),
+      ];
+    }
+    case "slide": {
+      const props = normalizeSlideProps(slideStyleFor(node, resolvedStyles));
+      const backgroundInput = backgroundInputFor(resolved, props);
+      const background = resolveBackgroundLayersSafely(
+        { property: backgroundInput?.property ?? "background", value: backgroundInput?.value },
+        undefined,
+        { widthEmu: frame.widthEmu, heightEmu: frame.heightEmu },
+        frame,
+        { borderBox: frame, paddingBox: frame, contentBox: frame },
+        props.backgroundPosition,
+        props.backgroundSize,
+        props.backgroundRepeat,
+        props.backgroundOrigin,
+        props.backgroundClip,
+      );
+      return background.unsupportedSemantics ?? [];
+    }
+    case "document":
+    case "table":
+    case "tableSection":
+    case "tableRow":
+    case "tableCell":
+    case "textRun":
+      return [];
   }
 }
 

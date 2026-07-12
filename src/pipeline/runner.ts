@@ -1,13 +1,14 @@
 import type { DeckOptions } from "../authoring/options";
 import { validateDeckOptions } from "../authoring/options/validation";
-import type { RenderOptions, WriterAdapter } from "../adapter";
+import type { RenderOptions, WriterAdapter, WriterAdapterResult } from "../adapter";
 import { createWriterRenderContext } from "../adapter/context";
 import type { AssetLoader, AssetLoadResult, AssetProbeResult, AssetSource } from "../assets";
 import {
   BUILTIN_ASSET_RESOLVER_IDENTITY,
-  assetDiagnosticFromError,
+  assetDependencyBoundaryValue,
+  assetDiagnostic,
+  assetLoaderBoundaryOutcome,
   assetLoaderForIdentity,
-  assetLoaderOutcomeValue,
   assetLoadersWithIdentities,
   assetSourceFromEntity,
   missingAssetContextDiagnostics,
@@ -18,7 +19,7 @@ import {
   summarizeAssetResolutions,
 } from "../asset-loading";
 import { defaultAdapterLimitationsFor, selectWriterAdapter } from "../adapter/registry";
-import { createDiagnostics, diagnostic, type Diagnostics } from "../diagnostics";
+import { createDiagnostics, diagnostic, type Diagnostic, type Diagnostics } from "../diagnostics";
 import {
   COMPOSITION_SOURCE,
   type CompositionSource,
@@ -616,66 +617,63 @@ async function resolveFontAssetRegistration(input: {
 
   if (!probe) {
     for (const { loader, resolverIdentity: loaderResolverIdentity } of probeLoaders) {
-      try {
-        const outcome = assetLoaderOutcomeValue({
-          outcome: await loader.probe?.({
+      const outcome = await assetLoaderBoundaryOutcome({
+        invoke: () =>
+          loader.probe?.({
             source,
             resolverIdentity: loaderResolverIdentity,
             assetEntityId,
             sourceField: "font",
             ...(input.origin ? { origin: input.origin } : {}),
           }),
-          stage: "project",
-          code: "E_PROJECT_ASSET_PROBE_OUTCOME_INVALID",
-          title: "asset probe outcome is invalid",
-          phase: "probe",
+        stage: "project",
+        code: "E_PROJECT_ASSET_PROBE_OUTCOME_INVALID",
+        title: "asset probe outcome is invalid",
+        failureCode: "E_PROJECT_ASSET_PROBE_FAILED",
+        failureTitle: "asset probe failed",
+        phase: "probe",
+        source,
+        resolverIdentity: loaderResolverIdentity,
+        assetEntityId,
+      });
+      if (outcome.kind === "failed") {
+        diagnostics = combineDiagnostics(diagnostics, outcome.diagnostics);
+        resolverIdentity = loaderResolverIdentity;
+        resolutionStopped = true;
+        break;
+      }
+      if (outcome.kind === "resolved") {
+        const normalized = normalizedAssetProbeResult({
+          result: outcome.value,
           source,
           resolverIdentity: loaderResolverIdentity,
           assetEntityId,
         });
-        if (outcome.kind === "failed") {
-          diagnostics = combineDiagnostics(diagnostics, outcome.diagnostics);
-          resolverIdentity = loaderResolverIdentity;
-          resolutionStopped = true;
-          break;
+        if (!normalized.ok) {
+          diagnostics = combineDiagnostics(diagnostics, normalized.diagnostics);
+          continue;
         }
-        if (outcome.kind === "resolved") {
-          const normalized = normalizedAssetProbeResult({
-            result: outcome.value,
-            source,
-            resolverIdentity: loaderResolverIdentity,
-            assetEntityId,
-          });
-          if (!normalized.ok) {
-            diagnostics = combineDiagnostics(diagnostics, normalized.diagnostics);
-            continue;
-          }
-          probe = normalized.result;
-          resolverIdentity = loaderResolverIdentity;
-          diagnostics = combineDiagnostics(diagnostics, outcome.diagnostics);
-          break;
-        }
-      } catch (error) {
-        diagnostics = combineDiagnostics(
-          diagnostics,
-          assetDiagnosticFromError({
-            stage: "project",
-            code: "E_PROJECT_ASSET_PROBE_FAILED",
-            title: "asset probe failed",
-            phase: "probe",
-            source,
-            resolverIdentity: loaderResolverIdentity,
-            assetEntityId,
-            error,
-          }),
-        );
+        probe = normalized.result;
+        resolverIdentity = loaderResolverIdentity;
+        diagnostics = combineDiagnostics(diagnostics, outcome.diagnostics);
+        break;
       }
     }
   }
 
   if (!probe && !resolutionStopped) {
-    try {
-      const builtIn = await probeBuiltInAssetSource(source);
+    const builtInResult = await assetDependencyBoundaryValue({
+      invoke: () => probeBuiltInAssetSource(source),
+      stage: "project",
+      code: "E_PROJECT_ASSET_PROBE_FAILED",
+      title: "asset probe failed",
+      phase: "probe",
+      source,
+      resolverIdentity: BUILTIN_ASSET_RESOLVER_IDENTITY,
+      assetEntityId,
+    });
+    if (builtInResult.ok) {
+      const builtIn = builtInResult.value;
       if (builtIn) {
         probe = builtIn.probe;
         load = builtIn.load;
@@ -683,20 +681,8 @@ async function resolveFontAssetRegistration(input: {
         diagnostics = combineDiagnostics(diagnostics, builtIn.diagnostics ?? emptyDiagnostics());
         resolutionStopped = builtIn.diagnostics?.hasErrors ?? false;
       }
-    } catch (error) {
-      diagnostics = combineDiagnostics(
-        diagnostics,
-        assetDiagnosticFromError({
-          stage: "project",
-          code: "E_PROJECT_ASSET_PROBE_FAILED",
-          title: "asset probe failed",
-          phase: "probe",
-          source,
-          resolverIdentity: BUILTIN_ASSET_RESOLVER_IDENTITY,
-          assetEntityId,
-          error,
-        }),
-      );
+    } else {
+      diagnostics = combineDiagnostics(diagnostics, builtInResult.diagnostics);
     }
   }
 
@@ -710,79 +696,66 @@ async function resolveFontAssetRegistration(input: {
     if (load || resolutionStopped) {
       break;
     }
-    try {
-      const outcome = assetLoaderOutcomeValue({
-        outcome: await loader.load?.({
+    const outcome = await assetLoaderBoundaryOutcome({
+      invoke: () =>
+        loader.load?.({
           source,
           resolverIdentity: loaderResolverIdentity,
           assetEntityId,
           sourceField: "font",
           ...(input.origin ? { origin: input.origin } : {}),
         }),
-        stage: "project",
-        code: "E_PROJECT_ASSET_LOAD_OUTCOME_INVALID",
-        title: "asset load outcome is invalid",
-        phase: "load",
+      stage: "project",
+      code: "E_PROJECT_ASSET_LOAD_OUTCOME_INVALID",
+      title: "asset load outcome is invalid",
+      failureCode: "E_PROJECT_ASSET_LOAD_FAILED",
+      failureTitle: "asset load failed",
+      phase: "load",
+      source,
+      resolverIdentity: loaderResolverIdentity,
+      assetEntityId,
+    });
+    if (outcome.kind === "failed") {
+      diagnostics = combineDiagnostics(diagnostics, outcome.diagnostics);
+      resolverIdentity = loaderResolverIdentity;
+      resolutionStopped = true;
+      break;
+    }
+    if (outcome.kind === "resolved") {
+      const normalized = normalizedAssetLoadResult({
+        result: outcome.value,
         source,
         resolverIdentity: loaderResolverIdentity,
+        stage: "project",
+        assetEntityId,
       });
-      if (outcome.kind === "failed") {
-        diagnostics = outcome.diagnostics;
-        resolverIdentity = loaderResolverIdentity;
-        resolutionStopped = true;
-        break;
+      if (!normalized.ok) {
+        diagnostics = combineDiagnostics(diagnostics, normalized.diagnostics);
+        continue;
       }
-      if (outcome.kind === "resolved") {
-        const normalized = normalizedAssetLoadResult({
-          result: outcome.value,
-          source,
-          resolverIdentity: loaderResolverIdentity,
-          stage: "project",
-          assetEntityId,
-        });
-        if (!normalized.ok) {
-          diagnostics = combineDiagnostics(diagnostics, normalized.diagnostics);
-          continue;
-        }
 
-        load = normalized.result;
-        resolverIdentity = loaderResolverIdentity;
-        diagnostics = combineDiagnostics(diagnostics, outcome.diagnostics);
-        break;
-      }
-    } catch (error) {
-      diagnostics = combineDiagnostics(
-        diagnostics,
-        assetDiagnosticFromError({
-          stage: "project",
-          code: "E_PROJECT_ASSET_LOAD_FAILED",
-          title: "asset load failed",
-          phase: "load",
-          source,
-          resolverIdentity: loaderResolverIdentity,
-          error,
-        }),
-      );
+      load = normalized.result;
+      resolverIdentity = loaderResolverIdentity;
+      diagnostics = combineDiagnostics(diagnostics, outcome.diagnostics);
+      break;
     }
   }
 
   if (!load && !resolutionStopped && resolverIdentity === BUILTIN_ASSET_RESOLVER_IDENTITY) {
-    try {
-      load = await loadBuiltInAssetSource(source);
-    } catch (error) {
-      diagnostics = combineDiagnostics(
-        diagnostics,
-        assetDiagnosticFromError({
-          stage: "project",
-          code: "E_PROJECT_ASSET_LOAD_FAILED",
-          title: "asset load failed",
-          phase: "load",
-          source,
-          resolverIdentity,
-          assetEntityId,
-          error,
-        }),
-      );
+    const builtInResult = await assetDependencyBoundaryValue({
+      invoke: () => loadBuiltInAssetSource(source),
+      stage: "project",
+      code: "E_PROJECT_ASSET_LOAD_FAILED",
+      title: "asset load failed",
+      phase: "load",
+      source,
+      resolverIdentity,
+      assetEntityId,
+    });
+    if (builtInResult.ok) {
+      load = builtInResult.value;
+    } else {
+      diagnostics = combineDiagnostics(diagnostics, builtInResult.diagnostics);
     }
   }
 
@@ -933,65 +906,63 @@ async function resolveAssetArtifacts(input: {
     }
 
     for (const { loader, resolverIdentity: loaderResolverIdentity } of loaders) {
-      try {
-        const outcome = assetLoaderOutcomeValue({
-          outcome: await loader.probe?.({
+      const outcome = await assetLoaderBoundaryOutcome({
+        invoke: () =>
+          loader.probe?.({
             source,
             resolverIdentity: loaderResolverIdentity,
             assetEntityId,
             sourceField: asset.sourceField,
             ...(assetOrigin ? { origin: assetOrigin } : {}),
           }),
-          stage: "project",
-          code: "E_PROJECT_ASSET_PROBE_OUTCOME_INVALID",
-          title: "asset probe outcome is invalid",
-          phase: "probe",
+        stage: "project",
+        code: "E_PROJECT_ASSET_PROBE_OUTCOME_INVALID",
+        title: "asset probe outcome is invalid",
+        failureCode: "E_PROJECT_ASSET_PROBE_FAILED",
+        failureTitle: "asset probe failed",
+        phase: "probe",
+        source,
+        resolverIdentity: loaderResolverIdentity,
+        assetEntityId,
+      });
+      if (outcome.kind === "failed") {
+        assetDiagnostics = outcome.diagnostics;
+        resolverIdentity = loaderResolverIdentity;
+        resolutionStopped = true;
+        break;
+      }
+      if (outcome.kind === "resolved") {
+        const normalized = normalizedAssetProbeResult({
+          result: outcome.value,
           source,
           resolverIdentity: loaderResolverIdentity,
           assetEntityId,
         });
-        if (outcome.kind === "failed") {
-          assetDiagnostics = outcome.diagnostics;
-          resolverIdentity = loaderResolverIdentity;
-          resolutionStopped = true;
-          break;
+        if (!normalized.ok) {
+          diagnostics.push(normalized.diagnostics);
+          continue;
         }
-        if (outcome.kind === "resolved") {
-          const normalized = normalizedAssetProbeResult({
-            result: outcome.value,
-            source,
-            resolverIdentity: loaderResolverIdentity,
-            assetEntityId,
-          });
-          if (!normalized.ok) {
-            diagnostics.push(normalized.diagnostics);
-            continue;
-          }
 
-          probe = normalized.result;
-          resolverIdentity = loaderResolverIdentity;
-          assetDiagnostics = outcome.diagnostics;
-          break;
-        }
-      } catch (error) {
-        diagnostics.push(
-          assetDiagnosticFromError({
-            stage: "project",
-            code: "E_PROJECT_ASSET_PROBE_FAILED",
-            title: "asset probe failed",
-            phase: "probe",
-            source,
-            resolverIdentity: loaderResolverIdentity,
-            assetEntityId,
-            error,
-          }),
-        );
+        probe = normalized.result;
+        resolverIdentity = loaderResolverIdentity;
+        assetDiagnostics = outcome.diagnostics;
+        break;
       }
     }
 
     if (!probe && !resolutionStopped) {
-      try {
-        const builtInProbe = await probeBuiltInAssetSource(source);
+      const builtInResult = await assetDependencyBoundaryValue({
+        invoke: () => probeBuiltInAssetSource(source),
+        stage: "project",
+        code: "E_PROJECT_ASSET_PROBE_FAILED",
+        title: "asset probe failed",
+        phase: "probe",
+        source,
+        resolverIdentity: BUILTIN_ASSET_RESOLVER_IDENTITY,
+        assetEntityId,
+      });
+      if (builtInResult.ok) {
+        const builtInProbe = builtInResult.value;
         if (builtInProbe) {
           const normalized = normalizedAssetProbeResult({
             result: builtInProbe.probe,
@@ -1010,19 +981,8 @@ async function resolveAssetArtifacts(input: {
             diagnostics.push(normalized.diagnostics);
           }
         }
-      } catch (error) {
-        diagnostics.push(
-          assetDiagnosticFromError({
-            stage: "project",
-            code: "E_PROJECT_ASSET_PROBE_FAILED",
-            title: "asset probe failed",
-            phase: "probe",
-            source,
-            resolverIdentity: BUILTIN_ASSET_RESOLVER_IDENTITY,
-            assetEntityId,
-            error,
-          }),
-        );
+      } else {
+        diagnostics.push(builtInResult.diagnostics);
       }
       resolverIdentity = BUILTIN_ASSET_RESOLVER_IDENTITY;
     }
@@ -1151,62 +1111,49 @@ async function loadAssetArtifacts(input: {
         continue mediaLoop;
       }
 
-      try {
-        const outcome = assetLoaderOutcomeValue({
-          outcome: await loader.load?.({
+      const outcome = await assetLoaderBoundaryOutcome({
+        invoke: () =>
+          loader.load?.({
             source: media.source,
             resolverIdentity: loaderResolverIdentity,
             assetEntityId: media.assetEntityId,
             sourceField: media.sourceField,
             ...(mediaOrigin ? { origin: mediaOrigin } : {}),
           }),
-          stage: "render",
-          code: "E_RENDER_ASSET_LOAD_OUTCOME_INVALID",
-          title: "asset load outcome is invalid",
-          phase: "load",
+        stage: "render",
+        code: "E_RENDER_ASSET_LOAD_OUTCOME_INVALID",
+        title: "asset load outcome is invalid",
+        failureCode: "E_RENDER_ASSET_LOAD_FAILED",
+        failureTitle: "asset load failed",
+        phase: "load",
+        source: media.source,
+        resolverIdentity: loaderResolverIdentity,
+        assetEntityId: media.assetEntityId,
+        packagePartPath: media.packagePartPath,
+      });
+      if (outcome.kind === "failed") {
+        assetDiagnostics = outcome.diagnostics;
+        resolverIdentity = loaderResolverIdentity;
+        resolutionStopped = true;
+        break;
+      }
+      if (outcome.kind === "resolved") {
+        const normalized = normalizedAssetLoadResult({
+          result: outcome.value,
           source: media.source,
           resolverIdentity: loaderResolverIdentity,
           assetEntityId: media.assetEntityId,
           packagePartPath: media.packagePartPath,
         });
-        if (outcome.kind === "failed") {
-          assetDiagnostics = outcome.diagnostics;
-          resolverIdentity = loaderResolverIdentity;
-          resolutionStopped = true;
-          break;
+        if (!normalized.ok) {
+          diagnostics.push(normalized.diagnostics);
+          continue;
         }
-        if (outcome.kind === "resolved") {
-          const normalized = normalizedAssetLoadResult({
-            result: outcome.value,
-            source: media.source,
-            resolverIdentity: loaderResolverIdentity,
-            assetEntityId: media.assetEntityId,
-            packagePartPath: media.packagePartPath,
-          });
-          if (!normalized.ok) {
-            diagnostics.push(normalized.diagnostics);
-            continue;
-          }
 
-          load = normalized.result;
-          resolverIdentity = loaderResolverIdentity;
-          assetDiagnostics = outcome.diagnostics;
-          break;
-        }
-      } catch (error) {
-        diagnostics.push(
-          assetDiagnosticFromError({
-            stage: "render",
-            code: "E_RENDER_ASSET_LOAD_FAILED",
-            title: "asset load failed",
-            phase: "load",
-            source: media.source,
-            resolverIdentity: loaderResolverIdentity,
-            assetEntityId: media.assetEntityId,
-            packagePartPath: media.packagePartPath,
-            error,
-          }),
-        );
+        load = normalized.result;
+        resolverIdentity = loaderResolverIdentity;
+        assetDiagnostics = outcome.diagnostics;
+        break;
       }
     }
 
@@ -1215,8 +1162,19 @@ async function loadAssetArtifacts(input: {
       !resolutionStopped &&
       (!currentResolverIdentity || currentResolverIdentity === BUILTIN_ASSET_RESOLVER_IDENTITY)
     ) {
-      try {
-        const builtInLoad = await loadBuiltInAssetSource(media.source);
+      const builtInResult = await assetDependencyBoundaryValue({
+        invoke: () => loadBuiltInAssetSource(media.source),
+        stage: "render",
+        code: "E_RENDER_ASSET_LOAD_FAILED",
+        title: "asset load failed",
+        phase: "load",
+        source: media.source,
+        resolverIdentity,
+        assetEntityId: media.assetEntityId,
+        packagePartPath: media.packagePartPath,
+      });
+      if (builtInResult.ok) {
+        const builtInLoad = builtInResult.value;
         if (builtInLoad) {
           const normalized = normalizedAssetLoadResult({
             result: builtInLoad,
@@ -1232,20 +1190,8 @@ async function loadAssetArtifacts(input: {
           }
         }
         resolverIdentity = BUILTIN_ASSET_RESOLVER_IDENTITY;
-      } catch (error) {
-        diagnostics.push(
-          assetDiagnosticFromError({
-            stage: "render",
-            code: "E_RENDER_ASSET_LOAD_FAILED",
-            title: "asset load failed",
-            phase: "load",
-            source: media.source,
-            resolverIdentity,
-            assetEntityId: media.assetEntityId,
-            packagePartPath: media.packagePartPath,
-            error,
-          }),
-        );
+      } else {
+        diagnostics.push(builtInResult.diagnostics);
       }
     }
 
@@ -1265,7 +1211,7 @@ async function loadAssetArtifacts(input: {
 
     if (!load) {
       diagnostics.push(
-        assetDiagnosticFromError({
+        assetDiagnostic({
           stage: "render",
           code: "E_RENDER_ASSET_LOAD_FAILED",
           title: "asset load failed",
@@ -1274,7 +1220,7 @@ async function loadAssetArtifacts(input: {
           resolverIdentity,
           assetEntityId: media.assetEntityId,
           packagePartPath: media.packagePartPath,
-          error: new Error("No asset loader returned bytes for this media source."),
+          message: "No asset loader returned bytes for this media source.",
         }),
       );
       continue;
@@ -1328,6 +1274,72 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function hasOnlyKeys(
+  value: Readonly<Record<string, unknown>>,
+  allowed: readonly string[],
+): boolean {
+  return Object.keys(value).every((key) => allowed.includes(key));
+}
+
+function isStringArray(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isDiagnosticSourceSpan(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["file", "line", "column"]) &&
+    (value.file === undefined || typeof value.file === "string") &&
+    (value.line === undefined || typeof value.line === "number") &&
+    (value.column === undefined || typeof value.column === "number")
+  );
+}
+
+function isDiagnosticLabel(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["path", "message", "sourceSpan", "severity"]) &&
+    typeof value.path === "string" &&
+    typeof value.message === "string" &&
+    (value.sourceSpan === undefined || isDiagnosticSourceSpan(value.sourceSpan)) &&
+    (value.severity === undefined || value.severity === "primary" || value.severity === "secondary")
+  );
+}
+
+function isDiagnosticValue(value: unknown): value is Diagnostic {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["severity", "code", "title", "message", "labels", "notes", "help"]) &&
+    (value.severity === "error" || value.severity === "warning") &&
+    typeof value.code === "string" &&
+    typeof value.title === "string" &&
+    (value.message === undefined || typeof value.message === "string") &&
+    Array.isArray(value.labels) &&
+    value.labels.every(isDiagnosticLabel) &&
+    (value.notes === undefined || isStringArray(value.notes)) &&
+    (value.help === undefined || isStringArray(value.help))
+  );
+}
+
+function isDiagnosticsValue(value: unknown): value is Diagnostics {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["items", "hasErrors", "hasWarnings"]) &&
+    Array.isArray(value.items) &&
+    value.items.every(isDiagnosticValue) &&
+    typeof value.hasErrors === "boolean" &&
+    typeof value.hasWarnings === "boolean"
+  );
+}
+
+function isWriterAdapterResult(value: unknown): value is WriterAdapterResult {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["diagnostics", "artifact", "patchPlan", "summary"]) &&
+    isDiagnosticsValue(value.diagnostics)
+  );
+}
+
 function projectionInputFormatMatches(
   input: DefinedProjectionInput | undefined,
   format: ProjectionFormat,
@@ -1353,6 +1365,54 @@ function diagnosticFromError(input: {
       labels: [{ path: input.stage, message }],
     }),
   ]);
+}
+
+async function renderAdapterAtIntegrationBoundary(input: {
+  readonly adapter: WriterAdapter;
+  readonly projection: ProjectedDocumentModel;
+  readonly context: ReturnType<typeof createWriterRenderContext>;
+}): Promise<
+  | { readonly ok: true; readonly result: WriterAdapterResult }
+  | { readonly ok: false; readonly diagnostics: Diagnostics }
+> {
+  try {
+    const result = await input.adapter.render(input.projection, input.context);
+    if (!isWriterAdapterResult(result)) {
+      return {
+        ok: false,
+        diagnostics: createDiagnostics([
+          diagnostic({
+            severity: "error",
+            code: "E_RENDER_ADAPTER_RESULT_INVALID",
+            title: "writer adapter result is invalid",
+            message: "Writer adapters must return a result object with diagnostics.",
+            labels: [
+              {
+                path: "render.adapter.result",
+                message: result === null ? "received null" : `received ${typeof result}`,
+                severity: "primary",
+              },
+            ],
+          }),
+        ]),
+      };
+    }
+
+    return {
+      ok: true,
+      result,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      diagnostics: diagnosticFromError({
+        stage: "render",
+        code: "E_RENDER_FAILED",
+        title: "render failed",
+        error,
+      }),
+    };
+  }
 }
 
 function projectionWithReusablePackageParts(input: {
@@ -1905,6 +1965,7 @@ export async function projectSource<
       projectDiagnostics,
     );
     let partialProjection: ProjectedDocumentModel | undefined;
+
     try {
       partialProjection = projectGraphToPartialDocumentModel({
         format: projectionFormat,
@@ -1912,7 +1973,7 @@ export async function projectSource<
         resolvedStyles: compileResult.resolvedStyles,
         options: input.options,
       });
-      const partialDiagnostics = combineDiagnostics(
+      diagnostics = combineDiagnostics(
         diagnostics,
         projectionDiagnosticsForModel({
           projection: partialProjection,
@@ -1920,8 +1981,7 @@ export async function projectSource<
         }),
         validateProjectedDocumentModel(partialProjection),
       );
-      diagnostics = partialDiagnostics;
-      artifacts.materializeProjection(partialProjection, partialDiagnostics, input.options);
+      artifacts.materializeProjection(partialProjection, diagnostics, input.options);
     } catch {
       partialProjection = undefined;
     }
@@ -1932,7 +1992,7 @@ export async function projectSource<
         diagnostics,
         stages: {
           ...compileResult.stages,
-          project: stageSummary("project", projectDiagnostics, "missing"),
+          project: stageSummary("project", diagnostics, "missing"),
         },
         format: projectionFormat,
       };
@@ -1955,7 +2015,7 @@ export async function projectSource<
         ...compileResult.stages,
         project: stageSummary(
           "project",
-          projectDiagnostics,
+          diagnostics,
           projectedArtifactStatus(partialProjection, diagnostics),
         ),
       },
@@ -2218,7 +2278,28 @@ export async function renderSource<
       onBuildArtifacts: (buildArtifacts) => artifacts.materializePptxBuildArtifacts(buildArtifacts),
     });
 
-    const adapterResult = await adapter.render(renderProjection, writerContext);
+    const adapterBoundaryResult = await renderAdapterAtIntegrationBoundary({
+      adapter,
+      projection: renderProjection,
+      context: writerContext,
+    });
+    if (!adapterBoundaryResult.ok) {
+      const diagnostics = combineDiagnostics(
+        preRenderDiagnostics,
+        adapterBoundaryResult.diagnostics,
+      );
+      return finishRender({
+        ok: false,
+        diagnostics,
+        stages: {
+          ...projectResult.stages,
+          render: stageSummary("render", diagnostics, "missing"),
+        },
+        format: adapter.format,
+      });
+    }
+
+    const adapterResult = adapterBoundaryResult.result;
     const afterRender = applyPluginHooks(execution.plugins, "afterRender", {
       stage: "render" as const,
       phase: "after" as const,
@@ -2288,7 +2369,7 @@ export async function renderSource<
       diagnostics,
       stages: {
         ...projectResult.stages,
-        render: stageSummary("render", renderDiagnostics, "missing"),
+        render: stageSummary("render", diagnostics, "missing"),
       },
       format: adapter.format,
     });
