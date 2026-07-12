@@ -280,7 +280,7 @@ function mutuallyExclusiveTextScriptDiagnostic(input: {
   return diagnostic({
     severity: "error",
     code: "E_COMPILE_INVALID_STYLE_VALUE",
-    title: "style value is not part of the public authoring API",
+    title: "style values are mutually exclusive",
     message: "Text cannot be both superscript and subscript.",
     labels: [
       {

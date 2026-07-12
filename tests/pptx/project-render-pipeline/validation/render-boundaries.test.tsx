@@ -637,6 +637,53 @@ describe("project/render validation render boundaries", () => {
     });
   });
 
+  test("project integration failures remain diagnostics instead of rejected promises", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin({
+      kind: "deckjsx.plugin",
+      id: "test:project-boundary-invalid-resolved-style",
+      name: "test:project-boundary-invalid-resolved-style",
+      hooks: {
+        beforeProject(context) {
+          const textNodeId = H.textNodeIdBy(context.graph, "invalid style from plugin");
+          const resolved = textNodeId ? context.resolvedStyles.get(textNodeId) : undefined;
+          if (!textNodeId || !resolved) {
+            return undefined;
+          }
+
+          return {
+            resolvedStyles: new Map(context.resolvedStyles).set(textNodeId, {
+              ...resolved,
+              style: {
+                ...resolved.style,
+                superscript: true,
+                subscript: true,
+              },
+            }),
+          };
+        },
+      },
+    });
+    deck.slide({ name: "Project boundary" }, () => (
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
+        invalid style from plugin
+      </p>
+    ));
+
+    const project = await deck.project();
+
+    expect(project.ok).toBe(false);
+    expect(project.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        severity: "error",
+        code: "E_PROJECT_FAILED",
+      }),
+    );
+    expect(project.stages.project.diagnostics.items).toContainEqual(
+      expect.objectContaining({ code: "E_PROJECT_FAILED" }),
+    );
+  });
+
   test("adapter-like invalid writer values are render-blocking errors", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Invalid adapter" }, () => <></>);
@@ -659,6 +706,39 @@ describe("project/render validation render boundaries", () => {
     expect(result.stages.render.artifact).toBe("missing");
     expect(result.diagnostics.items).toContainEqual(
       expect.objectContaining({ code: "E_RENDER_INVALID_WRITER_ADAPTER", severity: "error" }),
+    );
+  });
+
+  test("malformed writer adapter results remain render diagnostics", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Malformed adapter result" }, () => (
+      <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
+        malformed adapter result
+      </p>
+    ));
+    const malformedAdapter: H.WriterAdapter = {
+      kind: "deckjsx.writerAdapter",
+      name: "test:malformed-result",
+      projectionFormat: "pptx",
+      format: "pptx",
+      options: {},
+      async render() {
+        return undefined as never;
+      },
+    };
+
+    const result = await deck.render(malformedAdapter);
+
+    expect(result.ok).toBe(false);
+    expect(result.artifact).toBeUndefined();
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        code: "E_RENDER_ADAPTER_RESULT_INVALID",
+        severity: "error",
+      }),
+    );
+    expect(result.stages.render.diagnostics.items).toContainEqual(
+      expect.objectContaining({ code: "E_RENDER_ADAPTER_RESULT_INVALID" }),
     );
   });
 });

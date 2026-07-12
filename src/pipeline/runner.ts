@@ -19,7 +19,7 @@ import {
   summarizeAssetResolutions,
 } from "../asset-loading";
 import { defaultAdapterLimitationsFor, selectWriterAdapter } from "../adapter/registry";
-import { createDiagnostics, diagnostic, type Diagnostics } from "../diagnostics";
+import { createDiagnostics, diagnostic, type Diagnostic, type Diagnostics } from "../diagnostics";
 import {
   COMPOSITION_SOURCE,
   type CompositionSource,
@@ -80,6 +80,7 @@ import type {
 } from "../projection/pptx/model";
 import {
   projectGraphToDocumentModel,
+  projectGraphToPartialDocumentModel,
   projectionDiagnosticsForGraph,
   projectionDiagnosticsForModel,
   summarizeProjectedDocumentModel,
@@ -715,7 +716,7 @@ async function resolveFontAssetRegistration(input: {
       assetEntityId,
     });
     if (outcome.kind === "failed") {
-      diagnostics = outcome.diagnostics;
+      diagnostics = combineDiagnostics(diagnostics, outcome.diagnostics);
       resolverIdentity = loaderResolverIdentity;
       resolutionStopped = true;
       break;
@@ -1273,6 +1274,72 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function hasOnlyKeys(
+  value: Readonly<Record<string, unknown>>,
+  allowed: readonly string[],
+): boolean {
+  return Object.keys(value).every((key) => allowed.includes(key));
+}
+
+function isStringArray(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isDiagnosticSourceSpan(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["file", "line", "column"]) &&
+    (value.file === undefined || typeof value.file === "string") &&
+    (value.line === undefined || typeof value.line === "number") &&
+    (value.column === undefined || typeof value.column === "number")
+  );
+}
+
+function isDiagnosticLabel(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["path", "message", "sourceSpan", "severity"]) &&
+    typeof value.path === "string" &&
+    typeof value.message === "string" &&
+    (value.sourceSpan === undefined || isDiagnosticSourceSpan(value.sourceSpan)) &&
+    (value.severity === undefined || value.severity === "primary" || value.severity === "secondary")
+  );
+}
+
+function isDiagnosticValue(value: unknown): value is Diagnostic {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["severity", "code", "title", "message", "labels", "notes", "help"]) &&
+    (value.severity === "error" || value.severity === "warning") &&
+    typeof value.code === "string" &&
+    typeof value.title === "string" &&
+    (value.message === undefined || typeof value.message === "string") &&
+    Array.isArray(value.labels) &&
+    value.labels.every(isDiagnosticLabel) &&
+    (value.notes === undefined || isStringArray(value.notes)) &&
+    (value.help === undefined || isStringArray(value.help))
+  );
+}
+
+function isDiagnosticsValue(value: unknown): value is Diagnostics {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["items", "hasErrors", "hasWarnings"]) &&
+    Array.isArray(value.items) &&
+    value.items.every(isDiagnosticValue) &&
+    typeof value.hasErrors === "boolean" &&
+    typeof value.hasWarnings === "boolean"
+  );
+}
+
+function isWriterAdapterResult(value: unknown): value is WriterAdapterResult {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["diagnostics", "artifact", "patchPlan", "summary"]) &&
+    isDiagnosticsValue(value.diagnostics)
+  );
+}
+
 function projectionInputFormatMatches(
   input: DefinedProjectionInput | undefined,
   format: ProjectionFormat,
@@ -1309,9 +1376,31 @@ async function renderAdapterAtIntegrationBoundary(input: {
   | { readonly ok: false; readonly diagnostics: Diagnostics }
 > {
   try {
+    const result = await input.adapter.render(input.projection, input.context);
+    if (!isWriterAdapterResult(result)) {
+      return {
+        ok: false,
+        diagnostics: createDiagnostics([
+          diagnostic({
+            severity: "error",
+            code: "E_RENDER_ADAPTER_RESULT_INVALID",
+            title: "writer adapter result is invalid",
+            message: "Writer adapters must return a result object with diagnostics.",
+            labels: [
+              {
+                path: "render.adapter.result",
+                message: result === null ? "received null" : `received ${typeof result}`,
+                severity: "primary",
+              },
+            ],
+          }),
+        ]),
+      };
+    }
+
     return {
       ok: true,
-      result: await input.adapter.render(input.projection, input.context),
+      result,
     };
   } catch (error) {
     return {
@@ -1682,7 +1771,7 @@ export async function projectSource<
     };
   }
 
-  {
+  try {
     const execution =
       input.execution ??
       createRenderExecution({
@@ -1863,6 +1952,77 @@ export async function projectSource<
       projection,
       ...(summary ? { summary } : {}),
     };
+  } catch (error) {
+    const projectDiagnostics = diagnosticFromError({
+      stage: "project",
+      code: "E_PROJECT_FAILED",
+      title: "project failed",
+      error,
+    });
+    let diagnostics = combineDiagnostics(
+      implicitFormatDiagnostics,
+      compileResult.diagnostics,
+      projectDiagnostics,
+    );
+    let partialProjection: ProjectedDocumentModel | undefined;
+
+    try {
+      partialProjection = projectGraphToPartialDocumentModel({
+        format: projectionFormat,
+        graph: compileResult.graph,
+        resolvedStyles: compileResult.resolvedStyles,
+        options: input.options,
+      });
+      diagnostics = combineDiagnostics(
+        diagnostics,
+        projectionDiagnosticsForModel({
+          projection: partialProjection,
+          includeAllUnsupportedSemantics: true,
+        }),
+        validateProjectedDocumentModel(partialProjection),
+      );
+      artifacts.materializeProjection(partialProjection, diagnostics, input.options);
+    } catch {
+      partialProjection = undefined;
+    }
+
+    if (!partialProjection) {
+      return {
+        ok: false,
+        diagnostics,
+        stages: {
+          ...compileResult.stages,
+          project: stageSummary("project", diagnostics, "missing"),
+        },
+        format: projectionFormat,
+      };
+    }
+
+    const summary = includeInspectionSummary(input.projectOptions?.inspection)
+      ? summarizeProjectedDocumentModel(partialProjection, {
+          diagnostics,
+          adapterLimitations: defaultAdapterLimitationsFor(projectionFormat),
+          graph: compileResult.graph,
+          includeDetails: includeInspectionDetails(input.projectOptions?.inspection),
+          resolvedStyles: compileResult.resolvedStyles,
+        })
+      : undefined;
+
+    return {
+      ok: false,
+      diagnostics,
+      stages: {
+        ...compileResult.stages,
+        project: stageSummary(
+          "project",
+          diagnostics,
+          projectedArtifactStatus(partialProjection, diagnostics),
+        ),
+      },
+      format: projectionFormat,
+      projection: partialProjection,
+      ...(summary ? { summary } : {}),
+    };
   }
 }
 
@@ -2033,7 +2193,7 @@ export async function renderSource<
     });
   }
 
-  {
+  try {
     const graphArtifact = artifacts.graph;
     const beforeAssetLoad =
       graphArtifact && graphArtifact.graph && graphArtifact.resolvedStyles
@@ -2133,7 +2293,7 @@ export async function renderSource<
         diagnostics,
         stages: {
           ...projectResult.stages,
-          render: stageSummary("render", adapterBoundaryResult.diagnostics, "missing"),
+          render: stageSummary("render", diagnostics, "missing"),
         },
         format: adapter.format,
       });
@@ -2194,6 +2354,24 @@ export async function renderSource<
       artifact,
       ...(patchPlan ? { patchPlan } : {}),
       ...(summary ? { summary } : {}),
+    });
+  } catch (error) {
+    const renderDiagnostics = diagnosticFromError({
+      stage: "render",
+      code: "E_RENDER_FAILED",
+      title: "render failed",
+      error,
+    });
+    const diagnostics = combineDiagnostics(preRenderDiagnostics, renderDiagnostics);
+
+    return finishRender({
+      ok: false,
+      diagnostics,
+      stages: {
+        ...projectResult.stages,
+        render: stageSummary("render", diagnostics, "missing"),
+      },
+      format: adapter.format,
     });
   }
 }
