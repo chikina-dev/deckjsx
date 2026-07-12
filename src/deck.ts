@@ -363,16 +363,15 @@ export class Deck<
    * Plugins participate in deckjsx pipeline stages without changing ordinary authoring props.
    */
   plugin(plugin: DeckPluginInput): this {
-    const storedPlugin = isDeckPlugin(plugin) ? { ...plugin } : plugin;
     const existing = isDeckPlugin(plugin)
       ? this.#plugins.findIndex((item) => isDeckPlugin(item) && item.id === plugin.id)
       : -1;
     if (existing >= 0) {
-      this.#plugins.splice(existing, 1, storedPlugin);
+      this.#plugins.splice(existing, 1, plugin);
       this.#invalidateFromSource();
       return this;
     }
-    this.#plugins.push(storedPlugin);
+    this.#plugins.push(plugin);
     this.#invalidateFromSource();
     return this;
   }

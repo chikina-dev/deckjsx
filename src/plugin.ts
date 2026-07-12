@@ -127,7 +127,7 @@ function deckPluginIntegrationValidationMessage(integration: unknown): string | 
   }
 
   if (!isNonEmptyString(integration.id)) {
-    return "Deck plugin integration.id must be a string.";
+    return "Deck plugin integration.id must be a non-empty string.";
   }
 
   if (integration.assetLoaders !== undefined && !isAssetLoaderArray(integration.assetLoaders)) {

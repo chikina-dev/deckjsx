@@ -16,6 +16,42 @@ function snapshotValue(value: unknown, seen = new WeakMap<object, unknown>()): u
     return value;
   }
 
+  if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) {
+    const clone = globalThis.structuredClone(value);
+    seen.set(value, clone);
+    return clone;
+  }
+
+  if (value instanceof Date) {
+    const clone = new Date(value.getTime());
+    seen.set(value, clone);
+    return clone;
+  }
+
+  if (value instanceof RegExp) {
+    const clone = new RegExp(value.source, value.flags);
+    seen.set(value, clone);
+    return clone;
+  }
+
+  if (value instanceof Map) {
+    const clone = new Map<unknown, unknown>();
+    seen.set(value, clone);
+    value.forEach((entry, key) => {
+      clone.set(snapshotValue(key, seen), snapshotValue(entry, seen));
+    });
+    return clone;
+  }
+
+  if (value instanceof Set) {
+    const clone = new Set<unknown>();
+    seen.set(value, clone);
+    value.forEach((entry) => {
+      clone.add(snapshotValue(entry, seen));
+    });
+    return clone;
+  }
+
   const clone = Array.isArray(value)
     ? []
     : Object.create(Object.getPrototypeOf(value) as object | null);
