@@ -82,7 +82,7 @@ export default defineConfig({ entry: "entry.cts", output: "second.pdf" });
         RECOVERY_TIMEOUT_MS,
       );
 
-      resident.child.stdin.end("exit\n");
+      resident.child.stdin.write("exit\n");
       const exit = await withTimeout(
         resident.exited,
         PROCESS_TIMEOUT_MS,
@@ -108,24 +108,31 @@ export default defineConfig({ entry: "entry.cts", output: "second.pdf" });
         RECOVERY_TIMEOUT_MS,
       );
 
+      const configRecoveryOutputStart = configFailureResident.output.stderr.length;
+      await writeFile(entryPath, validEntrySource("config-recovered.pdf"));
       await writeFile(
         path.join(projectRoot, "deckjsx.config.ts"),
         `import { defineConfig } from "@deckjsx/node";
 export default defineConfig({ entry: "entry.cts", output: "config-recovered.pdf" });
 `,
       );
-      await writeFile(entryPath, validEntrySource("config-recovered.pdf"));
       await waitForOutput(
         configFailureResident,
         async () => {
           const outputStats = await stat(recoveredConfigOutput).catch(() => undefined);
-          return outputStats !== undefined && outputStats.size > 0;
+          return (
+            outputStats !== undefined &&
+            outputStats.size > 0 &&
+            configFailureResident.output.stderr
+              .slice(configRecoveryOutputStart)
+              .includes("[deckjsx] ready")
+          );
         },
         "the artifact recovered from the initial config failure",
         RECOVERY_TIMEOUT_MS,
       );
 
-      configFailureResident.child.stdin.end("exit\n");
+      configFailureResident.child.stdin.write("exit\n");
       await expect(
         withTimeout(
           configFailureResident.exited,

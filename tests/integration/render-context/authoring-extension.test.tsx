@@ -306,7 +306,7 @@ describe("deck plugin authoring extension lowering", () => {
     },
   ])(
     "reports $label authoring lowerers without escaping the compile boundary",
-    ({ lower, code }) => {
+    ({ lower, code }: { lower: () => unknown; code: string }) => {
       const value = createAuthoringExtensionValue({
         pluginId: `test:${code}`,
         kind: "invalid",
