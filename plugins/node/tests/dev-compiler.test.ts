@@ -393,6 +393,44 @@ describe("@deckjsx/node dev change scheduler", () => {
     expect(scheduler.consumeChangedSourceIds(secondBuild)).toEqual(["/project/assets/hero.png"]);
   });
 
+  test("retains the paired Host execution snapshot for asset-only rebuilds", async () => {
+    const execution = {
+      entry: "/project/src/main.tsx",
+      entries: ["/project/src/main.tsx"],
+      outputs: ["latest.pdf"],
+      out: "latest.pdf",
+      renderExecutionContext: { plugins: [] },
+    } as const;
+    const scheduler = createDevChangeScheduler({
+      cwd: "/project",
+      async nextSourceSnapshot() {
+        return {
+          status: "executable",
+          code: "generated",
+          moduleIds: ["/project/src/main.tsx"],
+          watchFiles: ["/project/src/main.tsx"],
+          changedSourceIds: ["/project/src/main.tsx"],
+          execution,
+        };
+      },
+    });
+    const firstBuild = await scheduler.nextSourceSnapshot();
+    if (!("code" in firstBuild)) throw new Error("expected executable build");
+    scheduler.commitExecutableSnapshot({
+      graph: createDevModuleGraphSnapshot({
+        cwd: "/project",
+        moduleIds: firstBuild.moduleIds,
+        watchFiles: firstBuild.watchFiles,
+        observedAssetFiles: ["/project/assets/hero.png"],
+      }),
+      sourceSnapshot: firstBuild,
+    });
+
+    scheduler.invalidateAssets(["/project/assets/hero.png"]);
+
+    await expect(scheduler.nextSourceSnapshot()).resolves.toMatchObject({ execution });
+  });
+
   test("waits for adapter output for source invalidations", async () => {
     let releaseSecondBuild!: () => void;
     let resolved = false;

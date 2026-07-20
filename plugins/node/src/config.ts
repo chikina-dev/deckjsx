@@ -1,6 +1,6 @@
-import { access, readFile } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Diagnostic } from "deckjsx";
 import type { DeckPlugin } from "deckjsx/integration";
 import { isDeckPlugin, mergePluginSlots } from "deckjsx/plugin-validation";
@@ -99,14 +99,18 @@ export async function resolveConfig(
           diagnostic(
             "warning",
             "W_CONFIG_DEFINE_CONFIG_MISSING",
-            "deckjsx.config.ts should use defineConfig(...) ",
+            "deckjsx.config.ts should use defineConfig(...)",
             configPath,
           ),
         ];
     const resolved = await resolveDefinition(loaded.definition, { environment }, new Set());
     const shapeDiagnostics = validateConfigInput(resolved, configPath);
     if (shapeDiagnostics.some((item) => item.severity === "error")) {
-      return { ok: false, diagnostics: [...diagnostics, ...shapeDiagnostics] };
+      return {
+        ok: false,
+        diagnostics: [...diagnostics, ...shapeDiagnostics],
+        watchFiles: Object.freeze([...new Set([configPath, ...loaded.watchFiles])].sort()),
+      };
     }
     const entry = normalizeHint(resolved.entry);
     const output = normalizeHint(resolved.output);
@@ -170,7 +174,11 @@ function mergeConfigInputs(
   base: DeckjsxConfigInput,
   child: DeckjsxConfigInput,
 ): DeckjsxConfigInput {
+  const { extends: _baseExtends, ...baseFields } = base;
+  const { extends: _childExtends, ...childFields } = child;
   return {
+    ...baseFields,
+    ...childFields,
     ...(child.entry !== undefined
       ? { entry: child.entry }
       : base.entry !== undefined
@@ -197,6 +205,7 @@ async function loadConfigDefinition(
     input: configPath,
     cwd,
     platform: "node",
+    transform: { define: { "import.meta.url": JSON.stringify(pathToFileURL(configPath).href) } },
     plugins: [absoluteExternalPackages(configPath)],
   });
   try {
@@ -245,66 +254,20 @@ function absoluteExternalPackages(configPath: string): RolldownPlugin {
 }
 
 async function resolvePackageImport(specifier: string, fromDirectory: string): Promise<string> {
-  const parsed = packageSpecifier(specifier);
-  let current = fromDirectory;
-  while (true) {
-    const packageRoot = path.join(current, "node_modules", parsed.name);
-    const manifestPath = path.join(packageRoot, "package.json");
-    if (await exists(manifestPath)) {
-      const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
-        readonly exports?: unknown;
-        readonly module?: unknown;
-        readonly main?: unknown;
-      };
-      const target = packageExportTarget(manifest.exports, parsed.subpath);
-      const fallback =
-        parsed.subpath === "."
-          ? typeof manifest.module === "string"
-            ? manifest.module
-            : typeof manifest.main === "string"
-              ? manifest.main
-              : "index.js"
-          : parsed.subpath.slice(2);
-      return path.resolve(packageRoot, target ?? fallback);
-    }
-    const parent = path.dirname(current);
-    if (parent === current) break;
-    current = parent;
+  const parentUrl = pathToFileURL(path.join(fromDirectory, "deckjsx.config.ts")).href;
+  let resolved: string;
+  try {
+    resolved = import.meta.resolve(specifier, parentUrl);
+  } catch (error) {
+    throw new Error(
+      `Cannot resolve package import ${JSON.stringify(specifier)} from ${fromDirectory}.`,
+      { cause: error },
+    );
   }
-  throw new Error(
-    `Cannot resolve package import ${JSON.stringify(specifier)} from ${fromDirectory}.`,
-  );
-}
-
-function packageSpecifier(specifier: string): { readonly name: string; readonly subpath: string } {
-  const parts = specifier.split("/");
-  const packageParts = specifier.startsWith("@") ? parts.slice(0, 2) : parts.slice(0, 1);
-  const remaining = parts.slice(packageParts.length);
-  return {
-    name: packageParts.join("/"),
-    subpath: remaining.length === 0 ? "." : `./${remaining.join("/")}`,
-  };
-}
-
-function packageExportTarget(exportsValue: unknown, subpath: string): string | undefined {
-  const selected =
-    typeof exportsValue === "object" && exportsValue !== null && subpath in exportsValue
-      ? (exportsValue as Record<string, unknown>)[subpath]
-      : subpath === "."
-        ? exportsValue
-        : undefined;
-  return conditionalExportTarget(selected);
-}
-
-function conditionalExportTarget(value: unknown): string | undefined {
-  if (typeof value === "string") return value;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const conditions = value as Record<string, unknown>;
-  return (
-    conditionalExportTarget(conditions.import) ??
-    conditionalExportTarget(conditions.node) ??
-    conditionalExportTarget(conditions.default)
-  );
+  if (!resolved.startsWith("file:")) {
+    throw new Error(`Package import ${JSON.stringify(specifier)} resolved to ${resolved}.`);
+  }
+  return fileURLToPath(resolved);
 }
 
 export async function resolveHostPackageBoundary(
@@ -344,6 +307,10 @@ export async function resolveHostPackageBoundary(
 
 function validateConfigInput(value: DeckjsxConfigInput, file: string): readonly Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
+  const knownKeys = new Set(["entry", "output", "plugins"]);
+  for (const key of Object.keys(value)) {
+    if (!knownKeys.has(key)) diagnostics.push(invalidField(key, file));
+  }
   if (!isHint(value.entry)) diagnostics.push(invalidField("entry", file));
   if (!isHint(value.output)) diagnostics.push(invalidField("output", file));
   if (value.plugins !== undefined && !Array.isArray(value.plugins)) {

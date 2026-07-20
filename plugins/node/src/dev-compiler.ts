@@ -45,7 +45,7 @@ export type DeckjsxDevCompilerOptions = {
   /** Host Configuration context applied before Deck-local Plugins. */
   readonly renderExecutionContext?: RenderExecutionContext;
   /** Dynamic Host Session snapshot used when config changes during resident execution. */
-  readonly executionSnapshot?: () => DeckjsxDevExecutionSnapshot;
+  readonly executionSnapshot?: () => DeckjsxDevExecutionSnapshot | undefined;
 };
 
 /** Event emitted by the `@deckjsx/node/dev` compiler lifecycle. */

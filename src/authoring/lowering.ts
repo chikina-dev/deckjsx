@@ -17,6 +17,8 @@ type LoweringState = {
   readonly activeValues: WeakSet<object>;
 };
 
+const MAX_AUTHORING_EXTENSION_LOWERING_DEPTH = 64;
+
 export function lowerComposedAuthorRoots(
   roots: readonly ComposedAuthorRoot[],
   plugins: readonly DeckPlugin[],
@@ -59,7 +61,12 @@ export function lowerComposedAuthorRoots(
   return { roots: loweredRoots, diagnostics };
 }
 
-function lowerNode(state: LoweringState, node: AuthorTreeNode, path: string): LoweredNodeResult {
+function lowerNode(
+  state: LoweringState,
+  node: AuthorTreeNode,
+  path: string,
+  extensionDepth = 0,
+): LoweredNodeResult {
   const origin = state.root.slotOrigins.get(node);
 
   if (node.kind === "text") {
@@ -70,11 +77,11 @@ function lowerNode(state: LoweringState, node: AuthorTreeNode, path: string): Lo
   }
 
   if (node.kind === "element" && node.source.kind === "extension") {
-    return lowerExtension(state, node.source.value, path, origin);
+    return lowerExtension(state, node.source.value, path, origin, extensionDepth);
   }
 
   const children = node.children.flatMap((child, index) =>
-    lowerNode(state, child, `${path} > child[${index}]`),
+    lowerNode(state, child, `${path} > child[${index}]`, extensionDepth),
   );
   const loweredChildren = children.flatMap((result) => result.nodes);
   const loweredOrigins = new Map<AuthorTreeNode, SourceSlotOrigin>();
@@ -101,8 +108,9 @@ function lowerExtension(
   value: AuthoringExtensionValue,
   path: string,
   origin: SourceSlotOrigin | undefined,
+  extensionDepth: number,
 ): LoweredNodeResult {
-  if (state.activeValues.has(value)) {
+  if (state.activeValues.has(value) || extensionDepth >= MAX_AUTHORING_EXTENSION_LOWERING_DEPTH) {
     state.diagnostics.push({
       severity: "error",
       code: "E_PLUGIN_AUTHORING_LOWERING_CYCLE",
@@ -153,7 +161,7 @@ function lowerExtension(
     }
 
     const lowered = normalized.flatMap((child, index) =>
-      lowerNode(state, child, `${path} > lowered[${index}]`),
+      lowerNode(state, child, `${path} > lowered[${index}]`, extensionDepth + 1),
     );
     const origins = new Map<AuthorTreeNode, SourceSlotOrigin>();
     lowered.forEach((result) => {

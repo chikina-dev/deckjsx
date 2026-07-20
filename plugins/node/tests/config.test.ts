@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test } from "vite-plus/test";
 import { defineConfig, resolveConfig, resolveEntries } from "@/src/index";
 import { createRolldownWatchAdapter } from "@/src/rolldown-watch-adapter";
 import { createHostSessionSourceProvider } from "@/src/host-session-source-provider";
+import { createEntryExecutionHost } from "@/src/entry-execution-host";
 
 const temporaryDirectories: string[] = [];
 
@@ -100,6 +101,65 @@ export default { entry: path.basename(entry), output, plugins };`,
     expect(result.value.entry).toEqual(["slides.ts"]);
     expect(result.value.output).toEqual(["slides.pdf"]);
     expect(result.value.watchFiles).toContain(path.join(root, "local.ts"));
+  });
+
+  test("uses config-file import.meta.url semantics and Node wildcard/imports resolution", async () => {
+    const root = await fixture();
+    const dependency = path.join(root, "node_modules", "config-patterns");
+    await mkdir(path.join(dependency, "dist"), { recursive: true });
+    await writeFile(
+      path.join(dependency, "package.json"),
+      JSON.stringify({ type: "module", exports: { "./*": "./dist/*.js" } }),
+    );
+    await writeFile(path.join(dependency, "dist", "entry.js"), `export default "wildcard.ts";`);
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ type: "module", imports: { "#output": "./output-name.ts" } }),
+    );
+    await writeFile(path.join(root, "output-name.ts"), `export default "slides.pdf";`);
+    await writeFile(
+      path.join(root, "deckjsx.config.ts"),
+      `import { fileURLToPath } from "node:url";
+import entry from "config-patterns/entry";
+import output from "#output";
+if (fileURLToPath(import.meta.url) !== ${JSON.stringify(path.join(root, "deckjsx.config.ts"))}) throw new Error("wrong config URL");
+export default { entry, output };`,
+    );
+
+    const result = await resolveConfig({ cwd: root });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.entry).toEqual(["wildcard.ts"]);
+    expect(result.value.output).toEqual(["slides.pdf"]);
+  });
+
+  test("rejects unknown config keys and keeps imported config dependencies watched", async () => {
+    const root = await fixture();
+    const basePath = path.join(root, "base.ts");
+    await writeFile(basePath, `export default { entries: "slides.ts", output: 42 };`);
+    await writeFile(
+      path.join(root, "deckjsx.config.ts"),
+      `import base from "./base"; export default { extends: base };`,
+    );
+
+    const result = await resolveConfig({ cwd: root });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "E_CONFIG_INVALID",
+          title: expect.stringContaining("entries"),
+        }),
+        expect.objectContaining({
+          code: "E_CONFIG_INVALID",
+          title: expect.stringContaining("output"),
+        }),
+      ]),
+    );
+    expect(result.watchFiles).toContain(basePath);
   });
 
   test("reports invalid default exports, fields, and unresolved package imports", async () => {
@@ -355,6 +415,46 @@ await emit({ ok: false, diagnostics: { items: [] } });
     expect(entries.ok).toBe(true);
     if (!entries.ok) return;
     expect(entries.value.entries).toEqual([path.join(root, "slides.ts")]);
+  });
+
+  test("matches configured outputs at write calls without substring false positives", async () => {
+    const root = await fixture();
+    await writeFile(
+      path.join(root, "slides.ts"),
+      `import { write } from "@deckjsx/node"; await write({}, "output.pptx");`,
+    );
+    await writeFile(
+      path.join(root, "backup.ts"),
+      `import { write } from "@deckjsx/node"; const note = "output.pptx"; await write({}, "backup-output.pptx");`,
+    );
+    await writeFile(
+      path.join(root, "deckjsx.config.ts"),
+      `export default { entry: null, output: "output.pptx" };`,
+    );
+    const config = await resolveConfig({ cwd: root });
+    expect(config.ok).toBe(true);
+    if (!config.ok) return;
+
+    const entries = await resolveEntries(config.value);
+
+    expect(entries.ok).toBe(true);
+    if (!entries.ok) return;
+    expect(entries.value.entries).toEqual([path.join(root, "slides.ts")]);
+  });
+
+  test("discovers CommonJS destructured write imports", async () => {
+    const root = await fixture();
+    const entry = path.join(root, "slides.cts");
+    await writeFile(entry, `const { write } = require("@deckjsx/node"); write({}, "slides.pptx");`);
+    const config = await resolveConfig({ cwd: root });
+    expect(config.ok).toBe(true);
+    if (!config.ok) return;
+
+    const entries = await resolveEntries(config.value);
+
+    expect(entries.ok).toBe(true);
+    if (!entries.ok) return;
+    expect(entries.value.entries).toEqual([entry]);
   });
 
   test("keeps discovery usable and warns when an output hint cannot narrow it", async () => {
@@ -673,8 +773,14 @@ write();
     const root = await fixture();
     const first = path.join(root, "first.ts");
     const second = path.join(root, "second.ts");
-    await writeFile(first, `globalThis.__deckjsxFirst = true;\n`);
-    await writeFile(second, `globalThis.__deckjsxSecond = true;\n`);
+    await writeFile(
+      first,
+      `export default new Promise((resolve) => setTimeout(() => { globalThis.__deckjsxFirst = true; resolve(); }, 20));\n`,
+    );
+    await writeFile(
+      second,
+      `export default new Promise((resolve) => setTimeout(() => { globalThis.__deckjsxSecond = true; resolve(); }, 20));\n`,
+    );
     const adapter = createRolldownWatchAdapter({ cwd: root, entry: [first, second] });
 
     try {
@@ -686,6 +792,11 @@ write();
       expect(snapshot.code).toContain("__deckjsxFirst");
       expect(snapshot.code).toContain("__deckjsxSecond");
       expect(snapshot.watchFiles).toEqual(expect.arrayContaining([first, second]));
+      await createEntryExecutionHost({ cwd: root }).execute({ code: snapshot.code });
+      expect((globalThis as Record<string, unknown>).__deckjsxFirst).toBe(true);
+      expect((globalThis as Record<string, unknown>).__deckjsxSecond).toBe(true);
+      delete (globalThis as Record<string, unknown>).__deckjsxFirst;
+      delete (globalThis as Record<string, unknown>).__deckjsxSecond;
     } finally {
       await adapter.close();
     }
@@ -728,6 +839,77 @@ write();
       const secondPlugin = provider.executionSnapshot().renderExecutionContext.plugins?.[0];
       expect(secondPlugin).not.toBe(firstPlugin);
       expect(secondPlugin).toMatchObject({ consumer: { version: 2 } });
+    } finally {
+      await provider.close();
+    }
+  });
+
+  test("discards an older asynchronous Host Session rebuild", async () => {
+    const root = await fixture();
+    await writeFile(path.join(root, "slides.ts"), `export {};\n`);
+    const configPath = path.join(root, "deckjsx.config.ts");
+    await writeFile(configPath, `export default { entry: "slides.ts", output: "initial.pdf" };`);
+    const config = await resolveConfig({ cwd: root });
+    expect(config.ok).toBe(true);
+    if (!config.ok) return;
+    const entries = await resolveEntries(config.value);
+    expect(entries.ok).toBe(true);
+    if (!entries.ok) return;
+    const provider = createHostSessionSourceProvider({
+      cwd: root,
+      initial: { config: config.value, entries: entries.value },
+      debounceMs: 5,
+    });
+
+    try {
+      provider.start();
+      await provider.nextSourceSnapshot();
+      await writeFile(
+        configPath,
+        `export default async () => { await new Promise((resolve) => setTimeout(resolve, 150)); return { entry: "slides.ts", output: "stale.pdf" }; };`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      await writeFile(configPath, `export default { entry: "slides.ts", output: "latest.pdf" };`);
+
+      const rebuilt = await withTimeout(provider.nextSourceSnapshot(), 3_000);
+
+      expect(rebuilt.status).toBe("executable");
+      expect(provider.executionSnapshot().outputs).toEqual(["latest.pdf"]);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(provider.executionSnapshot().outputs).toEqual(["latest.pdf"]);
+    } finally {
+      await provider.close();
+    }
+  });
+
+  test("does not rebuild the Host Session for configured outputs or writer locks", async () => {
+    const root = await fixture();
+    await writeFile(path.join(root, "slides.ts"), `export {};\n`);
+    await writeFile(
+      path.join(root, "deckjsx.config.ts"),
+      `export default { entry: "slides.ts", output: "output.pptx" };`,
+    );
+    const config = await resolveConfig({ cwd: root });
+    expect(config.ok).toBe(true);
+    if (!config.ok) return;
+    const entries = await resolveEntries(config.value);
+    expect(entries.ok).toBe(true);
+    if (!entries.ok) return;
+    const provider = createHostSessionSourceProvider({
+      cwd: root,
+      initial: { config: config.value, entries: entries.value },
+      debounceMs: 5,
+    });
+
+    try {
+      provider.start();
+      await provider.nextSourceSnapshot();
+      const execution = provider.executionSnapshot();
+      await writeFile(path.join(root, ".deckjsx-lock"), "lock");
+      await writeFile(path.join(root, "output.pptx"), "artifact");
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      expect(provider.executionSnapshot()).toBe(execution);
     } finally {
       await provider.close();
     }

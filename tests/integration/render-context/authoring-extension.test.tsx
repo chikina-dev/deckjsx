@@ -347,6 +347,26 @@ describe("deck plugin authoring extension lowering", () => {
     );
   });
 
+  test("bounds recursive lowering that allocates a fresh carrier each time", () => {
+    const pluginId = "test:fresh-recursive-extension";
+    const fresh = () =>
+      createAuthoringExtensionValue({ pluginId, kind: "recursive", payload: null });
+    const deck = new H.Deck({ layout });
+    deck.plugin({
+      kind: "deckjsx.plugin",
+      id: pluginId,
+      authoring: { lower: () => ({ children: fresh() }) },
+    });
+    deck.slide(() => fresh());
+
+    const result = deck.compile();
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({ code: "E_PLUGIN_AUTHORING_LOWERING_CYCLE" }),
+    );
+  });
+
   test("reports an unresolved extension value as a compile diagnostic", () => {
     const value = createAuthoringExtensionValue({
       pluginId: "test:missing-extension",

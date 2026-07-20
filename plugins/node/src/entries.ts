@@ -2,6 +2,7 @@ import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import type { Diagnostic } from "deckjsx";
 import { rolldown, type OutputChunk } from "rolldown";
+import { parseAst } from "rolldown/parseAst";
 import type { DeckjsxResolveResult, ResolvedDeckjsxConfig } from "./config";
 import { isDeckjsxRuntimeExternalId } from "./dev-executor";
 
@@ -183,14 +184,41 @@ async function resolveExplicitEntries(
 async function discoverEntries(
   config: ResolvedDeckjsxConfig,
 ): Promise<DeckjsxResolveResult<ResolvedDeckjsxEntries>> {
-  const walked = await walkSources(config.packageRoot, config.configPath);
+  let walked: Awaited<ReturnType<typeof walkSources>>;
+  try {
+    walked = await walkSources(config.packageRoot, config.configPath);
+  } catch {
+    try {
+      walked = await walkSources(config.packageRoot, config.configPath);
+    } catch (error) {
+      return {
+        ok: false,
+        diagnostics: [
+          {
+            ...entryDiagnostic(
+              "error",
+              "E_CONFIG_ENTRY_DISCOVERY_RETRY",
+              "Entry discovery observed a changing filesystem",
+              config.packageRoot,
+            ),
+            message: error instanceof Error ? error.message : String(error),
+          },
+        ],
+        watchFiles: config.watchFiles,
+        watchDirectories: Object.freeze([config.packageRoot]),
+      };
+    }
+  }
   const outputSelectors = new Set(
     (config.output ?? []).flatMap((item) => [
       normalizeSlash(item),
       normalizeSlash(path.resolve(config.packageRoot, item)),
     ]),
   );
-  const candidates: { readonly file: string; readonly code: string }[] = [];
+  const candidates: {
+    readonly file: string;
+    readonly outputs: ReadonlySet<string>;
+  }[] = [];
   const analysisDiagnostics: Diagnostic[] = [];
   for (const source of walked.sources) {
     const analysis = await analyzeTopLevelExecution(source.file, config.packageRoot);
@@ -198,7 +226,7 @@ async function discoverEntries(
       analysisDiagnostics.push(analysis.diagnostic);
       continue;
     }
-    if (analysis.reachesWrite) candidates.push({ file: source.file, code: analysis.code });
+    if (analysis.reachesWrite) candidates.push({ file: source.file, outputs: analysis.outputs });
   }
   if (analysisDiagnostics.length > 0) {
     return {
@@ -212,7 +240,7 @@ async function discoverEntries(
     outputSelectors.size === 0
       ? candidates
       : candidates.filter((candidate) =>
-          generatedCodeMentionsOutput(candidate.code, outputSelectors),
+          [...candidate.outputs].some((output) => outputSelectors.has(output)),
         );
   const outputHintApplied = outputSelectors.size === 0 || outputMatches.length > 0;
   const entries = (outputHintApplied ? outputMatches : candidates)
@@ -277,7 +305,11 @@ async function analyzeTopLevelExecution(
   file: string,
   cwd: string,
 ): Promise<
-  | { readonly ok: true; readonly reachesWrite: boolean; readonly code: string }
+  | {
+      readonly ok: true;
+      readonly reachesWrite: boolean;
+      readonly outputs: ReadonlySet<string>;
+    }
   | { readonly ok: false; readonly diagnostic: Diagnostic }
 > {
   let bundle: Awaited<ReturnType<typeof rolldown>> | undefined;
@@ -295,11 +327,12 @@ async function analyzeTopLevelExecution(
       sourcemap: false,
     });
     const chunk = generated.output.find((item): item is OutputChunk => item.type === "chunk");
-    if (!chunk) return { ok: true, reachesWrite: false, code: "" };
+    if (!chunk) return { ok: true, reachesWrite: false, outputs: new Set() };
+    const analysis = analyzeGeneratedDeckjsxWrites(chunk.code, cwd);
     return {
       ok: true,
-      reachesWrite: generatedCodeCallsDeckjsxWrite(chunk.code),
-      code: chunk.code,
+      reachesWrite: analysis.reachesWrite,
+      outputs: analysis.outputs,
     };
   } catch (error) {
     return {
@@ -323,30 +356,162 @@ async function analyzeTopLevelExecution(
   }
 }
 
-function generatedCodeCallsDeckjsxWrite(code: string): boolean {
-  for (const match of code.matchAll(/import\s*\{([^}]*)\}\s*from\s*["']@deckjsx\/node["']/gu)) {
-    const imports = match[1] ?? "";
-    for (const imported of imports.split(",")) {
-      const binding = imported.trim().match(/^write(?:\s+as\s+([A-Za-z_$][\w$]*))?$/u);
-      if (binding) {
-        const local = binding[1] ?? "write";
-        if (new RegExp(`\\b${escapeRegExp(local)}\\s*\\(`, "u").test(code)) return true;
+type AstNode = { readonly type: string; readonly [key: string]: unknown };
+
+function analyzeGeneratedDeckjsxWrites(
+  code: string,
+  cwd: string,
+): { readonly reachesWrite: boolean; readonly outputs: ReadonlySet<string> } {
+  const program = parseAst(code, { lang: "js", sourceType: "module" }) as unknown as AstNode;
+  const writeBindings = new Set<string>();
+  const namespaceBindings = new Set<string>();
+  const nodes = collectAstNodes(program);
+
+  for (const node of nodes) {
+    if (node.type !== "ImportDeclaration" || stringLiteral(node.source) !== "@deckjsx/node") {
+      continue;
+    }
+    for (const specifier of astNodeArray(node.specifiers)) {
+      const local = identifierName(specifier.local);
+      if (!local) continue;
+      if (specifier.type === "ImportSpecifier" && identifierName(specifier.imported) === "write") {
+        writeBindings.add(local);
+      } else {
+        namespaceBindings.add(local);
       }
     }
   }
-  for (const match of code.matchAll(
-    /import\s*\*\s*as\s*([A-Za-z_$][\w$]*)\s*from\s*["']@deckjsx\/node["']/gu,
-  )) {
-    const namespace = match[1];
-    if (namespace && new RegExp(`\\b${escapeRegExp(namespace)}\\.write\\s*\\(`, "u").test(code)) {
-      return true;
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const node of nodes) {
+      if (node.type !== "VariableDeclarator") continue;
+      const source = namespaceSource(node.init, namespaceBindings);
+      if (!source) continue;
+      const id = astNode(node.id);
+      if (id?.type === "Identifier") {
+        const local = identifierName(id);
+        if (local && !namespaceBindings.has(local)) {
+          namespaceBindings.add(local);
+          changed = true;
+        }
+        continue;
+      }
+      if (id?.type !== "ObjectPattern") continue;
+      for (const property of astNodeArray(id.properties)) {
+        if (property.type !== "Property" || identifierName(property.key) !== "write") continue;
+        const local = identifierName(property.value);
+        if (local && !writeBindings.has(local)) {
+          writeBindings.add(local);
+          changed = true;
+        }
+      }
     }
+  }
+
+  const outputs = new Set<string>();
+  let reachesWrite = false;
+  for (const node of nodes) {
+    if (
+      node.type !== "CallExpression" ||
+      !isWriteCallee(node.callee, writeBindings, namespaceBindings)
+    ) {
+      continue;
+    }
+    reachesWrite = true;
+    const output = staticString(astNodeArray(node.arguments)[1]);
+    if (output !== undefined) {
+      outputs.add(normalizeSlash(output));
+      outputs.add(normalizeSlash(path.resolve(cwd, output)));
+    }
+  }
+  return { reachesWrite, outputs };
+}
+
+function namespaceSource(value: unknown, namespaces: ReadonlySet<string>): boolean {
+  const node = astNode(value);
+  if (!node) return false;
+  const identifier = identifierName(node);
+  if (identifier && namespaces.has(identifier)) return true;
+  if (node.type === "MemberExpression") {
+    const object = identifierName(node.object);
+    return Boolean(object && namespaces.has(object) && identifierName(node.property) === "default");
+  }
+  if (node.type === "CallExpression") {
+    const callee = identifierName(node.callee);
+    return (
+      Boolean(callee?.endsWith("require")) &&
+      stringLiteral(astNodeArray(node.arguments)[0]) === "@deckjsx/node"
+    );
   }
   return false;
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+function isWriteCallee(
+  value: unknown,
+  writes: ReadonlySet<string>,
+  namespaces: ReadonlySet<string>,
+): boolean {
+  const node = astNode(value);
+  if (!node) return false;
+  const direct = identifierName(node);
+  if (direct && writes.has(direct)) return true;
+  if (node.type !== "MemberExpression") return false;
+  const object = identifierName(node.object);
+  return Boolean(object && namespaces.has(object) && identifierName(node.property) === "write");
+}
+
+function staticString(value: unknown): string | undefined {
+  const node = astNode(value);
+  if (!node) return undefined;
+  if (node.type === "Literal" && typeof node.value === "string") return node.value;
+  if (node.type === "TemplateLiteral" && astNodeArray(node.expressions).length === 0) {
+    const quasi = astNodeArray(node.quasis)[0];
+    const cooked = astNode(quasi?.value)?.cooked;
+    return typeof cooked === "string" ? cooked : undefined;
+  }
+  return undefined;
+}
+
+function collectAstNodes(root: AstNode): readonly AstNode[] {
+  const output: AstNode[] = [];
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    const node = astNode(value);
+    if (!node) return;
+    output.push(node);
+    for (const [key, child] of Object.entries(node)) {
+      if (key !== "parent") visit(child);
+    }
+  };
+  visit(root);
+  return output;
+}
+
+function astNode(value: unknown): AstNode | undefined {
+  return typeof value === "object" && value !== null && "type" in value
+    ? (value as AstNode)
+    : undefined;
+}
+
+function astNodeArray(value: unknown): readonly AstNode[] {
+  return Array.isArray(value)
+    ? value.flatMap((item) => (astNode(item) ? [astNode(item)!] : []))
+    : [];
+}
+
+function identifierName(value: unknown): string | undefined {
+  const node = astNode(value);
+  return node?.type === "Identifier" && typeof node.name === "string" ? node.name : undefined;
+}
+
+function stringLiteral(value: unknown): string | undefined {
+  const node = astNode(value);
+  return node?.type === "Literal" && typeof node.value === "string" ? node.value : undefined;
 }
 
 type IgnoreRule = {
@@ -507,10 +672,6 @@ async function ancestorProjectIgnoreFiles(packageRoot: string): Promise<readonly
     if (await exists(file)) files.push(file);
   }
   return files;
-}
-
-function generatedCodeMentionsOutput(code: string, selectors: ReadonlySet<string>): boolean {
-  return [...selectors].some((selector) => code.includes(selector));
 }
 
 function isInside(root: string, candidate: string): boolean {

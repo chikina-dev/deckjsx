@@ -1,4 +1,4 @@
-import { unwatchFile, watchFile, type Stats } from "node:fs";
+import { readdirSync, statSync, unwatchFile, watchFile, type Stats } from "node:fs";
 import path from "node:path";
 import type { Diagnostic } from "deckjsx";
 import { resolveConfig, type ResolvedDeckjsxConfig } from "./config";
@@ -12,6 +12,7 @@ import {
 } from "./dev-source-snapshot";
 import type { DevSourceProvider } from "./dev-source-provider";
 import type { DeckjsxDevDiagnostic } from "./dev-diagnostics";
+import { devOutputIgnoreFiles } from "./tracked-output-coordinator";
 
 export type HostExecutionSnapshot = DeckjsxDevExecutionSnapshot;
 
@@ -65,6 +66,8 @@ export function createHostSessionSourceProvider(
   const queued: DeckjsxDevSourceSnapshot[] = [];
   const pending: ((snapshot: DeckjsxDevSourceSnapshot) => void)[] = [];
   const watchedPaths = new Set<string>();
+  const watchListeners = new Map<string, (current: Stats, previous: Stats) => void>();
+  const directoryFingerprints = new Map<string, string>();
   const startup =
     "initial" in input
       ? ({ status: "resolved", value: input.initial } as const)
@@ -190,25 +193,42 @@ export function createHostSessionSourceProvider(
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       debounceTimer = undefined;
-      void rebuildSession();
+      void rebuildSession().catch((error: unknown) => {
+        if (closed) return;
+        emit(
+          createDiagnosticSourceSnapshot([
+            {
+              severity: "error",
+              code: "deckjsx.node.hostSession.rebuildFailed",
+              title: "Host Session rebuild failed",
+              message: error instanceof Error ? error.message : String(error),
+              primary: { file: hostConfigPath },
+            },
+          ]),
+        );
+      });
     }, debounceMs);
   }
 
   async function rebuildSession(): Promise<void> {
     generation += 1;
+    const rebuildGeneration = generation;
     const previous = adapter;
     adapter = undefined;
     await previous?.close();
+    if (closed || rebuildGeneration !== generation) return;
     const config = await resolveConfig({
       cwd: invocationCwd,
       environment,
     });
+    if (closed || rebuildGeneration !== generation) return;
     if (!config.ok) {
       configureWatchers([hostConfigPath, ...configWatchFiles]);
       emit(createDiagnosticSourceSnapshot(config.diagnostics.map(toDevDiagnostic)));
       return;
     }
     const entries = await resolveEntries(config.value);
+    if (closed || rebuildGeneration !== generation) return;
     if (!entries.ok) {
       configureWatchers([
         hostConfigPath,
@@ -235,29 +255,46 @@ export function createHostSessionSourceProvider(
     );
     for (const watched of watchedPaths) {
       if (!next.has(watched)) {
-        unwatchFile(watched, onWatchChange);
+        const listener = watchListeners.get(watched);
+        if (listener) unwatchFile(watched, listener);
+        watchListeners.delete(watched);
+        directoryFingerprints.delete(watched);
         watchedPaths.delete(watched);
       }
     }
     for (const watched of next) {
       if (watchedPaths.has(watched)) continue;
+      if (isDirectory(watched)) directoryFingerprints.set(watched, directoryFingerprint(watched));
+      const listener = (current: Stats, previous: Stats) =>
+        onWatchChange(watched, current, previous);
+      watchListeners.set(watched, listener);
       watchedPaths.add(watched);
-      watchFile(watched, { interval: 100, persistent: true }, onWatchChange);
+      watchFile(watched, { interval: 100, persistent: true }, listener);
     }
   }
 
   function clearWatchers(): void {
-    for (const watched of watchedPaths) unwatchFile(watched, onWatchChange);
+    for (const watched of watchedPaths) {
+      const listener = watchListeners.get(watched);
+      if (listener) unwatchFile(watched, listener);
+    }
     watchedPaths.clear();
+    watchListeners.clear();
+    directoryFingerprints.clear();
   }
 
-  function onWatchChange(current: Stats, previous: Stats): void {
+  function onWatchChange(watched: string, current: Stats, previous: Stats): void {
     if (
       current.mtimeMs !== previous.mtimeMs ||
       current.ctimeMs !== previous.ctimeMs ||
       current.size !== previous.size ||
       current.ino !== previous.ino
     ) {
+      if (directoryFingerprints.has(watched)) {
+        const nextFingerprint = directoryFingerprint(watched);
+        if (nextFingerprint === directoryFingerprints.get(watched)) return;
+        directoryFingerprints.set(watched, nextFingerprint);
+      }
       scheduleRebuild();
     }
   }
@@ -266,6 +303,48 @@ export function createHostSessionSourceProvider(
     const resolve = pending.shift();
     if (resolve) resolve(snapshot);
     else queued.push(snapshot);
+  }
+
+  function isIgnoredArtifactChange(changedPath: string): boolean {
+    const normalized = path.resolve(changedPath);
+    if (
+      normalized.endsWith(".deckjsx-lock") ||
+      normalized.endsWith(".pptx") ||
+      normalized.endsWith(".pdf")
+    ) {
+      return true;
+    }
+    const current = execution;
+    if (!current) return false;
+    return new Set(
+      devOutputIgnoreFiles({
+        cwd: hostPackageRoot,
+        out: current.out,
+        outputs: current.outputs,
+      }).map((item) => path.resolve(item)),
+    ).has(normalized);
+  }
+
+  function directoryFingerprint(directory: string): string {
+    try {
+      return readdirSync(directory, { withFileTypes: true })
+        .filter((item) => !isIgnoredArtifactChange(path.join(directory, item.name)))
+        .map(
+          (item) => `${item.name}:${item.isDirectory() ? "d" : item.isSymbolicLink() ? "l" : "f"}`,
+        )
+        .sort()
+        .join("\n");
+    } catch {
+      return "missing";
+    }
+  }
+}
+
+function isDirectory(candidate: string): boolean {
+  try {
+    return statSync(candidate).isDirectory();
+  } catch {
+    return false;
   }
 }
 

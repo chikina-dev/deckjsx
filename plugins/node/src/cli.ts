@@ -248,7 +248,7 @@ export async function runDeckjsxDev(input: DeckjsxDevOptions): Promise<boolean> 
                 ],
                 watchDirectories: failedEntries!.watchDirectories,
               }
-            : {}),
+            : { watchFiles: configResult.watchFiles }),
         },
       });
   const initialExecution = hostSessionSource.executionSnapshot();
@@ -264,6 +264,7 @@ export async function runDeckjsxDev(input: DeckjsxDevOptions): Promise<boolean> 
       inspectionStore,
       renderExecutionContext: initialExecution?.renderExecutionContext,
       sourceProvider: hostSessionSource,
+      executionSnapshot: () => hostSessionSource.executionSnapshot(),
     }),
     interactive: input.interactive,
     entry:

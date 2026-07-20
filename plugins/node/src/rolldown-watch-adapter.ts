@@ -631,9 +631,15 @@ function multiEntryPlugin(entries: readonly string[]): Plugin {
       return id === VIRTUAL_MULTI_ENTRY_ID ? VIRTUAL_MULTI_ENTRY_ID : undefined;
     },
     load(id) {
-      return id === VIRTUAL_MULTI_ENTRY_ID
-        ? entries.map((entry) => `import ${JSON.stringify(entry)};`).join("\n")
-        : undefined;
+      if (id !== VIRTUAL_MULTI_ENTRY_ID) return undefined;
+      const imports = entries.map(
+        (entry, index) => `import * as entry${index} from ${JSON.stringify(entry)};`,
+      );
+      const completions = entries.map((_entry, index) => `entry${index}.default`);
+      return [
+        ...imports,
+        `export default Promise.all([${completions.join(", ")}].map((value) => Promise.resolve(value)));`,
+      ].join("\n");
     },
   };
 }
