@@ -160,7 +160,7 @@ jobs:
 
       - name: Install @deckjsx/node dependencies
         working-directory: plugins/node
-        run: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile --omit peer
 
       - name: Check @deckjsx/node
         working-directory: plugins/node

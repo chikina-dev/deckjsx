@@ -277,7 +277,11 @@ describe("deck plugin authoring extension lowering", () => {
     expect(text?.kind === "text" ? text.content.text : undefined).toBe("second:2");
   });
 
-  test.each([
+  test.each<{
+    label: string;
+    lower: () => unknown;
+    code: string;
+  }>([
     {
       label: "throwing",
       lower: () => {

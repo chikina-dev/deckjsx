@@ -15,9 +15,6 @@ const child = spawn(
     "--preserve-symlinks-main",
     bin,
     "dev",
-    "main.tsx",
-    "--out",
-    "output-tsx.pptx",
   ],
   {
     cwd,

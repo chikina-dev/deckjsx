@@ -9,8 +9,8 @@
   "main": "index.js",
   "scripts": {
     "check": "tsc --noEmit",
-    "dev": "node --preserve-symlinks --preserve-symlinks-main ./node_modules/@deckjsx/node/dist/cli.mjs dev main.tsx --out output-tsx.pptx",
-    "dev:interactive": "node --preserve-symlinks --preserve-symlinks-main ./node_modules/@deckjsx/node/dist/cli.mjs dev main.tsx --out output-tsx.pptx --interactive",
+    "dev": "node --preserve-symlinks --preserve-symlinks-main ./node_modules/@deckjsx/node/dist/cli.mjs dev",
+    "dev:interactive": "node --preserve-symlinks --preserve-symlinks-main ./node_modules/@deckjsx/node/dist/cli.mjs dev --interactive",
     "smoke": "node smoke-dev.mjs"
   },
   "dependencies": {
