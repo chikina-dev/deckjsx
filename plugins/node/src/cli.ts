@@ -9,6 +9,9 @@ import {
   type IncrementalArtifactWriteRecord,
 } from "deckjsx/integration";
 import type { DeckjsxDevCompiler } from "./dev-compiler";
+import { resolveConfig, resolveHostPackageBoundary } from "./config";
+import { resolveEntries } from "./entries";
+import { createHostSessionSourceProvider } from "./host-session-source-provider";
 import { createDevModuleGraphSnapshot } from "./dev-module-graph";
 import { cliUsageDiagnostic } from "./dev-diagnostics";
 import { createDevConsoleCoordinator } from "./dev-console/coordinator";
@@ -53,9 +56,6 @@ export type DeckjsxNodeCliParseResult =
   | {
       readonly ok: true;
       readonly command: "dev";
-      readonly entry: string;
-      readonly out: string;
-      readonly outputs: readonly string[];
       readonly interactive: boolean;
     }
   | {
@@ -85,10 +85,7 @@ export type DeckjsxDevWriteRecord = {
 };
 
 export type DeckjsxDevOptions = {
-  readonly entry: string;
   readonly cwd?: string;
-  readonly out: string;
-  readonly outputs?: readonly string[];
   readonly interactive?: boolean;
 };
 
@@ -107,7 +104,7 @@ export function parseDeckjsxNodeCliArgs(args: readonly string[]): DeckjsxNodeCli
       diagnostics: [
         cliUsageDiagnostic({
           code: "deckjsx.node.cli.unknownCommand",
-          title: "Usage: deckjsx dev <entry> --out <path> [output paths...]",
+          title: "Usage: deckjsx dev [--interactive]",
         }),
       ],
     };
@@ -130,75 +127,26 @@ export function parseDeckjsxNodeCliArgs(args: readonly string[]): DeckjsxNodeCli
 
   const interactive = commandArgs.includes("--interactive");
   const rest = commandArgs.filter((arg) => arg !== "--interactive");
-  const [entry] = rest;
-  if (!entry) {
+  if (rest.length > 0) {
     return {
       ok: false,
       diagnostics: [
         cliUsageDiagnostic({
-          code: "deckjsx.node.cli.missingEntry",
-          title: "deckjsx dev requires an entry module.",
+          code: "deckjsx.node.cli.unexpectedArgument",
+          title: "deckjsx dev reads entry and output from deckjsx.config.ts.",
         }),
       ],
     };
   }
-
-  const optionTokens = rest.slice(1);
-  let out: string | undefined;
-  const extraOutputs: string[] = [];
-  for (let index = 0; index < optionTokens.length; index += 1) {
-    const token = optionTokens[index]!;
-    if (token !== "--out") {
-      extraOutputs.push(token);
-      continue;
-    }
-    if (out !== undefined) {
-      return {
-        ok: false,
-        diagnostics: [
-          {
-            severity: "error",
-            code: "deckjsx.node.cli.duplicateOut",
-            title: "deckjsx dev accepts --out only once.",
-            message: "--out",
-          },
-        ],
-      };
-    }
-    const value = optionTokens[index + 1];
-    if (!value || value.startsWith("-")) {
-      break;
-    }
-    out = value;
-    index += 1;
-  }
-  if (!out) {
-    return {
-      ok: false,
-      diagnostics: [
-        cliUsageDiagnostic({
-          code: "deckjsx.node.cli.missingOut",
-          title: "deckjsx dev requires --out <path>.",
-        }),
-      ],
-    };
-  }
-
-  const outputs = [...new Set([out, ...extraOutputs])];
   return {
     ok: true,
     command: "dev",
-    entry,
-    out,
-    outputs,
     interactive,
   };
 }
 
 function isKnownDevOption(arg: string): boolean {
-  return (
-    arg === "--out" || arg === "--interactive" || arg === "--help" || arg === "--interactive-help"
-  );
+  return arg === "--interactive" || arg === "--help" || arg === "--interactive-help";
 }
 
 function unknownDevOptionDiagnostic(option: string): DeckjsxNodeCliDiagnostic {
@@ -212,7 +160,7 @@ function unknownDevOptionDiagnostic(option: string): DeckjsxNodeCliDiagnostic {
   };
 }
 
-const KNOWN_DEV_OPTIONS = ["--out", "--interactive", "--help", "--interactive-help"] as const;
+const KNOWN_DEV_OPTIONS = ["--interactive", "--help", "--interactive-help"] as const;
 
 function closestDevOptionSuggestion(option: string): string | undefined {
   const candidates = KNOWN_DEV_OPTIONS.map((candidate) => ({
@@ -255,26 +203,103 @@ export function devWriteRecords(input: {
   return classifyDevWrites(input).records;
 }
 
-export async function runDeckjsxDev(input: DeckjsxDevOptions): Promise<void> {
+export async function runDeckjsxDev(input: DeckjsxDevOptions): Promise<boolean> {
   const cwd = input.cwd ? path.resolve(input.cwd) : process.cwd();
+  const packageResult = await resolveHostPackageBoundary(cwd);
+  if (!packageResult.ok) {
+    await printDiagnostics(packageResult.diagnostics.map(coreDiagnosticToDevDiagnostic));
+    return false;
+  }
+  const packageRoot = packageResult.value;
+  const environment = process.env.NODE_ENV ?? "development";
+  const configResult = await resolveConfig({ cwd });
+  const entriesResult = configResult.ok ? await resolveEntries(configResult.value) : undefined;
+  const failedEntries = entriesResult && !entriesResult.ok ? entriesResult : undefined;
   const { createDeckjsxDevCompiler } = await import("./dev-compiler");
   const artifactSession = createIncrementalArtifactSession();
   const inspectionStore = createNodeDevInspectionStore();
+  const resolved =
+    configResult.ok && entriesResult?.ok ? { configResult, entriesResult } : undefined;
+  const hostSessionSource = resolved
+    ? createHostSessionSourceProvider({
+        cwd,
+        initial: {
+          config: resolved.configResult.value,
+          entries: resolved.entriesResult.value,
+          diagnostics: [
+            ...resolved.configResult.diagnostics,
+            ...resolved.entriesResult.diagnostics,
+          ],
+        },
+      })
+    : createHostSessionSourceProvider({
+        cwd,
+        initialFailure: {
+          packageRoot,
+          environment,
+          diagnostics: configResult.ok
+            ? [...configResult.diagnostics, ...failedEntries!.diagnostics]
+            : configResult.diagnostics,
+          ...(configResult.ok
+            ? {
+                watchFiles: [
+                  ...configResult.value.watchFiles,
+                  ...(failedEntries!.watchFiles ?? []),
+                ],
+                watchDirectories: failedEntries!.watchDirectories,
+              }
+            : {}),
+        },
+      });
+  const initialExecution = hostSessionSource.executionSnapshot();
+  const entry = initialExecution?.entry ?? path.join(packageRoot, "deckjsx.config.ts");
   await runDeckjsxDevCompilerHost({
     compiler: createDeckjsxDevCompiler({
-      entry: input.entry,
-      cwd,
-      out: input.out,
-      outputs: input.outputs,
+      entry,
+      entries: initialExecution?.entries,
+      cwd: packageRoot,
+      out: initialExecution?.out,
+      outputs: initialExecution?.outputs,
       session: artifactSession,
       inspectionStore,
+      renderExecutionContext: initialExecution?.renderExecutionContext,
+      sourceProvider: hostSessionSource,
     }),
     interactive: input.interactive,
-    entry: input.entry,
-    cwd,
+    entry:
+      initialExecution === undefined
+        ? "discovering entry"
+        : initialExecution.entries.length === 1
+          ? initialExecution.entry
+          : `${initialExecution.entries.length} entries`,
+    cwd: packageRoot,
     artifactSession,
     inspectionStore,
   });
+  return true;
+}
+
+function coreDiagnosticToDevDiagnostic(
+  diagnostic: import("deckjsx").Diagnostic,
+): DeckjsxDevDiagnostic {
+  const primary = diagnostic.labels[0];
+  return {
+    severity: diagnostic.severity,
+    code: diagnostic.code,
+    title: diagnostic.title,
+    ...(diagnostic.message ? { message: diagnostic.message } : {}),
+    ...(primary
+      ? {
+          primary: {
+            file: primary.path,
+            ...(primary.sourceSpan?.line ? { line: primary.sourceSpan.line } : {}),
+            ...(primary.sourceSpan?.column ? { column: primary.sourceSpan.column } : {}),
+          },
+        }
+      : {}),
+    ...(diagnostic.notes ? { notes: diagnostic.notes } : {}),
+    ...(diagnostic.help ? { help: diagnostic.help } : {}),
+  };
 }
 
 export async function runDeckjsxDevCompilerHost(input: {
@@ -747,7 +772,9 @@ async function main(): Promise<void> {
     return;
   }
 
-  await runDeckjsxDev(parsed);
+  if (!(await runDeckjsxDev(parsed))) {
+    process.exitCode = 1;
+  }
 }
 
 async function printDiagnostics(diagnostics: readonly DeckjsxNodeCliDiagnostic[]): Promise<void> {

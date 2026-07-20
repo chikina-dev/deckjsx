@@ -317,7 +317,7 @@ function bidiVisualRuns(input: {
     const levels = analyzer.getEmbeddingLevels(input.text, input.direction);
     const mirroredCharacters = analyzer.getMirroredCharactersMap(input.text, levels.levels);
     const charactersByStart = new Map<number, BidiCharacter>();
-    for (let start = 0; start < input.text.length; ) {
+    for (let start = 0; start < input.text.length;) {
       const codePoint = input.text.codePointAt(start);
       if (codePoint === undefined) {
         break;

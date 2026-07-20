@@ -154,26 +154,21 @@ describe("deckjsx integration hook diagnostics", () => {
     ]);
   });
 
-  test("unknown deck plugin fields are rejected at the plugin contract", async () => {
+  test("package-owned top-level Plugin fields are preserved by the Core contract", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
-    deck.plugin({
+    const plugin = {
       kind: "deckjsx.plugin",
       id: "test:unknown-plugin-field",
       priority: 1,
-    } as never);
+    } as const;
+    deck.plugin(plugin);
     deck.slide(() => <p>unknown plugin field</p>);
 
     const result = deck.compile();
 
-    expect(result.ok).toBe(false);
-    expect(result.graph).toBeUndefined();
-    expect(result.diagnostics.items).toEqual([
-      expect.objectContaining({
-        code: "E_PLUGIN_INVALID",
-        title: "deck plugin is not part of the public authoring API",
-        message: "Deck plugin priority is not part of the public authoring API.",
-      }),
-    ]);
+    expect(result.ok).toBe(true);
+    expect(result.graph).toBeDefined();
+    expect(result.diagnostics.items).toEqual([]);
   });
 
   test("invalid plugin hook updates become diagnostics instead of leaking across stages", async () => {

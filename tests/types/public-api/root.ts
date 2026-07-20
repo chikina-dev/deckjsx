@@ -6,7 +6,7 @@ type PublicCssGridShorthand = import("deckjsx").CssGridShorthand; // eslint-disa
 // @ts-expect-error grid template shorthand helper types are internal runtime-diagnostic support, not root public authoring API.
 type PublicCssGridTemplateShorthand = import("deckjsx").CssGridTemplateShorthand; // eslint-disable-line no-unused-vars
 
-// @ts-expect-error plugin hooks and detailed projection lifecycle types live in deckjsx/integration, not root authoring API.
+// @ts-expect-error DeckPlugin is intentionally named from deckjsx/integration rather than root.
 type PublicRootDeckPlugin = import("deckjsx").DeckPlugin; // eslint-disable-line no-unused-vars
 
 // @ts-expect-error compile graph node details are reached through CompileResult or deckjsx/inspect, not root named authoring exports.
@@ -102,8 +102,8 @@ void rootPluginInput;
 const rootPluginInputRejectsUnknownHook = {
   kind: "deckjsx.plugin",
   id: "bad-hook",
-  // @ts-expect-error DeckPluginInput is a root registration shape; hook authoring lives in deckjsx/integration.
   hooks: {
+    // @ts-expect-error unknown lifecycle hook names remain invalid.
     afterEverything() {},
   },
 } satisfies DeckPluginInput;
@@ -112,8 +112,8 @@ void rootPluginInputRejectsUnknownHook;
 const rootPluginInputRejectsUnknownIntegrationField = {
   kind: "deckjsx.plugin",
   id: "bad-integration",
-  // @ts-expect-error DeckPluginInput is a root registration shape; integration authoring lives in deckjsx/integration.
   integration: {
+    // @ts-expect-error Integration Context keeps its public fields closed.
     id: "integration:id",
     arbitraryContext: true,
   },

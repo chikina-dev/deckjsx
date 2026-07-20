@@ -85,7 +85,14 @@ export type {
   ViewStyle,
 } from "../style/types";
 export type { DeckOptions } from "./options/public";
-export type { DeckJsxElement, DeckJsxElementValue, JsxNode, JsxNodeArray } from "./jsx-types";
+export type {
+  AuthoringJsxNode,
+  DeckJsxElement,
+  DeckJsxElementValue,
+  JsxNode,
+  JsxNodeArray,
+} from "./jsx-types";
+export type { AuthoringExtensionValue } from "./extensions";
 export type {
   ContentJsxChild,
   ContentJsxChildArray,

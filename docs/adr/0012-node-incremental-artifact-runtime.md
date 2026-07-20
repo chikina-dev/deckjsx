@@ -1,5 +1,7 @@
 # Node Incremental Artifact Runtime replaces Vite HMR integration
 
+The host-input and CLI-option details in this ADR are superseded by ADR 0020. The runtime ownership, resident compiler, source invalidation, and artifact-session decisions remain in force.
+
 ## Decision
 
 v0.9 should remove `@deckjsx/vite` and the HMR-oriented project integration vocabulary, because the development loop is about updating generated artifacts such as PPTX files rather than notifying a browser viewer. Core should own the Incremental Artifact Session that assigns Render Slots, carries Source Invalidation, and retains graph, projection, and package artifacts for tracked slots; `@deckjsx/node` should own the Node CLI, Rolldown entry execution, file watching, filesystem writes, and observed output-path filtering. Untracked `write(...)` calls still run as ordinary output side effects, while `deckjsx`, `deckjsx/*`, `@deckjsx/node`, `@deckjsx/node/*`, and `node:*` remain external to the entry bundle so the runtime and entry share the same integration hooks.
@@ -23,6 +25,7 @@ The dev watcher should include both Rolldown's module graph and local asset file
 - `DeckjsxDevCompiler` owns lifecycle, source and asset invalidation scheduling, event emission, the last successful dev graph snapshot, and successful graph commits.
 - `DeckjsxDevCompilation` owns one source-snapshot-to-artifact attempt. Its public result should expose named statuses so callers do not infer phase from object shape: `artifactUpdated`, `bundleFailed`, `entryFailed`, and `outputBlocked`.
 - `DevSourceProvider` is the compiler-facing source snapshot seam. The default adapter is a Rolldown rebuild provider backed by `rolldown().generate(...)` and `watchFiles`; injected watcher adapters may use Rolldown's `change`/`event` stream as an invalidation source. The seam contract should be executable in tests: `start()` is idempotent, `nextSourceSnapshot()` returns queued or future snapshots, diagnostic snapshots do not throw through the compiler host, and `close()` releases provider-owned resources.
+- An executable source snapshot may carry the immutable Host Execution snapshot and non-fatal Host resolution diagnostics captured for the same generation. The compiler uses this paired snapshot rather than rereading mutable Host Session state after awaiting source acquisition. Config/entry warnings therefore remain associated with the generation they describe, while a later Host Session cannot redirect an older source artifact to newer entries, outputs, or Plugins.
 - `EntryExecutionHost` owns generated ESM module preparation, cache-busting dynamic imports, cwd switching, and execution cleanup so author code sees the project cwd. The current implementation uses fileless `data:` modules for dev execution and must not create workspace or temp entry files as part of the normal path.
 - `TrackedOutputCoordinator` owns output path normalization, tracked versus untracked write classification, Dev Artifact Update Plan creation, retained slot selection, and output/lock/staging ignore paths.
 - `ArtifactPlanApplier` owns the final command/effect boundary for applying a Dev Artifact Update Plan to an Incremental Artifact Session. A ready plan retains exactly its planned Render Slots; a blocked plan retains nothing.
@@ -33,6 +36,7 @@ The dev watcher should include both Rolldown's module graph and local asset file
 
 - The active dev integration package is `@deckjsx/node`; `@deckjsx/vite` and Vite/HMR runtime vocabulary are removed without compatibility aliases.
 - Vite+ may remain the repository toolchain, but it is not a deckjsx runtime or dev integration dependency.
-- `deckjsx dev <entry> --out <path> [extra output paths...]` is a resident Node command. Extra output paths may be written as ordinary side effects, but only the primary `--out` path retains Incremental Artifact Session state.
+- `deckjsx dev` is a resident, config-driven Node command. Entry and required output hints come from `deckjsx.config.ts` or configuration-transparent discovery; every explicitly listed output participates in Incremental Artifact Session validation. The former positional entry and `--out` contract is superseded by ADR 0020.
+- Residency begins once the Host Package Boundary is known, not only after the first valid config and entry resolution. Initial config or entry diagnostics are emitted as diagnostic source snapshots; config, discovery, and package watch evidence remains active so the same process can construct its first executable Host Session after the author fixes the project.
 - The Node dev compiler can update PPTX today and can later support other generated artifact types without adding browser viewer notification semantics.
 - Public dev APIs expose compiler concepts, source snapshots, artifact plans, named result statuses, and diagnostics; they do not expose Rolldown result objects or private Pipeline Artifact collections.

@@ -1,4 +1,5 @@
 import type { StyleSheetValue } from "../style/stylesheet/public";
+import type { Diagnostic } from "../diagnostics";
 import type { SlideTemplateSet } from "../templates";
 import type { SourceContextInput, SourceContextValue } from "./public";
 
@@ -32,6 +33,7 @@ export type CompositionSourceInternals<
   readonly entries: readonly CompositionEntry<TSourceContext, TTemplates>[];
   readonly stylesheets: readonly StyleSheetValue[];
   readonly plugins: readonly unknown[];
+  readonly pluginDiagnostics?: readonly Diagnostic[];
   readonly theme?: unknown;
   readonly templates?: unknown;
   readonly cycleId: object;

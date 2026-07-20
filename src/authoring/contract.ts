@@ -481,7 +481,9 @@ export function validateAuthoringElementPropsContract(input: {
   const supported =
     input.source.kind === "slide"
       ? supportedSlideOptionNames()
-      : supportedPropNamesForAuthoredTag(input.source.tag);
+      : input.source.kind === "tag"
+        ? supportedPropNamesForAuthoredTag(input.source.tag)
+        : new Set<string>();
   const target = input.source.kind === "slide" ? "slide declaration option" : "authoring prop";
   const issues: AuthoringPropContractIssue[] = [
     ...validateSupportedAuthoringPropNamesContract({
@@ -502,6 +504,10 @@ export function validateAuthoringElementPropsContract(input: {
 
   if (input.source.kind === "slide") {
     issues.push(...validateSlideDeclarationOptionsContract(input.props, propPath));
+    return issues;
+  }
+
+  if (input.source.kind !== "tag") {
     return issues;
   }
 

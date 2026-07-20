@@ -100,7 +100,7 @@ export type DeckjsxDevCompilationResult =
 export type RunDeckjsxDevCompilationInput = {
   readonly cwd: string;
   readonly entry: string;
-  readonly out: string;
+  readonly out?: string;
   readonly outputs?: readonly string[];
   readonly compilation: number;
   readonly sourceSnapshot: DeckjsxDevSourceSnapshot;
@@ -108,6 +108,7 @@ export type RunDeckjsxDevCompilationInput = {
   readonly entryHost: EntryExecutionHost;
   readonly session: IncrementalArtifactSession;
   readonly inspectionStore?: NodeDevInspectionStore;
+  readonly renderExecutionContext?: RenderExecutionContext;
 };
 
 export async function runDeckjsxDevCompilation(
@@ -136,11 +137,16 @@ export async function runDeckjsxDevCompilation(
     ...input.sourceSnapshot,
     changedSourceIds: input.changedSourceIds,
   } satisfies DeckjsxDevExecutableSourceSnapshot;
+  const sourceDiagnostics = (sourceSnapshot.diagnostics ?? []).map((diagnostic) => ({
+    ...diagnostic,
+    compilation: diagnostic.compilation ?? input.compilation,
+  }));
   const observedAssetFiles = new Set<string>();
   const cycle = input.session.beginCycle(
     cycleOptionsForCompilation({
       changedSourceIds: input.changedSourceIds,
       inspectionStore: input.inspectionStore,
+      renderExecutionContext: input.renderExecutionContext,
     }),
   );
   try {
@@ -160,13 +166,16 @@ export async function runDeckjsxDevCompilation(
     } catch {
       // Preserve the original entry failure diagnostic; completion is best-effort cleanup here.
     }
-    const diagnostics = annotateDevDiagnostics(
-      [entryFailedDiagnostic({ error, file: path.resolve(input.cwd, input.entry) })],
-      {
-        phase: "entry",
-        compilation: input.compilation,
-      },
-    );
+    const diagnostics = [
+      ...sourceDiagnostics,
+      ...annotateDevDiagnostics(
+        [entryFailedDiagnostic({ error, file: path.resolve(input.cwd, input.entry) })],
+        {
+          phase: "entry",
+          compilation: input.compilation,
+        },
+      ),
+    ];
     input.inspectionStore?.finishAttempt({ devStatus: "entryFailed", boundary: "entry" });
     return {
       ok: false,
@@ -210,7 +219,7 @@ export async function runDeckjsxDevCompilation(
     graph,
     writes: annotatedArtifactPlan.writes,
     retainedSlots: annotatedArtifactPlan.retainedSlots,
-    diagnostics: annotatedArtifactPlan.diagnostics,
+    diagnostics: [...sourceDiagnostics, ...annotatedArtifactPlan.diagnostics],
   };
   if (annotatedArtifactPlan.status === "ready") {
     const readyArtifactPlan = {
@@ -247,6 +256,7 @@ export async function runDeckjsxDevCompilation(
 function cycleOptionsForCompilation(input: {
   readonly changedSourceIds: readonly string[];
   readonly inspectionStore?: NodeDevInspectionStore;
+  readonly renderExecutionContext?: RenderExecutionContext;
 }): {
   readonly sourceInvalidation?: { readonly changedSourceIds: readonly string[] };
   readonly renderExecutionContext?: RenderExecutionContext;
@@ -255,8 +265,27 @@ function cycleOptionsForCompilation(input: {
     ...(input.changedSourceIds.length > 0
       ? { sourceInvalidation: { changedSourceIds: input.changedSourceIds } }
       : {}),
-    ...(input.inspectionStore
-      ? { renderExecutionContext: renderExecutionContextForInspection(input.inspectionStore) }
+    ...((input.inspectionStore || input.renderExecutionContext) && {
+      renderExecutionContext: mergeDevRenderExecutionContexts(
+        input.renderExecutionContext,
+        input.inspectionStore
+          ? renderExecutionContextForInspection(input.inspectionStore)
+          : undefined,
+      ),
+    }),
+  };
+}
+
+function mergeDevRenderExecutionContexts(
+  base: RenderExecutionContext | undefined,
+  inspection: RenderExecutionContextWithNodeDevObservers | undefined,
+): RenderExecutionContextWithNodeDevObservers {
+  return {
+    ...base,
+    ...inspection,
+    plugins: [...(base?.plugins ?? []), ...(inspection?.plugins ?? [])],
+    ...(inspection?.[AUTHORING_RUNTIME_OBSERVERS]
+      ? { [AUTHORING_RUNTIME_OBSERVERS]: inspection[AUTHORING_RUNTIME_OBSERVERS] }
       : {}),
   };
 }

@@ -7,6 +7,8 @@ import type {
   WriteDiagnostic,
   WriteResult,
   WriteStrategy,
+  ResolvedDeckjsxConfig,
+  ResolvedDeckjsxEntries,
 } from "@deckjsx/node";
 import type {
   DeckjsxDevCompiler,
@@ -24,6 +26,9 @@ import {
   nodeAssets,
   nodeFontAssets,
   write,
+  defineConfig,
+  resolveConfig,
+  resolveEntries,
 } from "@deckjsx/node";
 import { createDeckjsxDevCompiler } from "@deckjsx/node/dev";
 import { Deck } from "deckjsx";
@@ -80,6 +85,24 @@ nodeFontAssetsExtension satisfies DeckPlugin;
 
 const deckWithNodeAssets = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 deckWithNodeAssets.plugin(nodeAssetsExtension);
+
+const consumerPlugin = {
+  kind: "deckjsx.plugin" as const,
+  id: "test:consumer",
+  judgment: { expectedSlides: 2 },
+};
+const configDefinition = defineConfig(async ({ environment }) => ({
+  entry: environment === "test" ? ["slides.tsx"] : null,
+  output: ["dist/slides.pptx", "dist/slides.pdf"],
+  plugins: [consumerPlugin],
+}));
+void configDefinition;
+const configResult = await resolveConfig({ cwd: "/project", environment: "test" });
+if (configResult.ok) {
+  configResult.value satisfies ResolvedDeckjsxConfig;
+  const entryResult = await resolveEntries(configResult.value);
+  if (entryResult.ok) entryResult.value satisfies ResolvedDeckjsxEntries;
+}
 
 declare const renderResult: RenderResult;
 const writePromise = write(renderResult, "/project/out.pptx");

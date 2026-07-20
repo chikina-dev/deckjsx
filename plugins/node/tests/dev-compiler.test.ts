@@ -25,6 +25,7 @@ import {
   classifyDevWrites,
   devOutputIgnoreFiles,
   normalizeDevOutputPaths,
+  planDevArtifactUpdate,
 } from "@/src/tracked-output-coordinator.ts";
 import { createDevArtifactPlanApplier } from "@/src/dev-artifact-plan-applier.ts";
 import {
@@ -76,7 +77,7 @@ async function recordRenderedWrite(path: string, result: TestWriteResult) {
 }
 
 describe("@deckjsx/node dev compiler output coordinator", () => {
-  test("retains only the primary --out write while allowing extra output writes", () => {
+  test("retains all explicitly tracked output writes", () => {
     const result = classifyDevWrites({
       cwd: "/project",
       out: "output.pptx",
@@ -89,9 +90,9 @@ describe("@deckjsx/node dev compiler output coordinator", () => {
 
     expect(result.records).toEqual([
       { path: "/project/output.pptx", tracked: true, result: { status: "created" } },
-      { path: "/project/components.pptx", tracked: false, result: { status: "created" } },
+      { path: "/project/components.pptx", tracked: true, result: { status: "created" } },
     ]);
-    expect(result.retainedSlots).toEqual([0]);
+    expect(result.retainedSlots).toEqual([0, 1]);
     expect(result.diagnostics).toEqual([]);
   });
 
@@ -106,7 +107,7 @@ describe("@deckjsx/node dev compiler output coordinator", () => {
     });
 
     expect(result.records).toEqual([
-      { path: "/project/components.pptx", tracked: false, result: { status: "created" } },
+      { path: "/project/components.pptx", tracked: true, result: { status: "created" } },
     ]);
     expect(result.retainedSlots).toEqual([]);
     expect(result.diagnostics).toEqual([
@@ -120,10 +121,31 @@ describe("@deckjsx/node dev compiler output coordinator", () => {
         },
         phase: "output",
         help: [
-          "Make sure the entry calls write(...) for the same path passed to deckjsx dev --out.",
+          "Make sure the selected entry calls write(...) for the same path configured in output.",
         ],
       },
     ]);
+  });
+
+  test("allows writes outside explicit output hints with an untracked warning", () => {
+    const result = planDevArtifactUpdate({
+      cwd: "/project",
+      out: "output.pptx",
+      writes: [
+        { cycle: 1, slot: 0, path: "/project/output.pptx", result: { status: "created" } },
+        { cycle: 1, slot: 1, path: "/project/preview.pdf", result: { status: "created" } },
+      ],
+    });
+
+    expect(result.status).toBe("ready");
+    expect(result.retainedSlots).toEqual([0]);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        severity: "warning",
+        code: "deckjsx.node.dev.untrackedOutput",
+        message: "preview.pdf",
+      }),
+    );
   });
 
   test("blocks artifact updates when the tracked output write failed", () => {
@@ -1963,10 +1985,10 @@ describe("@deckjsx/node dev compiler", () => {
       throw new Error("expected compilation to succeed");
     }
     expect(result.compilation).toBe(1);
-    expect(result.retainedSlots).toEqual([0]);
+    expect(result.retainedSlots).toEqual([0, 1]);
     expect(result.writes).toEqual([
       { path: "/project/output.pptx", tracked: true, result: { status: "created" } },
-      { path: "/project/components.pptx", tracked: false, result: { status: "created" } },
+      { path: "/project/components.pptx", tracked: true, result: { status: "created" } },
     ]);
     expect(result.sourceSnapshot).toEqual({
       status: "executable",
@@ -1979,9 +2001,9 @@ describe("@deckjsx/node dev compiler", () => {
       status: "ready",
       writes: [
         { path: "/project/output.pptx", tracked: true, result: { status: "created" } },
-        { path: "/project/components.pptx", tracked: false, result: { status: "created" } },
+        { path: "/project/components.pptx", tracked: true, result: { status: "created" } },
       ],
-      retainedSlots: [0],
+      retainedSlots: [0, 1],
       diagnostics: [],
     });
     expect(result.graph.files).toEqual(["/project/src/main.tsx"]);
@@ -2145,6 +2167,103 @@ describe("@deckjsx/node dev compiler", () => {
     expect(nextSourceSnapshotCalls).toBe(1);
     expect(firstResult).toBe(secondResult);
     expect(firstResult).toMatchObject({ ok: true, compilation: 1 });
+  });
+
+  test("uses the Host execution snapshot paired with the emitted source generation", async () => {
+    const compiler = createDeckjsxDevCompiler({
+      cwd: "/project",
+      entry: "stale.ts",
+      out: "stale.pptx",
+      sourceProvider: {
+        start() {},
+        async nextSourceSnapshot() {
+          return {
+            status: "executable" as const,
+            code: "current generation",
+            moduleIds: ["/project/current.ts"],
+            watchFiles: ["/project/current.ts"],
+            changedSourceIds: ["/project/current.ts"],
+            diagnostics: [
+              {
+                severity: "warning" as const,
+                code: "W_CONFIG_DEFINE_CONFIG_MISSING",
+                title: "Configuration was not created with defineConfig",
+              },
+            ],
+            execution: {
+              entry: "/project/current.ts",
+              entries: ["/project/current.ts"] as const,
+              out: "current.pptx",
+              outputs: ["current.pptx"],
+              renderExecutionContext: {},
+            },
+          };
+        },
+        async close() {},
+      },
+      executionSnapshot: () => ({
+        entry: "/project/newer-but-unpaired.ts",
+        entries: ["/project/newer-but-unpaired.ts"],
+        out: "newer-but-unpaired.pptx",
+        outputs: ["newer-but-unpaired.pptx"],
+        renderExecutionContext: {},
+      }),
+      entryHost: {
+        async execute() {
+          await recordRenderedWrite("/project/current.pptx", { status: "created" });
+        },
+      },
+    });
+
+    compiler.start();
+    const result = await compiler.runNextCompilation();
+
+    expect(result).toMatchObject({ ok: true, status: "artifactUpdated" });
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "W_CONFIG_DEFINE_CONFIG_MISSING", compilation: 1 }),
+    );
+  });
+
+  test("closes compiler-owned resources and emits compilerClosed exactly once", async () => {
+    let sourceStarts = 0;
+    let sourceCloses = 0;
+    let assetCloses = 0;
+    let compilerClosedEvents = 0;
+    const compiler = createDeckjsxDevCompiler({
+      cwd: "/project",
+      entry: "entry.ts",
+      sourceProvider: {
+        start() {
+          sourceStarts += 1;
+        },
+        async nextSourceSnapshot() {
+          return { status: "diagnostic" as const, diagnostics: [] };
+        },
+        async close() {
+          sourceCloses += 1;
+        },
+      },
+      createAssetFileWatcher() {
+        return {
+          update() {},
+          close() {
+            assetCloses += 1;
+          },
+        };
+      },
+    });
+    compiler.on((event) => {
+      if (event.type === "compilerClosed") compilerClosedEvents += 1;
+    });
+
+    await compiler.close();
+    await compiler.close();
+    compiler.start();
+
+    expect(sourceStarts).toBe(0);
+    expect(sourceCloses).toBe(1);
+    expect(assetCloses).toBe(1);
+    expect(compilerClosedEvents).toBe(1);
   });
 
   test("updates observed asset watches and reruns the retained executable build for asset changes", async () => {

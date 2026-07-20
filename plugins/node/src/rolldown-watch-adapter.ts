@@ -57,7 +57,7 @@ export type RolldownWatchAdapter = DevSourceProvider;
 
 export type RolldownWatchAdapterOptions = {
   readonly cwd: string;
-  readonly entry: string;
+  readonly entry: string | readonly string[];
   readonly watchFactory?: (options: WatchOptions) => RolldownWatcherLike;
   readonly buildFactory?: (options: WatchOptions) => Promise<RolldownWatchResult>;
   readonly fileWatcherFactory?: (
@@ -82,7 +82,7 @@ export function createRolldownWatchAdapter(
 
 function createRolldownRebuildAdapter(options: RolldownWatchAdapterOptions): RolldownWatchAdapter {
   const cwd = path.resolve(options.cwd);
-  const entry = path.resolve(cwd, options.entry);
+  const entry = resolveWatchEntry(cwd, options.entry);
   const buildFactory = options.buildFactory ?? rolldown;
   const createFileWatcher = options.fileWatcherFactory ?? createNodeFileWatcher;
   const changedSourceIds = new Set<string>();
@@ -154,7 +154,7 @@ function createRolldownRebuildAdapter(options: RolldownWatchAdapterOptions): Rol
             ? snapshot.watchFiles
             : snapshot.moduleIds
           : [
-              entry,
+              ...entryPaths(entry),
               ...sourceWatchers.keys(),
               ...snapshot.diagnostics.flatMap((diagnostic) =>
                 diagnostic.primary?.file ? [diagnostic.primary.file] : [],
@@ -287,7 +287,7 @@ function createRolldownEventWatchAdapter(
   options: RolldownWatchAdapterOptions,
 ): RolldownWatchAdapter {
   const cwd = path.resolve(options.cwd);
-  const entry = path.resolve(cwd, options.entry);
+  const entry = resolveWatchEntry(cwd, options.entry);
   const changedSourceIds: string[] = [];
   const watchModuleIds: string[] = [];
   const queuedSourceSnapshots: RolldownWatchSourceSnapshot[] = [];
@@ -339,12 +339,16 @@ function createRolldownEventWatchAdapter(
       if (event.code === "ERROR") {
         await event.result?.close();
         emitSourceSnapshot(
-          createDiagnosticSourceSnapshot([diagnosticFromRolldownError(event.error, entry)]),
+          createDiagnosticSourceSnapshot([
+            diagnosticFromRolldownError(event.error, entryDiagnosticPath(entry)),
+          ]),
         );
       }
     } catch (error) {
       emitSourceSnapshot(
-        createDiagnosticSourceSnapshot([diagnosticFromRolldownError(error, entry)]),
+        createDiagnosticSourceSnapshot([
+          diagnosticFromRolldownError(error, entryDiagnosticPath(entry)),
+        ]),
       );
     }
   };
@@ -393,7 +397,7 @@ function createRolldownEventWatchAdapter(
             createDiagnosticSourceSnapshot([
               diagnosticFromRolldownError(
                 new Error("Rolldown emitted a malformed watch event."),
-                entry,
+                entryDiagnosticPath(entry),
               ),
             ]),
           );
@@ -532,7 +536,7 @@ function createNodeFileWatcher(
 
 async function buildSourceSnapshot(input: {
   readonly cwd: string;
-  readonly entry: string;
+  readonly entry: string | readonly string[];
   readonly buildFactory: (options: WatchOptions) => Promise<RolldownWatchResult>;
   readonly changedSourceIds: readonly string[];
 }): Promise<RolldownWatchSourceSnapshot> {
@@ -557,13 +561,15 @@ async function buildSourceSnapshot(input: {
       moduleIds,
     });
   } catch (error) {
-    return createDiagnosticSourceSnapshot([diagnosticFromRolldownError(error, input.entry)]);
+    return createDiagnosticSourceSnapshot([
+      diagnosticFromRolldownError(error, entryDiagnosticPath(input.entry)),
+    ]);
   }
 }
 
 async function initialBuildSnapshot(input: {
   readonly cwd: string;
-  readonly entry: string;
+  readonly entry: string | readonly string[];
   readonly buildFactory: (options: WatchOptions) => Promise<RolldownWatchResult>;
 }): Promise<RolldownWatchSourceSnapshot> {
   return buildSourceSnapshot({
@@ -574,17 +580,18 @@ async function initialBuildSnapshot(input: {
 
 export function createRolldownWatchOptions(input: {
   readonly cwd: string;
-  readonly entry: string;
+  readonly entry: string | readonly string[];
   readonly onWatchChange: (id: string) => void;
   readonly onBuildStart: () => void;
   readonly onModuleId: (id: string) => void;
 }): WatchOptions {
   return {
-    input: input.entry,
+    input: typeof input.entry === "string" ? input.entry : VIRTUAL_MULTI_ENTRY_ID,
     cwd: input.cwd,
     platform: "node",
     external: isDeckjsxRuntimeExternalId,
     plugins: [
+      ...(typeof input.entry === "string" ? [] : [multiEntryPlugin(input.entry)]),
       deckjsxWatchChangePlugin({
         onBuildStart: input.onBuildStart,
         onModuleId: input.onModuleId,
@@ -594,6 +601,39 @@ export function createRolldownWatchOptions(input: {
     ],
     transform: {
       jsx: deckjsxJsxTransformOptionsForCwd(input.cwd),
+    },
+  };
+}
+
+const VIRTUAL_MULTI_ENTRY_ID = "\0deckjsx:multi-entry";
+
+function resolveWatchEntry(
+  cwd: string,
+  entry: string | readonly string[],
+): string | readonly string[] {
+  return typeof entry === "string"
+    ? path.resolve(cwd, entry)
+    : Object.freeze(entry.map((item) => path.resolve(cwd, item)));
+}
+
+function entryPaths(entry: string | readonly string[]): readonly string[] {
+  return typeof entry === "string" ? [entry] : entry;
+}
+
+function entryDiagnosticPath(entry: string | readonly string[]): string {
+  return entryPaths(entry)[0] ?? VIRTUAL_MULTI_ENTRY_ID;
+}
+
+function multiEntryPlugin(entries: readonly string[]): Plugin {
+  return {
+    name: "@deckjsx/node/multi-entry",
+    resolveId(id) {
+      return id === VIRTUAL_MULTI_ENTRY_ID ? VIRTUAL_MULTI_ENTRY_ID : undefined;
+    },
+    load(id) {
+      return id === VIRTUAL_MULTI_ENTRY_ID
+        ? entries.map((entry) => `import ${JSON.stringify(entry)};`).join("\n")
+        : undefined;
     },
   };
 }

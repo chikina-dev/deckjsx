@@ -2,12 +2,14 @@ import path from "node:path";
 import {
   createIncrementalArtifactSession,
   type IncrementalArtifactSession,
+  type RenderExecutionContext,
 } from "deckjsx/integration";
 import { createDevChangeScheduler } from "./dev-change-scheduler";
 import { createDevAssetFileWatcher, type DevAssetFileWatcher } from "./dev-asset-file-watcher";
 import { createEntryExecutionHost, type EntryExecutionHost } from "./entry-execution-host";
 import { createRolldownWatchAdapter } from "./rolldown-watch-adapter";
 import type { DevSourceProvider } from "./dev-source-provider";
+import type { DeckjsxDevExecutionSnapshot } from "./dev-source-snapshot";
 import type { DeckjsxDevDiagnostic } from "./dev-diagnostics";
 import type { NodeDevInspectionStore } from "./dev-inspection-store";
 import { runDeckjsxDevCompilation, type DeckjsxDevCompilationResult } from "./dev-compilation";
@@ -22,10 +24,12 @@ import { runDeckjsxDevCompilation, type DeckjsxDevCompilationResult } from "./de
 export type DeckjsxDevCompilerOptions = {
   /** Entry module path, resolved relative to `cwd` when it is not absolute. */
   readonly entry: string;
+  /** Additional entry modules executed in the same bundled Host cycle. */
+  readonly entries?: readonly string[];
   /** Working directory for bundling, execution, file watching, and output path resolution. */
   readonly cwd?: string;
   /** Primary render output path, resolved relative to `cwd` when it is not absolute. */
-  readonly out: string;
+  readonly out?: string;
   /** Additional output paths that may be retained or tracked during incremental dev cycles. */
   readonly outputs?: readonly string[];
   /** Optional source provider. When omitted, `@deckjsx/node` creates a Rolldown watch provider. */
@@ -38,6 +42,10 @@ export type DeckjsxDevCompilerOptions = {
   readonly session?: IncrementalArtifactSession;
   /** Optional in-memory inspection store used by the interactive dev console. */
   readonly inspectionStore?: NodeDevInspectionStore;
+  /** Host Configuration context applied before Deck-local Plugins. */
+  readonly renderExecutionContext?: RenderExecutionContext;
+  /** Dynamic Host Session snapshot used when config changes during resident execution. */
+  readonly executionSnapshot?: () => DeckjsxDevExecutionSnapshot;
 };
 
 /** Event emitted by the `@deckjsx/node/dev` compiler lifecycle. */
@@ -100,7 +108,7 @@ export function createDeckjsxDevCompiler(options: DeckjsxDevCompilerOptions): De
     options.sourceProvider ??
     createRolldownWatchAdapter({
       cwd,
-      entry: options.entry,
+      entry: options.entries && options.entries.length > 1 ? options.entries : options.entry,
     });
   const entryHost = options.entryHost ?? createEntryExecutionHost({ cwd });
   const scheduler = createDevChangeScheduler({
@@ -114,6 +122,7 @@ export function createDeckjsxDevCompiler(options: DeckjsxDevCompilerOptions): De
   const listeners = new Set<(event: DeckjsxDevCompilerEvent) => void>();
   let compilation = 0;
   let started = false;
+  let closed = false;
   let currentCompilation: Promise<DeckjsxDevCompilationResult> | undefined;
 
   const emit = (event: DeckjsxDevCompilerEvent) => {
@@ -130,7 +139,7 @@ export function createDeckjsxDevCompiler(options: DeckjsxDevCompilerOptions): De
       };
     },
     start() {
-      if (started) {
+      if (started || closed) {
         return;
       }
       started = true;
@@ -151,6 +160,8 @@ export function createDeckjsxDevCompiler(options: DeckjsxDevCompilerOptions): De
       return currentCompilation;
     },
     async close() {
+      if (closed) return;
+      closed = true;
       assetWatcher.close();
       await sourceProvider.close();
       emit({ type: "compilerClosed" });
@@ -160,6 +171,9 @@ export function createDeckjsxDevCompiler(options: DeckjsxDevCompilerOptions): De
   async function runCompilation(): Promise<DeckjsxDevCompilationResult> {
     compilation += 1;
     const sourceSnapshot = await scheduler.nextSourceSnapshot();
+    const hostExecution =
+      (sourceSnapshot.status === "executable" ? sourceSnapshot.execution : undefined) ??
+      options.executionSnapshot?.();
     const changedSourceIds = scheduler.consumeChangedSourceIds(sourceSnapshot);
     emit({
       type: "compilationStarted",
@@ -169,15 +183,17 @@ export function createDeckjsxDevCompiler(options: DeckjsxDevCompilerOptions): De
 
     const result = await runDeckjsxDevCompilation({
       cwd,
-      entry: options.entry,
-      out: options.out,
-      outputs: options.outputs,
+      entry: hostExecution?.entry ?? options.entry,
+      out: hostExecution?.out ?? options.out,
+      outputs: hostExecution?.outputs ?? options.outputs,
       compilation,
       sourceSnapshot,
       changedSourceIds,
       entryHost,
       session,
       inspectionStore: options.inspectionStore,
+      renderExecutionContext:
+        hostExecution?.renderExecutionContext ?? options.renderExecutionContext,
     });
     result.diagnostics.forEach((diagnostic) => emit({ type: "diagnostic", diagnostic }));
     emit({ type: "compilationFinished", result });

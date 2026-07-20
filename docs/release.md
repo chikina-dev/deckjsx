@@ -209,6 +209,13 @@ function startDev(args, options = {}) {
   return { child, logs };
 }
 
+async function configureDev(entry, output) {
+  await writeFile(
+    "deckjsx.config.ts",
+    `import { defineConfig } from "@deckjsx/node";\nexport default defineConfig(${JSON.stringify({ entry, output })});\n`,
+  );
+}
+
 async function stopDev(child) {
   if (child.exitCode !== null) {
     return;
@@ -233,8 +240,9 @@ async function scenarioLiveUpdateErrorRecovery() {
   const recovered = `LIVE_RECOVERED_${runId}`;
   await unlinkIfExists(output);
   await writeFile(entry, validSource({ label: first, outputPath: output }));
+  await configureDev(entry, output);
 
-  const { child, logs } = startDev(["dev", entry, "--out", output]);
+  const { child, logs } = startDev(["dev"]);
   try {
     await waitFor(first, () => slideXml(output));
     const firstStat = await stat(output);
@@ -269,7 +277,7 @@ async function scenarioLiveUpdateErrorRecovery() {
 }
 
 function scenarioRemovedShortMode() {
-  const result = spawnSync("deckjsx", ["dev", "main.tsx", "--out", "short-output.pptx", "--short"], {
+  const result = spawnSync("deckjsx", ["dev", "--short"], {
     encoding: "utf8",
   });
   const stderr = result.stderr.trim();
@@ -289,7 +297,8 @@ async function scenarioInteractiveInspector() {
   await unlinkIfExists(output);
   await writeFile(entry, validSource({ label, outputPath: output }));
 
-  const { child, logs } = startDev(["dev", entry, "--out", output, "--interactive"], {
+  await configureDev(entry, output);
+  const { child, logs } = startDev(["dev", "--interactive"], {
     stdin: true,
   });
   try {
@@ -327,7 +336,8 @@ async function scenarioMultipleOutputs() {
     }),
   );
 
-  const { child, logs } = startDev(["dev", entry, "--out", primary, secondary]);
+  await configureDev(entry, [primary, secondary]);
+  const { child, logs } = startDev(["dev"]);
   try {
     await waitFor(firstPrimary, () => slideXml(primary));
     await waitFor(firstSecondary, () => slideXml(secondary));
@@ -402,7 +412,7 @@ This smoke must prove all of the following before publishing:
 
 - The installed package versions are the intended release candidates, not the registry's current
   `latest` versions.
-- `deckjsx dev main.tsx --out live-output.pptx` starts from a TSX entry and creates a PPTX.
+- `deckjsx dev` resolves `main.tsx` and `live-output.pptx` from `deckjsx.config.ts` and creates the PPTX.
 - Editing only the TSX source updates the existing PPTX in the same resident CLI process.
 - The updated PPTX remains patchable according to `inspectPatchablePptx()`.
 - A broken TSX edit emits detailed diagnostics with file, line, column, source line, caret, phase,
@@ -412,8 +422,8 @@ This smoke must prove all of the following before publishing:
 - `--short`/`-s` is rejected as a removed dev option instead of starting a compact log mode.
 - `deckjsx dev --interactive` answers `status`, `projection`, and `exit` with human-readable
   inspector output on stderr, without writing human UI to stdout.
-- `deckjsx dev <entry> --out primary-output.pptx components-output.pptx` creates and updates all
-  declared output files while retaining the primary output as the tracked artifact.
+- A config with entry and output arrays creates and updates all declared output files in one Host
+  execution while validating every explicit output.
 - The generated PPTX files pass `unzip -t`; PDF conversion is a strong additional compatibility
   check when `soffice` is installed.
 

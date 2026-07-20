@@ -12,7 +12,7 @@ import {
   type SourceContextValue,
 } from "../composition/types";
 import { compositionRevisionForSource } from "../composition/source";
-import { applyPluginHooks } from "../plugin";
+import { applyPluginHooks, pluginSetRevision } from "../plugin";
 import {
   createRenderExecution,
   withRenderExecutionContext,
@@ -174,8 +174,14 @@ function graphForCurrentComposition<
   source: CompositionSource<TSourceContext, TTemplates>,
   graph: DefinedGraphInput | undefined,
   currentRevision = compositionRevisionForSource(source),
+  currentPluginSetRevision?: string,
 ): DefinedGraphInput | undefined {
-  return graph?.compositionRevision === currentRevision ? graph : undefined;
+  return graph?.compositionRevision === currentRevision &&
+    (graph.pluginSetRevision === undefined ||
+      currentPluginSetRevision === undefined ||
+      graph.pluginSetRevision === currentPluginSetRevision)
+    ? graph
+    : undefined;
 }
 
 function materializeAssetMap(
@@ -405,19 +411,28 @@ export async function projectSource<
     };
   }
 
-  const compileResult = input.definedGraph
+  const currentCompositionRevision = compositionRevisionForSource(input.source);
+  const currentPluginSetRevision = pluginSetRevision(execution.plugins);
+  const definedGraph = graphForCurrentComposition(
+    input.source,
+    input.definedGraph,
+    currentCompositionRevision,
+    currentPluginSetRevision,
+  );
+
+  const compileResult = definedGraph
     ? {
-        ok: resultOk(input.definedGraph.diagnostics),
-        diagnostics: input.definedGraph.diagnostics,
+        ok: resultOk(definedGraph.diagnostics),
+        diagnostics: definedGraph.diagnostics,
         stages: {
           compile: stageSummary(
             "compile",
-            input.definedGraph.diagnostics,
-            projectedArtifactStatus(input.definedGraph.graph, input.definedGraph.diagnostics),
+            definedGraph.diagnostics,
+            projectedArtifactStatus(definedGraph.graph, definedGraph.diagnostics),
           ),
         },
-        graph: input.definedGraph.graph,
-        resolvedStyles: input.definedGraph.resolvedStyles,
+        graph: definedGraph.graph,
+        resolvedStyles: definedGraph.resolvedStyles,
       }
     : compileSourceWithValidatedPlugins(
         input.source,
@@ -508,6 +523,12 @@ export async function projectSource<
       materializeAssetMap(artifacts, projectAssetsById);
     }
     const incrementalReuseSnapshot = artifacts.incrementalProjectionReuseSnapshot;
+    const compatibleIncrementalReuseSnapshot =
+      incrementalReuseSnapshot &&
+      (incrementalReuseSnapshot.graph.pluginSetRevision === undefined ||
+        incrementalReuseSnapshot.graph.pluginSetRevision === currentPluginSetRevision)
+        ? incrementalReuseSnapshot
+        : undefined;
     const projectionReuse =
       projectionFormat === "pptx"
         ? incrementalProjectionReusePlan({
@@ -515,11 +536,11 @@ export async function projectSource<
             resolvedStyles: projectResolvedStyles,
             options: input.options,
             assets: projectAssetsById,
-            previousGraph: incrementalReuseSnapshot?.graph,
-            previousProjection: incrementalReuseSnapshot?.projection,
-            previousOptions: incrementalReuseSnapshot?.options,
-            previousAssets: incrementalReuseSnapshot?.assetsById,
-            staleAssetEntityIds: incrementalReuseSnapshot?.staleAssetEntityIds,
+            previousGraph: compatibleIncrementalReuseSnapshot?.graph,
+            previousProjection: compatibleIncrementalReuseSnapshot?.projection,
+            previousOptions: compatibleIncrementalReuseSnapshot?.options,
+            previousAssets: compatibleIncrementalReuseSnapshot?.assetsById,
+            staleAssetEntityIds: compatibleIncrementalReuseSnapshot?.staleAssetEntityIds,
           })
         : undefined;
     const beforeProjectDiagnostics = createDiagnostics(beforeProject.diagnostics);
@@ -535,7 +556,7 @@ export async function projectSource<
       projected.format === "pptx"
         ? projectionWithReusablePackageParts({
             projection: projected,
-            previous: incrementalReuseSnapshot?.projection,
+            previous: compatibleIncrementalReuseSnapshot?.projection,
             graph: projectGraph,
             reusableSlideNodeIds: projectionReuse?.slideNodeIds,
           })
@@ -777,15 +798,24 @@ export async function renderSource<
     ? artifacts.invalidateForSourceChange(execution.sourceInvalidation)
     : false;
   const currentCompositionRevision = compositionRevisionForSource(input.source);
+  const currentPluginSetRevision = pluginSetRevision(execution.plugins);
   const incrementalGraph = graphForCurrentComposition(
     input.source,
     incrementalSlot?.artifacts.graph,
     currentCompositionRevision,
+    currentPluginSetRevision,
   );
   const inputGraph = graphForCurrentComposition(
     input.source,
     input.definedGraph,
     currentCompositionRevision,
+    currentPluginSetRevision,
+  );
+  const artifactGraph = graphForCurrentComposition(
+    input.source,
+    artifacts.graph,
+    currentCompositionRevision,
+    currentPluginSetRevision,
   );
   const explicitDefinedProjection =
     input.definedProjectionOrigin === "cache" ? undefined : input.definedProjection;
@@ -793,10 +823,10 @@ export async function renderSource<
     source: input.source,
     options: input.options,
     projectionFormat: adapter.projectionFormat,
-    definedGraph: sourceInvalidated ? artifacts.graph : (incrementalGraph ?? inputGraph),
+    definedGraph: sourceInvalidated ? artifactGraph : (incrementalGraph ?? inputGraph),
     definedProjection:
       explicitDefinedProjection ??
-      (sourceInvalidated
+      (sourceInvalidated && artifactGraph
         ? projectionInputFormatMatches(artifacts.projection, adapter.projectionFormat)
           ? artifacts.projection
           : undefined

@@ -30,6 +30,10 @@ export default defineConfig({
         replacement: new URL("./src/integration.ts", import.meta.url).pathname,
       },
       {
+        find: "deckjsx/plugin-validation",
+        replacement: new URL("./src/plugin-validation.ts", import.meta.url).pathname,
+      },
+      {
         find: "deckjsx/style",
         replacement: new URL("./src/style/public.ts", import.meta.url).pathname,
       },
@@ -67,6 +71,7 @@ export default defineConfig({
       "src/adapter/index.ts",
       "src/inspect.ts",
       "src/integration.ts",
+      "src/plugin-validation.ts",
       "src/jsx-runtime.ts",
       "src/jsx-dev-runtime.ts",
     ],

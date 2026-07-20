@@ -1,4 +1,10 @@
 import {
+  AUTHORING_EXTENSION_VALUE_KIND,
+  createAuthoringExtensionValue,
+  isAuthoringExtensionValue,
+  type AuthoringExtensionValue,
+} from "./authoring/extensions";
+import {
   mediaSourceOrigins,
   type MediaSourceOrigin,
   type MediaSourceOriginByField,
@@ -33,6 +39,10 @@ import {
   type AfterRenderLifecycleUpdate,
   type AfterTreeLifecycleContext,
   type AfterTreeLifecycleUpdate,
+  type AuthoringExtensionLoweringContext,
+  type AuthoringExtensionLoweringResult,
+  type AuthoringExtensionResolver,
+  type DeckPluginAuthoring,
   type BeforeAssetLifecycleContext,
   type BeforeAssetLifecycleUpdate,
   type BeforeGraphLifecycleContext,
@@ -87,6 +97,11 @@ import {
 } from "./patchable-pptx";
 
 export type {
+  AuthoringExtensionValue,
+  AuthoringExtensionLoweringContext,
+  AuthoringExtensionLoweringResult,
+  AuthoringExtensionResolver,
+  DeckPluginAuthoring,
   AssetLoadResult,
   AssetLoader,
   AssetLoaderContext,
@@ -149,8 +164,11 @@ export type {
 };
 
 export {
+  AUTHORING_EXTENSION_VALUE_KIND,
   integrationContextId,
   authoringMetadata,
+  createAuthoringExtensionValue,
+  isAuthoringExtensionValue,
   createIncrementalArtifactSession,
   getArtifactWriteToken,
   recordArtifactWrite,

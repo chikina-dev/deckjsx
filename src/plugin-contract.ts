@@ -1,5 +1,8 @@
+import type { AuthoringExtensionValue } from "./authoring/extensions";
+import type { JsxNode } from "./authoring/jsx-types";
 import type { AssetLoader } from "./assets";
 import type { ComposedAuthorRoot } from "./composition/types";
+import type { CompositionContext } from "./composition/public";
 import type { Diagnostic } from "./diagnostics";
 import type { AssetEntityId, SemanticAuthorGraph } from "./graph";
 import type { DeckIntegrationContext } from "./integration-context";
@@ -177,6 +180,26 @@ export type AfterRenderLifecycleUpdate = {
   readonly artifact?: RenderedArtifact;
 };
 
+export type AuthoringExtensionLoweringContext<TKind extends string = string, TPayload = unknown> = {
+  readonly stage: "tree";
+  readonly value: AuthoringExtensionValue<TKind, TPayload>;
+  readonly path: string;
+  readonly composition: CompositionContext;
+};
+
+export type AuthoringExtensionLoweringResult = {
+  readonly children: JsxNode | readonly JsxNode[];
+  readonly diagnostics?: readonly Diagnostic[];
+};
+
+export type AuthoringExtensionResolver<TKind extends string = string, TPayload = unknown> = (
+  context: AuthoringExtensionLoweringContext<TKind, TPayload>,
+) => AuthoringExtensionLoweringResult | void;
+
+export type DeckPluginAuthoring<TKind extends string = string, TPayload = unknown> = {
+  readonly lower?: AuthoringExtensionResolver<TKind, TPayload>;
+};
+
 export type DeckPluginHooks = {
   beforeTree?(context: BeforeTreeLifecycleContext): PluginHookResult;
   afterTree?(context: AfterTreeLifecycleContext): PluginHookResult<AfterTreeLifecycleUpdate>;
@@ -196,14 +219,16 @@ export type DeckPluginHooks = {
   afterRender?(context: AfterRenderLifecycleContext): PluginHookResult<AfterRenderLifecycleUpdate>;
 };
 
-export type DeckPlugin = {
+export type DeckPlugin<TKind extends string = string, TPayload = unknown> = {
   readonly kind: "deckjsx.plugin";
   readonly id: string;
   readonly name?: string;
   readonly integration?: DeckIntegrationContext;
+  readonly authoring?: DeckPluginAuthoring<TKind, TPayload>;
   readonly hooks?: DeckPluginHooks;
 };
 
 export type ValidatedPluginSnapshot = {
   readonly plugins: readonly DeckPlugin[];
+  readonly diagnostics?: readonly Diagnostic[];
 };

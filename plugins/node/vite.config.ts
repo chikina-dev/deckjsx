@@ -28,6 +28,10 @@ export default defineConfig({
         replacement: new URL("../../dist/integration.mjs", import.meta.url).pathname,
       },
       {
+        find: "deckjsx/plugin-validation",
+        replacement: new URL("../../dist/plugin-validation.mjs", import.meta.url).pathname,
+      },
+      {
         find: "deckjsx/adapter",
         replacement: new URL("../../dist/adapter/index.mjs", import.meta.url).pathname,
       },
