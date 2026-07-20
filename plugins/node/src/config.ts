@@ -1,12 +1,9 @@
 import { access } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Diagnostic } from "deckjsx";
 import type { DeckPlugin } from "deckjsx/integration";
 import { isDeckPlugin, mergePluginSlots } from "deckjsx/plugin-validation";
-import { rolldown, type OutputChunk, type Plugin as RolldownPlugin } from "rolldown";
-
-const CONFIG_MARKER = Symbol.for("deckjsx.node.configDefinition");
+import { loadConfigModule, markConfigDefinition } from "./config-module-loader";
 
 export type DeckjsxConfigContext = {
   readonly environment: string;
@@ -24,10 +21,6 @@ export type DeckjsxConfigFactory = (
 ) => DeckjsxConfigInput | Promise<DeckjsxConfigInput>;
 
 export type DeckjsxConfigDefinition = DeckjsxConfigInput | DeckjsxConfigFactory;
-
-type MarkedConfigDefinition = DeckjsxConfigDefinition & {
-  readonly [CONFIG_MARKER]?: true;
-};
 
 export type ResolvedDeckjsxConfig = {
   readonly packageRoot: string;
@@ -52,12 +45,7 @@ export function defineConfig<TDefinition extends DeckjsxConfigDefinition>(
   definition: TDefinition,
 ): TDefinition {
   if ((typeof definition === "object" && definition !== null) || typeof definition === "function") {
-    Object.defineProperty(definition, CONFIG_MARKER, {
-      configurable: false,
-      enumerable: false,
-      value: true,
-      writable: false,
-    });
+    markConfigDefinition(definition);
   }
   return definition;
 }
@@ -91,57 +79,115 @@ export async function resolveConfig(
     };
   }
 
-  try {
-    const loaded = await loadConfigDefinition(configPath, packageRoot);
-    const diagnostics: Diagnostic[] = loaded.marked
-      ? []
-      : [
-          diagnostic(
-            "warning",
-            "W_CONFIG_DEFINE_CONFIG_MISSING",
-            "deckjsx.config.ts should use defineConfig(...)",
-            configPath,
-          ),
-        ];
-    const resolved = await resolveDefinition(loaded.definition, { environment }, new Set());
-    const shapeDiagnostics = validateConfigInput(resolved, configPath);
-    if (shapeDiagnostics.some((item) => item.severity === "error")) {
-      return {
-        ok: false,
-        diagnostics: [...diagnostics, ...shapeDiagnostics],
-        watchFiles: Object.freeze([...new Set([configPath, ...loaded.watchFiles])].sort()),
-      };
-    }
-    const entry = normalizeHint(resolved.entry);
-    const output = normalizeHint(resolved.output);
-    const plugins = normalizeConfigPlugins(resolved.plugins ?? []);
-    return {
-      ok: true,
-      value: {
-        packageRoot,
-        configPath,
-        environment,
-        entry,
-        output,
-        plugins: Object.freeze(plugins),
-        watchFiles: Object.freeze([...new Set([configPath, ...loaded.watchFiles])].sort()),
-      },
-      diagnostics,
-    };
-  } catch (error) {
+  return resolveConfigFile({ configPath, packageRoot, environment });
+}
+
+async function resolveConfigFile(input: {
+  readonly configPath: string;
+  readonly packageRoot: string;
+  readonly environment: string;
+}): Promise<DeckjsxResolveResult<ResolvedDeckjsxConfig>> {
+  const loaded = await loadDefinition(input.configPath, input.packageRoot);
+  if (!loaded.ok) return configLoadFailure(input.configPath, loaded.error);
+
+  const evaluated = await evaluateDefinition(loaded.definition, input.environment);
+  if (!evaluated.ok) return configLoadFailure(input.configPath, evaluated.error);
+
+  const diagnostics = defineConfigDiagnostics(loaded.marked, input.configPath);
+  const shapeDiagnostics = validateConfigInput(evaluated.value, input.configPath);
+  const watchFiles = Object.freeze([...new Set([input.configPath, ...loaded.watchFiles])].sort());
+  if (shapeDiagnostics.some((item) => item.severity === "error")) {
     return {
       ok: false,
-      diagnostics: [
-        diagnostic(
-          "error",
-          "E_CONFIG_LOAD_FAILED",
-          "deckjsx.config.ts could not be resolved",
-          configPath,
-          errorMessage(error),
-        ),
-      ],
+      diagnostics: [...diagnostics, ...shapeDiagnostics],
+      watchFiles,
     };
   }
+
+  return {
+    ok: true,
+    value: {
+      packageRoot: input.packageRoot,
+      configPath: input.configPath,
+      environment: input.environment,
+      entry: normalizeHint(evaluated.value.entry),
+      output: normalizeHint(evaluated.value.output),
+      plugins: Object.freeze(normalizeConfigPlugins(evaluated.value.plugins ?? [])),
+      watchFiles,
+    },
+    diagnostics,
+  };
+}
+
+type DefinitionLoadResult =
+  | {
+      readonly ok: true;
+      readonly definition: DeckjsxConfigDefinition;
+      readonly marked: boolean;
+      readonly watchFiles: readonly string[];
+    }
+  | { readonly ok: false; readonly error: unknown };
+
+async function loadDefinition(
+  configPath: string,
+  packageRoot: string,
+): Promise<DefinitionLoadResult> {
+  try {
+    const loaded = await loadConfigModule(configPath, packageRoot);
+    if (!isConfigDefinition(loaded.definition)) {
+      throw new Error("deckjsx.config.ts must default export a config object or callback.");
+    }
+    return { ok: true, ...loaded, definition: loaded.definition };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
+async function evaluateDefinition(
+  definition: DeckjsxConfigDefinition,
+  environment: string,
+): Promise<
+  | { readonly ok: true; readonly value: DeckjsxConfigInput }
+  | { readonly ok: false; readonly error: unknown }
+> {
+  try {
+    return {
+      ok: true,
+      value: await resolveDefinition(definition, { environment }, new Set()),
+    };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
+function defineConfigDiagnostics(marked: boolean, configPath: string): readonly Diagnostic[] {
+  if (marked) return [];
+  return [
+    diagnostic(
+      "warning",
+      "W_CONFIG_DEFINE_CONFIG_MISSING",
+      "deckjsx.config.ts should use defineConfig(...)",
+      configPath,
+    ),
+  ];
+}
+
+function configLoadFailure(
+  configPath: string,
+  error: unknown,
+): DeckjsxResolveResult<ResolvedDeckjsxConfig> {
+  return {
+    ok: false,
+    diagnostics: [
+      diagnostic(
+        "error",
+        "E_CONFIG_LOAD_FAILED",
+        "deckjsx.config.ts could not be resolved",
+        configPath,
+        errorMessage(error),
+      ),
+    ],
+  };
 }
 
 async function resolveDefinition(
@@ -191,83 +237,6 @@ function mergeConfigInputs(
         : {}),
     plugins: mergePluginSlots(base.plugins ?? [], child.plugins ?? []),
   };
-}
-
-async function loadConfigDefinition(
-  configPath: string,
-  cwd: string,
-): Promise<{
-  readonly definition: DeckjsxConfigDefinition;
-  readonly marked: boolean;
-  readonly watchFiles: readonly string[];
-}> {
-  const bundle = await rolldown({
-    input: configPath,
-    cwd,
-    platform: "node",
-    transform: { define: { "import.meta.url": JSON.stringify(pathToFileURL(configPath).href) } },
-    plugins: [absoluteExternalPackages(configPath)],
-  });
-  try {
-    const generated = await bundle.generate({
-      format: "esm",
-      codeSplitting: false,
-      sourcemap: false,
-    });
-    const chunk = generated.output.find((item): item is OutputChunk => item.type === "chunk");
-    if (!chunk) {
-      throw new Error("Rolldown did not generate a config module.");
-    }
-    const module = (await import(
-      `data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}#deckjsx-config-${Date.now()}`
-    )) as { readonly default?: unknown };
-    const definition = module.default;
-    if (!isConfigDefinition(definition)) {
-      throw new Error("deckjsx.config.ts must default export a config object or callback.");
-    }
-    return {
-      definition,
-      marked: (definition as MarkedConfigDefinition)[CONFIG_MARKER] === true,
-      watchFiles: [...new Set([...(await bundle.watchFiles), ...chunk.moduleIds])],
-    };
-  } finally {
-    await bundle.close();
-  }
-}
-
-function absoluteExternalPackages(configPath: string): RolldownPlugin {
-  return {
-    name: "@deckjsx/node/config-externals",
-    async resolveId(source) {
-      if (source.startsWith(".") || path.isAbsolute(source)) {
-        return undefined;
-      }
-      if (source.startsWith("node:")) {
-        return { id: source, external: true };
-      }
-      return {
-        id: pathToFileURL(await resolvePackageImport(source, path.dirname(configPath))).href,
-        external: true,
-      };
-    },
-  };
-}
-
-async function resolvePackageImport(specifier: string, fromDirectory: string): Promise<string> {
-  const parentUrl = pathToFileURL(path.join(fromDirectory, "deckjsx.config.ts")).href;
-  let resolved: string;
-  try {
-    resolved = import.meta.resolve(specifier, parentUrl);
-  } catch (error) {
-    throw new Error(
-      `Cannot resolve package import ${JSON.stringify(specifier)} from ${fromDirectory}.`,
-      { cause: error },
-    );
-  }
-  if (!resolved.startsWith("file:")) {
-    throw new Error(`Package import ${JSON.stringify(specifier)} resolved to ${resolved}.`);
-  }
-  return fileURLToPath(resolved);
 }
 
 export async function resolveHostPackageBoundary(

@@ -1,10 +1,8 @@
 import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import type { Diagnostic } from "deckjsx";
-import { rolldown, type OutputChunk } from "rolldown";
-import { parseAst } from "rolldown/parseAst";
 import type { DeckjsxResolveResult, ResolvedDeckjsxConfig } from "./config";
-import { isDeckjsxRuntimeExternalId } from "./dev-executor";
+import { analyzeEntryWrites } from "./entry-write-analysis";
 
 const SOURCE_EXTENSIONS = new Set([
   ".js",
@@ -184,31 +182,9 @@ async function resolveExplicitEntries(
 async function discoverEntries(
   config: ResolvedDeckjsxConfig,
 ): Promise<DeckjsxResolveResult<ResolvedDeckjsxEntries>> {
-  let walked: Awaited<ReturnType<typeof walkSources>>;
-  try {
-    walked = await walkSources(config.packageRoot, config.configPath);
-  } catch {
-    try {
-      walked = await walkSources(config.packageRoot, config.configPath);
-    } catch (error) {
-      return {
-        ok: false,
-        diagnostics: [
-          {
-            ...entryDiagnostic(
-              "error",
-              "E_CONFIG_ENTRY_DISCOVERY_RETRY",
-              "Entry discovery observed a changing filesystem",
-              config.packageRoot,
-            ),
-            message: error instanceof Error ? error.message : String(error),
-          },
-        ],
-        watchFiles: config.watchFiles,
-        watchDirectories: Object.freeze([config.packageRoot]),
-      };
-    }
-  }
+  const walkedResult = await walkSourcesWithRetry(config.packageRoot, config.configPath);
+  if (!walkedResult.ok) return discoveryRaceFailure(config, walkedResult.error);
+  const walked = walkedResult.value;
   const outputSelectors = new Set(
     (config.output ?? []).flatMap((item) => [
       normalizeSlash(item),
@@ -221,7 +197,7 @@ async function discoverEntries(
   }[] = [];
   const analysisDiagnostics: Diagnostic[] = [];
   for (const source of walked.sources) {
-    const analysis = await analyzeTopLevelExecution(source.file, config.packageRoot);
+    const analysis = await analyzeEntryWrites(source.file, config.packageRoot);
     if (!analysis.ok) {
       analysisDiagnostics.push(analysis.diagnostic);
       continue;
@@ -301,217 +277,54 @@ async function discoverEntries(
   };
 }
 
-async function analyzeTopLevelExecution(
-  file: string,
-  cwd: string,
+type SourceWalk = Awaited<ReturnType<typeof walkSources>>;
+
+async function walkSourcesWithRetry(
+  packageRoot: string,
+  configPath: string | undefined,
 ): Promise<
-  | {
-      readonly ok: true;
-      readonly reachesWrite: boolean;
-      readonly outputs: ReadonlySet<string>;
-    }
-  | { readonly ok: false; readonly diagnostic: Diagnostic }
+  | { readonly ok: true; readonly value: SourceWalk }
+  | { readonly ok: false; readonly error: unknown }
 > {
-  let bundle: Awaited<ReturnType<typeof rolldown>> | undefined;
+  const first = await attemptSourceWalk(packageRoot, configPath);
+  if (first.ok) return first;
+  return attemptSourceWalk(packageRoot, configPath);
+}
+
+async function attemptSourceWalk(
+  packageRoot: string,
+  configPath: string | undefined,
+): Promise<
+  | { readonly ok: true; readonly value: SourceWalk }
+  | { readonly ok: false; readonly error: unknown }
+> {
   try {
-    bundle = await rolldown({
-      input: file,
-      cwd,
-      platform: "node",
-      preserveEntrySignatures: false,
-      external: isDeckjsxRuntimeExternalId,
-    });
-    const generated = await bundle.generate({
-      format: "esm",
-      codeSplitting: false,
-      sourcemap: false,
-    });
-    const chunk = generated.output.find((item): item is OutputChunk => item.type === "chunk");
-    if (!chunk) return { ok: true, reachesWrite: false, outputs: new Set() };
-    const analysis = analyzeGeneratedDeckjsxWrites(chunk.code, cwd);
-    return {
-      ok: true,
-      reachesWrite: analysis.reachesWrite,
-      outputs: analysis.outputs,
-    };
+    return { ok: true, value: await walkSources(packageRoot, configPath) };
   } catch (error) {
-    return {
-      ok: false,
-      diagnostic: {
-        severity: "error",
-        code: "E_CONFIG_ENTRY_ANALYSIS_FAILED",
-        title: "Entry Execution analysis failed",
+    return { ok: false, error };
+  }
+}
+
+function discoveryRaceFailure(
+  config: ResolvedDeckjsxConfig,
+  error: unknown,
+): DeckjsxResolveResult<ResolvedDeckjsxEntries> {
+  return {
+    ok: false,
+    diagnostics: [
+      {
+        ...entryDiagnostic(
+          "error",
+          "E_CONFIG_ENTRY_DISCOVERY_RETRY",
+          "Entry discovery observed a changing filesystem",
+          config.packageRoot,
+        ),
         message: error instanceof Error ? error.message : String(error),
-        labels: [
-          {
-            message: "source could not be analyzed",
-            path: file,
-            sourceSpan: { file },
-          },
-        ],
       },
-    };
-  } finally {
-    await bundle?.close();
-  }
-}
-
-type AstNode = { readonly type: string; readonly [key: string]: unknown };
-
-function analyzeGeneratedDeckjsxWrites(
-  code: string,
-  cwd: string,
-): { readonly reachesWrite: boolean; readonly outputs: ReadonlySet<string> } {
-  const program = parseAst(code, { lang: "js", sourceType: "module" }) as unknown as AstNode;
-  const writeBindings = new Set<string>();
-  const namespaceBindings = new Set<string>();
-  const nodes = collectAstNodes(program);
-
-  for (const node of nodes) {
-    if (node.type !== "ImportDeclaration" || stringLiteral(node.source) !== "@deckjsx/node") {
-      continue;
-    }
-    for (const specifier of astNodeArray(node.specifiers)) {
-      const local = identifierName(specifier.local);
-      if (!local) continue;
-      if (specifier.type === "ImportSpecifier" && identifierName(specifier.imported) === "write") {
-        writeBindings.add(local);
-      } else {
-        namespaceBindings.add(local);
-      }
-    }
-  }
-
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const node of nodes) {
-      if (node.type !== "VariableDeclarator") continue;
-      const source = namespaceSource(node.init, namespaceBindings);
-      if (!source) continue;
-      const id = astNode(node.id);
-      if (id?.type === "Identifier") {
-        const local = identifierName(id);
-        if (local && !namespaceBindings.has(local)) {
-          namespaceBindings.add(local);
-          changed = true;
-        }
-        continue;
-      }
-      if (id?.type !== "ObjectPattern") continue;
-      for (const property of astNodeArray(id.properties)) {
-        if (property.type !== "Property" || identifierName(property.key) !== "write") continue;
-        const local = identifierName(property.value);
-        if (local && !writeBindings.has(local)) {
-          writeBindings.add(local);
-          changed = true;
-        }
-      }
-    }
-  }
-
-  const outputs = new Set<string>();
-  let reachesWrite = false;
-  for (const node of nodes) {
-    if (
-      node.type !== "CallExpression" ||
-      !isWriteCallee(node.callee, writeBindings, namespaceBindings)
-    ) {
-      continue;
-    }
-    reachesWrite = true;
-    const output = staticString(astNodeArray(node.arguments)[1]);
-    if (output !== undefined) {
-      outputs.add(normalizeSlash(output));
-      outputs.add(normalizeSlash(path.resolve(cwd, output)));
-    }
-  }
-  return { reachesWrite, outputs };
-}
-
-function namespaceSource(value: unknown, namespaces: ReadonlySet<string>): boolean {
-  const node = astNode(value);
-  if (!node) return false;
-  const identifier = identifierName(node);
-  if (identifier && namespaces.has(identifier)) return true;
-  if (node.type === "MemberExpression") {
-    const object = identifierName(node.object);
-    return Boolean(object && namespaces.has(object) && identifierName(node.property) === "default");
-  }
-  if (node.type === "CallExpression") {
-    const callee = identifierName(node.callee);
-    return (
-      Boolean(callee?.endsWith("require")) &&
-      stringLiteral(astNodeArray(node.arguments)[0]) === "@deckjsx/node"
-    );
-  }
-  return false;
-}
-
-function isWriteCallee(
-  value: unknown,
-  writes: ReadonlySet<string>,
-  namespaces: ReadonlySet<string>,
-): boolean {
-  const node = astNode(value);
-  if (!node) return false;
-  const direct = identifierName(node);
-  if (direct && writes.has(direct)) return true;
-  if (node.type !== "MemberExpression") return false;
-  const object = identifierName(node.object);
-  return Boolean(object && namespaces.has(object) && identifierName(node.property) === "write");
-}
-
-function staticString(value: unknown): string | undefined {
-  const node = astNode(value);
-  if (!node) return undefined;
-  if (node.type === "Literal" && typeof node.value === "string") return node.value;
-  if (node.type === "TemplateLiteral" && astNodeArray(node.expressions).length === 0) {
-    const quasi = astNodeArray(node.quasis)[0];
-    const cooked = astNode(quasi?.value)?.cooked;
-    return typeof cooked === "string" ? cooked : undefined;
-  }
-  return undefined;
-}
-
-function collectAstNodes(root: AstNode): readonly AstNode[] {
-  const output: AstNode[] = [];
-  const visit = (value: unknown): void => {
-    if (Array.isArray(value)) {
-      value.forEach(visit);
-      return;
-    }
-    const node = astNode(value);
-    if (!node) return;
-    output.push(node);
-    for (const [key, child] of Object.entries(node)) {
-      if (key !== "parent") visit(child);
-    }
+    ],
+    watchFiles: config.watchFiles,
+    watchDirectories: Object.freeze([config.packageRoot]),
   };
-  visit(root);
-  return output;
-}
-
-function astNode(value: unknown): AstNode | undefined {
-  return typeof value === "object" && value !== null && "type" in value
-    ? (value as AstNode)
-    : undefined;
-}
-
-function astNodeArray(value: unknown): readonly AstNode[] {
-  return Array.isArray(value)
-    ? value.flatMap((item) => (astNode(item) ? [astNode(item)!] : []))
-    : [];
-}
-
-function identifierName(value: unknown): string | undefined {
-  const node = astNode(value);
-  return node?.type === "Identifier" && typeof node.name === "string" ? node.name : undefined;
-}
-
-function stringLiteral(value: unknown): string | undefined {
-  const node = astNode(value);
-  return node?.type === "Literal" && typeof node.value === "string" ? node.value : undefined;
 }
 
 type IgnoreRule = {

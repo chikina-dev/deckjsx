@@ -632,16 +632,17 @@ function multiEntryPlugin(entries: readonly string[]): Plugin {
     },
     load(id) {
       if (id !== VIRTUAL_MULTI_ENTRY_ID) return undefined;
-      const imports = entries.map(
-        (entry, index) => `import * as entry${index} from ${JSON.stringify(entry)};`,
-      );
-      const completions = entries.map((_entry, index) => `entry${index}.default`);
-      return [
-        ...imports,
-        `export default Promise.all([${completions.join(", ")}].map((value) => Promise.resolve(value)));`,
-      ].join("\n");
+      return multiEntryModule(entries);
     },
   };
+}
+
+function multiEntryModule(entries: readonly string[]): string {
+  const imports = entries.map(
+    (entry, index) => `import * as entry${index} from ${JSON.stringify(entry)};`,
+  );
+  const completions = entries.map((_entry, index) => `Promise.resolve(entry${index}.default)`);
+  return [...imports, `export default Promise.all([${completions.join(", ")}]);`].join("\n");
 }
 
 async function sourceSnapshotFromBundleEnd(input: {

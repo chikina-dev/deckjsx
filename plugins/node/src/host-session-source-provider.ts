@@ -1,4 +1,3 @@
-import { readdirSync, statSync, unwatchFile, watchFile, type Stats } from "node:fs";
 import path from "node:path";
 import type { Diagnostic } from "deckjsx";
 import { resolveConfig, type ResolvedDeckjsxConfig } from "./config";
@@ -12,6 +11,7 @@ import {
 } from "./dev-source-snapshot";
 import type { DevSourceProvider } from "./dev-source-provider";
 import type { DeckjsxDevDiagnostic } from "./dev-diagnostics";
+import { createHostWatchSet } from "./host-watch-set";
 import { devOutputIgnoreFiles } from "./tracked-output-coordinator";
 
 export type HostExecutionSnapshot = DeckjsxDevExecutionSnapshot;
@@ -65,9 +65,6 @@ export function createHostSessionSourceProvider(
   const debounceMs = input.debounceMs ?? 50;
   const queued: DeckjsxDevSourceSnapshot[] = [];
   const pending: ((snapshot: DeckjsxDevSourceSnapshot) => void)[] = [];
-  const watchedPaths = new Set<string>();
-  const watchListeners = new Map<string, (current: Stats, previous: Stats) => void>();
-  const directoryFingerprints = new Map<string, string>();
   const startup =
     "initial" in input
       ? ({ status: "resolved", value: input.initial } as const)
@@ -86,11 +83,16 @@ export function createHostSessionSourceProvider(
     startup.status === "resolved"
       ? executionSnapshotFrom(startup.value.config, startup.value.entries)
       : undefined;
+  let ignoredArtifactPaths = outputIgnorePaths(hostPackageRoot, execution);
   let adapter: RolldownWatchAdapter | undefined;
   let generation = 0;
   let started = false;
   let closed = false;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+  const watchSet = createHostWatchSet({
+    onChange: scheduleRebuild,
+    isIgnored: isIgnoredArtifactChange,
+  });
 
   return {
     start() {
@@ -103,7 +105,7 @@ export function createHostSessionSourceProvider(
           (startup.value.diagnostics ?? []).map(toDevDiagnostic),
         );
       } else {
-        configureWatchers([
+        watchSet.replace([
           hostConfigPath,
           ...configWatchFiles,
           ...(startup.value.watchDirectories ?? [hostPackageRoot]),
@@ -125,7 +127,7 @@ export function createHostSessionSourceProvider(
       closed = true;
       generation += 1;
       if (debounceTimer) clearTimeout(debounceTimer);
-      clearWatchers();
+      watchSet.close();
       await adapter?.close();
       const terminal = createDiagnosticSourceSnapshot([]);
       pending.splice(0).forEach((resolve) => resolve(terminal));
@@ -140,13 +142,14 @@ export function createHostSessionSourceProvider(
     generation += 1;
     const installedGeneration = generation;
     execution = executionSnapshotFrom(config, entries);
+    ignoredArtifactPaths = outputIgnorePaths(hostPackageRoot, execution);
     configWatchFiles = config.watchFiles;
     const previous = adapter;
     adapter = createRolldownWatchAdapter({
       cwd: config.packageRoot,
       entry: entries.entries.length > 1 ? entries.entries : entries.entries[0],
     });
-    configureWatchers([
+    watchSet.replace([
       hostConfigPath,
       ...config.watchFiles,
       ...entries.watchFiles,
@@ -193,21 +196,23 @@ export function createHostSessionSourceProvider(
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       debounceTimer = undefined;
-      void rebuildSession().catch((error: unknown) => {
-        if (closed) return;
-        emit(
-          createDiagnosticSourceSnapshot([
-            {
-              severity: "error",
-              code: "deckjsx.node.hostSession.rebuildFailed",
-              title: "Host Session rebuild failed",
-              message: error instanceof Error ? error.message : String(error),
-              primary: { file: hostConfigPath },
-            },
-          ]),
-        );
-      });
+      void rebuildSession().catch(reportRebuildFailure);
     }, debounceMs);
+  }
+
+  function reportRebuildFailure(error: unknown): void {
+    if (closed) return;
+    emit(
+      createDiagnosticSourceSnapshot([
+        {
+          severity: "error",
+          code: "deckjsx.node.hostSession.rebuildFailed",
+          title: "Host Session rebuild failed",
+          message: error instanceof Error ? error.message : String(error),
+          primary: { file: hostConfigPath },
+        },
+      ]),
+    );
   }
 
   async function rebuildSession(): Promise<void> {
@@ -223,14 +228,14 @@ export function createHostSessionSourceProvider(
     });
     if (closed || rebuildGeneration !== generation) return;
     if (!config.ok) {
-      configureWatchers([hostConfigPath, ...configWatchFiles]);
+      watchSet.replace([hostConfigPath, ...configWatchFiles]);
       emit(createDiagnosticSourceSnapshot(config.diagnostics.map(toDevDiagnostic)));
       return;
     }
     const entries = await resolveEntries(config.value);
     if (closed || rebuildGeneration !== generation) return;
     if (!entries.ok) {
-      configureWatchers([
+      watchSet.replace([
         hostConfigPath,
         ...config.value.watchFiles,
         ...(entries.watchFiles ?? []),
@@ -249,56 +254,6 @@ export function createHostSessionSourceProvider(
     ]);
   }
 
-  function configureWatchers(paths: readonly string[]): void {
-    const next = new Set(
-      paths.filter((item) => !item.includes("\0")).map((item) => path.resolve(item)),
-    );
-    for (const watched of watchedPaths) {
-      if (!next.has(watched)) {
-        const listener = watchListeners.get(watched);
-        if (listener) unwatchFile(watched, listener);
-        watchListeners.delete(watched);
-        directoryFingerprints.delete(watched);
-        watchedPaths.delete(watched);
-      }
-    }
-    for (const watched of next) {
-      if (watchedPaths.has(watched)) continue;
-      if (isDirectory(watched)) directoryFingerprints.set(watched, directoryFingerprint(watched));
-      const listener = (current: Stats, previous: Stats) =>
-        onWatchChange(watched, current, previous);
-      watchListeners.set(watched, listener);
-      watchedPaths.add(watched);
-      watchFile(watched, { interval: 100, persistent: true }, listener);
-    }
-  }
-
-  function clearWatchers(): void {
-    for (const watched of watchedPaths) {
-      const listener = watchListeners.get(watched);
-      if (listener) unwatchFile(watched, listener);
-    }
-    watchedPaths.clear();
-    watchListeners.clear();
-    directoryFingerprints.clear();
-  }
-
-  function onWatchChange(watched: string, current: Stats, previous: Stats): void {
-    if (
-      current.mtimeMs !== previous.mtimeMs ||
-      current.ctimeMs !== previous.ctimeMs ||
-      current.size !== previous.size ||
-      current.ino !== previous.ino
-    ) {
-      if (directoryFingerprints.has(watched)) {
-        const nextFingerprint = directoryFingerprint(watched);
-        if (nextFingerprint === directoryFingerprints.get(watched)) return;
-        directoryFingerprints.set(watched, nextFingerprint);
-      }
-      scheduleRebuild();
-    }
-  }
-
   function emit(snapshot: DeckjsxDevSourceSnapshot): void {
     const resolve = pending.shift();
     if (resolve) resolve(snapshot);
@@ -306,46 +261,20 @@ export function createHostSessionSourceProvider(
   }
 
   function isIgnoredArtifactChange(changedPath: string): boolean {
-    const normalized = path.resolve(changedPath);
-    if (
-      normalized.endsWith(".deckjsx-lock") ||
-      normalized.endsWith(".pptx") ||
-      normalized.endsWith(".pdf")
-    ) {
-      return true;
-    }
-    const current = execution;
-    if (!current) return false;
-    return new Set(
-      devOutputIgnoreFiles({
-        cwd: hostPackageRoot,
-        out: current.out,
-        outputs: current.outputs,
-      }).map((item) => path.resolve(item)),
-    ).has(normalized);
-  }
-
-  function directoryFingerprint(directory: string): string {
-    try {
-      return readdirSync(directory, { withFileTypes: true })
-        .filter((item) => !isIgnoredArtifactChange(path.join(directory, item.name)))
-        .map(
-          (item) => `${item.name}:${item.isDirectory() ? "d" : item.isSymbolicLink() ? "l" : "f"}`,
-        )
-        .sort()
-        .join("\n");
-    } catch {
-      return "missing";
-    }
+    return ignoredArtifactPaths.has(path.resolve(changedPath));
   }
 }
 
-function isDirectory(candidate: string): boolean {
-  try {
-    return statSync(candidate).isDirectory();
-  } catch {
-    return false;
-  }
+function outputIgnorePaths(
+  cwd: string,
+  execution: HostExecutionSnapshot | undefined,
+): ReadonlySet<string> {
+  if (!execution) return new Set();
+  return new Set(
+    devOutputIgnoreFiles({ cwd, out: execution.out, outputs: execution.outputs }).map((item) =>
+      path.resolve(item),
+    ),
+  );
 }
 
 function executionSnapshotFrom(
