@@ -14,10 +14,9 @@ export type DeckjsxDevConsoleFormatOptions = {
 export function formatDeckjsxDevHelp(): readonly string[] {
   return [
     "Usage",
-    "  deckjsx dev <entry> --out <path> [extra output paths...]",
+    "  deckjsx dev [--interactive]",
     "",
     "Options",
-    "  --out <path>          tracked output path",
     "  --interactive         open the inline inspector",
     "  --interactive-help    print inspector command reference",
   ];

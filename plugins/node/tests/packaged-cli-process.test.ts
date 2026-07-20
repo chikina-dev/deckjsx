@@ -7,7 +7,7 @@ import { describe, expect, test } from "vite-plus/test";
 
 const REPOSITORY_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const NODE_PACKAGE_ROOT = path.join(REPOSITORY_ROOT, "plugins/node");
-const PROCESS_TIMEOUT_MS = 10_000;
+const PROCESS_TIMEOUT_MS = 20_000;
 const RECOVERY_TIMEOUT_MS = 20_000;
 
 type ProcessCapture = {
@@ -17,7 +17,7 @@ type ProcessCapture = {
 };
 
 describe("@deckjsx/node packaged cli process contract", () => {
-  test("keeps diagnostics on stderr and recovers after an initial bundle failure", async () => {
+  test("keeps diagnostics on stderr and recovers from initial bundle and config failures", async () => {
     const fixtureRoot = await mkdtemp(path.join(tmpdir(), "deckjsx-packaged-cli-test-"));
     let resident: ProcessCapture | undefined;
     try {
@@ -26,7 +26,7 @@ describe("@deckjsx/node packaged cli process contract", () => {
 
       const help = await runCli(cliPath, projectRoot, ["dev", "--help"]);
       expect(help).toMatchObject({ code: 0, signal: null, stdout: "" });
-      expect(help.stderr).toContain("Usage\n  deckjsx dev <entry> --out <path>");
+      expect(help.stderr).toContain("Usage\n  deckjsx dev [--interactive]");
 
       const unknown = await runCli(cliPath, projectRoot, ["dev", "entry.cts", "--interative"]);
       expect(unknown).toMatchObject({ code: 1, signal: null, stdout: "" });
@@ -35,19 +35,13 @@ describe("@deckjsx/node packaged cli process contract", () => {
 
       const invalid = await runCli(cliPath, projectRoot, ["dev", "entry.cts", "--out"]);
       expect(invalid).toMatchObject({ code: 1, signal: null, stdout: "" });
-      expect(invalid.stderr).toContain("error deckjsx.node.cli.missingOut");
+      expect(invalid.stderr).toContain("error deckjsx.node.cli.unknownOption");
 
       const entryPath = path.join(projectRoot, "entry.cts");
       const outputPath = path.join(projectRoot, "output.pptx");
       await writeFile(entryPath, "const broken = ;\n");
 
-      resident = spawnCli(cliPath, projectRoot, [
-        "dev",
-        "entry.cts",
-        "--out",
-        "output.pptx",
-        "--interactive",
-      ]);
+      resident = spawnCli(cliPath, projectRoot, ["dev", "--interactive"]);
       await waitForOutput(
         resident,
         () => resident!.output.stderr.includes("deckjsx.node.dev.bundleFailed"),
@@ -70,7 +64,25 @@ describe("@deckjsx/node packaged cli process contract", () => {
         RECOVERY_TIMEOUT_MS,
       );
 
-      resident.child.stdin.end("exit\n");
+      const secondOutputPath = path.join(projectRoot, "second.pdf");
+      await writeFile(
+        path.join(projectRoot, "deckjsx.config.ts"),
+        `import { defineConfig } from "@deckjsx/node";
+export default defineConfig({ entry: "entry.cts", output: "second.pdf" });
+`,
+      );
+      await writeFile(entryPath, validEntrySource("second.pdf"));
+      await waitForOutput(
+        resident,
+        async () => {
+          const outputStats = await stat(secondOutputPath).catch(() => undefined);
+          return outputStats !== undefined && outputStats.size > 0;
+        },
+        "the artifact selected by the rebuilt Host Session",
+        RECOVERY_TIMEOUT_MS,
+      );
+
+      resident.child.stdin.write("exit\n");
       const exit = await withTimeout(
         resident.exited,
         PROCESS_TIMEOUT_MS,
@@ -83,11 +95,59 @@ describe("@deckjsx/node packaged cli process contract", () => {
       await expect(stat(outputPath)).resolves.toEqual(
         expect.objectContaining({ size: expect.any(Number) }),
       );
+
+      resident = undefined;
+      await writeFile(path.join(projectRoot, "deckjsx.config.ts"), `export default { entry: ;`);
+      const recoveredConfigOutput = path.join(projectRoot, "config-recovered.pdf");
+      const configFailureResident = spawnCli(cliPath, projectRoot, ["dev", "--interactive"]);
+      resident = configFailureResident;
+      await waitForOutput(
+        configFailureResident,
+        () => configFailureResident.output.stderr.includes("E_CONFIG_LOAD_FAILED"),
+        "the initial config failure",
+        RECOVERY_TIMEOUT_MS,
+      );
+
+      const configRecoveryOutputStart = configFailureResident.output.stderr.length;
+      await writeFile(entryPath, validEntrySource("config-recovered.pdf"));
+      await writeFile(
+        path.join(projectRoot, "deckjsx.config.ts"),
+        `import { defineConfig } from "@deckjsx/node";
+export default defineConfig({ entry: "entry.cts", output: "config-recovered.pdf" });
+`,
+      );
+      await waitForOutput(
+        configFailureResident,
+        async () => {
+          const outputStats = await stat(recoveredConfigOutput).catch(() => undefined);
+          return (
+            outputStats !== undefined &&
+            outputStats.size > 0 &&
+            configFailureResident.output.stderr
+              .slice(configRecoveryOutputStart)
+              .includes("[deckjsx] ready")
+          );
+        },
+        "the artifact recovered from the initial config failure",
+        RECOVERY_TIMEOUT_MS,
+      );
+
+      configFailureResident.child.stdin.write("exit\n");
+      await expect(
+        withTimeout(
+          configFailureResident.exited,
+          PROCESS_TIMEOUT_MS,
+          "the config-recovered CLI process to exit",
+        ),
+      ).resolves.toEqual({ code: 0, signal: null });
+      expect(configFailureResident.output.stdout).toBe("");
+      expect(configFailureResident.output.stderr).toContain("E_CONFIG_LOAD_FAILED");
+      expect(configFailureResident.output.stderr).toContain("[deckjsx] ready");
     } finally {
       await stopProcess(resident);
       await rm(fixtureRoot, { force: true, recursive: true });
     }
-  }, 60_000);
+  }, 90_000);
 });
 
 async function createPackedProject(fixtureRoot: string): Promise<string> {
@@ -117,6 +177,13 @@ async function createPackedProject(fixtureRoot: string): Promise<string> {
       const link = path.join(nodeModules, dependency.name);
       await symlink(target, link, process.platform === "win32" ? "junction" : "dir");
     }),
+  );
+  await writeFile(path.join(projectRoot, "package.json"), JSON.stringify({ type: "module" }));
+  await writeFile(
+    path.join(projectRoot, "deckjsx.config.ts"),
+    `import { defineConfig } from "@deckjsx/node";
+export default defineConfig({ entry: "entry.cts", output: "output.pptx" });
+`,
   );
   return projectRoot;
 }
@@ -256,7 +323,7 @@ async function stopProcess(capture: ProcessCapture | undefined): Promise<void> {
   }
 }
 
-function validEntrySource(): string {
+function validEntrySource(output = "output.pptx"): string {
   return [
     'import { write } from "@deckjsx/node";',
     'import { Deck } from "deckjsx";',
@@ -265,7 +332,7 @@ function validEntrySource(): string {
     "module.exports = (async () => {",
     '  const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });',
     '  deck.slide({ name: "Recovered" }, () => jsx("p", { children: "recovered" }));',
-    '  await write(await deck.render(pptx({ inspection: "none" })), "output.pptx");',
+    `  await write(await deck.render(pptx({ inspection: "none" })), ${JSON.stringify(output)});`,
     "})();",
   ].join("\n");
 }

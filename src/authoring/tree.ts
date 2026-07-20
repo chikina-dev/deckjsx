@@ -15,6 +15,7 @@ import type {
 } from "./props";
 import type { MediaSourceOriginByField } from "../media-source-origin";
 import type { ComponentProvenance } from "../authoring-metadata";
+import { isAuthoringExtensionValue, type AuthoringExtensionValue } from "./extensions";
 
 /**
  * JSX key value accepted by deckjsx authoring.
@@ -41,7 +42,11 @@ export type AuthorElementSource =
       readonly kind: "tag";
       readonly tag: AuthoredTag;
     }
-  | { readonly kind: "slide" };
+  | { readonly kind: "slide" }
+  | {
+      readonly kind: "extension";
+      readonly value: AuthoringExtensionValue;
+    };
 
 type AuthorElementNodeBase<
   TSource extends AuthorElementSource,
@@ -125,7 +130,16 @@ export type AuthorElementNode =
   | AuthorTableElementNode
   | AuthorTableSectionElementNode
   | AuthorTableRowElementNode
-  | AuthorTableCellElementNode;
+  | AuthorTableCellElementNode
+  | AuthorExtensionElementNode;
+
+export type AuthorExtensionElementNode = AuthorElementNodeBase<
+  {
+    readonly kind: "extension";
+    readonly value: AuthoringExtensionValue;
+  },
+  AuthorElementProps
+>;
 
 export type AuthorFragmentNode = {
   readonly $$typeof: "deckjsx.author-tree";
@@ -145,6 +159,7 @@ export type AuthorTextLeaf = {
 export type AuthorTreeNode = AuthorElementNode | AuthorFragmentNode | AuthorTextLeaf;
 export type AuthorTreeChild =
   | AuthorTreeNode
+  | AuthoringExtensionValue
   | string
   | number
   | boolean
@@ -182,6 +197,7 @@ function isAuthorElementPropValueWithSeen(
   if (
     typeof value !== "object" ||
     isAuthorTreeNode(value) ||
+    isAuthoringExtensionValue(value) ||
     depth >= MAX_AUTHOR_ELEMENT_PROP_DEPTH
   ) {
     return false;
@@ -228,6 +244,20 @@ export function createAuthorText(value: string | number, sourceSpan?: SourceSpan
     $$typeof: "deckjsx.author-tree",
     kind: "text",
     value,
+    ...(sourceSpan ? { sourceSpan } : {}),
+  };
+}
+
+export function createAuthorExtensionElement(
+  value: AuthoringExtensionValue,
+  sourceSpan?: SourceSpan,
+): AuthorExtensionElementNode {
+  return {
+    $$typeof: "deckjsx.author-tree",
+    kind: "element",
+    source: { kind: "extension", value },
+    props: {},
+    children: [],
     ...(sourceSpan ? { sourceSpan } : {}),
   };
 }
@@ -607,7 +637,8 @@ function isAuthorTreeNodeWithSeen(
             (source.tag === "span" ||
               source.tag === "img" ||
               source.tag === "video" ||
-              source.tag === "shape")));
+              source.tag === "shape")) ||
+          (source.kind === "extension" && isAuthoringExtensionValue(source.value)));
       valid =
         validSource &&
         isRecord(value.props) &&
@@ -654,6 +685,7 @@ function isAuthorTreeChildWithSeen(
     typeof value === "boolean" ||
     typeof value === "string" ||
     typeof value === "number" ||
+    isAuthoringExtensionValue(value) ||
     isAuthorTreeNode(value)
   );
 }
@@ -697,6 +729,10 @@ function normalizeAuthorChildrenWithSeen(
 
     if (Array.isArray(child)) {
       return normalizeAuthorChildrenWithSeen(child, seen, depth + 1);
+    }
+
+    if (isAuthoringExtensionValue(child)) {
+      return [createAuthorExtensionElement(child)];
     }
 
     if (isAuthorTreeNode(child)) {

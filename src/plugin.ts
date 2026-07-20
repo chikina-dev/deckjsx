@@ -1,3 +1,5 @@
+import { isAuthorTreeChild, type AuthorTreeChild } from "./authoring/tree";
+import type { JsxNode } from "./authoring/jsx-types";
 import type { AssetLoader, AssetSource } from "./assets";
 import type { Diagnostic } from "./diagnostics";
 import { snapshotComposedAuthorRoots } from "./composition/snapshot";
@@ -16,7 +18,10 @@ import type { AssetArtifact } from "./pipeline/artifacts";
 import { isPdfPageModel } from "./projection/pdf/model";
 import type { ProjectedDocumentModel } from "./projection/registry";
 import { isPptxPackageModel, type PptxPackageModel } from "./projection/pptx/model";
+import { mergePluginSlots } from "./plugin-slots";
 import type {
+  AuthoringExtensionLoweringContext,
+  AuthoringExtensionLoweringResult,
   DeckPlugin,
   DeckPluginHooks,
   PluginHookResult,
@@ -34,6 +39,9 @@ export type {
   AfterRenderLifecycleUpdate,
   AfterTreeLifecycleContext,
   AfterTreeLifecycleUpdate,
+  AuthoringExtensionLoweringContext,
+  AuthoringExtensionLoweringResult,
+  AuthoringExtensionResolver,
   AssetLifecycleSnapshot,
   BeforeAssetLifecycleContext,
   BeforeAssetLifecycleUpdate,
@@ -44,6 +52,7 @@ export type {
   BeforeRenderLifecycleContext,
   BeforeRenderLifecycleUpdate,
   BeforeTreeLifecycleContext,
+  DeckPluginAuthoring,
   DeckPlugin,
   DeckPluginHooks,
   GraphLifecycleSnapshot,
@@ -69,18 +78,6 @@ function deckPluginValidationMessage(plugin: unknown): string | undefined {
     return 'Deck plugin must be an object with kind "deckjsx.plugin" and a string id.';
   }
 
-  for (const key of Object.keys(plugin)) {
-    if (
-      key !== "kind" &&
-      key !== "id" &&
-      key !== "name" &&
-      key !== "integration" &&
-      key !== "hooks"
-    ) {
-      return `Deck plugin ${key} is not part of the public authoring API.`;
-    }
-  }
-
   if (plugin.name !== undefined && typeof plugin.name !== "string") {
     return "Deck plugin name must be a string when provided.";
   }
@@ -89,6 +86,13 @@ function deckPluginValidationMessage(plugin: unknown): string | undefined {
     const integrationMessage = deckPluginIntegrationValidationMessage(plugin.integration);
     if (integrationMessage) {
       return integrationMessage;
+    }
+  }
+
+  if (plugin.authoring !== undefined) {
+    const authoringMessage = deckPluginAuthoringValidationMessage(plugin.authoring);
+    if (authoringMessage) {
+      return authoringMessage;
     }
   }
 
@@ -105,6 +109,24 @@ function deckPluginValidationMessage(plugin: unknown): string | undefined {
         return `Deck plugin hooks.${hookName} must be a function when provided.`;
       }
     }
+  }
+
+  return undefined;
+}
+
+function deckPluginAuthoringValidationMessage(authoring: unknown): string | undefined {
+  if (!isRecord(authoring)) {
+    return "Deck plugin authoring must be an object when provided.";
+  }
+
+  for (const key of Object.keys(authoring)) {
+    if (key !== "lower") {
+      return `Deck plugin authoring.${key} is not part of the public authoring API.`;
+    }
+  }
+
+  if (authoring.lower !== undefined && typeof authoring.lower !== "function") {
+    return "Deck plugin authoring.lower must be a function when provided.";
   }
 
   return undefined;
@@ -188,13 +210,228 @@ export function validateDeckPlugins(plugins: unknown): readonly Diagnostic[] {
 }
 
 export function validDeckPlugins(plugins: unknown): readonly DeckPlugin[] {
-  return Array.isArray(plugins) ? plugins.filter(isDeckPlugin) : [];
+  return Array.isArray(plugins) ? normalizeDeckPlugins(plugins.filter(isDeckPlugin)) : [];
+}
+
+/**
+ * Normalize one execution's Plugin Set by stable id.
+ *
+ * Later execution-scoped contributions replace earlier values in place so host configuration can
+ * override a Deck-local default without changing the rest of the Plugin order.
+ */
+export function normalizeDeckPlugins(plugins: readonly DeckPlugin[]): readonly DeckPlugin[] {
+  return mergePluginSlots(plugins);
+}
+
+export function mergeDeckPluginContributions(input: {
+  readonly host: readonly DeckPlugin[];
+  readonly deck: readonly DeckPlugin[];
+}): { readonly plugins: readonly DeckPlugin[]; readonly diagnostics: readonly Diagnostic[] } {
+  const hostIds = new Set(input.host.map((plugin) => plugin.id));
+  const overriddenIds = [...new Set(input.deck.map((plugin) => plugin.id))].filter((id) =>
+    hostIds.has(id),
+  );
+  return {
+    plugins: normalizeDeckPlugins([...input.host, ...input.deck]),
+    diagnostics: overriddenIds.map((id) => ({
+      severity: "warning",
+      code: "W_PLUGIN_DECK_OVERRIDE",
+      title: "Deck Plugin overrides Host Configuration Plugin",
+      message: `Deck Plugin ${JSON.stringify(id)} replaces the Host Configuration contribution in the existing Plugin slot.`,
+      labels: [],
+    })),
+  };
+}
+
+let nextPluginObjectRevision = 0;
+const pluginObjectRevisions = new WeakMap<object, number>();
+
+function pluginObjectRevision(plugin: DeckPlugin): string {
+  const previous = pluginObjectRevisions.get(plugin);
+  const revision = previous ?? ++nextPluginObjectRevision;
+  if (previous === undefined) pluginObjectRevisions.set(plugin, revision);
+  return `${revision}:${pluginValueFingerprint(plugin, new WeakSet())}`;
+}
+
+function pluginValueFingerprint(value: unknown, active: WeakSet<object>): string {
+  if (value === null || typeof value !== "object") {
+    if (typeof value === "function") return `function:${pluginReferenceRevision(value)}`;
+    if (typeof value === "symbol") return `symbol:${String(value.description)}`;
+    return `${typeof value}:${String(value)}`;
+  }
+  if (active.has(value)) return `cycle:${pluginReferenceRevision(value)}`;
+  active.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return `array:[${value.map((item) => pluginValueFingerprint(item, active)).join(",")}]`;
+    }
+    if (value instanceof Map) {
+      return `map:[${[...value.entries()]
+        .map(
+          ([key, item]) =>
+            `${pluginValueFingerprint(key, active)}=>${pluginValueFingerprint(item, active)}`,
+        )
+        .join(",")}]`;
+    }
+    if (value instanceof Set) {
+      return `set:[${[...value].map((item) => pluginValueFingerprint(item, active)).join(",")}]`;
+    }
+    const properties = Reflect.ownKeys(value)
+      .map((key) => {
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        const name = typeof key === "symbol" ? `symbol:${String(key.description)}` : key;
+        if (!descriptor) return `${name}:missing`;
+        if ("value" in descriptor) {
+          return `${name}:${pluginValueFingerprint(descriptor.value, active)}`;
+        }
+        const getter = Reflect.get(descriptor, "get") as object | undefined;
+        const setter = Reflect.get(descriptor, "set") as object | undefined;
+        return `${name}:accessor:${pluginReferenceRevision(getter)}:${pluginReferenceRevision(setter)}`;
+      })
+      .sort();
+    return `object:${pluginReferenceRevision(value)}:{${properties.join(",")}}`;
+  } finally {
+    active.delete(value);
+  }
+}
+
+function pluginReferenceRevision(value: object | undefined): number {
+  if (value === undefined) return 0;
+  const previous = pluginObjectRevisions.get(value);
+  if (previous !== undefined) return previous;
+  const revision = ++nextPluginObjectRevision;
+  pluginObjectRevisions.set(value, revision);
+  return revision;
+}
+
+/**
+ * Return the execution identity used to decide whether a compiled graph may be reused.
+ *
+ * Plugin objects are intentionally part of this identity: a host may keep the same stable id while
+ * replacing its resolver or integration configuration for another execution.
+ */
+export function pluginSetRevision(plugins: readonly DeckPlugin[]): string {
+  return JSON.stringify([
+    "plugins",
+    plugins.map((plugin) => [plugin.id, pluginObjectRevision(plugin)]),
+  ]);
 }
 
 export function createValidatedPluginSnapshot(
   plugins: readonly DeckPlugin[],
+  diagnostics: readonly Diagnostic[] = [],
 ): ValidatedPluginSnapshot {
-  return { plugins: Object.freeze([...plugins]) };
+  return {
+    plugins: Object.freeze([...normalizeDeckPlugins(plugins)]),
+    diagnostics: Object.freeze([...diagnostics]),
+  };
+}
+
+export function lowerAuthoringExtension(
+  plugins: readonly DeckPlugin[] | undefined,
+  context: AuthoringExtensionLoweringContext,
+): {
+  readonly handled: boolean;
+  readonly children?: readonly AuthorTreeChild[];
+  readonly diagnostics: readonly Diagnostic[];
+} {
+  const diagnostics: Diagnostic[] = [];
+
+  for (const plugin of plugins ?? []) {
+    if (plugin.id !== context.value.pluginId) {
+      continue;
+    }
+
+    const lower = plugin.authoring?.lower;
+    if (lower === undefined) {
+      continue;
+    }
+
+    let result: AuthoringExtensionLoweringResult | void;
+    try {
+      result = lower(context);
+    } catch (error) {
+      diagnostics.push(
+        authoringExtensionLoweringFailedDiagnostic({
+          plugin,
+          value: context.value,
+          error,
+        }),
+      );
+      return { handled: true, diagnostics };
+    }
+
+    if (isPromiseLike(result)) {
+      diagnostics.push(
+        authoringExtensionLoweringAsyncDiagnostic({
+          plugin,
+          value: context.value,
+        }),
+      );
+      return { handled: true, diagnostics };
+    }
+
+    if (result === undefined) {
+      continue;
+    }
+
+    if (!isAuthoringLoweringResult(result)) {
+      diagnostics.push(
+        authoringExtensionLoweringInvalidResultDiagnostic({
+          plugin,
+          value: context.value,
+        }),
+      );
+      return { handled: true, diagnostics };
+    }
+
+    if (result.diagnostics !== undefined) {
+      if (!isDiagnosticArray(result.diagnostics)) {
+        diagnostics.push(
+          authoringExtensionLoweringInvalidDiagnosticsDiagnostic({
+            plugin,
+            value: context.value,
+          }),
+        );
+      } else {
+        diagnostics.push(...result.diagnostics);
+      }
+    }
+
+    const children: readonly JsxNode[] = Array.isArray(result.children)
+      ? result.children
+      : [result.children];
+    if (!children.every(isAuthorTreeChild)) {
+      diagnostics.push(
+        authoringExtensionLoweringInvalidChildrenDiagnostic({
+          plugin,
+          value: context.value,
+        }),
+      );
+      return { handled: true, diagnostics };
+    }
+
+    return {
+      handled: true,
+      children: children as readonly AuthorTreeChild[],
+      diagnostics,
+    };
+  }
+
+  return { handled: false, diagnostics };
+}
+
+function isAuthoringLoweringResult(value: unknown): value is AuthoringExtensionLoweringResult {
+  return isRecord(value) && "children" in value;
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "then" in value &&
+    typeof (value as { readonly then?: unknown }).then === "function"
+  );
 }
 
 export function mergeAssetLoaders(
@@ -204,17 +441,27 @@ export function mergeAssetLoaders(
   return loaders.length > 0 ? loaders : undefined;
 }
 
-export function applyPluginHooks<TContext extends object>(
+type PluginHookFunction<THook extends keyof DeckPluginHooks> = NonNullable<DeckPluginHooks[THook]>;
+type PluginHookContext<THook extends keyof DeckPluginHooks> = Parameters<
+  PluginHookFunction<THook>
+>[0];
+
+export function applyPluginHooks<THook extends keyof DeckPluginHooks>(
   plugins: readonly DeckPlugin[] | undefined,
-  hookName: keyof DeckPluginHooks,
-  initialContext: TContext,
-): { readonly context: TContext; readonly diagnostics: readonly Diagnostic[] } {
+  hookName: THook,
+  initialContext: PluginHookContext<THook>,
+): {
+  readonly context: PluginHookContext<THook>;
+  readonly diagnostics: readonly Diagnostic[];
+} {
   let context = initialContext;
   const diagnostics: Diagnostic[] = [];
   const allowedUpdateKeys: readonly string[] = allowedPluginHookUpdateKeys[hookName];
 
   for (const plugin of plugins ?? []) {
-    const hook = plugin.hooks?.[hookName] as ((value: TContext) => PluginHookResult) | undefined;
+    const hook = plugin.hooks?.[hookName] as
+      | ((value: PluginHookContext<THook>) => PluginHookResult)
+      | undefined;
     let result: PluginHookResult;
     try {
       result = hook?.(snapshotPluginHookContext(context));
@@ -256,7 +503,7 @@ export function applyPluginHooks<TContext extends object>(
       ...context,
       ...candidateUpdates,
       ...(candidateGraph !== undefined && !isSemanticAuthorGraph(candidateGraph)
-        ? { graph: isRecord(context) ? context.graph : undefined }
+        ? { graph: "graph" in context ? context.graph : undefined }
         : {}),
     };
     const allowedUpdates = Object.fromEntries(
@@ -437,7 +684,7 @@ const pluginHookUpdateValueValidators: Record<
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object";
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -924,6 +1171,73 @@ function isPdfImageResourceValue(value: unknown): boolean {
     (value.height === undefined || typeof value.height === "number") &&
     (value.data === undefined || value.data instanceof Uint8Array)
   );
+}
+
+function authoringExtensionLoweringFailedDiagnostic(input: {
+  readonly plugin: DeckPlugin;
+  readonly value: { readonly pluginId: string; readonly kind: string };
+  readonly error: unknown;
+}): Diagnostic {
+  const message = input.error instanceof Error ? input.error.message : String(input.error);
+  return {
+    severity: "error",
+    code: "E_PLUGIN_AUTHORING_LOWERING_FAILED",
+    title: "plugin authoring lowering failed",
+    message: `${input.plugin.id} could not lower ${input.value.pluginId}:${input.value.kind}: ${message}`,
+    labels: [],
+  };
+}
+
+function authoringExtensionLoweringAsyncDiagnostic(input: {
+  readonly plugin: DeckPlugin;
+  readonly value: { readonly pluginId: string; readonly kind: string };
+}): Diagnostic {
+  return {
+    severity: "error",
+    code: "E_PLUGIN_AUTHORING_LOWERING_ASYNC",
+    title: "plugin authoring lowering must be synchronous",
+    message: `${input.plugin.id} returned a Promise while lowering ${input.value.pluginId}:${input.value.kind}. Move asynchronous work to an asset or runtime integration boundary.`,
+    labels: [],
+  };
+}
+
+function authoringExtensionLoweringInvalidResultDiagnostic(input: {
+  readonly plugin: DeckPlugin;
+  readonly value: { readonly pluginId: string; readonly kind: string };
+}): Diagnostic {
+  return {
+    severity: "error",
+    code: "E_PLUGIN_AUTHORING_LOWERING_INVALID_RESULT",
+    title: "plugin authoring lowering returned an invalid result",
+    message: `${input.plugin.id} must return an object with children when lowering ${input.value.pluginId}:${input.value.kind}.`,
+    labels: [],
+  };
+}
+
+function authoringExtensionLoweringInvalidDiagnosticsDiagnostic(input: {
+  readonly plugin: DeckPlugin;
+  readonly value: { readonly pluginId: string; readonly kind: string };
+}): Diagnostic {
+  return {
+    severity: "error",
+    code: "E_PLUGIN_AUTHORING_LOWERING_INVALID_DIAGNOSTICS",
+    title: "plugin authoring lowering returned invalid diagnostics",
+    message: `${input.plugin.id} returned invalid diagnostics while lowering ${input.value.pluginId}:${input.value.kind}.`,
+    labels: [],
+  };
+}
+
+function authoringExtensionLoweringInvalidChildrenDiagnostic(input: {
+  readonly plugin: DeckPlugin;
+  readonly value: { readonly pluginId: string; readonly kind: string };
+}): Diagnostic {
+  return {
+    severity: "error",
+    code: "E_PLUGIN_AUTHORING_LOWERING_INVALID_CHILDREN",
+    title: "plugin authoring lowering returned invalid children",
+    message: `${input.plugin.id} returned a non-authoring child while lowering ${input.value.pluginId}:${input.value.kind}.`,
+    labels: [],
+  };
 }
 
 function pluginHookFailedDiagnostic(input: {

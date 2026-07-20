@@ -60,6 +60,10 @@ describe("public surface", () => {
       "./adapter": { types: "./dist/adapter/index.d.mts", import: "./dist/adapter/index.mjs" },
       "./inspect": { types: "./dist/inspect.d.mts", import: "./dist/inspect.mjs" },
       "./integration": { types: "./dist/integration.d.mts", import: "./dist/integration.mjs" },
+      "./plugin-validation": {
+        types: "./dist/plugin-validation.d.mts",
+        import: "./dist/plugin-validation.mjs",
+      },
       "./style": { types: "./dist/style/public.d.mts", import: "./dist/style/public.mjs" },
       "./jsx-dev-runtime": {
         types: "./dist/jsx-dev-runtime.d.mts",

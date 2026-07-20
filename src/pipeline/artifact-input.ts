@@ -11,6 +11,7 @@ export type DefinedGraphInput = {
   readonly resolvedStyles: ResolvedStyleMap;
   readonly diagnostics: Diagnostics;
   readonly compositionRevision?: string;
+  readonly pluginSetRevision?: string;
 };
 
 export type DefinedProjectionInput = {

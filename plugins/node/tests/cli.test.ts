@@ -33,22 +33,10 @@ function pendingInteractiveLines(): AsyncIterable<string> {
 }
 
 describe("@deckjsx/node cli", () => {
-  test("parses dev entry, required out, extra output paths, and interactive mode", () => {
-    expect(
-      parseDeckjsxNodeCliArgs([
-        "dev",
-        "main.tsx",
-        "--out",
-        "output.pptx",
-        "components.pptx",
-        "--interactive",
-      ]),
-    ).toEqual({
+  test("parses config-driven dev and interactive mode", () => {
+    expect(parseDeckjsxNodeCliArgs(["dev", "--interactive"])).toEqual({
       ok: true,
       command: "dev",
-      entry: "main.tsx",
-      out: "output.pptx",
-      outputs: ["output.pptx", "components.pptx"],
       interactive: true,
     });
   });
@@ -65,7 +53,7 @@ describe("@deckjsx/node cli", () => {
   });
 
   test("rejects removed short mode and unknown dev options", () => {
-    expect(parseDeckjsxNodeCliArgs(["dev", "main.tsx", "--out", "out.pptx", "--short"])).toEqual({
+    expect(parseDeckjsxNodeCliArgs(["dev", "--short"])).toEqual({
       ok: false,
       diagnostics: [
         expect.objectContaining({
@@ -75,9 +63,7 @@ describe("@deckjsx/node cli", () => {
         }),
       ],
     });
-    expect(
-      parseDeckjsxNodeCliArgs(["dev", "main.tsx", "--out", "out.pptx", "--interacitve"]),
-    ).toEqual({
+    expect(parseDeckjsxNodeCliArgs(["dev", "--interacitve"])).toEqual({
       ok: false,
       diagnostics: [
         expect.objectContaining({
@@ -87,9 +73,7 @@ describe("@deckjsx/node cli", () => {
         }),
       ],
     });
-    expect(
-      parseDeckjsxNodeCliArgs(["dev", "main.tsx", "--out", "out.pptx", "--interactve"]),
-    ).toEqual({
+    expect(parseDeckjsxNodeCliArgs(["dev", "--interactve"])).toEqual({
       ok: false,
       diagnostics: [
         expect.objectContaining({
@@ -99,7 +83,7 @@ describe("@deckjsx/node cli", () => {
         }),
       ],
     });
-    expect(parseDeckjsxNodeCliArgs(["dev", "main.tsx", "--interactive-hepl"])).toEqual({
+    expect(parseDeckjsxNodeCliArgs(["dev", "--interactive-hepl"])).toEqual({
       ok: false,
       diagnostics: [
         expect.objectContaining({
@@ -109,7 +93,7 @@ describe("@deckjsx/node cli", () => {
         }),
       ],
     });
-    expect(parseDeckjsxNodeCliArgs(["dev", "main.tsx", "--out", "out.pptx", "-s"])).toEqual({
+    expect(parseDeckjsxNodeCliArgs(["dev", "-s"])).toEqual({
       ok: false,
       diagnostics: [
         expect.objectContaining({
@@ -130,37 +114,15 @@ describe("@deckjsx/node cli", () => {
     });
   });
 
-  test("requires --out for dev", () => {
+  test("rejects positional entry and output arguments", () => {
     expect(parseDeckjsxNodeCliArgs(["dev", "main.tsx"])).toEqual({
       ok: false,
       diagnostics: [
         {
           severity: "error",
-          code: "deckjsx.node.cli.missingOut",
-          title: "deckjsx dev requires --out <path>.",
+          code: "deckjsx.node.cli.unexpectedArgument",
+          title: "deckjsx dev reads entry and output from deckjsx.config.ts.",
         },
-      ],
-    });
-  });
-
-  test("rejects duplicate --out and option tokens used as output paths", () => {
-    expect(
-      parseDeckjsxNodeCliArgs(["dev", "main.tsx", "--out", "first.pptx", "--out", "second.pptx"]),
-    ).toEqual({
-      ok: false,
-      diagnostics: [
-        expect.objectContaining({
-          code: "deckjsx.node.cli.duplicateOut",
-          message: "--out",
-        }),
-      ],
-    });
-    expect(parseDeckjsxNodeCliArgs(["dev", "main.tsx", "--out", "--interactive"])).toEqual({
-      ok: false,
-      diagnostics: [
-        expect.objectContaining({
-          code: "deckjsx.node.cli.missingOut",
-        }),
       ],
     });
   });
@@ -200,10 +162,7 @@ describe("@deckjsx/node cli", () => {
       "  help        Fix the entry module and save again.",
     ]);
     expect(formatDeckjsxDevHelp()).toEqual(
-      expect.arrayContaining([
-        "Usage",
-        "  deckjsx dev <entry> --out <path> [extra output paths...]",
-      ]),
+      expect.arrayContaining(["Usage", "  deckjsx dev [--interactive]"]),
     );
     expect(formatDeckjsxInteractiveHelp()).toEqual(
       expect.arrayContaining([

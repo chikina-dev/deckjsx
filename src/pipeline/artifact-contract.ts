@@ -36,6 +36,7 @@ export type DefinedGraphArtifact = {
   readonly assetEntityIds: readonly AssetEntityId[];
   readonly diagnostics: Diagnostics;
   readonly compositionRevision?: string;
+  readonly pluginSetRevision?: string;
 };
 
 export type GraphArtifactReplacement = {
@@ -45,6 +46,7 @@ export type GraphArtifactReplacement = {
   readonly compositionDiagnostics: Diagnostics;
   readonly diagnostics: Diagnostics;
   readonly compositionRevision?: string;
+  readonly pluginSetRevision?: string;
 };
 
 export type SourceGraphArtifactSlice = {

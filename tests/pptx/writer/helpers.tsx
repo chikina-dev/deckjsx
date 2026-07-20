@@ -152,7 +152,7 @@ export function localFileHeaderEntries(bytes: Uint8Array): Array<{
     uncompressedSize: number;
   }> = [];
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  for (let offset = 0; offset <= bytes.byteLength - 30; ) {
+  for (let offset = 0; offset <= bytes.byteLength - 30;) {
     if (view.getUint32(offset, true) !== 0x04034b50) {
       break;
     }

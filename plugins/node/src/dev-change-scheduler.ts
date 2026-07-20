@@ -91,6 +91,7 @@ export function createDevChangeScheduler(input: {
         watchFiles: sourceSnapshot.watchFiles,
         changedSourceIds: [],
         status: "executable",
+        ...(sourceSnapshot.execution ? { execution: sourceSnapshot.execution } : {}),
       };
     },
   };

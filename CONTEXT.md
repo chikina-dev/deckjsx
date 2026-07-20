@@ -234,30 +234,102 @@ _Avoid_: Incremental Artifact Session, core artifact retention, public inspectio
 An internal transport for integration-supplied metadata that travels beside authored JSX without changing author-facing prop values. Its fields are a core-owned closed vocabulary, such as Media Source Origin and Component Provenance, rather than an open plugin-defined metadata bag.
 _Avoid_: public authoring prop, arbitrary metadata map, plugin-owned payload bag
 
-**Integration Interface**:
-The plugin-facing public subpath, such as `deckjsx/integration`, that exposes the minimum contracts Deck Plugins and Runtime Integration Packages need to connect to core without becoming ordinary authoring APIs. It may expose Integration Context, Media Source Origin helpers, AssetLoader contracts, lifecycle hook context types, and patch plan DTOs, while root `deckjsx` keeps authoring vocabulary separate.
-Root `deckjsx` may expose the user-facing Deck Plugin type and `deck.plugin(...)` registration API, but low-level plugin-author contracts belong to the Integration Interface.
-_Avoid_: root Authoring Interface export, internal writer module import, user-authored media prop wrapper
+**Host Configuration**:
+The optional host configuration loaded from `deckjsx.config.ts` through `@deckjsx/node` configuration facilities. It belongs beside the `package.json` that defines its Host Package Boundary and is the canonical configuration channel when host startup and execution options are supplied; CLI options should not duplicate those settings. Its default export is created through `@deckjsx/node`'s root `defineConfig(...)` export, using either a static object or a synchronous or asynchronous callback evaluated once for a Host Session with an Environment Context. A Config Consumer fully resolves configuration before constructing its own session. Its `entry` and `output` selections each accept `null`, one string, or an array of strings. They are Execution Index Hints that let a consumer narrow source discovery, bundling, output association, and watching without becoming another owner of authored execution behavior. In the absence of a configuration file, entry and output information is derived as though both hints were `null`. The configuration may also supply integration-specific judgment and arbitrary Plugin contributions around a root Deck execution; it is not a replacement for Deck or a Core-owned project object. Consumers such as a future `@deckjsx/test` may depend on `@deckjsx/node`, read the same configuration, and own an independent execution path without creating a reverse dependency from Node to test. During Deck execution, config Plugins merge with Plugins registered by the entry's root Deck into one execution-scoped Deck Plugin Set, with the root Deck registration as the explicit override.
+_Avoid_: Deck authoring options, core project object, process-global configuration, duplicated CLI configuration, render artifact state
+
+Host Configuration authored without `defineConfig(...)` may remain loadable when structurally valid, but the Host reports that noncanonical form as a warning rather than treating the helper as a separate correctness boundary.
+
+Host Configuration may explicitly extend one or more shared Config Definitions. Shared definitions contribute reusable settings and Plugins without changing the consuming Host Package Boundary; inherited entry and output paths remain relative to the final package config.
+
+**Host Package Boundary**:
+The consuming package directory resolved from the Host invocation working directory and identified by a `package.json` with its optional sibling `deckjsx.config.ts`. It anchors Host Configuration paths, dependency resolution, discovery, and execution. Dynamic discovery does not cross a nested package manifest. The installed bin or Host package location identifies Host-owned resources, not the consuming package. A configuration file detached from a sibling package manifest is invalid rather than implicitly governing a different directory tree.
+_Avoid_: repository root by assumption, config-only project root, Core package boundary
+
+**Config Definition**:
+A static, synchronous, or asynchronous value created by `defineConfig(...)` that may be the default Host Configuration or be imported by another definition through `extends`. Explicit extension shares configuration without making bin hoisting or ancestor package layout an implicit inheritance mechanism.
+_Avoid_: automatically inherited ancestor config, package-manager bin location, alternate project manifest
+
+**Execution Index Hint**:
+Host Configuration information that narrows the work needed to locate and execute authoring sources. Explicit entry and output paths allow a host to reduce filesystem traversal, source inspection, bundling, and watch scope; `null` asks the host to derive the missing information at a higher startup cost. An explicit hint is validated rather than silently replaced by broad discovery when stale. Output hints identify required tracked outputs rather than restricting every output an entry may write; a null output hint tracks every write observed from the selected entry without requiring one output. An Execution Index Hint does not replace the executable source or its `write(...)` instruction.
+_Avoid_: render option, output destination override, Core configuration
+
+Static use of an Execution Index Hint is best-effort optimization. When source constructs an output path dynamically, the Host may lose the narrowing benefit and report that degradation, but final validity is determined from the normalized `write(...)` paths observed during execution rather than by restricting authoring source to statically evaluable literals.
+
+**Entry Execution Root**:
+A package-local source module whose top-level execution can reach an `@deckjsx/node` `write(...)` boundary through its module graph. The module that defines, exports, or wraps `write(...)` is not itself the entry merely because it contains that call; discovery follows aliases, re-exports, local imports, and top-level call reachability back to the execution root without running candidate modules as probes.
+_Avoid_: write helper module, filename convention alone, arbitrary source probe
+
+**Configuration Transparency**:
+The developer experience in which ordinary deck authoring remains understandable and runnable from its source without requiring or maintaining a parallel description of that source in Host Configuration. Configuration may accelerate discovery or add host and Plugin behavior, but it should not require authors to duplicate entry-to-output relationships already expressed by executable imports and `write(...)` calls.
+_Avoid_: config manifest as source of truth, entry-output mapping table, required duplicated project model
+
+**Deck Plugin Set**:
+The ordered, normalized set of Plugins applied to a root Deck execution. Root Deck values registered through `deck.plugin(...)` form its local contribution; a host may add arbitrary execution-scoped Plugin contributions, including authoring, integration, runtime, dev, or test behavior, without creating another public top-level object.
+The set owns plugin identity, order, activation, lifecycle, and invalidation across compile, project, render, dev, and test executions. Its execution identity participates in graph and projection cache reuse, so replacing a Plugin object or execution contribution cannot reuse a graph lowered under another Plugin Set. A same-id replacement changes the value while preserving the first slot allocated to that id, so an override does not reorder unrelated hooks. Config inheritance resolves base to child without warning; when a Host Configuration contribution has an id already present in the root Deck-local set, the root Deck Plugin replaces the Host contribution and the conflict is reported once as a warning while the execution set is formed. The set does not execute two Plugins with the same id. Mounted child sources do not own or automatically contribute another Deck Plugin Set.
+_Avoid_: Project Plugin Set, source-local plugin registry, process-global plugin registry
+
+**Host Execution Scope**:
+The host-owned asynchronous execution boundary in which an entry module runs with Host Configuration Plugin contributions and other execution context. A root Deck render inside the scope combines those contributions with its Deck-local Plugins before compilation begins. A Host Session evaluates configuration once and may reuse its stable Plugin values across entry and watch executions; per-execution mutable state belongs to lifecycle context rather than Plugin objects. Hosts such as `@deckjsx/node` provide isolation appropriate to their runtime; Core defines the generic context and merge contract without requiring an ambient Node mechanism for direct Edge execution.
+_Avoid_: process-global plugin registry, write-time plugin injection, Core-owned config loader
+
+**Host Session**:
+The lifetime in which a host uses one evaluated Host Configuration and one stable set of config Plugin values across selected entry executions and incremental updates. A configuration change ends that session and starts another with new Plugin Set identity and corresponding cache invalidation.
+_Avoid_: process lifetime, individual render, mutable Plugin state container
+
+**Config Consumer**:
+A package that resolves the shared `deckjsx.config.ts` contract and uses the relevant configuration and Plugin capabilities for its own execution path. `@deckjsx/node` provides the config facilities; a package such as `@deckjsx/test` may depend on those facilities and consume the same config without making Node depend on test or routing test execution through the Node CLI.
+_Avoid_: reverse optional-package dependency, shared runner requirement, deckjsx test command by implication
+
+**Configuration Resolver**:
+The public `@deckjsx/node` function boundary that resolves a consuming package, Environment Context, config/extends graph, Execution Index Hints, preserved Plugin values, diagnostics, and config watch inputs without constructing a public Project object. Entry Resolution is a separate function so another Config Consumer may reuse config alone or continue through shared discovery before entering its independent runner. Expected configuration and discovery failures are returned as result-based core Diagnostics rather than thrown, allowing different consumers to share evidence while owning presentation.
+_Avoid_: public Project runtime, test-owned duplicate config loader, mandatory Node runner
+
+**Consumer Plugin Capability**:
+Configuration and behavior owned by an independently distributed Config Consumer and carried by its Plugin value in the shared Host Configuration. Consumer-specific settings do not become top-level Node config fields. The shared loader preserves the Plugin object's identity and additional properties; how a consumer represents and recognizes its own capability remains that package's decision.
+_Avoid_: top-level test config in Node, consumer switch in config loader, reverse dependency
+
+**Plugin Value Preservation**:
+The Host Configuration guarantee that a valid Plugin object is passed onward without cloning it into a closed set of known fields or discarding package-owned properties. Core and each Config Consumer use the fields they understand while the owning package retains control of any additional representation.
+_Avoid_: plugin DTO normalization, unknown-field stripping, Core consumer capability registry
+
+**Environment Context**:
+The Host-supplied context passed to a functional `defineConfig(...)` when a Host Session begins. Its `environment` follows the surrounding JavaScript ecosystem's `NODE_ENV` value when present and remains an open string with conventional values such as `development`, `test`, and `production`. When absent, the Host supplies a context-local default without mutating `process.env`. The Host normalizes the value once so config evaluation and Host Session identity use the same environment without introducing a deckjsx-specific environment variable.
+_Avoid_: DECKJSX_ENV, per-render config callback, closed deployment enum
+
+**Plugin**:
+A unified Deck integration unit that can contribute to multiple deckjsx execution surfaces, including authoring or source transforms, Authoring Extension Value lowering, core lifecycle stages, runtime services, authoring observation, and dev/test host behavior. A Plugin may be registered directly on a root Deck or supplied by a host execution.
+Plugin activation is determined by the host command and execution lifecycle, so dev/runtime behavior is an activation distinction inside one Plugin rather than separate user-facing plugin kinds or registration APIs.
+Plugin identity is the stable id used to manage a Deck Plugin Set. Identity is distinct from Resolver Identity and does not explain asset-resolution assumptions.
+The common minimum is Plugin kind and identity. A Plugin with no Core-standard capability remains valid because an independent Config Consumer may own additional behavior; Core does not report it as a no-op merely because Core has nothing to execute.
+Plugins should receive stage snapshots and return only allowed stage updates plus diagnostics; they should not directly mutate Deck authoring state, the Pipeline Artifact Collection, or artifacts outside the current stage boundary.
+Plugins are not authored source content. Mounted child sources may contribute authored content, Source Context, templates, styles, and Media Source Origin metadata, but they do not contribute root Deck Plugins.
+_Avoid_: Project Plugin, dev plugin registry, runtime plugin registry, source-local plugin registry, process-global plugin registry
 
 **Deck Plugin**:
-Pipeline participation declared for a Deck render execution through `deck.plugin(...)`, such as lifecycle hooks, asset loading, or stable integration behavior.
-The Deck Plugin value is a discriminated object with `kind: "deckjsx.plugin"` and required `id`. Optional fields may include display `name`, hooks, and `integration` metadata. `name` is not a replacement key.
-`DeckPlugin.integration` supplies render-execution scoped Integration Context metadata for the root Deck execution. It is not a source-scoped registry entry and should not be copied into Asset Entities as ownership.
-Root `deckjsx` exposes Deck Plugin as the public value accepted by `deck.plugin(...)`; detailed plugin-author contracts such as AssetLoader and lifecycle hook context types should come from `deckjsx/integration`.
-v0.9 should remove the older extension registration vocabulary rather than keeping compatibility aliases; plugin registration should use `deck.plugin(...)` and Deck Plugin values only.
-Internal module and helper names should use Plugin vocabulary, such as `plugin.ts`, rather than keeping the old Extension vocabulary for the same concept.
-Runtime and authoring plugin packages such as `@deckjsx/mermaid` and `@deckjsx/node` should expose Deck Plugin factories rather than source-local registration APIs.
-`@deckjsx/node` may expose `nodeAssets()` as a Deck Plugin factory for Node file asset loading, intended for use as `deck.plugin(nodeAssets())`. `nodeAssets()` should not own path output, In-place Package Patch writes, or `write(...)`; those remain Runtime Integration Package output APIs.
-The initial Deck Plugin hook boundaries are before and after tree, graph, asset, project, and render. The tree hook surrounds JSX capture and Author Tree preparation. The graph hook surrounds Semantic Author Graph construction. The asset hook surrounds the Asset Loading Boundary where Asset Entities and Authored Media Sources become Asset Artifacts. The project hook surrounds creation of the Projected Document Model. The render hook surrounds core Render as it turns a Projected Document Model into a Rendered Artifact through a Writer Adapter; runtime path writing and In-place Package Patch operations remain outside this hook. Future plugin boundaries may be added deliberately when a new pipeline layer needs a stable extension point.
-Deck Plugin hooks run only for the stages required by the invoked operation: compile runs tree and graph hooks, project runs tree, graph, asset, and project hooks, and render runs the full hook sequence through render.
-Deck Plugin hooks should receive stage snapshots and return only allowed stage updates plus diagnostics. Hooks should not directly mutate the Deck, the Pipeline Artifact Collection, or artifacts outside the current stage boundary.
-Hooks at the same stage run in Deck Plugin stack order. Both `before*` and `after*` hooks use registration order; `after*` hooks do not reverse the stack.
-Deck Plugin registration is persistent Deck configuration. Once registered, a plugin participates in later compile, project, and render executions for that root Deck until replaced or removed by plugin identity.
-Plugin identity is the stable `plugin.id` used to manage the Deck Plugin stack. Registering another plugin with the same identity replaces the previous plugin; registering a different identity appends it in order. Plugin ids should normally be package-name-based stable strings, such as `@deckjsx/node/assets` or `@deckjsx/mermaid`; use an explicit suffix only when multiple instances of the same plugin package must coexist. Plugin identity is distinct from Resolver Identity and does not explain asset-resolution assumptions.
-Deck Plugins should not store per-render event snapshots such as changed source ids as durable plugin configuration. Per-render event data belongs to the render execution context and is consumed by plugin hooks during that execution.
-Deck Plugins are not authored source content and should not be aggregated as a mounted child source property. The root render invocation owns the plugin stack that runs across the pipeline.
-If a mounted child source declares Deck Plugins, that child contribution should produce a CompileResult composition warning, such as `W_COMPOSITION_CHILD_PLUGIN_IGNORED`, and be ignored. The child source may still contribute authored content, Source Context, templates, styles, and Media Source Origin metadata.
-_Avoid_: source-local plugin registry, process-global plugin registry, child render owner
+A Plugin value registered through `deck.plugin(...)` on a root Deck. Deck Plugin is not a separate semantic kind from Plugin; it identifies the registration scope and the root Deck execution that owns the contribution.
+Deck Plugin registration is persistent Deck configuration and participates in later compile, project, and render executions for that root Deck. A mounted child Deck's local plugin contribution is not automatically inherited by its parent execution.
+When a root Deck Plugin id conflicts with a Host Configuration Plugin id, the root Deck registration is the explicit runtime override and the conflict is warning-level rather than an error.
+Registering the same Plugin id more than once on one Deck replaces the value in its existing slot and records one warning through Deck diagnostics rather than writing directly to the process console.
+The initial core lifecycle hook boundaries are before and after tree, graph, asset, project, and render. Compile runs tree and graph hooks; Project runs through project hooks; Render runs the full sequence through the Writer Adapter boundary. Hooks receive stage snapshots and return only allowed stage updates plus diagnostics, and same-stage hooks run in Plugin Set order.
+Integration Context and AssetLoader contributions belong to the root execution's Plugin Set; per-render source invalidation and dev observations remain execution-scoped rather than durable Plugin configuration. Runtime packages such as `@deckjsx/node` may expose Plugin factories such as `nodeAssets()`, while file writing and patching remain host APIs.
+_Avoid_: Project Plugin, source-local plugin registry, process-global plugin registry
+
+**Authoring Extension Value**:
+An opaque authoring value produced by an authoring package, such as the value returned by a tagged template `mermaid\`...\``. It carries package-owned meaning without requiring core to add a Mermaid-specific intrinsic tag or Semantic Node.
+Its `pluginId`is the stable routing key for the owning Plugin; only the active Deck Plugin with that identity is asked to resolve the value, and its`kind` remains Plugin-owned dispatch data. Core may carry and diagnose an unresolved Authoring Extension Value, but it does not interpret either field.
+_Avoid_: arbitrary JSX prop object, core Semantic Node, plugin-defined intrinsic tag
+
+**Authoring Lowering**:
+The Plugin-owned transformation that resolves an Authoring Extension Value into one or more core-standard `AuthorTreeChild` values before Semantic Author Graph construction. Lowering may expand one opaque value into an ordered group of ordinary elements, such as a rendered diagram plus caption, while keeping package-specific syntax and semantics outside core and allowing an edge-compatible Plugin to run entirely in an Edge bundle.
+Initial Authoring Lowering is synchronous and belongs to the Compile composition/tree phase. Asynchronous work belongs to Asset Loading, Runtime Integration, host preprocessing, or a later explicitly designed async authoring boundary rather than being smuggled into the current slide factory contract.
+An unresolved value should become a compile diagnostic rather than silently pass into graph, projection, or render.
+_Avoid_: custom graph node by default, output-specific lowering, Node-only requirement
+
+**Integration Interface**:
+The plugin-facing public subpath, such as `deckjsx/integration`, that exposes the minimum contracts Plugins and Runtime Integration Packages need to connect to core without becoming ordinary authoring APIs. It may expose Integration Context, Media Source Origin helpers, AssetLoader contracts, lifecycle hook context types, Authoring Extension Value contracts, and patch plan DTOs, while root `deckjsx` keeps authoring vocabulary separate.
+Plugin-author contracts belong to the Integration Interface; Host Configuration and host loading remain outside core authoring APIs, while root Deck registration uses `deck.plugin(...)`.
+_Avoid_: root Authoring Interface export, internal writer module import, user-authored media prop wrapper, process-global plugin registration
 
 **Asset Entity**:
 A graph entity that represents reusable external content such as an image source, video source, or font source. Renderable nodes and style/layout decisions reference Asset Entities instead of embedding output-specific paths or bytes.
@@ -278,12 +350,12 @@ _Avoid_: system font assumption, PDF font object, CSS font-family name only, cor
 **Font Asset**:
 An Asset Entity and Asset Artifact pair for a loaded or probed font program used by text layout decisions and PDF writing. Font Assets may provide metadata such as family name, style, weight, supported ranges, metrics, and bytes for embedding, and style resolution should match text Font Family References to these registered assets by declared font metadata rather than by asset handles in style values.
 Font Assets should reuse the existing Asset Loading Boundary, AssetSource, AssetLoader, Asset Artifact, Resolver Identity, diagnostics, provenance, and cache behavior instead of introducing a separate font registry pipeline. Any font-specific additions should extend asset kind/source metadata and font probe/load result metadata rather than bypassing the asset flow.
-Font Asset declarations should enter through Deck-owned configuration or Deck Plugin integration flow so the data path starts from the Deck render execution, while StyleSheets only request fonts through Font Family References.
+Font Asset declarations should enter through Host Configuration or Deck Plugin integration flow so the data path starts from the root Deck execution, while StyleSheets only request fonts through Font Family References.
 _Avoid_: system font lookup, writer-local font cache, theme font scheme, style-owned font bytes
 
 **Font Asset Registration**:
-A Deck Plugin integration contribution that declares named Font Assets for the current render execution, including the key or family metadata used by style resolution and the AssetSource consumed by the Asset Loading Boundary. It complements `assetLoaders`: registrations say which font assets exist, while loaders say how sources are probed and loaded.
-Font Asset Registration belongs to `DeckIntegrationContext` rather than StyleSheet declarations so font bytes follow the same Deck-owned data path as other assets.
+A Plugin integration contribution that declares named Font Assets for the current Deck or render execution, including the key or family metadata used by style resolution and the AssetSource consumed by the Asset Loading Boundary. It complements `assetLoaders`: registrations say which font assets exist, while loaders say how sources are probed and loaded.
+Font Asset Registration belongs to `DeckIntegrationContext` rather than StyleSheet declarations so font bytes follow the same Deck Plugin Set data path as other assets.
 The registration key is the stable asset identity for the font program or variant; text style matching should use declared family, weight, style, and range metadata rather than treating the key as the authored `fontFamily` value.
 The initial PDF implementation accepts byte-backed Font Asset Registrations only. Path, URL, or other non-byte font sources should remain invalid until font sources are routed through the Asset Loading Boundary with runtime-neutral loading semantics.
 _Avoid_: StyleSheet-owned font bytes, CSS url resolver, process-global font registry
@@ -345,7 +417,7 @@ _Avoid_: all video formats, renderer compatibility layer, transcoding policy
 
 **Asset Loading Boundary**:
 The pipeline resource boundary that resolves Authored Media Sources into reusable metadata and bytes without making deckjsx core depend on one runtime's file system or asset APIs.
-The Deck Plugin asset hook runs immediately before and after this boundary, not during tree construction, graph construction, output projection, or final package writing.
+The Plugin asset hook runs immediately before and after this boundary, not during tree construction, graph construction, output projection, or final package writing.
 Integration-provided loaders from the current render execution are evaluated before built-in multi-runtime handling and in integration-defined order. The Resolver Identity that wins Project probing should also be used by Render loading so metadata and bytes are not mixed across different runtime assumptions.
 Built-in multi-runtime loading is limited to authored bytes, data/data URI sources, and absolute HTTP(S) URL sources when the runtime provides `fetch`; this is still the Asset Loading Boundary, not a video-specific retrieval mechanism. If `fetch` is unavailable, returns a non-success HTTP response, or fails for an absolute HTTP(S) source, Project should report an Asset Loading Boundary diagnostic because Project-time image metadata cannot be completed. Relative paths, root-absolute project paths, `file:` URLs, and local file sources are runtime-specific and should require an explicit integration loader or thin runtime boundary rather than becoming a core file-system dependency.
 When built-in URL fetch succeeds during Project, Project should retain the fetched bytes in the Asset Artifact so Render can embed the same bytes without fetching again.
@@ -433,18 +505,17 @@ Output Path.
 _Avoid_: plugin-owned artifact cache, process-global deck cache, writer output state
 
 **Integration Context**:
-The integration-managed context for a single deck render execution so Runtime Integration Packages can provide Asset Loading Boundary behavior, source invalidation event metadata, and related plugin behavior without making authors call registration APIs.
-Integration Context is render-execution scoped rather than process-global, because multiple dev runtimes, tests, and incremental sessions may need different resolver assumptions in the same process. It is global only inside that one execution's pipeline.
-When sources are composed, the root deck render execution owns the Integration Context used by Project and Render. Mounted child sources may carry Media Source Origin metadata for authored media references, but they do not contribute an additional Integration Context to the execution.
-If a mounted child source contains its own `plugin(...)` contribution, that contribution conflicts with render-execution ownership: it should be surfaced as a CompileResult composition warning and ignored rather than executed as a nested plugin context.
+The integration-managed context for a single root Deck execution, created from the active Deck Plugin Set so Runtime Integration Packages can provide Asset Loading Boundary behavior, source invalidation event metadata, and related plugin behavior without making authors call registration APIs.
+Integration Context is execution-scoped rather than process-global, because multiple dev runtimes, tests, and incremental sessions may need different resolver assumptions in the same process. It is global only inside that execution's pipeline.
+When sources are composed, the root Deck execution owns the Integration Context used by Compile, Project, and Render. Mounted child sources may carry Media Source Origin metadata for authored media references, but they do not contribute an additional Deck Plugin Set or Integration Context to the execution.
 An Asset Entity records authored media relationships, including Asset Source Field and optional Media Source Origin, but it does not own or select an Integration Context. Project-local path resolution happens through the render execution's Asset Loading Boundary using those asset facts.
 Integration Context Identity identifies the render-execution context or integration contribution, not asset ownership. It is distinct from Resolver Identity, which explains the resolver assumptions that produced an Asset Artifact for cache and provenance.
 _Avoid_: public authoring option, global singleton registry, manual loader registration, resolver identity
 
 **Runtime Integration Package**:
-An optional package that connects deckjsx to a runtime capability family, such as Node file-system output, without making that runtime part of the core package. The canonical Node Runtime Integration Package is `@deckjsx/node`.
-Runtime Integration Packages may provide path output, local file AssetLoader primitives, Patchable PPTX file inspection, In-place Package Patch writes, file locking, and whole-archive rewrite fallback over core runtime-neutral artifacts and contracts.
-`@deckjsx/node` should expose `nodeAssets()` as the runtime Deck Plugin factory for Node file AssetLoader behavior when user render code wants Node-local asset resolution. `nodeAssets()` is not the Node output or patch writer API; `write(...)` and Patchable PPTX filesystem operations stay as separate Runtime Integration Package APIs.
+An optional package that connects deckjsx to a runtime capability family, such as Node file-system output, without making that runtime part of the core package. The canonical Node Runtime Integration Package is `@deckjsx/node`, which may provide both Deck Plugins and host helpers.
+Runtime Integration Packages may provide path output, local file AssetLoader primitives, Patchable PPTX file inspection, In-place Package Patch writes, file locking, and whole-archive rewrite fallback over core runtime-neutral artifacts and contracts. Their Deck-level capabilities enter through Deck Plugin registration or host execution integration.
+`@deckjsx/node` should expose unified Node Plugins for Node-local asset, font, dev, and runtime behavior when configured by a host. Lower-level asset factories may remain package-internal or explicit runtime helpers; `write(...)` and Patchable PPTX filesystem operations remain Runtime Integration Package APIs.
 Runtime Integration Packages may provide an Incremental Artifact Runtime when they own enough runtime capability to discover source changes, reload the deck entry, retain process-memory pipeline artifacts, and observe Tracked Output Paths through user-authored `write(...)` calls.
 _Avoid_: core runtime import, hidden platform assumption, viewer notification layer
 
@@ -1291,3 +1362,47 @@ Domain expert: No. Source Slot Graph Identity should mix caller slot origin with
 Developer: Should Source Slot field names matter for identity?
 
 Domain expert: Yes. A Source Slot field name, such as context.note, is authored meaning and should be part of slot origin and identity material.
+
+Developer: Should a Plugin be attached directly to a Deck?
+
+Domain expert: Yes, for a root Deck-local contribution. `deck.plugin(...)` registers a Plugin in the Deck Plugin Set; Host Configuration may add execution-scoped host behavior without creating another top-level project object.
+
+Developer: Are dev Plugins and runtime Plugins separate user-facing concepts?
+
+Domain expert: No. One Plugin may contribute to both. The host command and execution lifecycle determine which contributions activate.
+
+Developer: Can a mounted child source install its own Plugin Set?
+
+Domain expert: No. Plugin composition belongs to the root Deck execution. A child source contributes authored content and source metadata, not another Deck Plugin Set.
+
+Developer: Should `mermaid\`...\`` become a new core intrinsic element?
+
+Domain expert: No. It produces an Authoring Extension Value, and `deck.plugin(mermaid())` performs Authoring Lowering into core-standard AuthorTree before graph construction.
+
+Developer: Can core alone resolve an Authoring Extension Value on Edge?
+
+Domain expert: No. Core owns the generic carrier and diagnostic boundary; an edge-compatible Plugin must be included in the Edge bundle to provide the value's meaning.
+
+Developer: Should `deckjsx.config.ts` accept only Host Plugins?
+
+Domain expert: No. It may contribute any Plugin to the same execution-scoped Deck Plugin Set as `deck.plugin(...)`; `@deckjsx/node` or another host owns loading the config, while core continues to know only the normalized Plugin contract.
+
+Developer: Which Plugin wins when config and `deck.plugin(...)` use the same id?
+
+Domain expert: The root Deck Plugin wins. The config contribution is a host default, while `deck.plugin(...)` is the explicit runtime-side override; the conflict emits a warning and only the Deck Plugin executes.
+
+Developer: Should host execution options be supplied through CLI flags or `deckjsx.config.ts`?
+
+Domain expert: `deckjsx.config.ts` is the canonical channel. The CLI should retain only the command surface that is necessary to start or interact with a host; it should not duplicate ordinary entry, output, dev, or test configuration. The `entry` field accepts `null`, a string, or a string array. Explicit entries are recommended for deterministic startup, while `null` enables host-owned dynamic entry discovery with a small performance cost.
+
+Developer: How should a host resolve `entry: null`?
+
+Domain expert: The Node host should descend from the `deckjsx.config.ts` directory and find source associated with its `write(...)` output boundary. Zero matches and multiple matches are diagnostics; it must not execute arbitrary candidates just to discover which one writes. Explicit `entry` values remain the recommended path, while `null` is supported as a slower convenience mode.
+
+Developer: Can the Node host use Rolldown for dynamic entry discovery?
+
+Domain expert: Yes. Rolldown's scan/build hooks can parse and inspect the source candidates, while the Host still enumerates the directory and recognizes the `write(...)` boundary. Discovery results may be cached and invalidated when relevant files change; this remains a Node Host mechanism rather than a Core contract.
+
+Developer: How broad should `entry: null` discovery be, and where should its cache live?
+
+Domain expert: The Node host should traverse the configuration directory and all descendants except `node_modules`. The result belongs in a process-local memory cache, invalidated when the traversed source set changes; no persistent disk cache is required.

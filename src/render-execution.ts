@@ -15,6 +15,7 @@ import type { MediaSourceOrigin } from "./media-source-origin";
 import {
   createValidatedPluginSnapshot,
   mergeAssetLoaders,
+  mergeDeckPluginContributions,
   validateDeckPlugins,
   validDeckPlugins,
   type DeckPlugin,
@@ -64,7 +65,7 @@ export function withRenderExecutionContext<TInput extends RenderInputWithExecuti
   input: TInput,
   context: RenderExecutionContext,
 ): TInput {
-  const current = renderExecutionContextFrom(input);
+  const current = renderExecutionContextValueFrom(input);
   const output = Object.create(Object.getPrototypeOf(input)) as TInput;
   Object.defineProperties(output, Object.getOwnPropertyDescriptors(input));
   Object.defineProperty(output, RENDER_EXECUTION_CONTEXT, {
@@ -79,6 +80,15 @@ export function withRenderExecutionContext<TInput extends RenderInputWithExecuti
 export function renderExecutionContextFrom(
   input: RenderInputWithExecutionContext | undefined,
 ): RenderExecutionContext | undefined {
+  const value = renderExecutionContextValueFrom(input);
+  return renderExecutionContextShapeValidationMessage(value) === undefined
+    ? (value as RenderExecutionContext)
+    : undefined;
+}
+
+function renderExecutionContextValueFrom(
+  input: RenderInputWithExecutionContext | undefined,
+): unknown {
   if (!input || typeof input !== "object") {
     return undefined;
   }
@@ -100,7 +110,10 @@ export function createRenderExecution(input: {
   readonly assetLoaders?: readonly AssetLoader[];
   readonly mediaSourceOrigin?: MediaSourceOrigin;
 }): RenderExecution {
-  const renderExecutionContext = renderExecutionContextFrom(input.renderInput);
+  const renderExecutionContext = renderExecutionContextValueFrom(input.renderInput);
+  const renderExecutionContextRecord = isRecord(renderExecutionContext)
+    ? renderExecutionContext
+    : undefined;
   const authoringRuntimeObservers = authoringRuntimeObserversFrom(renderExecutionContext);
   const renderContextShapeDiagnostics =
     renderExecutionContext === undefined
@@ -112,34 +125,42 @@ export function createRenderExecution(input: {
   ];
   const renderContextFieldsAreValid = renderContextShapeDiagnostics.length === 0;
   const renderContextPluginsDiagnostics = renderContextFieldsAreValid
-    ? renderContextPluginsDiagnostic(renderExecutionContext?.plugins)
+    ? renderContextPluginsDiagnostic(renderExecutionContextRecord?.plugins)
     : [];
   const renderContextPlugins =
     renderContextFieldsAreValid && renderContextPluginsDiagnostics.length === 0
-      ? (renderExecutionContext?.plugins ?? [])
+      ? (renderExecutionContextRecord?.plugins ?? [])
       : [];
   const deckPluginDiagnostics = validateDeckPlugins(input.plugins ?? []);
-  const plugins = validDeckPlugins([...(input.plugins ?? []), ...renderContextPlugins]);
-  const renderContextIntegration = renderExecutionContext?.integration;
+  const mergedPlugins = mergeDeckPluginContributions({
+    host: validDeckPlugins(renderContextPlugins),
+    deck: validDeckPlugins(input.plugins ?? []),
+  });
+  const plugins = mergedPlugins.plugins;
+  const renderContextIntegration = renderExecutionContextRecord?.integration;
   const integrationDiagnostics = renderContextFieldsAreValid
     ? renderContextIntegrationDiagnostic(renderContextIntegration)
     : [];
   const sourceInvalidationDiagnostics = renderContextFieldsAreValid
-    ? renderContextSourceInvalidationDiagnostic(renderExecutionContext?.sourceInvalidation)
+    ? renderContextSourceInvalidationDiagnostic(renderExecutionContextRecord?.sourceInvalidation)
     : [];
   const diagnostics = [
     ...renderContextDiagnostics,
     ...renderContextPluginsDiagnostics,
     ...deckPluginDiagnostics,
     ...validateDeckPlugins(renderContextPlugins),
+    ...mergedPlugins.diagnostics,
     ...integrationDiagnostics,
     ...sourceInvalidationDiagnostics,
   ];
   const validRenderContextIntegration =
-    integrationDiagnostics.length === 0 ? renderContextIntegration : undefined;
+    integrationDiagnostics.length === 0 && isDeckIntegrationContext(renderContextIntegration)
+      ? renderContextIntegration
+      : undefined;
   const validSourceInvalidation =
-    sourceInvalidationDiagnostics.length === 0
-      ? renderExecutionContext?.sourceInvalidation
+    sourceInvalidationDiagnostics.length === 0 &&
+    isSourceInvalidation(renderExecutionContextRecord?.sourceInvalidation)
+      ? renderExecutionContextRecord.sourceInvalidation
       : undefined;
   const integrationContext = mergeIntegrationContexts(
     [integrationContextFromValidatedPlugins(plugins), validRenderContextIntegration].filter(
@@ -154,7 +175,7 @@ export function createRenderExecution(input: {
       ? { authoringRuntimeObservers }
       : {}),
     plugins,
-    pluginSnapshot: createValidatedPluginSnapshot(plugins),
+    pluginSnapshot: createValidatedPluginSnapshot(plugins, diagnostics),
     diagnostics,
     ...(integrationContext ? { integrationContext } : {}),
     ...(assetLoaders ? { assetLoaders } : {}),
@@ -163,9 +184,7 @@ export function createRenderExecution(input: {
   };
 }
 
-function renderContextPluginsDiagnostic(
-  plugins: readonly DeckPlugin[] | undefined,
-): readonly Diagnostic[] {
+function renderContextPluginsDiagnostic(plugins: unknown): readonly Diagnostic[] {
   if (plugins === undefined || Array.isArray(plugins)) {
     return [];
   }
@@ -242,7 +261,7 @@ function renderContextIntegrationValidationMessage(integration: unknown): string
 }
 
 function isDeckIntegrationContext(value: unknown): value is DeckIntegrationContext {
-  return renderContextIntegrationValidationMessage(value) === undefined;
+  return value !== undefined && renderContextIntegrationValidationMessage(value) === undefined;
 }
 
 function renderContextSourceInvalidationDiagnostic(
@@ -290,7 +309,9 @@ function renderContextSourceInvalidationValidationMessage(
 }
 
 function isSourceInvalidation(value: unknown): value is SourceInvalidation {
-  return renderContextSourceInvalidationValidationMessage(value) === undefined;
+  return (
+    value !== undefined && renderContextSourceInvalidationValidationMessage(value) === undefined
+  );
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
@@ -418,10 +439,8 @@ function renderExecutionContextShapeValidationMessage(context: unknown): string 
   return undefined;
 }
 
-function mergeRenderExecutionContext(
-  current: RenderExecutionContext | undefined,
-  next: unknown,
-): RenderExecutionContext {
+function mergeRenderExecutionContext(current: unknown, next: unknown): RenderExecutionContext {
+  const currentContext = isRecord(current) ? current : undefined;
   const nextContext = isRecord(next) ? (next as RenderExecutionContext) : undefined;
   const authoringRuntimeObservers = [
     ...(authoringRuntimeObserversFrom(current) ?? []),
@@ -432,16 +451,16 @@ function mergeRenderExecutionContext(
     ...(current === undefined ? [] : renderExecutionContextShapeDiagnostics(current)),
     ...renderExecutionContextShapeDiagnostics(next),
   ];
-  const currentPlugins = Array.isArray(current?.plugins) ? current.plugins : [];
+  const currentPlugins = Array.isArray(currentContext?.plugins) ? currentContext.plugins : [];
   const nextPlugins = Array.isArray(nextContext?.plugins) ? nextContext.plugins : [];
-  const currentIntegration = isDeckIntegrationContext(current?.integration)
-    ? current?.integration
+  const currentIntegration = isDeckIntegrationContext(currentContext?.integration)
+    ? currentContext.integration
     : undefined;
   const nextIntegration = isDeckIntegrationContext(nextContext?.integration)
     ? nextContext?.integration
     : undefined;
-  const currentSourceInvalidation = isSourceInvalidation(current?.sourceInvalidation)
-    ? current?.sourceInvalidation
+  const currentSourceInvalidation = isSourceInvalidation(currentContext?.sourceInvalidation)
+    ? currentContext.sourceInvalidation
     : undefined;
   const nextSourceInvalidation = isSourceInvalidation(nextContext?.sourceInvalidation)
     ? nextContext?.sourceInvalidation

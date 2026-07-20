@@ -1040,3 +1040,14 @@ async function writePatchSegments(
     await file.close();
   }
 }
+export {
+  defineConfig,
+  resolveConfig,
+  type DeckjsxConfigContext,
+  type DeckjsxConfigDefinition,
+  type DeckjsxConfigFactory,
+  type DeckjsxConfigInput,
+  type DeckjsxResolveResult,
+  type ResolvedDeckjsxConfig,
+} from "./config";
+export { resolveEntries, type ResolvedDeckjsxEntries } from "./entries";

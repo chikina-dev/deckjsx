@@ -1,5 +1,7 @@
 declare const deckJsxElementTag: unique symbol;
 
+import type { AuthoringExtensionValue } from "./extensions";
+
 /**
  * Runtime-neutral element produced by deckjsx's JSX runtime.
  *
@@ -14,8 +16,18 @@ export type DeckJsxElement<TTag extends string = string> = DeckJsxElementValue &
   readonly [deckJsxElementTag]?: TTag;
 };
 
+/** Runtime-neutral JSX-compatible authoring value, including plugin-owned extension values. */
+export type AuthoringJsxNode = DeckJsxElement | AuthoringExtensionValue;
+
 /** Recursive low-level JSX node value used by the runtime. Prefer element-specific child types. */
 export interface JsxNodeArray extends ReadonlyArray<JsxNode> {}
 
 /** Low-level JSX runtime child value. Public authoring should use element-specific child contracts. */
-export type JsxNode = DeckJsxElement | string | number | boolean | null | undefined | JsxNodeArray;
+export type JsxNode =
+  | AuthoringJsxNode
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | JsxNodeArray;

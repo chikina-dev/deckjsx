@@ -3,6 +3,7 @@ import type { IncrementalArtifactWriteRecord } from "deckjsx/integration";
 import {
   missingTrackedOutputDiagnostic,
   outputWriteFailedDiagnostic,
+  untrackedOutputDiagnostic,
   type DeckjsxDevDiagnostic,
 } from "./dev-diagnostics";
 
@@ -21,7 +22,7 @@ export type DeckjsxDevWriteRecord = {
 /** Normalized output paths used by `@deckjsx/node/dev`. */
 export type NormalizedDevOutputPaths = {
   /** Primary output path. */
-  readonly out: string;
+  readonly out?: string;
   /** Primary plus additional output paths. */
   readonly outputs: readonly string[];
 };
@@ -51,24 +52,24 @@ export type DeckjsxDevArtifactPlan = {
 
 export function normalizeDevOutputPaths(input: {
   readonly cwd: string;
-  readonly out: string;
+  readonly out?: string;
   readonly outputs?: readonly string[];
 }): NormalizedDevOutputPaths {
   const cwd = path.resolve(input.cwd);
-  const out = path.resolve(cwd, input.out);
+  const out = input.out ? path.resolve(cwd, input.out) : undefined;
   const extraOutputs = (input.outputs ?? [])
     .map((output) => path.resolve(cwd, output))
     .filter((output) => output !== out);
-  const outputs = [out, ...uniqueSorted(extraOutputs)];
+  const outputs = [...(out ? [out] : []), ...uniqueSorted(extraOutputs)];
   return {
-    out,
+    ...(out ? { out } : {}),
     outputs,
   };
 }
 
 export function classifyDevWrites(input: {
   readonly cwd: string;
-  readonly out: string;
+  readonly out?: string;
   readonly outputs?: readonly string[];
   readonly writes: readonly IncrementalArtifactWriteRecord[];
 }): ClassifiedDevWrites {
@@ -78,7 +79,7 @@ export function classifyDevWrites(input: {
     const writePath = path.resolve(cwd, write.path);
     return {
       path: writePath,
-      tracked: writePath === normalized.out,
+      tracked: normalized.outputs.length === 0 || normalized.outputs.includes(writePath),
       result: write.result,
     };
   });
@@ -94,11 +95,18 @@ export function classifyDevWrites(input: {
       : [];
   });
   const successfulTrackedSlots = input.writes.flatMap((write) =>
-    path.resolve(cwd, write.path) === normalized.out && !isFailedWriteResult(write.result)
+    (normalized.outputs.length === 0 ||
+      normalized.outputs.includes(path.resolve(cwd, write.path))) &&
+    !isFailedWriteResult(write.result)
       ? [write.slot]
       : [],
   );
-  const retainedSlots = failedWrites.length > 0 ? [] : uniqueSortedNumbers(successfulTrackedSlots);
+  const attemptedOutputPaths = new Set(input.writes.map((write) => path.resolve(cwd, write.path)));
+  const missingOutputs = normalized.outputs.filter((output) => !attemptedOutputPaths.has(output));
+  const retainedSlots =
+    failedWrites.length > 0 || missingOutputs.length > 0
+      ? []
+      : uniqueSortedNumbers(successfulTrackedSlots);
   const diagnostics: readonly DeckjsxDevDiagnostic[] = [
     ...failedWrites.map(({ path: writePath, diagnostics }) =>
       outputWriteFailedDiagnostic({
@@ -107,14 +115,22 @@ export function classifyDevWrites(input: {
         notes: diagnostics,
       }),
     ),
-    ...(successfulTrackedSlots.length > 0 || failedWrites.length > 0
+    ...missingOutputs.map((output) =>
+      missingTrackedOutputDiagnostic({
+        relativePath: path.relative(cwd, output),
+        file: output,
+      }),
+    ),
+    ...(normalized.outputs.length === 0
       ? []
-      : [
-          missingTrackedOutputDiagnostic({
-            relativePath: path.relative(cwd, normalized.out),
-            file: normalized.out,
-          }),
-        ]),
+      : records
+          .filter((record) => !record.tracked)
+          .map((record) =>
+            untrackedOutputDiagnostic({
+              relativePath: path.relative(cwd, record.path),
+              file: record.path,
+            }),
+          )),
   ];
 
   return {
@@ -126,13 +142,15 @@ export function classifyDevWrites(input: {
 
 export function planDevArtifactUpdate(input: {
   readonly cwd: string;
-  readonly out: string;
+  readonly out?: string;
   readonly outputs?: readonly string[];
   readonly writes: readonly IncrementalArtifactWriteRecord[];
 }): DeckjsxDevArtifactPlan {
   const classified = classifyDevWrites(input);
   return {
-    status: classified.diagnostics.length === 0 ? "ready" : "blocked",
+    status: classified.diagnostics.some((diagnostic) => diagnostic.severity === "error")
+      ? "blocked"
+      : "ready",
     writes: classified.records,
     retainedSlots: classified.retainedSlots,
     diagnostics: classified.diagnostics,
@@ -141,7 +159,7 @@ export function planDevArtifactUpdate(input: {
 
 export function devOutputIgnoreFiles(input: {
   readonly cwd: string;
-  readonly out: string;
+  readonly out?: string;
   readonly outputs?: readonly string[];
 }): readonly string[] {
   const normalized = normalizeDevOutputPaths(input);

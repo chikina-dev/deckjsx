@@ -79,7 +79,7 @@ export function missingTrackedOutputDiagnostic(input: {
     message: input.relativePath,
     primary: { file: input.file },
     phase: "output",
-    help: ["Make sure the entry calls write(...) for the same path passed to deckjsx dev --out."],
+    help: ["Make sure the selected entry calls write(...) for the same path configured in output."],
   };
 }
 
@@ -96,6 +96,21 @@ export function outputWriteFailedDiagnostic(input: {
     primary: { file: input.file },
     phase: "output",
     ...(input.notes.length > 0 ? { notes: input.notes } : {}),
+  };
+}
+
+export function untrackedOutputDiagnostic(input: {
+  readonly relativePath: string;
+  readonly file: string;
+}): DeckjsxDevDiagnostic {
+  return {
+    severity: "warning",
+    code: "deckjsx.node.dev.untrackedOutput",
+    title: "Entry wrote an output not listed in configuration.",
+    message: input.relativePath,
+    primary: { file: input.file },
+    phase: "output",
+    help: ["Add the path to output when it should participate in tracked artifact validation."],
   };
 }
 

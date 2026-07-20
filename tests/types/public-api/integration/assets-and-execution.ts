@@ -21,6 +21,7 @@ import type {
   SourceInvalidation,
 } from "deckjsx/integration";
 import { integrationContextId, withRenderExecutionContext } from "deckjsx/integration";
+import { isDeckPlugin } from "deckjsx/plugin-validation";
 import { pptx } from "deckjsx/adapter";
 
 const mediaOrigin = {
@@ -148,6 +149,19 @@ const lifecyclePlugin = {
   hooks: lifecycleHooks,
 } satisfies DeckPlugin;
 void lifecyclePlugin;
+isDeckPlugin(lifecyclePlugin) satisfies boolean;
+
+const typedAuthoringPlugin: DeckPlugin<"diagram", { readonly source: string }> = {
+  kind: "deckjsx.plugin",
+  id: "test:typed-authoring",
+  authoring: {
+    lower({ value }) {
+      value.payload.source satisfies string;
+      return { children: [] };
+    },
+  },
+};
+void typedAuthoringPlugin;
 
 const renderExecutionContext = {
   plugins: [lifecyclePlugin],

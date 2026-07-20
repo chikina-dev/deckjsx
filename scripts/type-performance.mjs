@@ -14,6 +14,7 @@ const PUBLISHED_DECKJSX_PATHS = {
   "deckjsx/adapter": ["dist/adapter/index.d.mts"],
   "deckjsx/inspect": ["dist/inspect.d.mts"],
   "deckjsx/integration": ["dist/integration.d.mts"],
+  "deckjsx/plugin-validation": ["dist/plugin-validation.d.mts"],
   "deckjsx/jsx-dev-runtime": ["dist/jsx-dev-runtime.d.mts"],
   "deckjsx/jsx-runtime": ["dist/jsx-runtime.d.mts"],
 };
@@ -94,7 +95,7 @@ const TYPE_PERFORMANCE_PROFILES = {
   },
   "node-plugin": {
     checkTimeMs: 5000,
-    instantiations: 45000,
+    instantiations: 50000,
     memoryKb: 500000,
   },
 };
@@ -229,10 +230,15 @@ function typePerformanceProjectConfigForProfile(profile, generatedRoot) {
       ...(pathsForGeneratedProject(profile)
         ? {
             allowImportingTsExtensions: false,
-            paths: relativePathsForGeneratedProject(
-              pathsForGeneratedProject(profile),
-              generatedRoot,
-            ),
+            paths: {
+              ...relativePathsForGeneratedProject(pathsForGeneratedProject(profile), generatedRoot),
+              ...(profile === "node-authoring-consumer"
+                ? {
+                    rolldown: ["./rolldown-shim.d.ts"],
+                    "rolldown/parseAst": ["./rolldown-shim.d.ts"],
+                  }
+                : {}),
+            },
           }
         : {}),
     },
@@ -287,7 +293,16 @@ declare module "rolldown" {
   export type Plugin = {
     readonly name?: string;
     buildStart?(): void;
+    load?(id: string): string | undefined | null | Promise<string | undefined | null>;
     moduleParsed?(info: { readonly id: string }): void;
+    resolveId?(
+      source: string,
+    ):
+      | string
+      | { readonly id: string; readonly external?: boolean }
+      | undefined
+      | null
+      | Promise<string | { readonly id: string; readonly external?: boolean } | undefined | null>;
     watchChange?(id: string): void;
     transform?:
       | ((code: string, id: string) => TransformResult | Promise<TransformResult>)
@@ -377,8 +392,10 @@ async function materializeTypePerformanceProject(profile, generatedRoot) {
   }
 
   await mkdir(generatedRoot, { recursive: true });
-  if (profile === "node-plugin") {
+  if (profile === "node-plugin" || profile === "node-authoring-consumer") {
     await writeFile(nodePluginRolldownShimPath(generatedRoot), nodePluginRolldownShimSource());
+  }
+  if (profile === "node-plugin") {
     await writeFile(project, `${JSON.stringify(config, null, 2)}\n`);
     return project;
   }

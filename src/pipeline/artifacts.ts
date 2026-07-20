@@ -455,6 +455,7 @@ export class PipelineArtifactCollection {
     assetEntityIds?: readonly AssetEntityId[];
     diagnostics: Diagnostics;
     compositionRevision?: string;
+    pluginSetRevision?: string;
   }): void {
     const sourceKey = input.sourceKey ?? ROOT_SOURCE_ARTIFACT_KEY;
     const graphNodeIds = input.graphNodeIds ?? [...input.graph.nodes.keys()];
@@ -477,6 +478,7 @@ export class PipelineArtifactCollection {
       assetEntityIds,
       diagnostics: input.diagnostics,
       ...(input.compositionRevision ? { compositionRevision: input.compositionRevision } : {}),
+      ...(input.pluginSetRevision ? { pluginSetRevision: input.pluginSetRevision } : {}),
     });
   }
 
@@ -486,6 +488,7 @@ export class PipelineArtifactCollection {
     roots: readonly ComposedAuthorRoot[];
     diagnostics: Diagnostics;
     compositionRevision?: string;
+    pluginSetRevision?: string;
   }): void {
     this.#graphsBySourceKey.clear();
 
@@ -539,6 +542,7 @@ export class PipelineArtifactCollection {
         assetEntityIds: [...new Set(assetsBySourceKey.get(sourceKey) ?? [])],
         diagnostics: input.diagnostics,
         ...(input.compositionRevision ? { compositionRevision: input.compositionRevision } : {}),
+        ...(input.pluginSetRevision ? { pluginSetRevision: input.pluginSetRevision } : {}),
       });
     });
   }

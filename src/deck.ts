@@ -15,7 +15,7 @@ import type {
   SourceContextInput,
   SourceContextValue,
 } from "./composition/public";
-import { createDiagnostics, type Diagnostics } from "./diagnostics";
+import { createDiagnostics, type Diagnostic, type Diagnostics } from "./diagnostics";
 import { resultOk, stageSummary } from "./pipeline/stage";
 import type {
   OutputFormat,
@@ -37,7 +37,7 @@ import type {
   ProjectResult,
   RenderResult,
 } from "./pipeline/results-public";
-import { isDeckPlugin } from "./plugin";
+import { isDeckPlugin, pluginSetRevision, validDeckPlugins, type DeckPlugin } from "./plugin";
 import type { StyleSheetValue } from "./style/stylesheet/public";
 import type { EmptySlideTemplateSet, SlideTemplateSet, TemplateName } from "./templates";
 
@@ -51,18 +51,8 @@ export type {
 } from "./composition/public";
 export type { CompileResult, ProjectResult, RenderResult } from "./pipeline/results-public";
 
-/**
- * Public plugin value accepted by `Deck#plugin(...)`.
- *
- * Root `deckjsx` exposes plugin registration only. It intentionally does not expose hook context,
- * asset loader, or integration authoring shapes; plugin authors should import `DeckPlugin` and the
- * related lifecycle types from `deckjsx/integration`.
- */
-export type DeckPluginInput = {
-  readonly kind: "deckjsx.plugin";
-  readonly id: string;
-  readonly name?: string;
-};
+/** Public Plugin value accepted by `Deck#plugin(...)`. */
+export type DeckPluginInput = DeckPlugin;
 
 /**
  * Public projected document definition accepted by `Deck#defineProjection(...)`.
@@ -208,6 +198,7 @@ export class BoundSource<
       entries: source.entries,
       stylesheets: source.stylesheets,
       plugins: source.plugins,
+      pluginDiagnostics: source.pluginDiagnostics,
       ...(Object.hasOwn(source, "theme") ? { theme: source.theme } : {}),
       ...(Object.hasOwn(source, "templates") ? { templates: source.templates } : {}),
       cycleId: source.cycleId,
@@ -294,6 +285,7 @@ export class Deck<
   readonly #entries: CompositionEntry<TSourceContext, TTemplates>[] = [];
   readonly #stylesheets: StyleSheetValue[] = [];
   readonly #plugins: DeckPluginInput[] = [];
+  readonly #pluginDiagnostics: Diagnostic[] = [];
   #artifacts?: DeckPipelineArtifacts;
   #definedGraph?: DefinedGraphInput;
   #definedProjection?: DefinedProjectionInput;
@@ -329,7 +321,14 @@ export class Deck<
 
   #artifactGraph(): DefinedGraphInput | undefined {
     const graph = this.#artifacts?.graph;
-    return graph?.compositionRevision === compositionRevisionForSource(this) ? graph : undefined;
+    const currentPluginSetRevision = pluginSetRevision(
+      validDeckPlugins(this[COMPOSITION_SOURCE]().plugins),
+    );
+    return graph?.compositionRevision === compositionRevisionForSource(this) &&
+      (graph.pluginSetRevision === undefined ||
+        graph.pluginSetRevision === currentPluginSetRevision)
+      ? graph
+      : undefined;
   }
 
   [COMPOSITION_SOURCE](): CompositionSourceInternals<TSourceContext, TTemplates> {
@@ -337,6 +336,7 @@ export class Deck<
       entries: Object.freeze([...this.#entries]),
       stylesheets: Object.freeze([...this.#stylesheets]),
       plugins: Object.freeze([...this.#plugins]),
+      pluginDiagnostics: Object.freeze([...this.#pluginDiagnostics]),
       ...(this.#options.theme !== undefined ? { theme: this.#options.theme } : {}),
       ...(this.#options.templates !== undefined ? { templates: this.#options.templates } : {}),
       cycleId: this,
@@ -362,12 +362,19 @@ export class Deck<
    *
    * Plugins participate in deckjsx pipeline stages without changing ordinary authoring props.
    */
-  plugin(plugin: DeckPluginInput): this {
+  plugin<TPlugin extends DeckPluginInput>(plugin: TPlugin): this {
     const existing = isDeckPlugin(plugin)
       ? this.#plugins.findIndex((item) => isDeckPlugin(item) && item.id === plugin.id)
       : -1;
     if (existing >= 0) {
       this.#plugins.splice(existing, 1, plugin);
+      this.#pluginDiagnostics.push({
+        severity: "warning",
+        code: "W_PLUGIN_DECK_DUPLICATE",
+        title: "Deck Plugin registration replaces an existing Plugin",
+        message: `Deck Plugin ${JSON.stringify(plugin.id)} was registered more than once on the same Deck and replaces the earlier value in its existing slot.`,
+        labels: [],
+      });
       this.#invalidateFromSource();
       return this;
     }

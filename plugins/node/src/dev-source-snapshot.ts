@@ -1,5 +1,14 @@
 import path from "node:path";
+import type { RenderExecutionContext } from "deckjsx/integration";
 import type { DeckjsxDevDiagnostic } from "./dev-diagnostics";
+
+export type DeckjsxDevExecutionSnapshot = {
+  readonly entry: string;
+  readonly entries: readonly [string, ...string[]];
+  readonly out?: string;
+  readonly outputs?: readonly string[];
+  readonly renderExecutionContext: RenderExecutionContext;
+};
 
 /**
  * Bundled source snapshot that can be executed by the Node dev compiler.
@@ -17,6 +26,10 @@ export type DeckjsxDevExecutableSourceSnapshot = {
   readonly watchFiles: readonly string[];
   /** Source or asset ids that changed for this snapshot. */
   readonly changedSourceIds: readonly string[];
+  /** Non-fatal Host resolution diagnostics paired with this source generation. */
+  readonly diagnostics?: readonly DeckjsxDevDiagnostic[];
+  /** Host execution inputs captured atomically with this source generation. */
+  readonly execution?: DeckjsxDevExecutionSnapshot;
 };
 
 /** Source snapshot used when bundling failed and no executable source is available. */
@@ -43,6 +56,8 @@ export function createExecutableSourceSnapshot(input: {
   readonly moduleIds: readonly string[];
   readonly watchFiles: readonly string[];
   readonly changedSourceIds: readonly string[];
+  readonly diagnostics?: readonly DeckjsxDevDiagnostic[];
+  readonly execution?: DeckjsxDevExecutionSnapshot;
 }): DeckjsxDevExecutableSourceSnapshot {
   const cwd = input.cwd ? path.resolve(input.cwd) : process.cwd();
   return {
@@ -51,6 +66,8 @@ export function createExecutableSourceSnapshot(input: {
     moduleIds: normalizePaths(cwd, input.moduleIds),
     watchFiles: normalizePaths(cwd, input.watchFiles),
     changedSourceIds: normalizePaths(cwd, input.changedSourceIds),
+    ...(input.diagnostics ? { diagnostics: input.diagnostics } : {}),
+    ...(input.execution ? { execution: input.execution } : {}),
   };
 }
 

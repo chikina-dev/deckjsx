@@ -13,6 +13,7 @@ import type {
   ViewNodeProps,
 } from "./props";
 import type { JsxKey } from "./tree";
+import type { AuthoringExtensionValue } from "./extensions";
 
 /** Recursive children accepted by block text elements. Only text and inline `span` runs are valid. */
 export interface TextJsxChildArray extends ReadonlyArray<TextJsxChild> {}
@@ -25,6 +26,7 @@ export interface TextJsxChildArray extends ReadonlyArray<TextJsxChild> {}
  */
 export type TextJsxChild =
   | DeckJsxElement<"span">
+  | AuthoringExtensionValue
   | string
   | number
   | boolean
@@ -41,7 +43,13 @@ export type ContentJsxElement = DeckJsxElement<
 >;
 
 /** Public child contract for generic authored content containers. */
-export type ContentJsxChild = ContentJsxElement | boolean | null | undefined | ContentJsxChildArray;
+export type ContentJsxChild =
+  | ContentJsxElement
+  | AuthoringExtensionValue
+  | boolean
+  | null
+  | undefined
+  | ContentJsxChildArray;
 
 /** Recursive children accepted by view-like intrinsic elements. */
 export interface ViewIntrinsicJsxChildArray extends ReadonlyArray<ViewIntrinsicJsxChild> {}
@@ -128,6 +136,7 @@ export interface TableJsxChildArray extends ReadonlyArray<TableJsxChild> {}
 
 export type TableJsxChild =
   | DeckJsxElement<"thead" | "tbody" | "tfoot" | "tr">
+  | AuthoringExtensionValue
   | boolean
   | null
   | undefined
@@ -138,6 +147,7 @@ export interface TableSectionJsxChildArray extends ReadonlyArray<TableSectionJsx
 
 export type TableSectionJsxChild =
   | DeckJsxElement<"tr">
+  | AuthoringExtensionValue
   | boolean
   | null
   | undefined
@@ -148,6 +158,7 @@ export interface TableRowJsxChildArray extends ReadonlyArray<TableRowJsxChild> {
 
 export type TableRowJsxChild =
   | DeckJsxElement<"th" | "td">
+  | AuthoringExtensionValue
   | boolean
   | null
   | undefined
@@ -156,7 +167,12 @@ export type TableRowJsxChild =
 /** Recursive child contract for table cells. Cells may contain text or authored elements. */
 export interface TableCellJsxChildArray extends ReadonlyArray<TableCellJsxChild> {}
 
-export type TableCellJsxChild = ViewIntrinsicJsxChild | string | number | TableCellJsxChildArray;
+export type TableCellJsxChild =
+  | ViewIntrinsicJsxChild
+  | AuthoringExtensionValue
+  | string
+  | number
+  | TableCellJsxChildArray;
 
 /** Props accepted by `table` intrinsic elements. */
 export type IntrinsicTableProps = TableNodeProps &

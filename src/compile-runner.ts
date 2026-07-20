@@ -10,10 +10,13 @@ import {
   withAuthoringRuntimeObservers,
   type AuthoringRuntimeObserver,
 } from "./authoring-runtime-observer";
+import { lowerComposedAuthorRoots } from "./authoring/lowering";
 import { createDiagnostics, type Diagnostics } from "./diagnostics";
 import { buildSemanticAuthorGraph } from "./graph";
 import {
   applyPluginHooks,
+  normalizeDeckPlugins,
+  pluginSetRevision,
   validateDeckPlugins,
   validDeckPlugins,
   type ValidatedPluginSnapshot,
@@ -45,6 +48,7 @@ type CompileArtifactSink = {
     readonly roots: readonly ComposedAuthorRoot[];
     readonly diagnostics: Diagnostics;
     readonly compositionRevision?: string;
+    readonly pluginSetRevision?: string;
   }): void;
 };
 
@@ -53,6 +57,13 @@ function directPluginsForSource<
   TTemplates extends SlideTemplateSet,
 >(source: CompositionSource<TSourceContext, TTemplates>) {
   return source[COMPOSITION_SOURCE]().plugins;
+}
+
+function directPluginDiagnosticsForSource<
+  TSourceContext extends SourceContextValue | void,
+  TTemplates extends SlideTemplateSet,
+>(source: CompositionSource<TSourceContext, TTemplates>) {
+  return source[COMPOSITION_SOURCE]().pluginDiagnostics ?? [];
 }
 
 function projectedArtifactStatus(value: undefined, diagnostics: Diagnostics): "missing";
@@ -119,14 +130,17 @@ function compileSourceInternal<
   pluginInput: CompilePluginInput,
   authoringRuntimeObservers?: readonly AuthoringRuntimeObserver[],
 ): InternalCompileResult {
-  const pluginDiagnostics =
-    pluginInput.kind === "raw"
-      ? createDiagnostics(validateDeckPlugins(pluginInput.plugins))
-      : emptyDiagnostics();
+  const pluginDiagnostics = createDiagnostics([
+    ...directPluginDiagnosticsForSource(source),
+    ...(pluginInput.kind === "raw"
+      ? validateDeckPlugins(pluginInput.plugins)
+      : (pluginInput.snapshot.diagnostics ?? [])),
+  ]);
   const validPlugins =
     pluginInput.kind === "raw"
       ? validDeckPlugins(pluginInput.plugins)
-      : pluginInput.snapshot.plugins;
+      : normalizeDeckPlugins(pluginInput.snapshot.plugins);
+  const currentPluginSetRevision = pluginSetRevision(validPlugins);
   const beforeTree = applyPluginHooks(validPlugins, "beforeTree", {
     stage: "tree" as const,
     phase: "before" as const,
@@ -135,15 +149,19 @@ function compileSourceInternal<
   const composition = withAuthoringRuntimeObservers(authoringRuntimeObservers, () =>
     resolveComposition(source),
   );
+  const loweredComposition = composition.roots
+    ? lowerComposedAuthorRoots(composition.roots, validPlugins)
+    : { roots: [], diagnostics: [] };
   const afterTree = applyPluginHooks(validPlugins, "afterTree", {
     stage: "tree" as const,
     phase: "after" as const,
-    roots: composition.roots ?? [],
+    roots: loweredComposition.roots,
   });
   const treeDiagnostics = combineDiagnostics(
     pluginDiagnostics,
     beforeTreeDiagnostics,
     composition.diagnostics,
+    createDiagnostics(loweredComposition.diagnostics),
     createDiagnostics(afterTree.diagnostics),
   );
   const roots = afterTree.context.roots;
@@ -193,6 +211,7 @@ function compileSourceInternal<
       roots: graphRoots,
       diagnostics,
       compositionRevision: compositionRevisionForSource(source),
+      pluginSetRevision: currentPluginSetRevision,
     });
   }
 
@@ -231,5 +250,6 @@ export function defineGraphForSource<
     resolvedStyles: styleResult.resolvedStyles,
     diagnostics: combineDiagnostics(composition.diagnostics, styleResult.diagnostics),
     compositionRevision: compositionRevisionForSource(source),
+    pluginSetRevision: pluginSetRevision(validDeckPlugins(directPluginsForSource(source))),
   };
 }

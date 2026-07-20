@@ -6886,7 +6886,7 @@ import { pptx } from "deckjsx/adapter";
 await write(await deck.render(pptx()), "out.pptx");
 ```
 
-Dev projects run `deckjsx dev main.tsx --out out.pptx` so the normal render call receives
+Dev projects run `deckjsx dev` with config or configuration-transparent discovery so the normal render call receives
 module-local origin metadata, source invalidation, render-slot artifact reuse, and tracked-output
 filtering. `@deckjsx/node` remains the runtime file-writing package rather than a core Render option.
 For ordinary Node rendering outside the dev loop, `@deckjsx/node` may provide a local file

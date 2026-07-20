@@ -25,6 +25,7 @@
       "deckjsx/adapter": ["./src/adapter/index.ts"],
       "deckjsx/inspect": ["./src/inspect.ts"],
       "deckjsx/integration": ["./src/integration.ts"],
+      "deckjsx/plugin-validation": ["./src/plugin-validation.ts"],
       "deckjsx/style": ["./src/style/public.ts"],
       "deckjsx/jsx-dev-runtime": ["./src/jsx-dev-runtime.ts"],
       "deckjsx/jsx-runtime": ["./src/jsx-runtime.ts"]
