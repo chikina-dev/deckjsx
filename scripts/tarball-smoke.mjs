@@ -38,6 +38,12 @@ async function main() {
     );
 
     await writeFile(path.join(directory, "entry.cts"), smokeEntrySource());
+    await writeFile(
+      path.join(directory, "deckjsx.config.ts"),
+      `import { defineConfig } from "@deckjsx/node";
+export default defineConfig({ entry: "entry.cts", output: "output.pptx" });
+`,
+    );
     const result = await runInteractiveSmoke(directory);
     await assertPptxOutput(directory);
 
@@ -91,14 +97,10 @@ function run(command, args, options) {
 }
 
 async function runInteractiveSmoke(directory) {
-  const child = spawn(
-    process.execPath,
-    ["./node_modules/.bin/deckjsx", "dev", "entry.cts", "--out", "output.pptx", "--interactive"],
-    {
-      cwd: directory,
-      stdio: ["pipe", "pipe", "pipe"],
-    },
-  );
+  const child = spawn(process.execPath, ["./node_modules/.bin/deckjsx", "dev", "--interactive"], {
+    cwd: directory,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
   let stdout = "";
   let stderr = "";
   child.stdout.on("data", (chunk) => {
