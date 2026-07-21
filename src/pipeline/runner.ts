@@ -5,6 +5,7 @@ import { createWriterRenderContext } from "../adapter/context";
 import type { AssetLoader } from "../assets";
 import { summarizeAssetResolutions } from "../asset-loading";
 import { defaultAdapterLimitationsFor, selectWriterAdapter } from "../adapter/registry";
+import { assetLoadRequirementsForAdapter } from "../adapter/asset-requirements";
 import { createDiagnostics, diagnostic, type Diagnostics } from "../diagnostics";
 import {
   COMPOSITION_SOURCE,
@@ -42,16 +43,10 @@ import {
 } from "../output-target/policy";
 import type { InternalProjectResult } from "./results";
 import type { PresentStageArtifactStatus, RenderResult } from "./results-public";
-import { isPptxPackageModel, isPptxSlidePart } from "../projection/pptx/model";
+import { isPptxPackageModel } from "../projection/pptx/model";
 import { isPdfPageModel, type PdfPageModel } from "../projection/pdf/model";
 import { projectionShapeDiagnostics } from "../projection/pptx/artifact";
-import { withPackagePartFingerprints } from "../projection/pptx/fingerprint";
-import type {
-  PptxPackageModel,
-  PptxPackageModelCandidate,
-  PptxPackagePart,
-  PptxSlidePart,
-} from "../projection/pptx/model";
+import type { PptxPackageModel, PptxPackageModelCandidate } from "../projection/pptx/model";
 import {
   projectGraphToDocumentModel,
   projectGraphToPartialDocumentModel,
@@ -61,10 +56,6 @@ import {
   validateProjectedDocumentModel,
   type ProjectedDocumentModel,
 } from "../projection/registry";
-import {
-  incrementalProjectionReusePlan,
-  slideProjectionFingerprintSnapshots,
-} from "../projection/pptx/reuse";
 import type { SlideTemplateSet } from "../templates";
 import {
   loadAssetArtifacts,
@@ -73,7 +64,12 @@ import {
 } from "./asset-resolution";
 import { renderAdapterAtIntegrationBoundary } from "./render-boundary";
 import { diagnosticFromError } from "./failure-diagnostics";
-import { projectionWithReusablePackageParts } from "./projection-reuse";
+import {
+  applyProjectionReuse,
+  normalizeProjectedDocumentAfterHook,
+  prepareProjectionLifecycle,
+  projectionFingerprintsForLifecycle,
+} from "./projection-lifecycle";
 
 export { compileSource } from "../compile-runner";
 export type { CompileResult, ProjectResult, RenderResult } from "./results-public";
@@ -191,20 +187,6 @@ function materializeAssetMap(
   assetsById.forEach((asset) => artifacts.materializeAsset(asset));
 }
 
-function normalizePptxPackageProjection(projection: PptxPackageModel): PptxPackageModel {
-  const parts = withPackagePartFingerprints(projection.parts);
-  const partsById = new Map(parts.map((part) => [part.id, part]));
-  const slides = projection.slides
-    .map((slide): PptxPackagePart | undefined => partsById.get(slide.id))
-    .filter((part): part is PptxSlidePart => part !== undefined && isPptxSlidePart(part));
-
-  return {
-    ...projection,
-    parts,
-    slides,
-  };
-}
-
 function projectedArtifactStatus(value: undefined, diagnostics: Diagnostics): "missing";
 function projectedArtifactStatus<T>(value: T, diagnostics: Diagnostics): PresentStageArtifactStatus;
 function projectedArtifactStatus<T>(
@@ -248,6 +230,7 @@ type ProjectSourceRunnerInput<
   projectionFormat?: ProjectionFormat;
   definedGraph?: DefinedGraphInput;
   definedProjection?: DefinedProjectionInput;
+  definedProjectionOrigin?: "cache" | "explicit";
   artifacts?: PipelineArtifactCollection;
   assetLoaders?: readonly AssetLoader[];
   mediaSourceOrigin?: MediaSourceOrigin;
@@ -372,6 +355,10 @@ export async function projectSource<
           includeDetails: includeInspectionDetails(input.projectOptions?.inspection),
         })
       : undefined;
+    const resultProjection =
+      input.definedProjectionOrigin === "cache" || input.definedProjection === artifacts.projection
+        ? globalThis.structuredClone(definedProjection)
+        : definedProjection;
 
     return {
       ok: resultOk(diagnostics),
@@ -385,7 +372,7 @@ export async function projectSource<
         ),
       },
       format: projectionFormat,
-      projection: definedProjection,
+      projection: resultProjection,
       ...(summary ? { summary } : {}),
     };
   }
@@ -529,20 +516,18 @@ export async function projectSource<
         incrementalReuseSnapshot.graph.pluginSetRevision === currentPluginSetRevision)
         ? incrementalReuseSnapshot
         : undefined;
-    const projectionReuse =
-      projectionFormat === "pptx"
-        ? incrementalProjectionReusePlan({
-            graph: projectGraph,
-            resolvedStyles: projectResolvedStyles,
-            options: input.options,
-            assets: projectAssetsById,
-            previousGraph: compatibleIncrementalReuseSnapshot?.graph,
-            previousProjection: compatibleIncrementalReuseSnapshot?.projection,
-            previousOptions: compatibleIncrementalReuseSnapshot?.options,
-            previousAssets: compatibleIncrementalReuseSnapshot?.assetsById,
-            staleAssetEntityIds: compatibleIncrementalReuseSnapshot?.staleAssetEntityIds,
-          })
-        : undefined;
+    const projectionLifecycle = prepareProjectionLifecycle({
+      format: projectionFormat,
+      graph: projectGraph,
+      resolvedStyles: projectResolvedStyles,
+      options: input.options,
+      assets: projectAssetsById,
+      previousGraph: compatibleIncrementalReuseSnapshot?.graph,
+      previousProjection: compatibleIncrementalReuseSnapshot?.projection,
+      previousOptions: compatibleIncrementalReuseSnapshot?.options,
+      previousAssets: compatibleIncrementalReuseSnapshot?.assetsById,
+      staleAssetEntityIds: compatibleIncrementalReuseSnapshot?.staleAssetEntityIds,
+    });
     const beforeProjectDiagnostics = createDiagnostics(beforeProject.diagnostics);
     const projected = projectGraphToDocumentModel({
       format: projectionFormat,
@@ -552,15 +537,12 @@ export async function projectSource<
       assets: projectAssetsById,
       integrationContext: afterAsset.context.integrationContext,
     });
-    const reusedProjection =
-      projected.format === "pptx"
-        ? projectionWithReusablePackageParts({
-            projection: projected,
-            previous: compatibleIncrementalReuseSnapshot?.projection,
-            graph: projectGraph,
-            reusableSlideNodeIds: projectionReuse?.slideNodeIds,
-          })
-        : projected;
+    const reusedProjection = applyProjectionReuse({
+      projection: projected,
+      plan: projectionLifecycle,
+      previous: compatibleIncrementalReuseSnapshot?.projection,
+      graph: projectGraph,
+    });
     const afterProject = applyPluginHooks(execution.plugins, "afterProject", {
       stage: "project" as const,
       phase: "after" as const,
@@ -573,29 +555,28 @@ export async function projectSource<
     const projection =
       afterProject.context.projection === reusedProjection
         ? reusedProjection
-        : afterProject.context.projection.format === "pptx"
-          ? normalizePptxPackageProjection(afterProject.context.projection)
-          : afterProject.context.projection;
+        : normalizeProjectedDocumentAfterHook(afterProject.context.projection);
     const unsupportedProjectionDiagnostics = projectionDiagnosticsForGraph({
       format: projectionFormat,
       graph: projectGraph,
       resolvedStyles: projectResolvedStyles,
       options: input.options,
+      projection,
     });
-    const unsupportedProjectionModelDiagnostics = projectionDiagnosticsForModel({ projection });
+    const unsupportedProjectionModelDiagnostics = projectionDiagnosticsForModel({
+      projection,
+      includeAllUnsupportedSemantics: true,
+    });
     const projectionDiagnostics = validateProjectedDocumentModel(projection);
-    const slideProjectionFingerprints =
-      projection.format === "pptx"
-        ? (projectionReuse?.slideProjectionFingerprints ??
-          (input.retainSlideProjectionFingerprints
-            ? slideProjectionFingerprintSnapshots({
-                graph: projectGraph,
-                resolvedStyles: projectResolvedStyles,
-                options: input.options,
-                assets: projectAssetsById,
-              })
-            : undefined))
-        : undefined;
+    const slideProjectionFingerprints = projectionFingerprintsForLifecycle({
+      format: projectionFormat,
+      graph: projectGraph,
+      resolvedStyles: projectResolvedStyles,
+      options: input.options,
+      assets: projectAssetsById,
+      plan: projectionLifecycle,
+      retain: input.retainSlideProjectionFingerprints === true,
+    });
     const diagnostics = combineDiagnostics(
       implicitFormatDiagnostics,
       compileResult.diagnostics,
@@ -635,7 +616,7 @@ export async function projectSource<
         ),
       },
       format: projectionFormat,
-      projection,
+      projection: globalThis.structuredClone(projection),
       ...(summary ? { summary } : {}),
     };
   } catch (error) {
@@ -706,7 +687,7 @@ export async function projectSource<
         ),
       },
       format: projectionFormat,
-      projection: partialProjection,
+      projection: globalThis.structuredClone(partialProjection),
       ...(summary ? { summary } : {}),
     };
   }
@@ -925,7 +906,14 @@ export async function renderSource<
       artifacts,
       loaders: beforeAssetLoad?.context.assetLoaders ?? execution.assetLoaders,
       mediaSourceOrigin: beforeAssetLoad?.context.mediaSourceOrigin ?? execution.mediaSourceOrigin,
-      projection: renderProjection,
+      requirements: assetLoadRequirementsForAdapter({
+        adapter,
+        projection: renderProjection,
+        context: {
+          assetsById: artifacts.assetsById,
+          pptxBuildArtifactsByPartId: artifacts.pptxBuildArtifactsByPartId,
+        },
+      }),
     });
     const afterAssetLoad =
       graphArtifact && graphArtifact.graph && graphArtifact.resolvedStyles

@@ -10,7 +10,7 @@ import type {
 } from "./assets";
 import { createDiagnostics, diagnostic, type Diagnostics } from "./diagnostics";
 import type { AssetEntity, AssetEntityId } from "./graph";
-import type { AssetArtifact } from "./pipeline/artifacts";
+import type { AssetArtifact } from "./asset-artifact";
 import type { ProjectInspectionAssetResolutionSummary } from "./projection/pptx/model";
 import { BUILTIN_ASSET_RESOLVER_IDENTITY } from "./asset-builtins";
 

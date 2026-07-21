@@ -5,6 +5,7 @@ import type { DeckIntegrationContext } from "@/src/integration-context";
 import { buildLayoutInputSnapshot } from "@/src/layout/input";
 import type { FrameIR } from "@/src/layout/projected";
 import { resolveProjectedLayout } from "@/src/layout/resolve";
+import { PRESENTATION_TEXT_MEASUREMENT_PROFILE } from "@/src/layout/text-measurement-profile";
 import { textFontMetricsFromRegistrations } from "@/src/layout/text-metrics";
 import type { ResolvedStyleMap } from "@/src/style/resolve";
 import { EMU_PER_INCH, POINTS_PER_INCH } from "@/src/types";
@@ -21,7 +22,7 @@ import type {
 } from "./model";
 import { isPptxSlidePart } from "./model";
 import { withPackagePartOrderKeys, withPackagePartRequirements } from "./package-parts";
-import { partialPptxSlidePartFor, pptxSlidePartFor } from "./slide";
+import { pptxSlidePartFor } from "./slide";
 import { defaultPptxSupportParts, slideLayoutPartForSlide } from "./support";
 
 function sizeFromOptions(options: DeckOptions): PptxPackageModel["size"] {
@@ -43,7 +44,6 @@ function projectGraphToPptxPackageInternal(input: {
   diagnostics?: Diagnostics;
   assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
   integrationContext?: DeckIntegrationContext;
-  partial?: boolean;
 }): PptxPackageModel {
   const size = sizeFromOptions(input.options);
   const document = input.graph.nodes.get(input.graph.documentId);
@@ -55,21 +55,18 @@ function projectGraphToPptxPackageInternal(input: {
     size,
     slideIds,
   });
-  const layoutInput = input.partial
-    ? undefined
-    : buildLayoutInputSnapshot({
-        graph: input.graph,
-        resolvedStyles: input.resolvedStyles,
-        assetProbeArtifacts: input.assets,
-        deckSize: size,
-        diagnostics: input.diagnostics,
-        meta: input.options.meta,
-      });
-  const projectedLayout = layoutInput
-    ? resolveProjectedLayout(input.options, layoutInput.snapshot, {
-        fontMetrics: textFontMetricsFromRegistrations(input.integrationContext?.fontAssets),
-      })
-    : undefined;
+  const layoutInput = buildLayoutInputSnapshot({
+    graph: input.graph,
+    resolvedStyles: input.resolvedStyles,
+    assetProbeArtifacts: input.assets,
+    deckSize: size,
+    diagnostics: input.diagnostics,
+    meta: input.options.meta,
+  });
+  const projectedLayout = resolveProjectedLayout(input.options, layoutInput.snapshot, {
+    fontMetrics: textFontMetricsFromRegistrations(input.integrationContext?.fontAssets),
+    textMeasurementProfile: PRESENTATION_TEXT_MEASUREMENT_PROFILE,
+  });
   const slideFrame: FrameIR = {
     xEmu: 0,
     yEmu: 0,
@@ -89,19 +86,6 @@ function projectGraphToPptxPackageInternal(input: {
       slideLayoutParts: supportParts.slideLayoutParts,
       defaultSlideLayoutPart: supportParts.slideLayoutPart,
     });
-    if (input.partial) {
-      return [
-        partialPptxSlidePartFor({
-          graph: input.graph,
-          resolvedStyles: input.resolvedStyles,
-          slide,
-          slideIndex,
-          slideFrame,
-          slideLayoutPart,
-          slidePartId: partId,
-        }),
-      ];
-    }
     if (!layoutSlide) {
       return [];
     }
@@ -202,5 +186,5 @@ export function projectGraphToPartialPptxPackage(input: {
   assets?: ReadonlyMap<AssetEntity["id"], PptxProjectionAssetArtifact>;
   integrationContext?: DeckIntegrationContext;
 }): PptxPackageModel {
-  return projectGraphToPptxPackageInternal({ ...input, partial: true });
+  return projectGraphToPptxPackageInternal(input);
 }

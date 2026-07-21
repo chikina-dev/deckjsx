@@ -141,6 +141,10 @@ describe("PDF font asset artifacts", () => {
           bytes: firstFontBytes,
           provenance: expect.objectContaining({ resolvedId: resolvedFontPath }),
         }),
+        probeDiagnostics: expect.objectContaining({
+          items: [expect.objectContaining({ code: "W_TEST_FONT_CACHE" })],
+        }),
+        loadDiagnostics: expect.objectContaining({ items: [] }),
       }),
     );
     expect(

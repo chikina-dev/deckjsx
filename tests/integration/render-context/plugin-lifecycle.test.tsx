@@ -58,6 +58,7 @@ describe("deckjsx integration plugin lifecycle", () => {
         },
         afterAsset: (context) => {
           events.push(`afterAsset:${context.operation}`);
+          return { assetsById: context.assetsById };
         },
         beforeProject: () => {
           events.push("beforeProject");
@@ -183,6 +184,53 @@ describe("deckjsx integration plugin lifecycle", () => {
 
     expect(project.ok).toBe(true);
     expect(H.expectPptxProjection(project).slides[0]?.payload.name).toBe("Project Hook Slide");
+  });
+
+  test("project lifecycle hook replacements transfer ownership to the pipeline", async () => {
+    let retainedReplacement: H.PptxPackageModel | undefined;
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin({
+      kind: "deckjsx.plugin",
+      id: "test:project-replacement-ownership",
+      hooks: {
+        afterProject(context) {
+          const projection = context.projection as H.PptxPackageModel;
+          retainedReplacement = {
+            ...projection,
+            slides: projection.slides.map((slide) => ({
+              ...slide,
+              payload: { ...slide.payload, name: "Owned replacement" },
+            })),
+            parts: projection.parts.map((part) =>
+              part.kind === "slide"
+                ? { ...part, payload: { ...part.payload, name: "Owned replacement" } }
+                : part,
+            ),
+          };
+          return { projection: retainedReplacement };
+        },
+      },
+    });
+    deck.slide({ name: "Original Slide" }, () => <p>replacement ownership</p>);
+
+    const project = await deck.project({ inspection: "none" });
+    expect(project.ok).toBe(true);
+    expect(H.expectPptxProjection(project).slides[0]?.payload.name).toBe("Owned replacement");
+
+    const retainedSlide = retainedReplacement?.slides[0] as
+      | { payload: { name?: string } }
+      | undefined;
+    if (retainedSlide) {
+      retainedSlide.payload.name = "Late plugin mutation";
+    }
+    const retainedPart = retainedReplacement?.parts.find((part) => part.kind === "slide") as
+      | { payload: { name?: string } }
+      | undefined;
+    if (retainedPart) {
+      retainedPart.payload.name = "Late plugin mutation";
+    }
+
+    expect(H.expectPptxProjection(project).slides[0]?.payload.name).toBe("Owned replacement");
   });
 
   test("project lifecycle hooks can replace pdf projection models", async () => {

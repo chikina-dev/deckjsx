@@ -9,13 +9,16 @@ import {
 import type { DefinedProjectionArtifact, PptxProjectionArtifact } from "./artifact-contract";
 
 type PptxPackagePartModel = PptxPackageModel["parts"][number];
-type DefinedPptxPackageModelArtifact = PptxProjectionArtifact<PptxPackageModel>;
+type DefinedPptxPackageModelArtifact = PptxProjectionArtifact<PptxPackageModel> & {
+  readonly format: "pptx";
+};
 
 function isDefinedPptxPackageModelArtifact(
   artifact: DefinedProjectionArtifact | undefined,
 ): artifact is DefinedPptxPackageModelArtifact {
   return (
-    artifact !== undefined && isPptxPackageModel(artifact.projection as PptxPackageModelCandidate)
+    artifact?.format === "pptx" &&
+    isPptxPackageModel(artifact.projection as PptxPackageModelCandidate)
   );
 }
 

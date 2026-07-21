@@ -22,14 +22,12 @@ import {
   type FontAssetRegistration,
 } from "../integration-context";
 import type { MediaSourceOrigin } from "../media-source-origin";
-import type { ProjectedDocumentModel } from "../projection/registry";
-import { pdfImageAssetLoadRequirements } from "../writers/pdf";
-import { pptxMediaAssetLoadRequirements } from "../writers/pptx";
 import {
   assetSourceCacheKey,
   type AssetArtifact,
   type AssetArtifactStore,
-} from "./artifact-contract";
+  type AssetLoadRequirement,
+} from "../asset-artifact";
 
 function combineDiagnostics(...diagnostics: readonly Diagnostics[]): Diagnostics {
   return createDiagnostics(diagnostics.flatMap((item) => item.items));
@@ -79,25 +77,32 @@ async function resolveFontAssetRegistration(input: {
   );
 
   if (cached?.load) {
+    const probeDiagnostics = cached.probeDiagnostics ?? cached.diagnostics;
+    const loadDiagnostics = cached.loadDiagnostics ?? emptyDiagnostics();
+    const diagnostics = combineDiagnostics(probeDiagnostics, loadDiagnostics);
     const artifact = {
       ...cached,
       assetEntityId,
       source,
       sourceField: "font" as const,
       ...(input.origin ? { origin: input.origin } : {}),
+      probeDiagnostics,
+      loadDiagnostics,
+      diagnostics,
     } satisfies AssetArtifact;
     input.artifacts?.materializeAsset(artifact);
     return {
       registration: fontRegistrationWithLoad(input.registration, cached.load),
       artifact,
-      diagnostics: artifact.diagnostics,
+      diagnostics,
     };
   }
 
   let probe = cached?.probe;
   let load = cached?.load;
   let resolverIdentity = cached?.resolverIdentity ?? BUILTIN_ASSET_RESOLVER_IDENTITY;
-  let diagnostics = cached?.diagnostics ?? emptyDiagnostics();
+  let probeDiagnostics = cached?.probeDiagnostics ?? cached?.diagnostics ?? emptyDiagnostics();
+  let loadDiagnostics = cached?.loadDiagnostics ?? emptyDiagnostics();
   let resolutionStopped = false;
   const scopedProbeLoader = cached?.resolverIdentity
     ? assetLoaderForIdentity(loaders, cached.resolverIdentity)
@@ -130,7 +135,7 @@ async function resolveFontAssetRegistration(input: {
         assetEntityId,
       });
       if (outcome.kind === "failed") {
-        diagnostics = combineDiagnostics(diagnostics, outcome.diagnostics);
+        probeDiagnostics = combineDiagnostics(probeDiagnostics, outcome.diagnostics);
         resolverIdentity = loaderResolverIdentity;
         resolutionStopped = true;
         break;
@@ -143,12 +148,12 @@ async function resolveFontAssetRegistration(input: {
           assetEntityId,
         });
         if (!normalized.ok) {
-          diagnostics = combineDiagnostics(diagnostics, normalized.diagnostics);
+          probeDiagnostics = combineDiagnostics(probeDiagnostics, normalized.diagnostics);
           continue;
         }
         probe = normalized.result;
         resolverIdentity = loaderResolverIdentity;
-        diagnostics = combineDiagnostics(diagnostics, outcome.diagnostics);
+        probeDiagnostics = combineDiagnostics(probeDiagnostics, outcome.diagnostics);
         break;
       }
     }
@@ -171,11 +176,14 @@ async function resolveFontAssetRegistration(input: {
         probe = builtIn.probe;
         load = builtIn.load;
         resolverIdentity = BUILTIN_ASSET_RESOLVER_IDENTITY;
-        diagnostics = combineDiagnostics(diagnostics, builtIn.diagnostics ?? emptyDiagnostics());
+        probeDiagnostics = combineDiagnostics(
+          probeDiagnostics,
+          builtIn.diagnostics ?? emptyDiagnostics(),
+        );
         resolutionStopped = builtIn.diagnostics?.hasErrors ?? false;
       }
     } else {
-      diagnostics = combineDiagnostics(diagnostics, builtInResult.diagnostics);
+      probeDiagnostics = combineDiagnostics(probeDiagnostics, builtInResult.diagnostics);
     }
   }
 
@@ -209,7 +217,7 @@ async function resolveFontAssetRegistration(input: {
       assetEntityId,
     });
     if (outcome.kind === "failed") {
-      diagnostics = combineDiagnostics(diagnostics, outcome.diagnostics);
+      loadDiagnostics = combineDiagnostics(loadDiagnostics, outcome.diagnostics);
       resolverIdentity = loaderResolverIdentity;
       resolutionStopped = true;
       break;
@@ -223,13 +231,13 @@ async function resolveFontAssetRegistration(input: {
         assetEntityId,
       });
       if (!normalized.ok) {
-        diagnostics = combineDiagnostics(diagnostics, normalized.diagnostics);
+        loadDiagnostics = combineDiagnostics(loadDiagnostics, normalized.diagnostics);
         continue;
       }
 
       load = normalized.result;
       resolverIdentity = loaderResolverIdentity;
-      diagnostics = combineDiagnostics(diagnostics, outcome.diagnostics);
+      loadDiagnostics = combineDiagnostics(loadDiagnostics, outcome.diagnostics);
       break;
     }
   }
@@ -248,17 +256,19 @@ async function resolveFontAssetRegistration(input: {
     if (builtInResult.ok) {
       load = builtInResult.value;
     } else {
-      diagnostics = combineDiagnostics(diagnostics, builtInResult.diagnostics);
+      loadDiagnostics = combineDiagnostics(loadDiagnostics, builtInResult.diagnostics);
     }
   }
 
-  if (!load && !diagnostics.hasErrors && source.kind === "path") {
-    diagnostics = combineDiagnostics(
-      diagnostics,
+  const phaseDiagnostics = combineDiagnostics(probeDiagnostics, loadDiagnostics);
+  if (!load && !phaseDiagnostics.hasErrors && source.kind === "path") {
+    loadDiagnostics = combineDiagnostics(
+      loadDiagnostics,
       missingAssetContextDiagnostics({ source, sourceField: "font", assetEntityId }),
     );
   }
 
+  const diagnostics = combineDiagnostics(probeDiagnostics, loadDiagnostics);
   const artifact = {
     assetEntityId,
     source,
@@ -267,6 +277,8 @@ async function resolveFontAssetRegistration(input: {
     ...(input.origin ? { origin: input.origin } : {}),
     ...(probe ? { probe } : {}),
     ...(load ? { load } : {}),
+    probeDiagnostics,
+    loadDiagnostics,
     diagnostics,
   } satisfies AssetArtifact;
   input.artifacts?.materializeAsset(artifact);
@@ -364,6 +376,17 @@ export async function resolveAssetArtifacts(input: {
     let assetDiagnostics = emptyDiagnostics();
     let resolutionStopped = false;
     let cached = input.artifacts?.assetsById.get(assetEntityId);
+    const cachedMatchesSource =
+      cached !== undefined &&
+      assetSourceCacheKey(
+        cached.source,
+        cached.resolverIdentity,
+        cached.origin,
+        cached.sourceField,
+      ) === assetSourceCacheKey(source, cached.resolverIdentity, assetOrigin, asset.sourceField);
+    if (!cachedMatchesSource) {
+      cached = undefined;
+    }
 
     if (!cached) {
       for (const { resolverIdentity } of loaders) {
@@ -388,13 +411,22 @@ export async function resolveAssetArtifacts(input: {
     }
 
     if (cached?.probe) {
+      const probeDiagnostics = cached.probeDiagnostics ?? cached.diagnostics;
+      const durableLoadDiagnostics =
+        cached.loadDiagnostics && !cached.loadDiagnostics.hasErrors
+          ? cached.loadDiagnostics
+          : emptyDiagnostics();
+      const reusableDiagnostics = combineDiagnostics(probeDiagnostics, durableLoadDiagnostics);
       const artifact = {
         ...cached,
         assetEntityId,
+        probeDiagnostics,
+        loadDiagnostics: durableLoadDiagnostics,
+        diagnostics: reusableDiagnostics,
       } satisfies AssetArtifact;
       input.artifacts?.materializeAsset(artifact);
       assetsById.set(assetEntityId, artifact);
-      diagnostics.push(artifact.diagnostics);
+      diagnostics.push(reusableDiagnostics);
       continue;
     }
 
@@ -514,6 +546,7 @@ export async function resolveAssetArtifacts(input: {
       ...(assetOrigin ? { origin: assetOrigin } : {}),
       ...(probe ? { probe } : {}),
       ...(load ? { load } : {}),
+      probeDiagnostics: artifactDiagnostics,
       diagnostics: artifactDiagnostics,
     } satisfies AssetArtifact;
     input.artifacts?.materializeAsset(artifact);
@@ -527,24 +560,14 @@ export async function loadAssetArtifacts(input: {
   artifacts?: AssetArtifactStore;
   loaders?: readonly AssetLoader[];
   mediaSourceOrigin?: MediaSourceOrigin;
-  projection: ProjectedDocumentModel;
+  requirements: readonly AssetLoadRequirement[];
 }): Promise<Diagnostics> {
   if (!input.artifacts) {
     return emptyDiagnostics();
   }
 
   const diagnostics: Diagnostics[] = [];
-  const mediaPayloads =
-    input.projection.format === "pptx"
-      ? pptxMediaAssetLoadRequirements({
-          projection: input.projection,
-          assetsById: input.artifacts.assetsById,
-          buildArtifactsByPartId: input.artifacts.pptxBuildArtifactsByPartId,
-        })
-      : pdfImageAssetLoadRequirements({
-          projection: input.projection,
-          assetsById: input.artifacts.assetsById,
-        });
+  const mediaPayloads = input.requirements;
 
   mediaLoop: for (const media of mediaPayloads) {
     const current = input.artifacts.assetsById.get(media.assetEntityId);
@@ -690,6 +713,10 @@ export async function loadAssetArtifacts(input: {
 
     if (!load && resolutionStopped) {
       diagnostics.push(assetDiagnostics);
+      const probeDiagnostics =
+        currentMatchesSource && current.probe
+          ? (current.probeDiagnostics ?? current.diagnostics)
+          : emptyDiagnostics();
       input.artifacts.materializeAsset({
         assetEntityId: media.assetEntityId,
         source: currentMatchesSource ? current.source : media.source,
@@ -697,7 +724,9 @@ export async function loadAssetArtifacts(input: {
         resolverIdentity,
         ...(currentMatchesSource && current.origin ? { origin: current.origin } : {}),
         ...(currentMatchesSource && current.probe ? { probe: current.probe } : {}),
-        diagnostics: assetDiagnostics,
+        probeDiagnostics,
+        loadDiagnostics: assetDiagnostics,
+        diagnostics: combineDiagnostics(probeDiagnostics, assetDiagnostics),
       });
       continue;
     }
@@ -719,9 +748,11 @@ export async function loadAssetArtifacts(input: {
       continue;
     }
 
-    const artifactDiagnostics = currentMatchesSource
-      ? combineDiagnostics(current.diagnostics, assetDiagnostics)
-      : assetDiagnostics;
+    const probeDiagnostics =
+      currentMatchesSource && current.probe
+        ? (current.probeDiagnostics ?? current.diagnostics)
+        : emptyDiagnostics();
+    const artifactDiagnostics = combineDiagnostics(probeDiagnostics, assetDiagnostics);
     diagnostics.push(assetDiagnostics);
     input.artifacts.materializeAsset({
       assetEntityId: media.assetEntityId,
@@ -731,6 +762,8 @@ export async function loadAssetArtifacts(input: {
       ...(currentMatchesSource && current.origin ? { origin: current.origin } : {}),
       ...(currentMatchesSource && current.probe ? { probe: current.probe } : {}),
       load,
+      probeDiagnostics,
+      loadDiagnostics: assetDiagnostics,
       diagnostics: artifactDiagnostics,
     });
   }

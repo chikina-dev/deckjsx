@@ -951,6 +951,69 @@ describe("@deckjsx/node write", () => {
     expect(childSlideXml).not.toContain('<a:srgbClr val="0000FF"/>');
   });
 
+  test("rejects a completed-cycle write token before touching the filesystem", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-write-"));
+    const outputPath = path.join(directory, "stale-cycle.pdf");
+    const existing = textEncoder.encode("existing output");
+    await writeFile(outputPath, existing);
+    const session = createIncrementalArtifactSession();
+    let render: Awaited<ReturnType<typeof renderPdfArtifact>> | undefined;
+
+    await runIncrementalArtifactCycle(session, {}, async () => {
+      render = await renderPdfArtifact();
+    });
+
+    await expect(write(render!, outputPath)).rejects.toThrow(
+      "Incremental artifact cycle 1 has already completed.",
+    );
+    expect(Array.from(await readFile(outputPath))).toEqual(Array.from(existing));
+    expect(await fileExists(lockPathFor(outputPath))).toBe(false);
+  });
+
+  test("rejects a second write for one render before touching another target", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-write-"));
+    const firstPath = path.join(directory, "first.pdf");
+    const secondPath = path.join(directory, "second.pdf");
+    const existing = textEncoder.encode("second target");
+    await writeFile(secondPath, existing);
+    const session = createIncrementalArtifactSession();
+
+    await runIncrementalArtifactCycle(session, {}, async () => {
+      const render = await renderPdfArtifact();
+      await expect(write(render, firstPath)).resolves.toEqual(
+        expect.objectContaining({ ok: true }),
+      );
+      await expect(write(render, secondPath)).rejects.toThrow("has already been claimed");
+    });
+
+    expect(Array.from(await readFile(secondPath))).toEqual(Array.from(existing));
+    expect(session.snapshot().writes).toHaveLength(1);
+  });
+
+  test("rejects another cycle's write token before touching the filesystem", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-write-"));
+    const outputPath = path.join(directory, "wrong-cycle.pdf");
+    const existing = textEncoder.encode("existing output");
+    await writeFile(outputPath, existing);
+    const session = createIncrementalArtifactSession();
+    const outer = session.beginCycle();
+    const inner = session.beginCycle();
+
+    await outer.run(async () => {
+      const render = await renderPdfArtifact();
+      await inner.run(async () => {
+        await expect(write(render, outputPath)).rejects.toThrow(
+          "Incremental artifact cycle 1 is not the active artifact write cycle.",
+        );
+      });
+    });
+    outer.complete();
+    inner.complete();
+
+    expect(Array.from(await readFile(outputPath))).toEqual(Array.from(existing));
+    expect(await fileExists(lockPathFor(outputPath))).toBe(false);
+  });
+
   test("returns result-first diagnostics without touching the target when render has no artifact", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "deckjsx-node-write-"));
     const outputPath = path.join(directory, "missing-artifact.pptx");

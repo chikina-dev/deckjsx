@@ -154,6 +154,14 @@ Cross-output visual layering such as generated backgrounds, borders, outlines, c
 For tables, Projected Layout Snapshot should preserve table frame, row geometry, column geometry, cell geometry, and projected table content/style data so Pptx Table Projection can emit native PPTX table payloads without reconstructing table layout from generic drawing nodes.
 _Avoid_: authoring-shaped layout bridge, solver IR, PPTX package model
 
+**Projected Paint Intent**:
+Output-neutral filter, blend, and isolation intent retained on a Projected Layout node after geometry and generated visual layers have been resolved. Each output projection owns the capability decision and fallback diagnostics for that intent; Layout must not encode a PPTX- or PDF-specific support verdict.
+_Avoid_: PPTX unsupported-semantic policy, PDF operator sequence, writer diagnostic
+
+**Text Measurement Profile**:
+A named projection-selected policy for text measurement assumptions that differ by output model, including the safety factor used for unregistered fonts. Layout consumes the profile as an explicit input; it must not infer an output format or accept an unexplained format-specific scalar.
+_Avoid_: hidden PDF boolean, unnamed width multiplier, writer-side line breaking
+
 **Text Layout Decision**:
 An inspectable layout decision for authored text, such as measured line breaks, overflow, fit, baseline placement, font fallback, and paragraph spacing. It belongs to layout/projection inspection so sandbox tooling can explain why text appears where it does before PPTX or PDF writers serialize it.
 _Avoid_: writer-only text wrapping, renderer side effect, uninspectable auto-fit
@@ -521,6 +529,7 @@ _Avoid_: core runtime import, hidden platform assumption, viewer notification la
 
 **Asset Artifact**:
 A Pipeline Artifact that records resolved media metadata and optionally loaded source bytes for an Asset Entity or Authored Media Source.
+Probe diagnostics and load diagnostics have separate lifetimes. Probe diagnostics remain reusable with probe metadata; successful load warnings may remain reusable with loaded bytes, while failed load diagnostics are transient and must be replaced by a later successful load attempt rather than poisoning the Asset Artifact indefinitely.
 _Avoid_: Asset Entity, Media Part, graph payload, package projection
 
 **Asset Resolution Provenance**:
@@ -838,6 +847,7 @@ Render should decide reusable non-media package-part Build Artifacts before invo
 Build artifacts should carry part-local Build Notes that explain the successful materialization of package-part bytes, including rebuild reason, part kind, byte length, writer/emitter/part fingerprints, dependency fingerprint count, media byte fingerprint when relevant, and diagnostic code references. Render Result remains the source of truth for stage diagnostics.
 Only successfully materialized package-part bytes should become build artifacts; failed or missing entries belong in Render diagnostics and the Assembly Plan.
 Successful build artifacts may be retained even when the overall Render fails, so a later Render can reuse the completed parts.
+Their format-local cache is owned behind the Pipeline Artifact Collection facade; generic graph, projection, and asset invalidation code should ask that cache to clear or materialize entries instead of owning a parallel PPTX map lifecycle.
 _Avoid_: Pptx Package Model, Projected Document Model, raw projection, final rendered artifact
 
 **Pptx Package Build Note**:

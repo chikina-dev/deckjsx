@@ -66,10 +66,12 @@ import {
 } from "./integration-context";
 import {
   createIncrementalArtifactSession,
+  claimArtifactWrite,
   getArtifactWriteToken,
   recordArtifactWrite,
   runIncrementalArtifactCycle,
   type ArtifactWriteRecord,
+  type ArtifactWriteLease,
   type ArtifactWriteToken,
   type IncrementalArtifactGraphNodeInspection,
   type IncrementalArtifactInspection,
@@ -151,6 +153,7 @@ export type {
   ComponentFrame,
   ComponentProvenance,
   ArtifactWriteRecord,
+  ArtifactWriteLease,
   ArtifactWriteToken,
   IncrementalArtifactGraphNodeInspection,
   IncrementalArtifactInspection,
@@ -170,6 +173,7 @@ export {
   createAuthoringExtensionValue,
   isAuthoringExtensionValue,
   createIncrementalArtifactSession,
+  claimArtifactWrite,
   getArtifactWriteToken,
   recordArtifactWrite,
   runIncrementalArtifactCycle,

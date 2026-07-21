@@ -50,6 +50,7 @@ import type {
   ProjectedLayoutNode,
   ProjectedLayoutDocument,
   ProjectedLayoutOrigin,
+  ProjectedPaintIntent,
   ProjectedLayoutShape,
   ProjectedLayoutSlide,
   ProjectedLayoutText,
@@ -137,6 +138,7 @@ import {
 } from "../style/stroke";
 import { hasShadowSpreadRadius, parseShadowShorthand } from "../style/shadow";
 import { parseTransformOrigin, parseTransformShorthand } from "../style/transform";
+import { PRESENTATION_TABLE_DEFAULTS } from "../style/defaults";
 import {
   extractText,
   getTextLengthContext,
@@ -157,6 +159,10 @@ import {
   textFontShapedWidthUnits,
 } from "./text-metrics";
 import {
+  PRESENTATION_TEXT_MEASUREMENT_PROFILE,
+  type TextMeasurementProfile,
+} from "./text-measurement-profile";
+import {
   errorReason,
   throwableResult,
   unsupportedCssWideKeywordSemantic,
@@ -172,7 +178,7 @@ type IdGenerator = {
 export type ProjectedLayoutResolutionOptions = {
   readonly origins?: WeakMap<object, ProjectedLayoutOrigin>;
   readonly fontMetrics?: LengthResolutionContext["fontMetrics"];
-  readonly fallbackTextWidthSafetyFactor?: number;
+  readonly textMeasurementProfile?: TextMeasurementProfile;
 };
 
 type StackLayoutOptions = Pick<
@@ -278,9 +284,6 @@ const INHERITED_TABLE_CELL_TEXT_KEYS = [
   "fit",
 ] as const satisfies readonly InheritedTableCellTextKey[];
 
-const DEFAULT_PPTX_TABLE_CELL_TEXT_FONT_SIZE = 18;
-const DEFAULT_PPTX_TABLE_CELL_PADDING = [0, 0.1, 0, 0.1] as const;
-
 function parseShadowShorthandOrIgnore(input: { property: string; value?: string }): {
   readonly shadow?: ShadowIR;
   readonly unsupportedSemantics: readonly ProjectedUnsupportedSemantic[];
@@ -301,7 +304,7 @@ function parseShadowShorthandOrIgnore(input: { property: string; value?: string 
         feature: "shadow",
         property: input.property,
         value: input.value,
-        reason: `CSS shadow spread radius is not projected by the current PPTX shadow model: ${input.value}`,
+        reason: `CSS shadow spread radius is preserved as a paint-resolution issue because not every output adapter can reproduce it: ${input.value}`,
         fallback: {
           strategy: "preserveAuthoredValueOnly",
           preserves: ["projectedShadowWithoutSpread"],
@@ -347,10 +350,10 @@ type StrokeProjectionProps = {
 };
 
 const STROKE_FALLBACK_REASON =
-  "CSS-like stroke or border input could not be projected to the current PPTX stroke model; v0.8 preserves the authored stroke input as unsupported semantic metadata.";
+  "CSS-like stroke or border input could not be resolved into the canonical projected stroke model; the authored input is preserved as paint-resolution metadata.";
 
 const OUTLINE_FALLBACK_REASON =
-  "CSS-like outline input could not be projected to the current PPTX outline model; v0.8 preserves the authored outline input as unsupported semantic metadata.";
+  "CSS-like outline input could not be resolved into the canonical projected outline model; the authored input is preserved as paint-resolution metadata.";
 
 function firstDefinedStrokeInput(
   props: StrokeProjectionProps,
@@ -471,7 +474,7 @@ function unsupportedStrokeFallback(
     fallback: {
       strategy: "preserveAuthoredValueOnly",
       preserves: ["authoredStrokeInput"],
-      missing: ["pptxStroke"],
+      missing: ["projectedStroke"],
     },
   });
 }
@@ -502,7 +505,7 @@ function resolveNodeStrokesOrFallback(
   ) {
     const semantic = unsupportedStrokeFallback(
       props,
-      "No PPTX stroke could be produced from the authored stroke input.",
+      "No canonical projected stroke could be produced from the authored stroke input.",
     );
     return { ...strokes, unsupportedSemantics: semantic ? [semantic] : [] };
   }
@@ -545,7 +548,7 @@ function outlineStrokeOrFallback(
       fallback: {
         strategy: "preserveAuthoredValueOnly",
         preserves: ["authoredOutlineInput"],
-        missing: ["pptxOutline"],
+        missing: ["projectedOutline"],
       },
     });
     return { unsupportedSemantics: semantic ? [semantic] : [] };
@@ -564,7 +567,7 @@ function outlineStrokeOrFallback(
     fallback: {
       strategy: "preserveAuthoredValueOnly",
       preserves: ["authoredOutlineInput"],
-      missing: ["pptxOutline"],
+      missing: ["projectedOutline"],
     },
   });
   return { unsupportedSemantics: semantic ? [semantic] : [] };
@@ -610,7 +613,7 @@ function resolveBackgroundLayersOrEmpty(
     fallback: {
       strategy: "preserveAuthoredValueOnly",
       preserves: ["authoredBackgroundInput"],
-      missing: ["pptxBackgroundLayer"],
+      missing: ["projectedBackgroundLayer"],
     },
   });
   return unsupported ? { unsupportedSemantics: [unsupported] } : {};
@@ -654,29 +657,14 @@ function unsupportedTransformSemantics(props: {
   return unsupported;
 }
 
-const GROUP_OPACITY_COMPOSITING_FALLBACK_REASON =
-  "CSS group opacity creates a composited stacking context; the current PPTX writer cascades alpha to child drawing values instead of compositing the rendered subtree.";
-
-const OPACITY_STACKING_CONTEXT_FALLBACK_REASON =
-  "CSS opacity creates a stacking context; v0.8 preserves the projected opacity value but does not yet evaluate a full CSS stacking-context subtree for this drawing node.";
-
 const CLIPPING_TRANSFORM_FALLBACK_REASON =
-  "CSS overflow clipping combined with transforms may require a transformed clip mask; v0.8 records axis-aligned clipping metadata and emits an approximate PPTX fallback.";
+  "CSS overflow clipping combined with transforms may require a transformed clip mask; layout records axis-aligned clipping metadata as an output-neutral approximation.";
 
 const CLIPPED_IMAGE_SOURCE_RECT_TRANSFORM_FALLBACK_REASON =
-  "CSS clipping of a transformed image may require clipping the transformed visual image; v0.8 folds axis-aligned clipping into the PPTX image source rectangle before applying transform.";
+  "CSS clipping of a transformed image may require clipping the transformed visual image; layout folds the axis-aligned clip into the projected image source rectangle before transform.";
 
 const TRANSFORM_STACKING_CONTEXT_FALLBACK_REASON =
   "CSS transforms create a stacking context; v0.8 preserves projected transform and paint-order inputs but does not yet evaluate a full CSS stacking-context subtree.";
-
-const FILTER_EFFECT_FALLBACK_REASON =
-  "CSS filter effects are not emitted by the current PPTX writer; v0.8 preserves the authored filter as an unsupported paint semantic for inspection.";
-
-const BLEND_MODE_FALLBACK_REASON =
-  "CSS blend modes require compositing behavior that the current PPTX writer does not reproduce; v0.8 preserves the authored blend mode as an unsupported paint semantic for inspection.";
-
-const ISOLATION_FALLBACK_REASON =
-  "CSS isolation creates a compositing group; v0.8 preserves the authored isolation input but does not yet evaluate isolated compositing groups.";
 
 const CSS_LAYOUT_UNSUPPORTED_VALUE_REASON =
   "This CSS layout value is valid CSS but is outside the current deckjsx v0.8.2 layout subset; deckjsx preserves the authored value for inspection and falls back to the closest supported layout behavior.";
@@ -1149,7 +1137,7 @@ function unsupportedCssLayoutValueSemantics(
 }
 
 const CSS_LOGICAL_LAYOUT_AXIS_FALLBACK_REASON =
-  "CSS writing-mode and direction remap logical layout axes; deckjsx v0.8.2 projects them to PPTX text body direction but still resolves layout, spacing, insets, and start/end alignment on physical axes.";
+  "CSS writing-mode and direction remap logical layout axes; deckjsx preserves text direction but still resolves layout, spacing, insets, and start/end alignment on physical axes.";
 
 function unsupportedTextLogicalLayoutSemantics(props: {
   readonly direction?: "ltr" | "rtl";
@@ -1191,48 +1179,6 @@ function unsupportedTextLogicalLayoutSemantics(props: {
   }
 
   return unsupported;
-}
-
-function unsupportedGroupOpacitySemantics(props: {
-  readonly opacity?: number;
-}): readonly ProjectedUnsupportedSemantic[] {
-  if (props.opacity === undefined || props.opacity <= 0 || props.opacity >= 1) {
-    return [];
-  }
-
-  const semantic = unsupportedSemantic({
-    feature: "opacity",
-    property: "opacity",
-    value: props.opacity,
-    error: new Error(GROUP_OPACITY_COMPOSITING_FALLBACK_REASON),
-    fallback: {
-      strategy: "cascadeOpacityToChildren",
-      preserves: ["projectedOpacity", "childDrawingValues"],
-      missing: ["compositedSubtree", "cssStackingContext"],
-    },
-  });
-  return semantic ? [semantic] : [];
-}
-
-function unsupportedOpacityStackingContextSemantics(props: {
-  readonly opacity?: number;
-}): readonly ProjectedUnsupportedSemantic[] {
-  if (props.opacity === undefined || props.opacity <= 0 || props.opacity >= 1) {
-    return [];
-  }
-
-  const semantic = unsupportedSemantic({
-    feature: "opacity",
-    property: "stackingContext",
-    value: props.opacity,
-    error: new Error(OPACITY_STACKING_CONTEXT_FALLBACK_REASON),
-    fallback: {
-      strategy: "preserveOpacityWithoutCompositedSubtree",
-      preserves: ["projectedOpacity", "drawingNode"],
-      missing: ["compositedSubtree", "cssStackingContext"],
-    },
-  });
-  return semantic ? [semantic] : [];
 }
 
 function hasProjectedTransform(input: {
@@ -1320,66 +1266,30 @@ function unsupportedTransformStackingContextSemantics(props: {
   return semantic ? [semantic] : [];
 }
 
-function unsupportedCompositingSemantics(props: {
+function paintIntentFromProps(props: {
   readonly filter?: string;
   readonly mixBlendMode?: string;
   readonly isolation?: string;
-}): readonly ProjectedUnsupportedSemantic[] {
-  const unsupported: ProjectedUnsupportedSemantic[] = [];
+}): ProjectedPaintIntent | undefined {
   const filter = props.filter?.trim();
-  if (filter && filter.toLowerCase() !== "none") {
-    const semantic = unsupportedSemantic({
-      feature: "filter",
-      property: "filter",
-      value: props.filter,
-      error: new Error(FILTER_EFFECT_FALLBACK_REASON),
-      fallback: {
-        strategy: "dropFilterEffect",
-        preserves: ["authoredFilter"],
-        missing: ["filterEffect"],
-      },
-    });
-    if (semantic) {
-      unsupported.push(semantic);
-    }
-  }
-
   const mixBlendMode = props.mixBlendMode?.trim();
-  if (mixBlendMode && mixBlendMode.toLowerCase() !== "normal") {
-    const semantic = unsupportedSemantic({
-      feature: "blend",
-      property: "mixBlendMode",
-      value: props.mixBlendMode,
-      error: new Error(BLEND_MODE_FALLBACK_REASON),
-      fallback: {
-        strategy: "dropBlendMode",
-        preserves: ["authoredBlendMode"],
-        missing: ["blendCompositing"],
-      },
-    });
-    if (semantic) {
-      unsupported.push(semantic);
-    }
-  }
+  const paintIntent: ProjectedPaintIntent = {
+    ...(filter && filter.toLowerCase() !== "none" ? { filter: props.filter } : {}),
+    ...(mixBlendMode && mixBlendMode.toLowerCase() !== "normal"
+      ? { mixBlendMode: props.mixBlendMode }
+      : {}),
+    ...(props.isolation === "isolate" ? { isolation: "isolate" as const } : {}),
+  };
+  return Object.keys(paintIntent).length > 0 ? paintIntent : undefined;
+}
 
-  if (props.isolation === "isolate") {
-    const semantic = unsupportedSemantic({
-      feature: "isolation",
-      property: "isolation",
-      value: props.isolation,
-      error: new Error(ISOLATION_FALLBACK_REASON),
-      fallback: {
-        strategy: "dropIsolationGroup",
-        preserves: ["authoredIsolation"],
-        missing: ["isolatedCompositingGroup"],
-      },
-    });
-    if (semantic) {
-      unsupported.push(semantic);
-    }
-  }
-
-  return unsupported;
+function paintIntentSnapshotFromProps(props: {
+  readonly filter?: string;
+  readonly mixBlendMode?: string;
+  readonly isolation?: string;
+}): { readonly paintIntent?: ProjectedPaintIntent } {
+  const paintIntent = paintIntentFromProps(props);
+  return paintIntent ? { paintIntent } : {};
 }
 
 function backgroundInput(props: {
@@ -1809,10 +1719,10 @@ function tableCellChildrenWithInheritedTextStyle(
 
     let props = inheritTableCellTextProps(cellProps, child.props);
     if (authoredTextProp(props, "fontSize") === undefined) {
-      props = { ...props, fontSize: DEFAULT_PPTX_TABLE_CELL_TEXT_FONT_SIZE };
+      props = { ...props, fontSize: PRESENTATION_TABLE_DEFAULTS.cellTextFontSize };
     }
     if (authoredTextProp(props, "whiteSpace") === undefined) {
-      props = { ...props, whiteSpace: "nowrap" };
+      props = { ...props, whiteSpace: PRESENTATION_TABLE_DEFAULTS.cellWhiteSpace };
     }
     if (shouldFillSingleTextChild && tableCellTextCanFillCellHeight(props)) {
       props = { ...props, height: "100%" };
@@ -1846,7 +1756,7 @@ function unsupportedObjectPositionSemantics(input: {
     fallback: {
       strategy: "preserveAuthoredValueOnly",
       preserves: ["authoredObjectPosition"],
-      missing: ["pptxObjectPosition"],
+      missing: ["projectedObjectPosition"],
     },
   });
 
@@ -3510,8 +3420,6 @@ function compileGroupNode(
     ...unsupportedCssLayoutValueSemantics(props),
     ...unsupportedTransformSemantics(props),
     ...unsupportedTransformStackingContextSemantics(props),
-    ...unsupportedCompositingSemantics(props),
-    ...unsupportedGroupOpacitySemantics(props),
     ...unsupportedClippingTransformSemantics({
       clip,
       rotation: resolved.rotation,
@@ -3532,6 +3440,7 @@ function compileGroupNode(
     siblingOrder: node.siblingOrder,
     ...(clip ? { clip } : {}),
     opacity: resolved.opacity,
+    ...paintIntentSnapshotFromProps(props),
     rotation: resolved.rotation,
     zIndex: resolved.zIndex,
     ...(props.visibility !== undefined ? { visibility: props.visibility } : {}),
@@ -3728,18 +3637,14 @@ function tableCellEdgeStrokesFromResolvedStrokes(input: {
   };
 }
 
-function defaultPptxTableStyleCellEdgeStrokes(sectionKind: "head" | "body" | "foot"): EdgeStrokeIR {
-  const stroke: StrokeIR = {
-    color: sectionKind === "head" ? "2563EB" : "111111",
-    widthPt: 0.75,
-  };
+function defaultTableCellEdgeStrokes(sectionKind: "head" | "body" | "foot"): EdgeStrokeIR {
+  const defaultStroke =
+    sectionKind === "head"
+      ? PRESENTATION_TABLE_DEFAULTS.headerCellBorder
+      : PRESENTATION_TABLE_DEFAULTS.bodyCellBorder;
+  const stroke: StrokeIR = { ...defaultStroke };
 
-  return {
-    top: stroke,
-    right: stroke,
-    bottom: stroke,
-    left: stroke,
-  };
+  return { top: stroke, right: stroke, bottom: stroke, left: stroke };
 }
 
 function unsupportedTableLayoutSemantics(
@@ -3753,7 +3658,7 @@ function unsupportedTableLayoutSemantics(
       property: "tableLayout",
       value: "auto",
       reason:
-        "CSS table-layout:auto requires the browser intrinsic table layout algorithm; deckjsx v0.8.4 approximates it with available-width column distribution for native PPTX table projection.",
+        "CSS table-layout:auto requires the browser intrinsic table layout algorithm; deckjsx approximates it with available-width column distribution in the structured table layout.",
       fallback: {
         strategy: "preserveAuthoredValueOnly",
         preserves: ["nativeTableStructure", "availableWidthColumnDistribution"],
@@ -3768,7 +3673,7 @@ function unsupportedTableLayoutSemantics(
       property: "borderCollapse",
       value: "collapse",
       reason:
-        "CSS border-collapse:collapse requires browser border conflict resolution; deckjsx v0.8.4 approximates shared borders with the projected native PPTX cell borders.",
+        "CSS border-collapse:collapse requires browser border conflict resolution; deckjsx approximates shared borders with projected cell edge strokes.",
       fallback: {
         strategy: "preserveAuthoredValueOnly",
         preserves: ["nativeTableStructure", "projectedCellBorders"],
@@ -3840,7 +3745,6 @@ function compileTableNode(
   );
   const unsupportedSemantics = [
     ...unsupportedTableLayoutSemantics(props),
-    ...unsupportedCompositingSemantics(props),
     ...shadow.unsupportedSemantics,
     ...(tableBackground.unsupportedSemantics ?? []),
     ...tableStrokes.unsupportedSemantics,
@@ -3858,6 +3762,7 @@ function compileTableNode(
     siblingOrder: node.siblingOrder,
     ...(clip ? { clip } : {}),
     opacity: resolved.opacity,
+    ...paintIntentSnapshotFromProps(props),
     rotation: resolved.rotation,
     zIndex: resolved.zIndex,
     ...(shadow.shadow ? { shadow: shadow.shadow } : {}),
@@ -3897,16 +3802,14 @@ function compileTableNode(
         section.source.props.backgroundOrigin,
         section.source.props.backgroundClip,
       );
-      const sectionUnsupportedSemantics = [
-        ...unsupportedCompositingSemantics(section.source.props),
-        ...(sectionBackground.unsupportedSemantics ?? []),
-      ];
+      const sectionUnsupportedSemantics = [...(sectionBackground.unsupportedSemantics ?? [])];
       return {
         kind: "tableSection",
         sectionKind: section.source.sectionKind,
         frame: sectionFrame,
         ...(section.source.origin ? { origin: section.source.origin } : {}),
         opacity: section.source.props.opacity,
+        ...paintIntentSnapshotFromProps(section.source.props),
         fill: sectionBackground.fill,
         ...(sectionBackground.backgroundLayers
           ? { backgroundLayers: sectionBackground.backgroundLayers }
@@ -3945,15 +3848,13 @@ function compileTableNode(
             row.props.backgroundOrigin,
             row.props.backgroundClip,
           );
-          const rowUnsupportedSemantics = [
-            ...unsupportedCompositingSemantics(row.props),
-            ...(rowBackground.unsupportedSemantics ?? []),
-          ];
+          const rowUnsupportedSemantics = [...(rowBackground.unsupportedSemantics ?? [])];
           const projectedRow = {
             kind: "tableRow" as const,
             ...(row.source.origin ? { origin: row.source.origin } : {}),
             frame: rowFrame,
             opacity: row.props.opacity,
+            ...paintIntentSnapshotFromProps(row.props),
             fill: rowBackground.fill,
             ...(rowBackground.backgroundLayers
               ? { backgroundLayers: rowBackground.backgroundLayers }
@@ -3982,7 +3883,7 @@ function compileTableNode(
                 !isStrokeIntentionallyNone(props) &&
                 !hasAuthoredStrokeInput(cell.props) &&
                 !isStrokeIntentionallyNone(cell.props)
-                  ? defaultPptxTableStyleCellEdgeStrokes(section.source.sectionKind)
+                  ? defaultTableCellEdgeStrokes(section.source.sectionKind)
                   : undefined);
               const cellHyperlink = cell.props.href
                 ? {
@@ -4010,8 +3911,8 @@ function compileTableNode(
                 cell.props.backgroundOrigin,
                 cell.props.backgroundClip,
               );
-              const cellUnsupportedSemantics = unsupportedCompositingSemantics(cell.props);
-              const cellLayoutPadding = cell.props.padding ?? DEFAULT_PPTX_TABLE_CELL_PADDING;
+              const cellLayoutPadding =
+                cell.props.padding ?? PRESENTATION_TABLE_DEFAULTS.cellPadding;
               if (cell.source.rowSpan > 1) {
                 for (
                   let offset = 0;
@@ -4035,9 +3936,7 @@ function compileTableNode(
                 ...(cell.source.origin ? { origin: cell.source.origin } : {}),
                 frame: cellFrame,
                 opacity: cell.props.opacity,
-                ...(cellUnsupportedSemantics.length
-                  ? { unsupportedSemantics: cellUnsupportedSemantics }
-                  : {}),
+                ...paintIntentSnapshotFromProps(cell.props),
                 fill: cellBackground.fill,
                 ...(cellBackground.backgroundLayers
                   ? { backgroundLayers: cellBackground.backgroundLayers }
@@ -4347,8 +4246,6 @@ function compileTextNode(
     ...unsupportedCssLayoutValueSemantics(props),
     ...unsupportedTextLogicalLayoutSemantics(props),
     ...unsupportedTransformSemantics(props),
-    ...unsupportedCompositingSemantics(props),
-    ...unsupportedOpacityStackingContextSemantics(props),
     ...unsupportedClippingTransformSemantics({
       clip,
       rotation: resolved.rotation,
@@ -4370,6 +4267,7 @@ function compileTextNode(
     siblingOrder: node.siblingOrder,
     ...(clip ? { clip } : {}),
     opacity: resolved.opacity,
+    ...paintIntentSnapshotFromProps(props),
     rotation: resolved.rotation,
     zIndex: resolved.zIndex,
     ...(props.visibility !== undefined ? { visibility: props.visibility } : {}),
@@ -4437,8 +4335,6 @@ function compileImageNode(
   const unsupportedSemantics = [
     ...unsupportedCssLayoutValueSemantics(props),
     ...unsupportedTransformSemantics(props),
-    ...unsupportedCompositingSemantics(props),
-    ...unsupportedOpacityStackingContextSemantics(props),
     ...unsupportedClippingTransformSemantics({
       clip,
       rotation: resolved.rotation,
@@ -4470,6 +4366,7 @@ function compileImageNode(
     ...(clip ? { clip } : {}),
     sourceFrame: originalFrame,
     opacity: resolved.opacity,
+    ...paintIntentSnapshotFromProps(props),
     rotation: resolved.rotation,
     zIndex: resolved.zIndex,
     ...(props.visibility !== undefined ? { visibility: props.visibility } : {}),
@@ -4604,8 +4501,6 @@ function compileVideoNode(
   const unsupportedSemantics = [
     ...unsupportedCssLayoutValueSemantics(props),
     ...unsupportedTransformSemantics(props),
-    ...unsupportedCompositingSemantics(props),
-    ...unsupportedOpacityStackingContextSemantics(props),
     ...unsupportedClippingTransformSemantics({
       clip,
       rotation: resolved.rotation,
@@ -4631,6 +4526,7 @@ function compileVideoNode(
     ...(clip ? { clip } : {}),
     sourceFrame: originalFrame,
     opacity: resolved.opacity,
+    ...paintIntentSnapshotFromProps(props),
     rotation: resolved.rotation,
     zIndex: resolved.zIndex,
     ...(props.visibility !== undefined ? { visibility: props.visibility } : {}),
@@ -4702,8 +4598,6 @@ function compileShapeNode(
   const unsupportedSemantics = [
     ...unsupportedCssLayoutValueSemantics(props),
     ...unsupportedTransformSemantics(props),
-    ...unsupportedCompositingSemantics(props),
-    ...unsupportedOpacityStackingContextSemantics(props),
     ...unsupportedClippingTransformSemantics({
       clip,
       rotation: resolved.rotation,
@@ -4725,6 +4619,7 @@ function compileShapeNode(
     siblingOrder: node.siblingOrder,
     ...(clip ? { clip } : {}),
     opacity: resolved.opacity,
+    ...paintIntentSnapshotFromProps(props),
     rotation: resolved.rotation,
     zIndex: resolved.zIndex,
     ...(props.visibility !== undefined ? { visibility: props.visibility } : {}),
@@ -4876,9 +4771,9 @@ export function resolveProjectedLayout(
     viewportWidthEmu: slideFrame.widthEmu,
     viewportHeightEmu: slideFrame.heightEmu,
     ...(resolutionOptions.fontMetrics ? { fontMetrics: resolutionOptions.fontMetrics } : {}),
-    ...(resolutionOptions.fallbackTextWidthSafetyFactor !== undefined
-      ? { fallbackTextWidthSafetyFactor: resolutionOptions.fallbackTextWidthSafetyFactor }
-      : {}),
+    fallbackTextWidthSafetyFactor: (
+      resolutionOptions.textMeasurementProfile ?? PRESENTATION_TEXT_MEASUREMENT_PROFILE
+    ).unregisteredFontWidthSafetyFactor,
   };
 
   return {

@@ -40,6 +40,7 @@ type ProjectionCapability<TModel extends ProjectedDocumentModel> = {
     graph: SemanticAuthorGraph;
     resolvedStyles: ResolvedStyleMap;
     options: DeckOptions;
+    projection?: ProjectedDocumentModel;
   }): Diagnostics;
   projectionDiagnostics(
     projection: TModel,
@@ -73,7 +74,11 @@ const pptxProjectionCapability: ProjectionCapability<PptxPackageModel> = {
   project: projectGraphToPptxPackage,
   diagnostics: (input) =>
     createDiagnostics([
-      ...collectPptxUnsupportedProjectionDiagnostics(input).items,
+      ...collectPptxUnsupportedProjectionDiagnostics({
+        graph: input.graph,
+        resolvedStyles: input.resolvedStyles,
+        ...(input.projection?.format === "pptx" ? { projection: input.projection } : {}),
+      }).items,
       ...collectPptxThemeProjectionDiagnostics(input).items,
     ]),
   projectionDiagnostics: collectPptxUnsupportedProjectionModelDiagnostics,
@@ -157,6 +162,7 @@ export function projectionDiagnosticsForGraph(input: {
   graph: SemanticAuthorGraph;
   resolvedStyles: ResolvedStyleMap;
   options: DeckOptions;
+  projection?: ProjectedDocumentModel;
 }): Diagnostics {
   return projectionCapabilityFor(input.format).diagnostics(input);
 }

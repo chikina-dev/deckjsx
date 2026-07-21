@@ -12058,7 +12058,7 @@ describe("pdf public surface", () => {
     expect(pdfBytes).toContain("($240k) Tj");
   });
 
-  test("projects PPTX-style default table cell borders into pdf visuals", async () => {
+  test("projects deck table default cell borders into pdf visuals", async () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
       output: { formats: ["pdf"] },
@@ -12115,7 +12115,7 @@ describe("pdf public surface", () => {
     });
   });
 
-  test("projects PPTX-style default table cell text size and padding into pdf text", async () => {
+  test("projects deck table default cell text size and padding into pdf text", async () => {
     const deck = new Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
       output: { formats: ["pdf"] },

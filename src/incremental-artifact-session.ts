@@ -15,6 +15,13 @@ type ArtifactWriteTokenValue = ArtifactWriteToken & {
   readonly session: IncrementalArtifactSessionImpl;
   readonly cycle: number;
   readonly slot: number;
+  claimed: boolean;
+};
+
+export type ArtifactWriteLease = {
+  commit<TWriteResult extends object>(
+    record: ArtifactWriteRecord<TWriteResult>,
+  ): IncrementalArtifactWriteRecord<TWriteResult>;
 };
 
 type RenderResultWithWriteToken = RenderResult & {
@@ -88,6 +95,7 @@ type IncrementalArtifactCycleState = {
   renderCount: number;
   running: boolean;
   completed: boolean;
+  pendingWrites: number;
   readonly writes: IncrementalArtifactWriteRecord[];
 };
 
@@ -239,6 +247,39 @@ class IncrementalArtifactSessionImpl {
     return clonePublicValue(write);
   }
 
+  claimWrite(token: ArtifactWriteTokenValue): ArtifactWriteLease {
+    if (this.#completedCycles.has(token.cycle)) {
+      throw new Error(`Incremental artifact cycle ${token.cycle} has already completed.`);
+    }
+    const active = currentActiveCycle();
+    if (active?.session !== this || active.cycle !== token.cycle) {
+      throw new Error(
+        `Incremental artifact cycle ${token.cycle} is not the active artifact write cycle.`,
+      );
+    }
+    if (token.claimed) {
+      throw new Error(
+        `Incremental artifact write slot ${token.slot} in cycle ${token.cycle} has already been claimed.`,
+      );
+    }
+    token.claimed = true;
+    active.pendingWrites += 1;
+    let committed = false;
+    return {
+      commit: <TWriteResult extends object>(record: ArtifactWriteRecord<TWriteResult>) => {
+        if (committed) {
+          throw new Error(
+            `Incremental artifact write slot ${token.slot} in cycle ${token.cycle} has already been recorded.`,
+          );
+        }
+        const write = this.recordWrite(token, record);
+        committed = true;
+        active.pendingWrites -= 1;
+        return write;
+      },
+    };
+  }
+
   completeCycle(
     cycle: number,
     slotArtifacts: ReadonlyMap<number, PipelineArtifactCollection>,
@@ -333,6 +374,7 @@ class IncrementalArtifactCycleImpl {
       renderCount: 0,
       running: false,
       completed: false,
+      pendingWrites: 0,
       writes: [],
     };
   }
@@ -371,6 +413,11 @@ class IncrementalArtifactCycleImpl {
     }
     if (this.#state.completed) {
       throw new Error(`Incremental artifact cycle ${this.#state.cycle} has already completed.`);
+    }
+    if (this.#state.pendingWrites > 0) {
+      throw new Error(
+        `Incremental artifact cycle ${this.#state.cycle} cannot complete with ${this.#state.pendingWrites} pending artifact write(s).`,
+      );
     }
     this.#state.completed = true;
     this.#state.session.completeCycle(this.#state.cycle, this.#state.slotArtifacts);
@@ -425,6 +472,7 @@ export function claimIncrementalArtifactRenderSlot(): IncrementalArtifactRenderS
     session: active.session,
     cycle: active.cycle,
     slot,
+    claimed: false,
   } as ArtifactWriteTokenValue;
 
   return {
@@ -465,5 +513,12 @@ export function recordArtifactWrite<TWriteResult extends object>(
   if (!value) {
     return undefined;
   }
-  return value.session.recordWrite(value, record);
+  return value.session.claimWrite(value).commit(record);
+}
+
+export function claimArtifactWrite(
+  token: ArtifactWriteToken | undefined,
+): ArtifactWriteLease | undefined {
+  const value = token as ArtifactWriteTokenValue | undefined;
+  return value?.session.claimWrite(value);
 }

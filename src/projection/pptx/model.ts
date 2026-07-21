@@ -229,12 +229,14 @@ export type PptxTableElement = PptxBaseElement & {
 export type PptxTableSection = {
   readonly kind: "tableSection";
   readonly sectionKind: ProjectedLayoutTableSection["sectionKind"];
+  readonly unsupportedSemantics?: readonly PptxUnsupportedSemantic[];
   readonly rows: readonly PptxTableRow[];
 };
 
 export type PptxTableRow = {
   readonly kind: "tableRow";
   readonly frame: FrameIR;
+  readonly unsupportedSemantics?: readonly PptxUnsupportedSemantic[];
   readonly cells: readonly PptxTableCell[];
 };
 

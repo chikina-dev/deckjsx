@@ -1,7 +1,47 @@
 import { describe, expect, test } from "vite-plus/test";
+import { resolveAssetArtifacts } from "@/src/pipeline/asset-resolution.ts";
 import * as H from "../helpers.tsx";
 
 describe("project/render asset probing and cache", () => {
+  test("asset lookup does not reuse a same-id probe after its source changes", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const artifacts = new H.PipelineArtifactCollection();
+    const probedSources: string[] = [];
+    const loader = H.testAssetLoader({
+      resolverIdentity: "test:source-aware-probe",
+      async probe({ source }) {
+        if (source.kind !== "path") {
+          return undefined;
+        }
+        probedSources.push(source.path);
+        return { mediaType: "image/png", extension: "png", width: 1, height: 1 };
+      },
+    });
+    deck.slide({ name: "Source aware probe" }, () => (
+      <img
+        src="./before.png"
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
+    ));
+    const graph = deck.compile().graph!;
+
+    await resolveAssetArtifacts({ graph, loaders: [loader], artifacts });
+    const [assetEntityId, asset] = [...graph.assets.entries()][0]!;
+    const changedGraph = {
+      ...graph,
+      assets: new Map([
+        [assetEntityId, { ...asset, source: { kind: "path", path: "./after.png" } as const }],
+      ]),
+    };
+    await resolveAssetArtifacts({ graph: changedGraph, loaders: [loader], artifacts });
+
+    expect(probedSources).toEqual(["./before.png", "./after.png"]);
+    expect(artifacts.assetsById.get(assetEntityId)?.source).toEqual({
+      kind: "path",
+      path: "./after.png",
+    });
+  });
+
   test("Incremental projection recomputes a slide when asset probe metadata changes", async () => {
     let imageWidth = 2;
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });

@@ -29,6 +29,7 @@ import type {
   TextStyleIR,
 } from "../../layout/projected";
 import { resolveProjectedLayout } from "../../layout/resolve";
+import { PDF_BUILT_IN_HELVETICA_TEXT_MEASUREMENT_PROFILE } from "../../layout/text-measurement-profile";
 import { textFontMetricsFromRegistrations } from "../../layout/text-metrics";
 import { normalizeColor } from "../../style/color";
 import { DEFAULT_FONT_SIZE_PT } from "../../style/length";
@@ -36,7 +37,20 @@ import type { ResolvedStyle, ResolvedStyleMap } from "../../style/resolve";
 import { parseShadowShorthand } from "../../style/shadow";
 import { EMU_PER_INCH, POINTS_PER_INCH } from "../../types";
 import { pdfDocumentId, pdfPageId, pdfResourceId } from "./identity";
-import { pdfCssColorFilterAdjustsColor, pdfCssColorFilterTransform } from "./filter-color";
+import {
+  pdfAdjustedColorFromCssColorFilter,
+  pdfCssColorFilterAdjustsColor,
+  pdfCssColorFilterTransform,
+  pdfCssFilterFactorFromArgs,
+  pdfCssFilterIsProjectedAsOpacity,
+  pdfCssFilterIsVisualNoop,
+  pdfCssFilterNumberArgs,
+  pdfCssFilterUnitIntervalFactorFromArgs,
+  pdfCssVisibleEffectFilterFunctions,
+  pdfHueRotateRadiansFromCssFilterArgs,
+  pdfOpacityFromCssFilter,
+  pdfOpacityFromCssOpacityFilterArgs,
+} from "./filter-color";
 import { shapedGlyphRunForPdf, shapedTextWidthUnits } from "../../font/shaping";
 import { fontFamilyList } from "../../font/family";
 import type {
@@ -179,80 +193,10 @@ function combinePdfOpacity(
   return pdfOpacity(inherited * own);
 }
 
-type PdfCssFilterFunction = {
-  readonly name: string;
-  readonly args: string;
-};
-
 type PdfCssFilterLengthContext = {
   readonly viewportHeightPt?: number;
   readonly viewportWidthPt?: number;
 };
-
-function pdfCssFilterFunctions(value: string): readonly PdfCssFilterFunction[] {
-  const normalized = value.trim();
-  const functionMatches = [...normalized.matchAll(/([a-z-]+)\(((?:[^()]|\([^()]*\))*)\)/giu)];
-  if (functionMatches.length === 0) {
-    return [];
-  }
-
-  if (!pdfCssFilterFunctionMatchesCoverValue(normalized, functionMatches)) {
-    return [];
-  }
-
-  return functionMatches.map((match) => ({
-    name: match[1]!.toLowerCase(),
-    args: match[2]!.trim(),
-  }));
-}
-
-function pdfCssFilterFunctionMatchesCoverValue(
-  value: string,
-  matches: readonly RegExpMatchArray[],
-): boolean {
-  let offset = 0;
-  for (const match of matches) {
-    const index = match.index ?? -1;
-    if (index < offset || value.slice(offset, index).trim().length > 0) {
-      return false;
-    }
-    offset = index + match[0].length;
-  }
-
-  return value.slice(offset).trim().length === 0;
-}
-
-function pdfOpacityFromCssOpacityFilterArgs(value: string): number | undefined {
-  const match = /^([+-]?(?:\d+|\d*\.\d+))\s*(%)?$/iu.exec(value.trim());
-  if (!match) {
-    return undefined;
-  }
-
-  const raw = Number.parseFloat(match[1]!);
-  if (!Number.isFinite(raw)) {
-    return undefined;
-  }
-
-  const opacity = match[2] ? raw / 100 : raw;
-  return Math.min(Math.max(opacity, 0), 1);
-}
-
-function pdfCssFilterNumberArgs(value: string):
-  | {
-      readonly unit?: string;
-      readonly value: number;
-    }
-  | undefined {
-  const match = /^([+-]?(?:\d+|\d*\.\d+))\s*([a-z%]*)$/iu.exec(value.trim());
-  if (!match) {
-    return undefined;
-  }
-
-  const parsed = Number.parseFloat(match[1]!);
-  return Number.isFinite(parsed)
-    ? { value: parsed, ...(match[2] ? { unit: match[2]!.toLowerCase() } : {}) }
-    : undefined;
-}
 
 function pdfCssFilterLengthPt(
   value: string,
@@ -304,63 +248,6 @@ function pdfCssFilterLengthPt(
   }
 }
 
-function pdfCssFilterFunctionIsVisualNoop(filter: PdfCssFilterFunction): boolean {
-  const args = pdfCssFilterNumberArgs(filter.args);
-  if (!args) {
-    return false;
-  }
-
-  switch (filter.name) {
-    case "blur":
-      return args.value === 0;
-    case "brightness":
-    case "contrast":
-    case "saturate":
-      return args.unit === "%" ? args.value === 100 : args.value === 1;
-    case "grayscale":
-    case "sepia":
-    case "invert":
-      return (args.unit === undefined || args.unit === "%") && args.value === 0;
-    case "hue-rotate":
-      return (
-        args.value === 0 &&
-        (args.unit === undefined ||
-          args.unit === "deg" ||
-          args.unit === "rad" ||
-          args.unit === "turn")
-      );
-    case "opacity":
-      return args.unit === "%" ? args.value === 100 : args.value === 1;
-    default:
-      return false;
-  }
-}
-
-function pdfCssFilterIsVisualNoop(value: string): boolean {
-  const filters = pdfCssFilterFunctions(value);
-  return filters.length > 0 && filters.every(pdfCssFilterFunctionIsVisualNoop);
-}
-
-function pdfCssVisibleEffectFilterFunctions(value: string): readonly PdfCssFilterFunction[] {
-  return pdfCssFilterFunctions(value).filter((filter) => !pdfCssFilterFunctionIsVisualNoop(filter));
-}
-
-function pdfOpacityFromCssFilter(value: string): number | undefined {
-  const opacityValues = pdfCssFilterFunctions(value).flatMap((filter) => {
-    if (filter.name !== "opacity") {
-      return [];
-    }
-
-    const opacity = pdfOpacityFromCssOpacityFilterArgs(filter.args);
-    return opacity === undefined ? [] : [opacity];
-  });
-  if (!opacityValues.length) {
-    return undefined;
-  }
-
-  return opacityValues.reduce((opacity, value) => opacity * value, 1);
-}
-
 function pdfBlurRadiusFromCssFilter(
   value: string,
   context?: PdfCssFilterLengthContext,
@@ -382,17 +269,6 @@ function pdfBlurRadiusFromCssFilter(
 
   const radius = pdfCssFilterLengthPt(blurFilters[0]!.args, context);
   return radius !== undefined && Number.isFinite(radius) && radius > 0 ? radius : undefined;
-}
-
-function pdfCssFilterIsProjectedAsOpacity(value: string): boolean {
-  const filters = pdfCssFilterFunctions(value);
-  return (
-    filters.length > 0 &&
-    filters.every(
-      (filter) =>
-        filter.name === "opacity" && pdfOpacityFromCssOpacityFilterArgs(filter.args) !== undefined,
-    )
-  );
 }
 
 function pdfCssFilterIsProjectedAsSolidBlur(
@@ -436,22 +312,7 @@ function pdfBrightnessFactorFromCssFilter(value: string): number | undefined {
     return undefined;
   }
 
-  const args = pdfCssFilterNumberArgs(visibleEffectFilters[0].args);
-  if (!args) {
-    return undefined;
-  }
-
-  const factor = args.unit === "%" ? args.value / 100 : args.value;
-  return Number.isFinite(factor) && factor >= 0 ? factor : undefined;
-}
-
-function pdfBrightnessAdjustedColor(color: PdfRgbColor, factor: number): PdfRgbColor {
-  const adjust = (channel: number) => Math.min(1, Math.max(0, channel * factor));
-  return {
-    r: adjust(color.r),
-    g: adjust(color.g),
-    b: adjust(color.b),
-  };
+  return pdfCssFilterFactorFromArgs(visibleEffectFilters[0].args);
 }
 
 function pdfContrastFactorFromCssFilter(value: string): number | undefined {
@@ -460,22 +321,7 @@ function pdfContrastFactorFromCssFilter(value: string): number | undefined {
     return undefined;
   }
 
-  const args = pdfCssFilterNumberArgs(visibleEffectFilters[0].args);
-  if (!args) {
-    return undefined;
-  }
-
-  const factor = args.unit === "%" ? args.value / 100 : args.value;
-  return Number.isFinite(factor) && factor >= 0 ? factor : undefined;
-}
-
-function pdfContrastAdjustedColor(color: PdfRgbColor, factor: number): PdfRgbColor {
-  const adjust = (channel: number) => Math.min(1, Math.max(0, (channel - 0.5) * factor + 0.5));
-  return {
-    r: adjust(color.r),
-    g: adjust(color.g),
-    b: adjust(color.b),
-  };
+  return pdfCssFilterFactorFromArgs(visibleEffectFilters[0].args);
 }
 
 function pdfSaturateFactorFromCssFilter(value: string): number | undefined {
@@ -484,34 +330,7 @@ function pdfSaturateFactorFromCssFilter(value: string): number | undefined {
     return undefined;
   }
 
-  const args = pdfCssFilterNumberArgs(visibleEffectFilters[0].args);
-  if (!args) {
-    return undefined;
-  }
-
-  const factor = args.unit === "%" ? args.value / 100 : args.value;
-  return Number.isFinite(factor) && factor >= 0 ? factor : undefined;
-}
-
-function pdfSaturateAdjustedColor(color: PdfRgbColor, factor: number): PdfRgbColor {
-  const clamp = (channel: number) => Math.min(1, Math.max(0, channel));
-  return {
-    r: clamp(
-      (0.213 + 0.787 * factor) * color.r +
-        (0.715 - 0.715 * factor) * color.g +
-        (0.072 - 0.072 * factor) * color.b,
-    ),
-    g: clamp(
-      (0.213 - 0.213 * factor) * color.r +
-        (0.715 + 0.285 * factor) * color.g +
-        (0.072 - 0.072 * factor) * color.b,
-    ),
-    b: clamp(
-      (0.213 - 0.213 * factor) * color.r +
-        (0.715 - 0.715 * factor) * color.g +
-        (0.072 + 0.928 * factor) * color.b,
-    ),
-  };
+  return pdfCssFilterFactorFromArgs(visibleEffectFilters[0].args);
 }
 
 function pdfUnitIntervalFactorFromCssFilter(value: string, name: string): number | undefined {
@@ -520,53 +339,19 @@ function pdfUnitIntervalFactorFromCssFilter(value: string, name: string): number
     return undefined;
   }
 
-  const args = pdfCssFilterNumberArgs(visibleEffectFilters[0].args);
-  if (!args) {
-    return undefined;
-  }
-
-  const factor = args.unit === "%" ? args.value / 100 : args.value;
-  return Number.isFinite(factor) && factor >= 0 ? Math.min(factor, 1) : undefined;
+  return pdfCssFilterUnitIntervalFactorFromArgs(visibleEffectFilters[0].args);
 }
 
 function pdfGrayscaleFactorFromCssFilter(value: string): number | undefined {
   return pdfUnitIntervalFactorFromCssFilter(value, "grayscale");
 }
 
-function pdfGrayscaleAdjustedColor(color: PdfRgbColor, factor: number): PdfRgbColor {
-  return pdfSaturateAdjustedColor(color, 1 - factor);
-}
-
 function pdfInvertFactorFromCssFilter(value: string): number | undefined {
   return pdfUnitIntervalFactorFromCssFilter(value, "invert");
 }
 
-function pdfInvertAdjustedColor(color: PdfRgbColor, factor: number): PdfRgbColor {
-  const adjust = (channel: number) => channel * (1 - factor) + (1 - channel) * factor;
-  return {
-    r: adjust(color.r),
-    g: adjust(color.g),
-    b: adjust(color.b),
-  };
-}
-
 function pdfSepiaFactorFromCssFilter(value: string): number | undefined {
   return pdfUnitIntervalFactorFromCssFilter(value, "sepia");
-}
-
-function pdfSepiaAdjustedColor(color: PdfRgbColor, factor: number): PdfRgbColor {
-  const clamp = (channel: number) => Math.min(1, Math.max(0, channel));
-  const sepia = {
-    r: clamp(0.393 * color.r + 0.769 * color.g + 0.189 * color.b),
-    g: clamp(0.349 * color.r + 0.686 * color.g + 0.168 * color.b),
-    b: clamp(0.272 * color.r + 0.534 * color.g + 0.131 * color.b),
-  };
-  const mix = (from: number, to: number) => from * (1 - factor) + to * factor;
-  return {
-    r: mix(color.r, sepia.r),
-    g: mix(color.g, sepia.g),
-    b: mix(color.b, sepia.b),
-  };
 }
 
 function pdfHueRotateRadiansFromCssFilter(value: string): number | undefined {
@@ -575,193 +360,21 @@ function pdfHueRotateRadiansFromCssFilter(value: string): number | undefined {
     return undefined;
   }
 
-  const args = pdfCssFilterNumberArgs(visibleEffectFilters[0].args);
-  if (!args || !Number.isFinite(args.value)) {
-    return undefined;
-  }
-
-  switch (args.unit) {
-    case undefined:
-    case "deg":
-      return (args.value * Math.PI) / 180;
-    case "rad":
-      return args.value;
-    case "turn":
-      return args.value * Math.PI * 2;
-    default:
-      return undefined;
-  }
-}
-
-function pdfHueRotateAdjustedColor(color: PdfRgbColor, radians: number): PdfRgbColor {
-  const cos = Math.cos(radians);
-  const sin = Math.sin(radians);
-  const clamp = (channel: number) => Math.min(1, Math.max(0, channel));
-  return {
-    r: clamp(
-      (0.213 + cos * 0.787 - sin * 0.213) * color.r +
-        (0.715 - cos * 0.715 - sin * 0.715) * color.g +
-        (0.072 - cos * 0.072 + sin * 0.928) * color.b,
-    ),
-    g: clamp(
-      (0.213 - cos * 0.213 + sin * 0.143) * color.r +
-        (0.715 + cos * 0.285 + sin * 0.14) * color.g +
-        (0.072 - cos * 0.072 - sin * 0.283) * color.b,
-    ),
-    b: clamp(
-      (0.213 - cos * 0.213 - sin * 0.787) * color.r +
-        (0.715 - cos * 0.715 + sin * 0.715) * color.g +
-        (0.072 + cos * 0.928 + sin * 0.072) * color.b,
-    ),
-  };
-}
-
-function pdfCssFilterFactorFromArgs(argsValue: string): number | undefined {
-  const args = pdfCssFilterNumberArgs(argsValue);
-  if (!args) {
-    return undefined;
-  }
-
-  const factor = args.unit === "%" ? args.value / 100 : args.value;
-  return Number.isFinite(factor) && factor >= 0 ? factor : undefined;
-}
-
-function pdfCssFilterUnitIntervalFactorFromArgs(argsValue: string): number | undefined {
-  const factor = pdfCssFilterFactorFromArgs(argsValue);
-  return factor === undefined ? undefined : Math.min(factor, 1);
-}
-
-function pdfHueRotateRadiansFromCssFilterArgs(argsValue: string): number | undefined {
-  const args = pdfCssFilterNumberArgs(argsValue);
-  if (!args || !Number.isFinite(args.value)) {
-    return undefined;
-  }
-
-  switch (args.unit) {
-    case undefined:
-    case "deg":
-      return (args.value * Math.PI) / 180;
-    case "rad":
-      return args.value;
-    case "turn":
-      return args.value * Math.PI * 2;
-    default:
-      return undefined;
-  }
-}
-
-function pdfAdjustedColorFromCssFilter(
-  value: string,
-  initialColor: PdfRgbColor,
-): PdfRgbColor | undefined {
-  const visibleEffectFilters = pdfCssVisibleEffectFilterFunctions(value);
-  if (visibleEffectFilters.length === 0) {
-    return undefined;
-  }
-
-  let color = initialColor;
-  let adjustedColor = false;
-  for (const filter of visibleEffectFilters) {
-    switch (filter.name) {
-      case "brightness": {
-        const factor = pdfCssFilterFactorFromArgs(filter.args);
-        if (factor === undefined) {
-          return undefined;
-        }
-        color = pdfBrightnessAdjustedColor(color, factor);
-        adjustedColor = true;
-        break;
-      }
-      case "contrast": {
-        const factor = pdfCssFilterFactorFromArgs(filter.args);
-        if (factor === undefined) {
-          return undefined;
-        }
-        color = pdfContrastAdjustedColor(color, factor);
-        adjustedColor = true;
-        break;
-      }
-      case "saturate": {
-        const factor = pdfCssFilterFactorFromArgs(filter.args);
-        if (factor === undefined) {
-          return undefined;
-        }
-        color = pdfSaturateAdjustedColor(color, factor);
-        adjustedColor = true;
-        break;
-      }
-      case "grayscale": {
-        const factor = pdfCssFilterUnitIntervalFactorFromArgs(filter.args);
-        if (factor === undefined) {
-          return undefined;
-        }
-        color = pdfGrayscaleAdjustedColor(color, factor);
-        adjustedColor = true;
-        break;
-      }
-      case "invert": {
-        const factor = pdfCssFilterUnitIntervalFactorFromArgs(filter.args);
-        if (factor === undefined) {
-          return undefined;
-        }
-        color = pdfInvertAdjustedColor(color, factor);
-        adjustedColor = true;
-        break;
-      }
-      case "sepia": {
-        const factor = pdfCssFilterUnitIntervalFactorFromArgs(filter.args);
-        if (factor === undefined) {
-          return undefined;
-        }
-        color = pdfSepiaAdjustedColor(color, factor);
-        adjustedColor = true;
-        break;
-      }
-      case "hue-rotate": {
-        const radians = pdfHueRotateRadiansFromCssFilterArgs(filter.args);
-        if (radians === undefined) {
-          return undefined;
-        }
-        color = pdfHueRotateAdjustedColor(color, radians);
-        adjustedColor = true;
-        break;
-      }
-      case "opacity":
-        if (pdfOpacityFromCssOpacityFilterArgs(filter.args) === undefined) {
-          return undefined;
-        }
-        break;
-      default:
-        return undefined;
-    }
-  }
-
-  return adjustedColor ? color : undefined;
+  return pdfHueRotateRadiansFromCssFilterArgs(visibleEffectFilters[0].args);
 }
 
 function pdfCssFilterAdjustsSolidColor(value: string): boolean {
-  return pdfAdjustedColorFromCssFilter(value, { r: 0, g: 0, b: 0 }) !== undefined;
+  return pdfAdjustedColorFromCssColorFilter(value, { r: 0, g: 0, b: 0 }) !== undefined;
 }
 
-function pdfOpacityFromUnsupportedSemantics(
-  unsupportedSemantics: readonly ProjectedUnsupportedSemantic[] | undefined,
-): number | undefined {
-  for (const semantic of unsupportedSemantics ?? []) {
-    if (semantic.feature !== "filter" || semantic.property !== "filter") {
-      continue;
-    }
-
-    const opacity = pdfOpacityFromCssFilter(semantic.value);
-    if (opacity !== undefined) {
-      return opacity;
-    }
-  }
-
-  return undefined;
+function pdfFilterOpacityFromPaintIntent(input: {
+  readonly paintIntent?: ProjectedLayoutNode["paintIntent"];
+}): number | undefined {
+  return input.paintIntent?.filter ? pdfOpacityFromCssFilter(input.paintIntent.filter) : undefined;
 }
 
 function pdfFilterOpacityFromNode(node: ProjectedLayoutNode): number | undefined {
-  return pdfOpacityFromUnsupportedSemantics(node.unsupportedSemantics);
+  return pdfFilterOpacityFromPaintIntent(node);
 }
 
 function pdfOpacityForLayoutNode(node: ProjectedLayoutNode): number | undefined {
@@ -803,25 +416,92 @@ function pdfBlendModeFromCssMixBlendMode(value: string): PdfBlendMode | undefine
   }
 }
 
-function pdfBlendModeFromUnsupportedSemantics(
-  unsupportedSemantics: readonly ProjectedUnsupportedSemantic[] | undefined,
-): PdfBlendMode | undefined {
-  for (const semantic of unsupportedSemantics ?? []) {
-    if (semantic.feature !== "blend" || semantic.property !== "mixBlendMode") {
-      continue;
-    }
-
-    const blendMode = pdfBlendModeFromCssMixBlendMode(semantic.value);
-    if (blendMode !== undefined) {
-      return blendMode;
-    }
-  }
-
-  return undefined;
+function pdfBlendModeFromNode(node: ProjectedLayoutNode): PdfBlendMode | undefined {
+  return node.paintIntent?.mixBlendMode
+    ? pdfBlendModeFromCssMixBlendMode(node.paintIntent.mixBlendMode)
+    : undefined;
 }
 
-function pdfBlendModeFromNode(node: ProjectedLayoutNode): PdfBlendMode | undefined {
-  return pdfBlendModeFromUnsupportedSemantics(node.unsupportedSemantics);
+function pdfBlendModeFromPaintIntent(input: {
+  readonly paintIntent?: ProjectedLayoutNode["paintIntent"];
+}): PdfBlendMode | undefined {
+  return input.paintIntent?.mixBlendMode
+    ? pdfBlendModeFromCssMixBlendMode(input.paintIntent.mixBlendMode)
+    : undefined;
+}
+
+type PdfPaintIntentOwner = {
+  readonly kind?: string;
+  readonly opacity?: number;
+  readonly paintIntent?: ProjectedLayoutNode["paintIntent"];
+  readonly unsupportedSemantics?: readonly ProjectedUnsupportedSemantic[];
+};
+
+function pdfUnsupportedSemanticsFor(
+  input: PdfPaintIntentOwner,
+): readonly ProjectedUnsupportedSemantic[] {
+  const layoutIssues = (input.unsupportedSemantics ?? []).filter(
+    (semantic) =>
+      semantic.feature !== "filter" &&
+      semantic.feature !== "blend" &&
+      semantic.feature !== "isolation",
+  );
+  const paintSemantics: ProjectedUnsupportedSemantic[] = [];
+  if (input.paintIntent?.filter) {
+    paintSemantics.push({
+      feature: "filter",
+      property: "filter",
+      value: input.paintIntent.filter,
+      reason:
+        "The PDF projection evaluates this resolved CSS filter against its paint capabilities.",
+      fallback: {
+        strategy: "preserveAuthoredValueOnly",
+        preserves: ["authoredFilter"],
+        missing: ["filterEffect"],
+      },
+    });
+  }
+  if (input.paintIntent?.mixBlendMode) {
+    paintSemantics.push({
+      feature: "blend",
+      property: "mixBlendMode",
+      value: input.paintIntent.mixBlendMode,
+      reason:
+        "The PDF projection evaluates this resolved blend mode against its graphics-state capabilities.",
+    });
+  }
+  if (input.paintIntent?.isolation) {
+    paintSemantics.push({
+      feature: "isolation",
+      property: "isolation",
+      value: input.paintIntent.isolation,
+      reason:
+        "The PDF projection evaluates this resolved isolation intent against its compositing capabilities.",
+    });
+  }
+  if (
+    input.opacity !== undefined &&
+    input.opacity > 0 &&
+    input.opacity < 1 &&
+    input.kind !== "table" &&
+    input.kind !== "tableSection" &&
+    input.kind !== "tableRow" &&
+    input.kind !== "tableCell"
+  ) {
+    const group = input.kind === "group";
+    paintSemantics.push({
+      feature: "opacity",
+      property: group ? "opacity" : "stackingContext",
+      value: String(input.opacity),
+      reason: "The PDF projection evaluates resolved opacity against its compositing capabilities.",
+      fallback: {
+        strategy: group ? "cascadeOpacityToChildren" : "preserveOpacityWithoutCompositedSubtree",
+        preserves: ["projectedOpacity"],
+        missing: ["compositedSubtree", "cssStackingContext"],
+      },
+    });
+  }
+  return [...layoutIssues, ...paintSemantics];
 }
 
 function pdfBlendModeForTableCell(
@@ -831,9 +511,9 @@ function pdfBlendModeForTableCell(
   cell: ProjectedLayoutTableCell,
 ): PdfBlendMode | undefined {
   return (
-    pdfBlendModeFromUnsupportedSemantics(cell.unsupportedSemantics) ??
-    pdfBlendModeFromUnsupportedSemantics(row.unsupportedSemantics) ??
-    pdfBlendModeFromUnsupportedSemantics(section.unsupportedSemantics) ??
+    pdfBlendModeFromPaintIntent(cell) ??
+    pdfBlendModeFromPaintIntent(row) ??
+    pdfBlendModeFromPaintIntent(section) ??
     pdfBlendModeFromNode(table)
   );
 }
@@ -2246,7 +1926,7 @@ function edgeStrokeColorsAreDirectlyProjected(edgeStrokes: EdgeStrokeIR | undefi
 }
 
 function pdfColorFilterFromBackgroundImageNode(node: ProjectedLayoutNode): string | undefined {
-  for (const semantic of node.unsupportedSemantics ?? []) {
+  for (const semantic of pdfUnsupportedSemanticsFor(node)) {
     if (
       semantic.feature !== "filter" ||
       semantic.property !== "filter" ||
@@ -2264,7 +1944,7 @@ function pdfColorFilterFromBackgroundImageNode(node: ProjectedLayoutNode): strin
 function pdfColorFilterFromTableCellBackgroundImage(
   cell: ProjectedLayoutTableCell,
 ): string | undefined {
-  for (const semantic of cell.unsupportedSemantics ?? []) {
+  for (const semantic of pdfUnsupportedSemanticsFor(cell)) {
     if (
       semantic.feature !== "filter" ||
       semantic.property !== "filter" ||
@@ -2282,7 +1962,7 @@ function pdfColorFilterFromTableCellBackgroundImage(
 function pdfColorFilterFromTableRowBackgroundImage(
   row: ProjectedLayoutTable["sections"][number]["rows"][number],
 ): string | undefined {
-  for (const semantic of row.unsupportedSemantics ?? []) {
+  for (const semantic of pdfUnsupportedSemanticsFor(row)) {
     if (
       semantic.feature !== "filter" ||
       semantic.property !== "filter" ||
@@ -2300,7 +1980,7 @@ function pdfColorFilterFromTableRowBackgroundImage(
 function pdfColorFilterFromTableSectionBackgroundImage(
   section: ProjectedLayoutTable["sections"][number],
 ): string | undefined {
-  for (const semantic of section.unsupportedSemantics ?? []) {
+  for (const semantic of pdfUnsupportedSemanticsFor(section)) {
     if (
       semantic.feature !== "filter" ||
       semantic.property !== "filter" ||
@@ -2316,7 +1996,7 @@ function pdfColorFilterFromTableSectionBackgroundImage(
 }
 
 function pdfColorFilterFromTableBackgroundImage(table: ProjectedLayoutTable): string | undefined {
-  for (const semantic of table.unsupportedSemantics ?? []) {
+  for (const semantic of pdfUnsupportedSemanticsFor(table)) {
     if (
       semantic.feature !== "filter" ||
       semantic.property !== "filter" ||
@@ -2335,12 +2015,12 @@ function pdfAdjustedBackgroundImageNodeColorFromFilters(
   node: ProjectedLayoutGroup | ProjectedLayoutShape,
   color: PdfRgbColor,
 ): PdfRgbColor | undefined {
-  for (const semantic of node.unsupportedSemantics ?? []) {
+  for (const semantic of pdfUnsupportedSemanticsFor(node)) {
     if (semantic.feature !== "filter" || semantic.property !== "filter") {
       continue;
     }
 
-    const adjustedColor = pdfAdjustedColorFromCssFilter(semantic.value, color);
+    const adjustedColor = pdfAdjustedColorFromCssColorFilter(semantic.value, color);
     if (
       adjustedColor !== undefined &&
       pdfBackgroundLayersColorFilterIsDirectlyProjected(node, semantic.value)
@@ -2356,74 +2036,18 @@ function pdfAdjustedSolidShapeColorFromFilters(
   node: ProjectedLayoutShape,
   color: PdfRgbColor,
 ): PdfRgbColor | undefined {
-  for (const semantic of node.unsupportedSemantics ?? []) {
+  for (const semantic of pdfUnsupportedSemanticsFor(node)) {
     if (semantic.feature !== "filter" || semantic.property !== "filter") {
       continue;
     }
 
-    const adjustedColor = pdfAdjustedColorFromCssFilter(semantic.value, color);
+    const adjustedColor = pdfAdjustedColorFromCssColorFilter(semantic.value, color);
     if (
       adjustedColor !== undefined &&
       (pdfSolidShapeColorFilterIsDirectlyProjected(node, semantic.value) ||
         pdfBackgroundLayersColorFilterIsDirectlyProjected(node, semantic.value))
     ) {
       return adjustedColor;
-    }
-
-    const brightnessFactor = pdfBrightnessFactorFromCssFilter(semantic.value);
-    if (
-      brightnessFactor !== undefined &&
-      pdfSolidShapeBrightnessFilterIsDirectlyProjected(node, semantic.value)
-    ) {
-      return pdfBrightnessAdjustedColor(color, brightnessFactor);
-    }
-
-    const contrastFactor = pdfContrastFactorFromCssFilter(semantic.value);
-    if (
-      contrastFactor !== undefined &&
-      pdfSolidShapeContrastFilterIsDirectlyProjected(node, semantic.value)
-    ) {
-      return pdfContrastAdjustedColor(color, contrastFactor);
-    }
-
-    const saturateFactor = pdfSaturateFactorFromCssFilter(semantic.value);
-    if (
-      saturateFactor !== undefined &&
-      pdfSolidShapeSaturateFilterIsDirectlyProjected(node, semantic.value)
-    ) {
-      return pdfSaturateAdjustedColor(color, saturateFactor);
-    }
-
-    const grayscaleFactor = pdfGrayscaleFactorFromCssFilter(semantic.value);
-    if (
-      grayscaleFactor !== undefined &&
-      pdfSolidShapeGrayscaleFilterIsDirectlyProjected(node, semantic.value)
-    ) {
-      return pdfGrayscaleAdjustedColor(color, grayscaleFactor);
-    }
-
-    const invertFactor = pdfInvertFactorFromCssFilter(semantic.value);
-    if (
-      invertFactor !== undefined &&
-      pdfSolidShapeInvertFilterIsDirectlyProjected(node, semantic.value)
-    ) {
-      return pdfInvertAdjustedColor(color, invertFactor);
-    }
-
-    const sepiaFactor = pdfSepiaFactorFromCssFilter(semantic.value);
-    if (
-      sepiaFactor !== undefined &&
-      pdfSolidShapeSepiaFilterIsDirectlyProjected(node, semantic.value)
-    ) {
-      return pdfSepiaAdjustedColor(color, sepiaFactor);
-    }
-
-    const hueRotateRadians = pdfHueRotateRadiansFromCssFilter(semantic.value);
-    if (
-      hueRotateRadians !== undefined &&
-      pdfSolidShapeHueRotateFilterIsDirectlyProjected(node, semantic.value)
-    ) {
-      return pdfHueRotateAdjustedColor(color, hueRotateRadians);
     }
   }
 
@@ -2434,12 +2058,12 @@ function pdfAdjustedTextColorFromFilters(
   node: ProjectedLayoutText,
   color: PdfRgbColor,
 ): PdfRgbColor | undefined {
-  for (const semantic of node.unsupportedSemantics ?? []) {
+  for (const semantic of pdfUnsupportedSemanticsFor(node)) {
     if (semantic.feature !== "filter" || semantic.property !== "filter") {
       continue;
     }
 
-    const adjustedColor = pdfAdjustedColorFromCssFilter(semantic.value, color);
+    const adjustedColor = pdfAdjustedColorFromCssColorFilter(semantic.value, color);
     if (
       adjustedColor !== undefined &&
       pdfTextColorFilterIsDirectlyProjected(node, semantic.value)
@@ -3022,7 +2646,7 @@ function unsupportedSemanticFallbacksFromTableSection(input: {
   const fallbacks: PdfFallback[] = [];
 
   const semantics = [
-    ...(input.section.unsupportedSemantics ?? []),
+    ...pdfUnsupportedSemanticsFor(input.section),
     ...(input.effectiveOpacity === 0
       ? []
       : pdfVariableGradientOpacityUnsupportedSemantics(input.section)),
@@ -3074,7 +2698,7 @@ function unsupportedSemanticFallbacksFromTableRow(input: {
   const fallbacks: PdfFallback[] = [];
 
   const semantics = [
-    ...(input.row.unsupportedSemantics ?? []),
+    ...pdfUnsupportedSemanticsFor(input.row),
     ...(input.effectiveOpacity === 0
       ? []
       : pdfVariableGradientOpacityUnsupportedSemantics(input.row)),
@@ -3126,7 +2750,7 @@ function unsupportedSemanticFallbacksFromTableCell(input: {
   const fallbacks: PdfFallback[] = [];
 
   const semantics = [
-    ...(input.cell.unsupportedSemantics ?? []),
+    ...pdfUnsupportedSemanticsFor(input.cell),
     ...(input.effectiveOpacity === 0
       ? []
       : pdfVariableGradientOpacityUnsupportedSemantics(input.cell)),
@@ -3189,7 +2813,7 @@ function unsupportedSemanticFallbacksFromNode(input: {
   const fallbacks: PdfFallback[] = [];
 
   const semantics = [
-    ...(input.node.unsupportedSemantics ?? []),
+    ...pdfUnsupportedSemanticsFor(input.node),
     ...(effectiveOpacity === 0 || input.node.kind === "image" || input.node.kind === "video"
       ? []
       : pdfVariableGradientOpacityUnsupportedSemantics(input.node)),
@@ -3924,7 +3548,7 @@ function pdfShapeFillFromFill(input: {
   const fillColor = solidFillColor(input.fill);
   if (fillColor) {
     const adjustedColor = input.pdfColorFilter
-      ? pdfAdjustedColorFromCssFilter(input.pdfColorFilter, fillColor)
+      ? pdfAdjustedColorFromCssColorFilter(input.pdfColorFilter, fillColor)
       : undefined;
     return {
       color: adjustedColor ?? fillColor,
@@ -4321,7 +3945,7 @@ function pdfColorFilterFromLayoutImage(input: {
   readonly node: ProjectedLayoutImage;
   readonly asset?: PdfProjectionAssetArtifact;
 }): string | undefined {
-  for (const semantic of input.node.unsupportedSemantics ?? []) {
+  for (const semantic of pdfUnsupportedSemanticsFor(input.node)) {
     if (
       semantic.feature !== "filter" ||
       semantic.property !== "filter" ||
@@ -4344,7 +3968,7 @@ function pdfColorFilterFromVideoPoster(input: {
   readonly node: ProjectedLayoutVideo;
   readonly asset?: PdfProjectionAssetArtifact;
 }): string | undefined {
-  for (const semantic of input.node.unsupportedSemantics ?? []) {
+  for (const semantic of pdfUnsupportedSemanticsFor(input.node)) {
     if (
       semantic.feature !== "filter" ||
       semantic.property !== "filter" ||
@@ -5191,7 +4815,7 @@ function shadowVisualsFromLayoutMedia(
 function dropShadowFromFilterForLayoutMedia(
   node: ProjectedLayoutImage | ProjectedLayoutVideo,
 ): ShadowIR | undefined {
-  for (const semantic of node.unsupportedSemantics ?? []) {
+  for (const semantic of pdfUnsupportedSemanticsFor(node)) {
     if (
       semantic.feature !== "filter" ||
       semantic.property !== "filter" ||
@@ -5500,7 +5124,7 @@ function shadowVisualsFromLayoutShape(node: ProjectedLayoutShape): readonly PdfV
 }
 
 function dropShadowFromFilterForLayoutShape(node: ProjectedLayoutShape): ShadowIR | undefined {
-  for (const semantic of node.unsupportedSemantics ?? []) {
+  for (const semantic of pdfUnsupportedSemanticsFor(node)) {
     if (
       semantic.feature !== "filter" ||
       semantic.property !== "filter" ||
@@ -5742,7 +5366,7 @@ function shadowVisualsFromLayoutGroup(node: ProjectedLayoutGroup): readonly PdfV
 }
 
 function dropShadowFromFilterForLayoutGroup(node: ProjectedLayoutGroup): ShadowIR | undefined {
-  for (const semantic of node.unsupportedSemantics ?? []) {
+  for (const semantic of pdfUnsupportedSemanticsFor(node)) {
     if (
       semantic.feature !== "filter" ||
       semantic.property !== "filter" ||
@@ -5970,7 +5594,7 @@ function shadowVisualsFromLayoutTable(node: ProjectedLayoutTable): readonly PdfV
 }
 
 function dropShadowFromFilterForLayoutTable(node: ProjectedLayoutTable): ShadowIR | undefined {
-  for (const semantic of node.unsupportedSemantics ?? []) {
+  for (const semantic of pdfUnsupportedSemanticsFor(node)) {
     if (
       semantic.feature !== "filter" ||
       semantic.property !== "filter" ||
@@ -6310,7 +5934,7 @@ function pdfBlurFilterRadiusForNodeWithContext(
   node: ProjectedLayoutNode,
   context?: PdfCssFilterLengthContext,
 ): number | undefined {
-  for (const semantic of node.unsupportedSemantics ?? []) {
+  for (const semantic of pdfUnsupportedSemanticsFor(node)) {
     if (semantic.feature !== "filter" || semantic.property !== "filter") {
       continue;
     }
@@ -6612,7 +6236,7 @@ function lineVisualForEdge(input: {
     return undefined;
   }
   const adjustedColor = input.pdfColorFilter
-    ? pdfAdjustedColorFromCssFilter(input.pdfColorFilter, color)
+    ? pdfAdjustedColorFromCssColorFilter(input.pdfColorFilter, color)
     : undefined;
 
   const { box } = input;
@@ -6712,7 +6336,7 @@ function roundedStrokeVisualFromBox(input: {
     return undefined;
   }
   const adjustedColor = input.pdfColorFilter
-    ? pdfAdjustedColorFromCssFilter(input.pdfColorFilter, color)
+    ? pdfAdjustedColorFromCssColorFilter(input.pdfColorFilter, color)
     : undefined;
 
   return {
@@ -6885,7 +6509,7 @@ function pdfOpacityForTableSection(
 ): number | undefined {
   const sectionOpacity = combinePdfOpacity(
     pdfOpacity(section.opacity),
-    pdfOpacityFromUnsupportedSemantics(section.unsupportedSemantics),
+    pdfFilterOpacityFromPaintIntent(section),
   );
   return combinePdfOpacity(pdfOpacityForLayoutNode(table), sectionOpacity);
 }
@@ -6894,10 +6518,7 @@ function pdfBlendModeForTableSection(
   table: ProjectedLayoutTable,
   section: ProjectedLayoutTable["sections"][number],
 ): PdfBlendMode | undefined {
-  return (
-    pdfBlendModeFromUnsupportedSemantics(section.unsupportedSemantics) ??
-    pdfBlendModeFromNode(table)
-  );
+  return pdfBlendModeFromPaintIntent(section) ?? pdfBlendModeFromNode(table);
 }
 
 function backgroundVisualFromTableSection(input: {
@@ -6940,7 +6561,7 @@ function backgroundVisualFromTableSection(input: {
 function dropShadowFromFilterForTableSection(
   section: ProjectedLayoutTable["sections"][number],
 ): ShadowIR | undefined {
-  for (const semantic of section.unsupportedSemantics ?? []) {
+  for (const semantic of pdfUnsupportedSemanticsFor(section)) {
     if (
       semantic.feature !== "filter" ||
       semantic.property !== "filter" ||
@@ -7013,11 +6634,11 @@ function pdfOpacityForTableRow(
 ): number | undefined {
   const sectionOpacity = combinePdfOpacity(
     pdfOpacity(section.opacity),
-    pdfOpacityFromUnsupportedSemantics(section.unsupportedSemantics),
+    pdfFilterOpacityFromPaintIntent(section),
   );
   const rowOpacity = combinePdfOpacity(
     pdfOpacity(row.opacity),
-    pdfOpacityFromUnsupportedSemantics(row.unsupportedSemantics),
+    pdfFilterOpacityFromPaintIntent(row),
   );
   return combinePdfOpacity(
     combinePdfOpacity(pdfOpacityForLayoutNode(table), sectionOpacity),
@@ -7031,8 +6652,8 @@ function pdfBlendModeForTableRow(
   row: ProjectedLayoutTable["sections"][number]["rows"][number],
 ): PdfBlendMode | undefined {
   return (
-    pdfBlendModeFromUnsupportedSemantics(row.unsupportedSemantics) ??
-    pdfBlendModeFromUnsupportedSemantics(section.unsupportedSemantics) ??
+    pdfBlendModeFromPaintIntent(row) ??
+    pdfBlendModeFromPaintIntent(section) ??
     pdfBlendModeFromNode(table)
   );
 }
@@ -7078,7 +6699,7 @@ function backgroundVisualFromTableRow(input: {
 function dropShadowFromFilterForTableRow(
   row: ProjectedLayoutTable["sections"][number]["rows"][number],
 ): ShadowIR | undefined {
-  for (const semantic of row.unsupportedSemantics ?? []) {
+  for (const semantic of pdfUnsupportedSemanticsFor(row)) {
     if (
       semantic.feature !== "filter" ||
       semantic.property !== "filter" ||
@@ -7185,7 +6806,7 @@ function backgroundVisualFromTableCell(input: {
 }
 
 function dropShadowFromFilterForTableCell(cell: ProjectedLayoutTableCell): ShadowIR | undefined {
-  for (const semantic of cell.unsupportedSemantics ?? []) {
+  for (const semantic of pdfUnsupportedSemanticsFor(cell)) {
     if (
       semantic.feature !== "filter" ||
       semantic.property !== "filter" ||
@@ -7261,21 +6882,18 @@ function pdfOpacityForTableCell(
 ): number | undefined {
   const sectionOpacity = combinePdfOpacity(
     pdfOpacity(section.opacity),
-    pdfOpacityFromUnsupportedSemantics(section.unsupportedSemantics),
+    pdfFilterOpacityFromPaintIntent(section),
   );
   const rowOpacity = combinePdfOpacity(
     pdfOpacity(row.opacity),
-    pdfOpacityFromUnsupportedSemantics(row.unsupportedSemantics),
+    pdfFilterOpacityFromPaintIntent(row),
   );
   return combinePdfOpacity(
     combinePdfOpacity(
       combinePdfOpacity(pdfOpacityForLayoutNode(table), sectionOpacity),
       rowOpacity,
     ),
-    combinePdfOpacity(
-      pdfOpacity(cell.opacity),
-      pdfOpacityFromUnsupportedSemantics(cell.unsupportedSemantics),
-    ),
+    combinePdfOpacity(pdfOpacity(cell.opacity), pdfFilterOpacityFromPaintIntent(cell)),
   );
 }
 
@@ -9122,7 +8740,7 @@ function shadowTextVisualLayers(input: {
 }
 
 function dropShadowFromFilterForLayoutText(node: ProjectedLayoutText): ShadowIR | undefined {
-  for (const semantic of node.unsupportedSemantics ?? []) {
+  for (const semantic of pdfUnsupportedSemanticsFor(node)) {
     if (
       semantic.feature !== "filter" ||
       semantic.property !== "filter" ||
@@ -10081,8 +9699,7 @@ export function projectGraphToPdfPageModel(input: {
   });
   const projectedLayout = resolveProjectedLayout(input.options, layoutInput.snapshot, {
     fontMetrics: textFontMetricsFromRegistrations(input.integrationContext?.fontAssets),
-    // The unregistered-font PDF path uses the built-in Helvetica width table directly.
-    fallbackTextWidthSafetyFactor: 1,
+    textMeasurementProfile: PDF_BUILT_IN_HELVETICA_TEXT_MEASUREMENT_PROFILE,
   });
   const requestsByTextNode = explicitFontRequestsByTextNode({
     graph: input.graph,

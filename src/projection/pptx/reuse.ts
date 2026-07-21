@@ -39,6 +39,7 @@ export function incrementalProjectionReusePlan(input: {
   const previousOptions = input.previousOptions;
   const previousAssets = input.previousAssets;
   if (
+    previousProjectionArtifact.format !== "pptx" ||
     !isPptxPackageModel(previousProjection as PptxPackageModel) ||
     !previousOptions ||
     !previousAssets

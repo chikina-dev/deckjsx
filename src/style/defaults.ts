@@ -40,6 +40,15 @@ export const USER_AGENT_DEFAULTS = {
   th: { fontWeight: "bold", textAlign: "center" },
 } satisfies ThemeDefaults;
 
+/** Cross-format presentation defaults used when no table or cell style overrides them. */
+export const PRESENTATION_TABLE_DEFAULTS = {
+  cellTextFontSize: 18,
+  cellWhiteSpace: "nowrap",
+  cellPadding: [0, 0.1, 0, 0.1] as const,
+  headerCellBorder: { color: "2563EB", widthPt: 0.75 },
+  bodyCellBorder: { color: "111111", widthPt: 0.75 },
+} as const;
+
 export const ELEMENT_DEFAULTS: {
   readonly slide: SlideStyle;
   readonly container: ViewStyle;

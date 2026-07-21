@@ -2,6 +2,27 @@ import { describe, expect, test } from "vite-plus/test";
 import * as H from "../helpers.tsx";
 
 describe("project/render CSS fallback groups", () => {
+  test("preserves unsupported slide background diagnostics after projection", async () => {
+    const background = "repeating-linear-gradient(90deg, #FFFFFF 0%, #000000 0%)" as const;
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Unsupported slide background", style: { background } }, () => <></>);
+
+    const project = await deck.project();
+
+    expect(project.ok).toBe(true);
+    expect(project.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        code: "W_PROJECT_UNSUPPORTED_PPTX_SEMANTIC",
+        severity: "warning",
+        notes: expect.arrayContaining([
+          "nodeKind=slide",
+          "feature=background",
+          `value=${background}`,
+        ]),
+      }),
+    );
+  });
+
   test("project summary aggregates unsupported CSS-like semantics with drawing context", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Unsupported paint summary" }, () => (
