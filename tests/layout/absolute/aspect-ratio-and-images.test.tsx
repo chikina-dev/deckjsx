@@ -191,7 +191,7 @@ describe("absolute layout aspect ratio and images", () => {
             backgroundColor: "#EEEEEE",
           }}
         >
-          <p style={{ width: 1, height: 0.5, fontSize: 18 }}>Inner</p>
+          <p style={{ width: 1, height: 0.5, fontSize: 18, margin: 0 }}>Inner</p>
         </div>
         <div
           style={{

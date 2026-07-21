@@ -91,7 +91,15 @@ describe("style value units", () => {
             gap: "5vh",
           }}
         >
-          <p style={{ width: "20vw", height: "10vh", marginBottom: "5vh", fontSize: 12 }}>
+          <p
+            style={{
+              width: "20vw",
+              height: "10vh",
+              marginTop: 0,
+              marginBottom: "5vh",
+              fontSize: 12,
+            }}
+          >
             Stack viewport
           </p>
         </div>
@@ -139,7 +147,16 @@ describe("style value units", () => {
             gridTemplateRows: ["10vh", "1fr"],
           }}
         >
-          <p style={{ gridColumn: 1, gridRow: 1, width: "15vw", height: "8vh", fontSize: 12 }}>
+          <p
+            style={{
+              gridColumn: 1,
+              gridRow: 1,
+              width: "15vw",
+              height: "8vh",
+              fontSize: 12,
+              margin: 0,
+            }}
+          >
             Grid viewport
           </p>
         </div>

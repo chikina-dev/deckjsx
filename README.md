@@ -326,7 +326,7 @@ parent elements.
 
 For each style-capable element, values are resolved in this order:
 
-1. Element defaults, such as default text box behavior.
+1. Element defaults, including browser-inspired user-agent styles for authored tags.
 2. `Theme` defaults for the authored tag, such as `p`, `h1`, `div`, `span`, or `img`.
 3. Matching `StyleSheet` class rules registered with `deck.useStyles()`.
 4. Authored inline style from the JSX `style` object.
@@ -334,6 +334,22 @@ For each style-capable element, values are resolved in this order:
 Later layers replace earlier layers property by property. Inline visual and layout values belong in
 `style={{ ... }}`; structural props such as `className`, `area`, `src`, `data`, `shape`, `colspan`,
 and `rowspan` remain regular JSX props.
+
+The supported HTML-like tags start from familiar browser proportions: `h1` through `h6` have a
+heading size hierarchy and bold weight, `p`, headings, and `figure` have user-agent block margins,
+and adjacent vertical margins collapse in normal block flow. The scale uses deckjsx's readable 18pt
+body base rather than a browser's screen-oriented 16px root. Flex and grid items keep their margins,
+as they do in CSS. Layouts that intentionally pack text into exact tracks should apply a reset in a
+theme or class:
+
+```tsx
+const theme = new Theme({
+  defaults: {
+    p: { margin: 0 },
+    h1: { margin: 0 },
+  },
+});
+```
 
 ```tsx
 import { Deck, StyleSheet, Theme } from "deckjsx";

@@ -30,6 +30,7 @@ describe("style-aliases", () => {
               letterSpacing: 1.5,
               textDecoration: "underline line-through",
               lineHeight: "28px",
+              margin: 0,
             }}
           >
             Alias text
@@ -243,7 +244,7 @@ describe("style-aliases", () => {
           >
             One
           </p>
-          <p style={{ width: 1, height: 0.5, fontSize: 18 }}>Two</p>
+          <p style={{ width: 1, height: 0.5, fontSize: 18, margin: 0 }}>Two</p>
         </div>
       </>
     ));

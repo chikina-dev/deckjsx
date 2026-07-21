@@ -163,8 +163,18 @@ function summarizeTextMetricsFromInput(input: {
       : Math.max(1, Math.ceil(estimatedWidthPt / Math.max(availableWidthPt, 1)));
   const estimatedLineCapacity = Math.max(
     0,
-    Math.floor(availableHeightPt / Math.max(resolvedLineHeightPt, 1)),
+    Math.floor((availableHeightPt + 1e-6) / Math.max(resolvedLineHeightPt, 1)),
   );
+  const heightScale =
+    estimatedLineCount > 0 && resolvedLineHeightPt > 0
+      ? availableHeightPt / (estimatedLineCount * resolvedLineHeightPt)
+      : 1;
+  const widthScale =
+    input.style.wrap === false && estimatedWidthPt > 0 ? availableWidthPt / estimatedWidthPt : 1;
+  const estimatedRenderedFontSizePt =
+    input.style.fit === "shrink"
+      ? fontSizePt * Math.min(1, Math.max(0, heightScale), Math.max(0, widthScale))
+      : fontSizePt;
 
   return {
     characterCount: Array.from(input.text).length,
@@ -172,6 +182,7 @@ function summarizeTextMetricsFromInput(input: {
       ? { textDirection: input.style.textDirection }
       : {}),
     fontSizePt,
+    estimatedRenderedFontSizePt,
     lineHeightPt: resolvedLineHeightPt,
     availableWidthPt,
     availableHeightPt,
@@ -239,6 +250,7 @@ function textVisualChecks(input: {
   readonly metrics: ProjectInspectionTextMetrics | undefined;
   readonly slidePartId: ProjectInspectionVisualCheck["slidePartId"];
   readonly slideId: string;
+  readonly origin?: PptxElementOrigin;
 }): ProjectInspectionVisualCheck[] {
   const metrics = input.metrics;
   if (!metrics) {
@@ -247,17 +259,21 @@ function textVisualChecks(input: {
 
   const checks: ProjectInspectionVisualCheck[] = [];
 
-  if (metrics.fontSizePt < SMALL_TEXT_THRESHOLD_PT) {
+  if (metrics.estimatedRenderedFontSizePt < SMALL_TEXT_THRESHOLD_PT) {
+    const shrunk = metrics.estimatedRenderedFontSizePt < metrics.fontSizePt;
     checks.push({
       severity: "warning",
       code: "W_VISUAL_TEXT_SMALL",
-      message: `Text uses ${metrics.fontSizePt}pt type, which may be hard to read in the generated PPTX.`,
+      message: shrunk
+        ? `Text may render near ${metrics.estimatedRenderedFontSizePt.toFixed(1)}pt after shrinking from ${metrics.fontSizePt}pt, which may be hard to read in the generated PPTX.`
+        : `Text uses ${metrics.fontSizePt}pt type, which may be hard to read in the generated PPTX.`,
       slidePartId: input.slidePartId,
       slideId: input.slideId,
       ...(input.elementId ? { elementId: input.elementId } : {}),
       kind: input.kind,
       textPreview: input.textPreview.slice(0, 80),
       metrics,
+      ...(input.origin ? { origin: input.origin } : {}),
     });
   }
 
@@ -272,6 +288,7 @@ function textVisualChecks(input: {
       kind: input.kind,
       textPreview: input.textPreview.slice(0, 80),
       metrics,
+      ...(input.origin ? { origin: input.origin } : {}),
     });
   }
 
@@ -296,10 +313,20 @@ function textVisualChecks(input: {
       kind: input.kind,
       textPreview: input.textPreview.slice(0, 80),
       metrics,
+      ...(input.origin ? { origin: input.origin } : {}),
     });
   }
 
   return checks;
+}
+
+function frameExtendsOutside(inner: PptxElement["frame"], outer: PptxElement["frame"]): boolean {
+  return (
+    inner.xEmu < outer.xEmu ||
+    inner.yEmu < outer.yEmu ||
+    inner.xEmu + inner.widthEmu > outer.xEmu + outer.widthEmu ||
+    inner.yEmu + inner.heightEmu > outer.yEmu + outer.heightEmu
+  );
 }
 
 function mediaVisualChecks(input: {
@@ -369,6 +396,7 @@ function collectVisualChecksForSlide(
         metrics: textMetrics,
         slidePartId: slide.id,
         slideId: slide.payload.slideId,
+        origin: element.origin,
       }),
       ...mediaVisualChecks({
         element,
@@ -377,6 +405,19 @@ function collectVisualChecksForSlide(
         slideId: slide.payload.slideId,
       }),
     );
+
+    if (element.layoutAnchor && frameExtendsOutside(element.frame, element.layoutAnchor.frame)) {
+      checks.push({
+        severity: "warning",
+        code: "W_VISUAL_ELEMENT_OUTSIDE_TEMPLATE_AREA",
+        message: `Element extends outside template area "${element.layoutAnchor.template}.${element.layoutAnchor.area}" and may overlap neighboring slide content.`,
+        slidePartId: slide.id,
+        slideId: slide.payload.slideId,
+        elementId: element.id,
+        kind: element.kind,
+        origin: element.origin,
+      });
+    }
 
     if (element.kind === "group") {
       element.children.forEach((child) => collectFromElement(child, elementHidden));
@@ -393,6 +434,7 @@ function collectVisualChecksForSlide(
                 metrics: cellMetrics,
                 slidePartId: slide.id,
                 slideId: slide.payload.slideId,
+                origin: element.origin,
               }),
             );
             cell.children.forEach((child) => collectFromElement(child, elementHidden));

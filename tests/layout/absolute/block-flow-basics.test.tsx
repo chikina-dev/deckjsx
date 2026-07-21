@@ -17,14 +17,43 @@ describe("absolute layout block flow basics", () => {
         kind: "text",
         frame: {
           xEmu: 0,
-          yEmu: 0,
+          yEmu: 0.25 * H.EMU_PER_INCH,
           widthEmu: 10 * H.EMU_PER_INCH,
           heightEmu: 0.3 * H.EMU_PER_INCH,
         },
         text: "Hello",
-        fontSizePt: undefined,
+        fontSizePt: 18,
       },
     ]);
+  });
+
+  test("render applies browser-inspired heading and paragraph defaults with collapsed margins", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "User-agent block flow" }, () => (
+      <div style={{ position: "absolute", left: 1, top: 1, width: 4, height: 4 }}>
+        <h1>Heading</h1>
+        <p>First</p>
+        <p>Second</p>
+      </div>
+    ));
+
+    const [group] = H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children;
+    expect(group?.kind).toBe("group");
+    if (group?.kind !== "group") {
+      return;
+    }
+
+    const [heading, first, second] = group.children;
+    expect(heading?.kind).toBe("text");
+    if (heading?.kind !== "text") {
+      return;
+    }
+    expect(heading?.style.fontSizePt).toBe(36);
+    expect(heading?.style.fontWeight).toBe("bold");
+    expect(heading?.frame.yEmu).toBeCloseTo(1.335 * H.EMU_PER_INCH, 5);
+    expect(first?.frame.yEmu).toBeCloseTo(2.27 * H.EMU_PER_INCH, 5);
+    expect(second?.frame.yEmu).toBeCloseTo(2.82 * H.EMU_PER_INCH, 5);
   });
 
   test("measures long auto-height text using its wrapped line count", async () => {
@@ -83,6 +112,22 @@ describe("absolute layout block flow basics", () => {
 
     expect(text?.kind).toBe("text");
     expect(text?.frame.heightEmu).toBeCloseTo(41 * 120 * 12700, 5);
+  });
+
+  test("reserves wrap safety for unregistered presentation fonts", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Fallback font safety" }, () => (
+      <h2 style={{ position: "absolute", left: 1, top: 1, width: 3.57, margin: 0 }}>
+        Semantic defaults
+      </h2>
+    ));
+
+    const [heading] = H.expectPptxProjection(await deck.project()).slides[0].payload.drawing
+      .children;
+
+    expect(heading?.kind).toBe("text");
+    expect(heading?.frame.heightEmu).toBeCloseTo(0.9 * H.EMU_PER_INCH, 5);
   });
 
   test("includes character spacing when wrapping auto-height text", async () => {
@@ -178,7 +223,7 @@ describe("absolute layout block flow basics", () => {
             kind: "text",
             frame: {
               xEmu: 1 * H.EMU_PER_INCH + 0.1 * H.EMU_PER_INCH,
-              yEmu: 1 * H.EMU_PER_INCH + 0.1 * H.EMU_PER_INCH,
+              yEmu: 1.35 * H.EMU_PER_INCH,
               widthEmu: 1.8 * H.EMU_PER_INCH,
               heightEmu: 0.3 * H.EMU_PER_INCH,
             },
@@ -189,7 +234,7 @@ describe("absolute layout block flow basics", () => {
             kind: "text",
             frame: {
               xEmu: 1 * H.EMU_PER_INCH + 0.1 * H.EMU_PER_INCH,
-              yEmu: 1.4 * H.EMU_PER_INCH,
+              yEmu: 1_889_760,
               widthEmu: 1.8 * H.EMU_PER_INCH,
               heightEmu: 0.5 * H.EMU_PER_INCH,
             },
@@ -240,7 +285,7 @@ describe("absolute layout block flow basics", () => {
             kind: "text",
             frame: {
               xEmu: 1.55 * H.EMU_PER_INCH,
-              yEmu: 1.45 * H.EMU_PER_INCH,
+              yEmu: 1.7 * H.EMU_PER_INCH,
               widthEmu: 2.5 * H.EMU_PER_INCH,
               heightEmu: 0.3 * H.EMU_PER_INCH,
             },
@@ -251,7 +296,7 @@ describe("absolute layout block flow basics", () => {
             kind: "text",
             frame: {
               xEmu: 1.25 * H.EMU_PER_INCH,
-              yEmu: 1.8 * H.EMU_PER_INCH,
+              yEmu: 2.3 * H.EMU_PER_INCH,
               widthEmu: 2.5 * H.EMU_PER_INCH,
               heightEmu: 0.3 * H.EMU_PER_INCH,
             },
@@ -334,7 +379,7 @@ describe("absolute layout block flow basics", () => {
             kind: "text",
             frame: {
               xEmu: 1.56 * H.EMU_PER_INCH,
-              yEmu: 2.4 * H.EMU_PER_INCH,
+              yEmu: 2_048_256,
               widthEmu: 2.88 * H.EMU_PER_INCH,
               heightEmu: 0.3 * H.EMU_PER_INCH,
             },

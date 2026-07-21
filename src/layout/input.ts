@@ -171,7 +171,8 @@ function resolvedPropsFor<TProps extends object>(
     Object.entries(resolved.properties)
       .filter(
         ([, property]) =>
-          property.source.layer !== "default" && property.source.layer !== "inherited",
+          (property.source.layer !== "default" || property.source.defaultKey !== undefined) &&
+          property.source.layer !== "inherited",
       )
       .map(([key, property]) => [key, property.value]),
   ) as Partial<TProps>;

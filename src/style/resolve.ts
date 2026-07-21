@@ -8,7 +8,7 @@ import type {
   StyleClassRef,
   StyleEntity,
 } from "../graph";
-import { elementDefaultsFor } from "./defaults";
+import { elementDefaultsFor, userAgentDefaultsFor } from "./defaults";
 import {
   registerStylesheets,
   resolveClassMatches,
@@ -26,7 +26,7 @@ export type ResolvedStyleValue<TProperty extends StyleDeclarationKey = StyleDecl
 export type ResolvedStyleLayer = "default" | "inherited" | "theme" | "class" | "style";
 
 export type ResolvedStyleSource =
-  | { readonly layer: "default" }
+  | { readonly layer: "default"; readonly defaultKey?: string }
   | { readonly layer: "inherited"; readonly parentId: GraphNodeId }
   | { readonly layer: "theme"; readonly defaultKey: string }
   | {
@@ -209,6 +209,16 @@ function resolvedStyleFor(
   const defaults = elementDefaultsFor(node);
   if (defaults) {
     applyProperties(defaults, { layer: "default" }, properties, traceCandidates);
+  }
+
+  const userAgentDefaults = userAgentDefaultsFor(node);
+  if (userAgentDefaults && node.authoredTag) {
+    applyProperties(
+      userAgentDefaults,
+      { layer: "default", defaultKey: node.authoredTag },
+      properties,
+      traceCandidates,
+    );
   }
 
   applyInheritedProperties(inherited.parentId, inherited.style, properties, traceCandidates);

@@ -235,4 +235,61 @@ describe("style resolution authored style capture", () => {
     );
     expect(result.resolvedStyles?.get(text?.id ?? ("" as never))?.style.position).toBe("static");
   });
+
+  test("resolved authored tags include browser-inspired user-agent defaults", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide(() => (
+      <div>
+        <h1>Heading</h1>
+        <p>Paragraph</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Header</th>
+            </tr>
+          </thead>
+        </table>
+      </div>
+    ));
+
+    const result = deck.compile();
+    const nodes = H.values(result.graph?.nodes ?? new Map());
+    const heading = nodes.find((node) => node.kind === "text" && node.authoredTag === "h1");
+    const paragraph = nodes.find((node) => node.kind === "text" && node.authoredTag === "p");
+    const header = nodes.find((node) => node.kind === "tableCell" && node.authoredTag === "th");
+    const headingStyle = result.resolvedStyles?.get(heading?.id ?? ("" as never));
+    const paragraphStyle = result.resolvedStyles?.get(paragraph?.id ?? ("" as never));
+    const headerStyle = result.resolvedStyles?.get(header?.id ?? ("" as never));
+
+    expect(headingStyle?.style).toMatchObject({
+      fontSize: 36,
+      fontWeight: "bold",
+      margin: "0.67em 0",
+    });
+    expect(headingStyle?.properties.fontSize?.source).toEqual({
+      layer: "default",
+      defaultKey: "h1",
+    });
+    expect(paragraphStyle?.style.margin).toBe("1em 0");
+    expect(headerStyle?.style).toMatchObject({ fontWeight: "bold", textAlign: "center" });
+  });
+
+  test("theme and inline styles override user-agent defaults", async () => {
+    const deck = new H.Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      theme: new H.Theme({ defaults: { h1: { fontSize: 30, margin: 0 } } }),
+    });
+    deck.slide(() => <h1 style={{ fontWeight: 500 }}>Heading</h1>);
+
+    const result = deck.compile();
+    const heading = H.values(result.graph?.nodes ?? new Map()).find(
+      (node) => node.kind === "text" && node.authoredTag === "h1",
+    );
+    const style = result.resolvedStyles?.get(heading?.id ?? ("" as never));
+
+    expect(style?.style).toMatchObject({ fontSize: 30, fontWeight: 500, margin: 0 });
+    expect(style?.properties.fontSize?.source).toEqual({ layer: "theme", defaultKey: "h1" });
+    expect(style?.properties.fontWeight?.source).toEqual({ layer: "style" });
+  });
 });

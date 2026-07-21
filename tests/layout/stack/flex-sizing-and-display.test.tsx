@@ -20,8 +20,16 @@ describe("stack layout flex sizing and display", () => {
             padding: 0.5,
           }}
         >
-          <p style={{ width: 0.5, flexBasis: 1, flexGrow: 1, height: 0.5, fontSize: 18 }}>Grow A</p>
-          <p style={{ width: 0.5, flexBasis: 1, flexGrow: 2, height: 0.5, fontSize: 18 }}>Grow B</p>
+          <p
+            style={{ width: 0.5, flexBasis: 1, flexGrow: 1, height: 0.5, fontSize: 18, margin: 0 }}
+          >
+            Grow A
+          </p>
+          <p
+            style={{ width: 0.5, flexBasis: 1, flexGrow: 2, height: 0.5, fontSize: 18, margin: 0 }}
+          >
+            Grow B
+          </p>
         </div>
         <div
           style={{
@@ -36,8 +44,12 @@ describe("stack layout flex sizing and display", () => {
             padding: 0.5,
           }}
         >
-          <p style={{ flexBasis: 2, flexShrink: 1, height: 0.5, fontSize: 18 }}>Shrink A</p>
-          <p style={{ flexBasis: 2, flexShrink: 1, height: 0.5, fontSize: 18 }}>Shrink B</p>
+          <p style={{ flexBasis: 2, flexShrink: 1, height: 0.5, fontSize: 18, margin: 0 }}>
+            Shrink A
+          </p>
+          <p style={{ flexBasis: 2, flexShrink: 1, height: 0.5, fontSize: 18, margin: 0 }}>
+            Shrink B
+          </p>
         </div>
       </>
     ));
@@ -133,13 +145,13 @@ describe("stack layout flex sizing and display", () => {
             gap: 0.5,
           }}
         >
-          <p style={{ width: 2, height: 0.5, fontSize: 18 }}>A</p>
+          <p style={{ width: 2, height: 0.5, fontSize: 18, margin: 0 }}>A</p>
           <p
             style={{ position: "absolute", display: "none", width: 2, height: 0.75, fontSize: 18 }}
           >
             Hidden
           </p>
-          <p style={{ width: 2, height: 0.5, fontSize: 18 }}>B</p>
+          <p style={{ width: 2, height: 0.5, fontSize: 18, margin: 0 }}>B</p>
         </div>
       </>
     ));

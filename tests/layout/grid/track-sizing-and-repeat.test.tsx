@@ -19,9 +19,9 @@ describe("grid track sizing and repeat", () => {
             gridTemplateRows: "1fr",
           }}
         >
-          <p style={{ width: 0.5, height: 0.5 }}>A</p>
-          <p style={{ width: 0.5, height: 0.5 }}>B</p>
-          <p style={{ width: 0.5, height: 0.5 }}>C</p>
+          <p style={{ width: 0.5, height: 0.5, margin: 0 }}>A</p>
+          <p style={{ width: 0.5, height: 0.5, margin: 0 }}>B</p>
+          <p style={{ width: 0.5, height: 0.5, margin: 0 }}>C</p>
         </div>
       </>
     ));
@@ -49,7 +49,7 @@ describe("grid track sizing and repeat", () => {
               heightEmu: 0.5 * H.EMU_PER_INCH,
             },
             text: "A",
-            fontSizePt: undefined,
+            fontSizePt: 18,
           },
           {
             kind: "text",
@@ -60,7 +60,7 @@ describe("grid track sizing and repeat", () => {
               heightEmu: 0.5 * H.EMU_PER_INCH,
             },
             text: "B",
-            fontSizePt: undefined,
+            fontSizePt: 18,
           },
           {
             kind: "text",
@@ -71,7 +71,7 @@ describe("grid track sizing and repeat", () => {
               heightEmu: 0.5 * H.EMU_PER_INCH,
             },
             text: "C",
-            fontSizePt: undefined,
+            fontSizePt: 18,
           },
         ],
       },
@@ -97,9 +97,9 @@ describe("grid track sizing and repeat", () => {
             gridAutoFlow: "column",
           }}
         >
-          <p style={{ width: 0.5, height: 0.5 }}>A</p>
-          <p style={{ width: 0.5, height: 0.5 }}>B</p>
-          <p style={{ width: 0.5, height: 0.5 }}>C</p>
+          <p style={{ width: 0.5, height: 0.5, margin: 0 }}>A</p>
+          <p style={{ width: 0.5, height: 0.5, margin: 0 }}>B</p>
+          <p style={{ width: 0.5, height: 0.5, margin: 0 }}>C</p>
         </div>
       </>
     ));
@@ -127,7 +127,7 @@ describe("grid track sizing and repeat", () => {
               heightEmu: 0.5 * H.EMU_PER_INCH,
             },
             text: "A",
-            fontSizePt: undefined,
+            fontSizePt: 18,
           },
           {
             kind: "text",
@@ -138,7 +138,7 @@ describe("grid track sizing and repeat", () => {
               heightEmu: 0.5 * H.EMU_PER_INCH,
             },
             text: "B",
-            fontSizePt: undefined,
+            fontSizePt: 18,
           },
           {
             kind: "text",
@@ -149,7 +149,7 @@ describe("grid track sizing and repeat", () => {
               heightEmu: 0.5 * H.EMU_PER_INCH,
             },
             text: "C",
-            fontSizePt: undefined,
+            fontSizePt: 18,
           },
         ],
       },
@@ -173,9 +173,9 @@ describe("grid track sizing and repeat", () => {
             gridTemplateRows: "1fr",
           }}
         >
-          <p style={{ width: 0.5, height: 0.5 }}>A</p>
-          <p style={{ width: 0.5, height: 0.5 }}>B</p>
-          <p style={{ width: 0.5, height: 0.5 }}>C</p>
+          <p style={{ width: 0.5, height: 0.5, margin: 0 }}>A</p>
+          <p style={{ width: 0.5, height: 0.5, margin: 0 }}>B</p>
+          <p style={{ width: 0.5, height: 0.5, margin: 0 }}>C</p>
         </div>
       </>
     ));
@@ -203,7 +203,7 @@ describe("grid track sizing and repeat", () => {
               heightEmu: 0.5 * H.EMU_PER_INCH,
             },
             text: "A",
-            fontSizePt: undefined,
+            fontSizePt: 18,
           },
           {
             kind: "text",
@@ -214,7 +214,7 @@ describe("grid track sizing and repeat", () => {
               heightEmu: 0.5 * H.EMU_PER_INCH,
             },
             text: "B",
-            fontSizePt: undefined,
+            fontSizePt: 18,
           },
           {
             kind: "text",
@@ -225,7 +225,7 @@ describe("grid track sizing and repeat", () => {
               heightEmu: 0.5 * H.EMU_PER_INCH,
             },
             text: "C",
-            fontSizePt: undefined,
+            fontSizePt: 18,
           },
         ],
       },
@@ -249,8 +249,8 @@ describe("grid track sizing and repeat", () => {
             gridTemplateRows: "1fr",
           }}
         >
-          <p style={{ width: 0.5, height: 0.5 }}>A</p>
-          <p style={{ width: 0.5, height: 0.5 }}>B</p>
+          <p style={{ width: 0.5, height: 0.5, margin: 0 }}>A</p>
+          <p style={{ width: 0.5, height: 0.5, margin: 0 }}>B</p>
         </div>
       </>
     ));
@@ -278,7 +278,7 @@ describe("grid track sizing and repeat", () => {
               heightEmu: 0.5 * H.EMU_PER_INCH,
             },
             text: "A",
-            fontSizePt: undefined,
+            fontSizePt: 18,
           },
           {
             kind: "text",
@@ -289,7 +289,7 @@ describe("grid track sizing and repeat", () => {
               heightEmu: 0.5 * H.EMU_PER_INCH,
             },
             text: "B",
-            fontSizePt: undefined,
+            fontSizePt: 18,
           },
         ],
       },

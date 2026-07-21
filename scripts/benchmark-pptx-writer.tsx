@@ -286,7 +286,9 @@ const fixtures: readonly BenchmarkFixture[] = [
       for (let slide = 0; slide < 8; slide += 1) {
         deck.slide({ name: `Report ${slide + 1}`, template: "report" }, ({ template }) => (
           <>
-            <h1 area={template.title}>Template report {slide + 1}</h1>
+            <h1 area={template.title} style={{ margin: 0 }}>
+              Template report {slide + 1}
+            </h1>
             <div
               area={template.body}
               style={{
@@ -298,16 +300,22 @@ const fixtures: readonly BenchmarkFixture[] = [
               }}
             >
               {Array.from({ length: 8 }, (_, index) => (
-                <p style={{ fontSize: 11, color: index % 2 === 0 ? "#111827" : "#1D4ED8" }}>
+                <p
+                  style={{
+                    fontSize: 11,
+                    color: index % 2 === 0 ? "#111827" : "#1D4ED8",
+                    margin: 0,
+                  }}
+                >
                   Area item {index + 1}
                 </p>
               ))}
             </div>
             <div area={template.aside} style={{ backgroundColor: "#E0F2FE", padding: 0.12 }}>
-              <p style={{ fontSize: 18, fontWeight: 700 }}>KPI</p>
-              <p style={{ fontSize: 30, color: "#0369A1" }}>{92 + slide}%</p>
+              <p style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>KPI</p>
+              <p style={{ fontSize: 30, color: "#0369A1", margin: 0 }}>{92 + slide}%</p>
             </div>
-            <p area={template.footer} style={{ fontSize: 9, color: "#64748B" }}>
+            <p area={template.footer} style={{ fontSize: 9, color: "#64748B", margin: 0 }}>
               Template area flow and layout anchors
             </p>
           </>

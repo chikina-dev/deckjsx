@@ -523,6 +523,7 @@ function pdfTextMetrics(textElement: {
       ? { textDirection: textElement.textDirection }
       : {}),
     fontSizePt: textElement.fontSize,
+    estimatedRenderedFontSizePt: textElement.fontSize,
     lineHeightPt,
     availableWidthPt,
     availableHeightPt,
@@ -532,7 +533,7 @@ function pdfTextMetrics(textElement: {
         ? Math.max(1, Math.ceil(estimatedTextWidthPt / availableWidthPt))
         : 1,
     estimatedLineCapacity:
-      lineHeightPt > 0 ? Math.max(1, Math.floor(availableHeightPt / lineHeightPt)) : 1,
+      lineHeightPt > 0 ? Math.max(1, Math.floor((availableHeightPt + 1e-6) / lineHeightPt)) : 1,
     fit: textElement.fit ?? "none",
     wrap,
   };
@@ -598,7 +599,7 @@ function pdfTextVisualChecks(input: {
     (!metrics.wrap &&
       metrics.availableWidthPt > 0 &&
       metrics.estimatedTextWidthPt > metrics.availableWidthPt) ||
-    metrics.availableHeightPt < metrics.lineHeightPt;
+    metrics.availableHeightPt + 1e-6 < metrics.lineHeightPt;
 
   if (textMayOverflow) {
     const shrink = metrics.fit === "shrink";

@@ -14,6 +14,7 @@ export type LengthResolutionContext = {
   viewportWidthEmu?: number;
   viewportHeightEmu?: number;
   fontMetrics?: readonly TextFontMetrics[];
+  fallbackTextWidthSafetyFactor?: number;
 };
 
 const ROOT_FONT_SIZE_PX = 16;

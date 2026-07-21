@@ -710,6 +710,10 @@ function paintOrderIsValid(value: unknown): boolean {
     isRecord(value) &&
     Number.isFinite(value.siblingOrder) &&
     (value.zIndex === undefined || Number.isFinite(value.zIndex)) &&
+    (value.sequence === undefined ||
+      (typeof value.sequence === "number" &&
+        Number.isFinite(value.sequence) &&
+        value.sequence >= 0)) &&
     (value.generatedLayerRole === undefined ||
       value.generatedLayerRole === "authored" ||
       value.generatedLayerRole === "background" ||

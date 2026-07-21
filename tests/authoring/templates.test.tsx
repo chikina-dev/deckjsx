@@ -80,7 +80,9 @@ describe("Deck slide templates", () => {
 
     deck.slide({ template: "report" }, ({ template }) => (
       <>
-        <h1 area={template.title}>Quarterly Review</h1>
+        <h1 area={template.title} style={{ margin: 0 }}>
+          Quarterly Review
+        </h1>
         <section area={template.body}>
           <p>Body</p>
         </section>
@@ -138,7 +140,7 @@ describe("Deck slide templates", () => {
     );
 
     deck.slide({ template: "report" }, ({ template }) => (
-      <h1 area={template.title} className="title">
+      <h1 area={template.title} className="title" style={{ margin: 0 }}>
         Quarterly Review
       </h1>
     ));
@@ -207,7 +209,11 @@ describe("Deck slide templates", () => {
 
     const deck = new Deck({ layout });
     deck.mount("child", child, {
-      title: <h1 area={createTemplateAreaRef("report", "title")}>Slotted Title</h1>,
+      title: (
+        <h1 area={createTemplateAreaRef("report", "title")} style={{ margin: 0 }}>
+          Slotted Title
+        </h1>
+      ),
     });
 
     const [title] =

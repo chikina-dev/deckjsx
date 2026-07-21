@@ -34,10 +34,18 @@ export function comparePdfVisualsByPaintOrder(
   left: PdfVisualElement,
   right: PdfVisualElement,
 ): number {
+  const zIndexOrder = (left.paintOrder.zIndex ?? 0) - (right.paintOrder.zIndex ?? 0);
+  if (zIndexOrder !== 0) {
+    return zIndexOrder;
+  }
+
+  if (left.paintOrder.sequence !== undefined && right.paintOrder.sequence !== undefined) {
+    return left.paintOrder.sequence - right.paintOrder.sequence;
+  }
+
   const leftOwnerOrder = Math.round(left.paintOrder.siblingOrder);
   const rightOwnerOrder = Math.round(right.paintOrder.siblingOrder);
   return (
-    (left.paintOrder.zIndex ?? 0) - (right.paintOrder.zIndex ?? 0) ||
     leftOwnerOrder - rightOwnerOrder ||
     generatedLayerWeight(left) - generatedLayerWeight(right) ||
     left.paintOrder.siblingOrder - right.paintOrder.siblingOrder

@@ -19,8 +19,8 @@ describe("stack layout flex basics", () => {
             padding: 0.5,
           }}
         >
-          <p style={{ width: 1, fontSize: 18 }}>A</p>
-          <p style={{ width: 1, fontSize: 18 }}>B</p>
+          <p style={{ width: 1, fontSize: 18, margin: 0 }}>A</p>
+          <p style={{ width: 1, fontSize: 18, margin: 0 }}>B</p>
         </div>
       </>
     ));
@@ -84,8 +84,8 @@ describe("stack layout flex basics", () => {
             padding: 0.5,
           }}
         >
-          <p style={{ height: 0.5, fontSize: 18 }}>A</p>
-          <p style={{ height: 0.5, fontSize: 18 }}>B</p>
+          <p style={{ height: 0.5, fontSize: 18, margin: 0 }}>A</p>
+          <p style={{ height: 0.5, fontSize: 18, margin: 0 }}>B</p>
         </div>
       </>
     ));
@@ -147,8 +147,8 @@ describe("stack layout flex basics", () => {
           columnGap: "10%",
         }}
       >
-        <p style={{ width: 1, fontSize: 18 }}>A</p>
-        <p style={{ width: 1, fontSize: 18 }}>B</p>
+        <p style={{ width: 1, fontSize: 18, margin: 0 }}>A</p>
+        <p style={{ width: 1, fontSize: 18, margin: 0 }}>B</p>
       </div>
     ));
 
@@ -193,6 +193,48 @@ describe("stack layout flex basics", () => {
     ]);
   });
 
+  test("includes percentage item margins in flex sizing and placement", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Flex percentage item margins" }, () => (
+      <div
+        style={{
+          position: "absolute",
+          left: 1,
+          top: 1,
+          width: 6,
+          height: 2,
+          display: "flex",
+          padding: 0.5,
+        }}
+      >
+        <p style={{ width: 1, height: 0.5, margin: "0 10%", fontSize: 18 }}>A</p>
+        <p style={{ width: 1, height: 0.5, margin: "0 10%", fontSize: 18 }}>B</p>
+      </div>
+    ));
+
+    const [group] = H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children;
+    expect(group?.kind).toBe("group");
+    if (group?.kind !== "group") {
+      return;
+    }
+
+    expect(group.children.map((child) => child.frame)).toEqual([
+      {
+        xEmu: 2 * H.EMU_PER_INCH,
+        yEmu: 1.5 * H.EMU_PER_INCH,
+        widthEmu: 1 * H.EMU_PER_INCH,
+        heightEmu: 0.5 * H.EMU_PER_INCH,
+      },
+      {
+        xEmu: 4 * H.EMU_PER_INCH,
+        yEmu: 1.5 * H.EMU_PER_INCH,
+        widthEmu: 1 * H.EMU_PER_INCH,
+        heightEmu: 0.5 * H.EMU_PER_INCH,
+      },
+    ]);
+  });
+
   test("render resolves stack layout to absolute frames in the IR", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
@@ -211,8 +253,8 @@ describe("stack layout flex basics", () => {
             padding: 0.5,
           }}
         >
-          <p style={{ width: 4, height: 0.5, fontSize: 20 }}>First</p>
-          <p style={{ width: 4, height: 0.75, fontSize: 20 }}>Second</p>
+          <p style={{ width: 4, height: 0.5, fontSize: 20, margin: 0 }}>First</p>
+          <p style={{ width: 4, height: 0.75, fontSize: 20, margin: 0 }}>Second</p>
         </div>
       </>
     ));
