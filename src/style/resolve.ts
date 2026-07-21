@@ -211,6 +211,8 @@ function resolvedStyleFor(
     applyProperties(defaults, { layer: "default" }, properties, traceCandidates);
   }
 
+  applyInheritedProperties(inherited.parentId, inherited.style, properties, traceCandidates);
+
   const userAgentDefaults = userAgentDefaultsFor(node);
   if (userAgentDefaults && node.authoredTag) {
     applyProperties(
@@ -220,8 +222,6 @@ function resolvedStyleFor(
       traceCandidates,
     );
   }
-
-  applyInheritedProperties(inherited.parentId, inherited.style, properties, traceCandidates);
 
   const themeDefaults = node.authoredTag && isTheme(theme) ? themeInput(theme).defaults : undefined;
   const themeDefault =

@@ -381,6 +381,40 @@ describe("project/render package and inspection output", () => {
     );
   });
 
+  test("project inspection includes hard line breaks in shrink estimates", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Hard line shrink estimate" }, () => (
+      <p
+        style={{
+          position: "absolute",
+          left: 1,
+          top: 1,
+          width: 2,
+          height: "19.2pt",
+          fontSize: 16,
+          fit: "shrink",
+        }}
+      >
+        {"A\nB"}
+      </p>
+    ));
+
+    const project = await deck.project({ inspection: "summary" });
+    const text = project.summary?.slides[0]?.elements[0];
+
+    expect(text?.textMetrics).toMatchObject({
+      estimatedLineCount: 2,
+      estimatedLineCapacity: 1,
+    });
+    expect(text?.textMetrics?.estimatedRenderedFontSizePt).toBeLessThan(9);
+    expect(project.summary?.slides[0]?.visualChecks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "W_VISUAL_TEXT_SMALL" }),
+        expect.objectContaining({ code: "W_VISUAL_TEXT_MAY_SHRINK" }),
+      ]),
+    );
+  });
+
   test("project inspection warns when content extends outside its template area", async () => {
     const deck = new H.Deck({
       layout: { width: 10, height: 5.625, unit: "in" },
@@ -411,6 +445,39 @@ describe("project/render package and inspection output", () => {
         code: "W_VISUAL_ELEMENT_OUTSIDE_TEMPLATE_AREA",
         kind: "text",
         origin: expect.any(Object),
+      }),
+    );
+  });
+
+  test("template area inspection compares negative margins with the original grid cell", async () => {
+    const deck = new H.Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      templates: {
+        report: {
+          style: {
+            display: "grid",
+            gridTemplateAreas: ['"title"', '"body"'],
+            gridTemplateRows: [0.5, "1fr"],
+          },
+          areas: {
+            title: { kind: "title", style: { gridArea: "title" } },
+            body: { style: { gridArea: "body" } },
+          },
+        },
+      },
+    });
+    deck.slide({ name: "Negative area margin", template: "report" }, ({ template }) => (
+      <h1 area={template.title} style={{ height: 0.5, margin: [0, 0, 0, -0.25] }}>
+        Shifted title
+      </h1>
+    ));
+
+    const project = await deck.project({ inspection: "summary" });
+
+    expect(project.summary?.slides[0]?.visualChecks).toContainEqual(
+      expect.objectContaining({
+        code: "W_VISUAL_ELEMENT_OUTSIDE_TEMPLATE_AREA",
+        kind: "text",
       }),
     );
   });

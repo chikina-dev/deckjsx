@@ -272,7 +272,12 @@ describe("Deck slide templates", () => {
       template: "report",
       area: "title",
       kind: "title",
-      frame: parentTitle?.frame,
+      frame: {
+        xEmu: 0.25 * EMU_PER_INCH,
+        yEmu: 0.25 * EMU_PER_INCH,
+        widthEmu: 9.5 * EMU_PER_INCH,
+        heightEmu: 5.125 * EMU_PER_INCH,
+      },
     });
     expect(childTitle?.frame.xEmu).toBeCloseTo(1.25 * EMU_PER_INCH);
     expect(childTitle?.frame.widthEmu).toBeCloseTo(7.5 * EMU_PER_INCH);
@@ -280,7 +285,12 @@ describe("Deck slide templates", () => {
       template: "report",
       area: "title",
       kind: "title",
-      frame: childTitle?.frame,
+      frame: {
+        xEmu: 1.25 * EMU_PER_INCH,
+        yEmu: 1.25 * EMU_PER_INCH,
+        widthEmu: 7.5 * EMU_PER_INCH,
+        heightEmu: 3.125 * EMU_PER_INCH,
+      },
     });
   });
 
@@ -350,13 +360,18 @@ describe("Deck slide templates", () => {
     const project = await deck.project();
     const detailedProject = project as InternalProjectResult;
     const projection = expectPptxProjection(project);
-    const element = projection.slides[0]?.payload.drawing.children[0];
+    expect(projection.slides[0]?.payload.drawing.children[0]?.kind).toBe("text");
 
     expect(detailedProject.summary?.slides[0]?.elements[0]?.layoutAnchor).toMatchObject({
       template: "report",
       area: "title",
       kind: "generic",
-      frame: element?.frame,
+      frame: {
+        xEmu: 0.7 * EMU_PER_INCH,
+        yEmu: 0.7 * EMU_PER_INCH,
+        widthEmu: 8.6 * EMU_PER_INCH,
+        heightEmu: expect.closeTo(4.225 * EMU_PER_INCH, 5),
+      },
     });
   });
 

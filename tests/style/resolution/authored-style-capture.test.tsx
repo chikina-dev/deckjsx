@@ -292,4 +292,24 @@ describe("style resolution authored style capture", () => {
     expect(style?.properties.fontSize?.source).toEqual({ layer: "theme", defaultKey: "h1" });
     expect(style?.properties.fontWeight?.source).toEqual({ layer: "style" });
   });
+
+  test("user-agent declarations override inherited values", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide(() => (
+      <div style={{ fontSize: 12, fontWeight: "normal" } as never}>
+        <h1>Heading</h1>
+      </div>
+    ));
+
+    const result = deck.compile();
+    const nodes = H.values(result.graph?.nodes ?? new Map());
+    const heading = nodes.find((node) => node.kind === "text" && node.authoredTag === "h1");
+    const headingStyle = result.resolvedStyles?.get(heading?.id ?? ("" as never));
+
+    expect(headingStyle?.style).toMatchObject({ fontSize: 36, fontWeight: "bold" });
+    expect(headingStyle?.properties.fontSize?.source).toEqual({
+      layer: "default",
+      defaultKey: "h1",
+    });
+  });
 });

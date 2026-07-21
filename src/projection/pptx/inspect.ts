@@ -135,6 +135,23 @@ function textRunsForMetrics(input: {
   return [{ text: input.text, fontSizePt: input.style.fontSizePt ?? DEFAULT_TEXT_FONT_SIZE_PT }];
 }
 
+function hardLineWidthsPt(
+  runs: readonly { readonly text: string; readonly fontSizePt: number }[],
+): readonly number[] {
+  const widths = [0];
+  runs.forEach((run) => {
+    const hardLines = run.text.split(/\r\n|\r|\n/u);
+    hardLines.forEach((line, index) => {
+      widths[widths.length - 1] =
+        (widths[widths.length - 1] ?? 0) + estimatedTextWidthPt(line, run.fontSizePt);
+      if (index < hardLines.length - 1) {
+        widths.push(0);
+      }
+    });
+  });
+  return widths;
+}
+
 function summarizeTextMetricsFromInput(input: {
   readonly text: string;
   readonly runs?: readonly { readonly text: string; readonly style?: PptxTableCell["style"] }[];
@@ -153,14 +170,16 @@ function summarizeTextMetricsFromInput(input: {
     0,
     pointsFromEmu(input.frame.heightEmu) - padding[0] - padding[2],
   );
-  const estimatedWidthPt = runs.reduce(
-    (total, run) => total + estimatedTextWidthPt(run.text, run.fontSizePt),
+  const hardLineWidths = hardLineWidthsPt(runs);
+  const estimatedWidthPt = Math.max(...hardLineWidths);
+  const estimatedLineCount = hardLineWidths.reduce(
+    (total, width) =>
+      total +
+      (input.style.wrap === false
+        ? 1
+        : Math.max(1, Math.ceil(width / Math.max(availableWidthPt, 1)))),
     0,
   );
-  const estimatedLineCount =
-    input.style.wrap === false
-      ? 1
-      : Math.max(1, Math.ceil(estimatedWidthPt / Math.max(availableWidthPt, 1)));
   const estimatedLineCapacity = Math.max(
     0,
     Math.floor((availableHeightPt + 1e-6) / Math.max(resolvedLineHeightPt, 1)),

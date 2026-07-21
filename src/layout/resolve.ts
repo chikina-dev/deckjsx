@@ -2990,9 +2990,15 @@ function compileGridChildren(
             .slice(row - 1, row - 1 + rowSpan)
             .reduce((sum, size) => sum + size, 0) +
           Math.max(rowSpan - 1, 0) * spec.rowGapEmu;
+        const cellFrame: Frame = {
+          xEmu: spec.contentX + (columnOffsets[column - 1] ?? 0),
+          yEmu: spec.contentY + (rowOffsets[row - 1] ?? 0),
+          widthEmu: cellWidth,
+          heightEmu: cellHeight,
+        };
         const innerFrame: Frame = {
-          xEmu: spec.contentX + (columnOffsets[column - 1] ?? 0) + marginLeft,
-          yEmu: spec.contentY + (rowOffsets[row - 1] ?? 0) + marginTop,
+          xEmu: cellFrame.xEmu + marginLeft,
+          yEmu: cellFrame.yEmu + marginTop,
           widthEmu: Math.max(cellWidth - marginLeft - marginRight, 0),
           heightEmu: Math.max(cellHeight - marginTop - marginBottom, 0),
         };
@@ -3066,7 +3072,7 @@ function compileGridChildren(
           ...compiled,
           origin: {
             ...compiled.origin,
-            templateAreaFrame: innerFrame,
+            templateAreaFrame: cellFrame,
           },
         };
       })
