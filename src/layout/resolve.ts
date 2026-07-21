@@ -172,6 +172,7 @@ type IdGenerator = {
 export type ProjectedLayoutResolutionOptions = {
   readonly origins?: WeakMap<object, ProjectedLayoutOrigin>;
   readonly fontMetrics?: LengthResolutionContext["fontMetrics"];
+  readonly fallbackTextWidthSafetyFactor?: number;
 };
 
 type StackLayoutOptions = Pick<
@@ -2079,6 +2080,7 @@ function estimateLayoutTextWidthPt(
   fontMetrics: LengthResolutionContext["fontMetrics"] = [],
   standardFontIsBold = false,
   charSpacingPt = 0,
+  fallbackTextWidthSafetyFactor = 1.15,
 ): number {
   const characterCount = Array.from(text).length;
   const width = Array.from(text).reduce(
@@ -2096,9 +2098,11 @@ function estimateLayoutTextWidthPt(
   }
   const kerning =
     fontMetrics.length === 1 ? textFontKerningAdjustments(text, fontMetrics[0]) : undefined;
+  const fallbackWidthSafetyFactor = fontMetrics.length === 0 ? fallbackTextWidthSafetyFactor : 1;
   return (
-    width +
-    (kerning?.reduce((total, adjustment) => total + (fontSizePt * adjustment) / 1000, 0) ?? 0) +
+    (width +
+      (kerning?.reduce((total, adjustment) => total + (fontSizePt * adjustment) / 1000, 0) ?? 0)) *
+      fallbackWidthSafetyFactor +
     Math.max(0, characterCount - 1) * charSpacingPt
   );
 }
@@ -2110,6 +2114,7 @@ type EstimatedTextRun = {
   readonly fonts?: readonly TextFontMetrics[];
   readonly standardFontIsBold: boolean;
   readonly charSpacingPt: number;
+  readonly fallbackTextWidthSafetyFactor: number;
 };
 
 function estimateWrappedTextLineHeights(input: {
@@ -2156,6 +2161,7 @@ function estimateWrappedTextLineHeights(input: {
             fontMetrics,
             run.standardFontIsBold,
             run.charSpacingPt,
+            run.fallbackTextWidthSafetyFactor,
           );
           continue;
         }
@@ -2166,6 +2172,7 @@ function estimateWrappedTextLineHeights(input: {
           fontMetrics,
           run.standardFontIsBold,
           run.charSpacingPt,
+          run.fallbackTextWidthSafetyFactor,
         );
         const spaceWidth =
           hasContentOnLine && pendingSpaceWidth > 0 ? pendingSpaceWidth + 2 * run.charSpacingPt : 0;
@@ -2283,6 +2290,7 @@ function estimateTextAutoContentSize(
           (node.props.fontWeight === "bold" ||
             (typeof node.props.fontWeight === "number" && node.props.fontWeight >= 600))),
       charSpacingPt: run.style?.charSpacing ?? charSpacingPt,
+      fallbackTextWidthSafetyFactor: textContext?.fallbackTextWidthSafetyFactor ?? 1.15,
       ...(runFonts.length > 0 ? { fonts: runFonts } : {}),
     };
   });
@@ -2423,6 +2431,23 @@ function estimateViewAutoContentSize(
     (dimension === "height" && direction === "vertical") ||
     (dimension === "width" && direction === "horizontal")
   ) {
+    if (dimension === "height" && node.props.layout !== "stack") {
+      let usedBlock = 0;
+      let previousMarginBottom: number | undefined;
+      children.forEach((child, index) => {
+        const [marginTop, , marginBottom] = getNodeMargin(child, context, contentFrame.widthEmu);
+        usedBlock +=
+          (previousMarginBottom === undefined
+            ? marginTop
+            : collapseVerticalMargins(previousMarginBottom, marginTop)) +
+          estimateChildContentSize(child, "height", contentFrame, "vertical", context) +
+          (index > 0 ? mainGapEmu : 0);
+        previousMarginBottom = marginBottom;
+      });
+      usedBlock += previousMarginBottom ?? 0;
+      return usedBlock + paddingTop + paddingBottom;
+    }
+
     const usedMain =
       children.reduce(
         (sum, child) => sum + estimateChildMainSize(child, direction, contentFrame, context),
@@ -2441,6 +2466,18 @@ function estimateViewAutoContentSize(
   return (
     usedCross + (dimension === "height" ? paddingTop + paddingBottom : paddingLeft + paddingRight)
   );
+}
+
+function collapseVerticalMargins(previous: number, next: number): number {
+  if (previous >= 0 && next >= 0) {
+    return Math.max(previous, next);
+  }
+
+  if (previous <= 0 && next <= 0) {
+    return Math.min(previous, next);
+  }
+
+  return previous + next;
 }
 
 function estimateChildContentSize(
@@ -2856,7 +2893,8 @@ function compileGridChildren(
           ),
         ];
   const gridContentMetrics = {
-    getMargin: getNodeMargin,
+    getMargin: (child: LayoutChildNode, metricContext?: LengthResolutionContext) =>
+      getNodeMargin(child, metricContext, spec.contentWidth),
     estimateContentSize: (
       child: LayoutChildNode,
       dimension: "width" | "height",
@@ -2952,9 +2990,15 @@ function compileGridChildren(
             .slice(row - 1, row - 1 + rowSpan)
             .reduce((sum, size) => sum + size, 0) +
           Math.max(rowSpan - 1, 0) * spec.rowGapEmu;
+        const cellFrame: Frame = {
+          xEmu: spec.contentX + (columnOffsets[column - 1] ?? 0),
+          yEmu: spec.contentY + (rowOffsets[row - 1] ?? 0),
+          widthEmu: cellWidth,
+          heightEmu: cellHeight,
+        };
         const innerFrame: Frame = {
-          xEmu: spec.contentX + (columnOffsets[column - 1] ?? 0) + marginLeft,
-          yEmu: spec.contentY + (rowOffsets[row - 1] ?? 0) + marginTop,
+          xEmu: cellFrame.xEmu + marginLeft,
+          yEmu: cellFrame.yEmu + marginTop,
           widthEmu: Math.max(cellWidth - marginLeft - marginRight, 0),
           heightEmu: Math.max(cellHeight - marginTop - marginBottom, 0),
         };
@@ -3011,7 +3055,7 @@ function compileGridChildren(
           placementOverride.yEmu = innerFrame.yEmu + yOffset;
         }
 
-        return compileNode(
+        const compiled = compileNode(
           child,
           innerFrame,
           idGenerator,
@@ -3020,6 +3064,17 @@ function compileGridChildren(
           context,
           resolutionOptions,
         );
+        if (!compiled || !child.origin?.templateAreaRef) {
+          return compiled;
+        }
+
+        return {
+          ...compiled,
+          origin: {
+            ...compiled.origin,
+            templateAreaFrame: cellFrame,
+          },
+        };
       })
       .filter((node): node is ProjectedLayoutNode => node !== null),
   );
@@ -3059,6 +3114,7 @@ function compileBlockFlowChildren(
     contentFrame.heightEmu,
   );
   let cursorY = contentFrame.yEmu;
+  let previousMarginBottom: number | undefined;
   const flowNodes: ProjectedLayoutNode[] = [];
 
   for (const child of authorChildren) {
@@ -3078,9 +3134,13 @@ function compileBlockFlowChildren(
       "vertical",
       context,
     );
+    const collapsedMarginBefore =
+      previousMarginBottom === undefined
+        ? marginTop
+        : collapseVerticalMargins(previousMarginBottom, marginTop);
     const placement: Placement = {
       xEmu: contentFrame.xEmu + marginLeft,
-      yEmu: cursorY + marginTop,
+      yEmu: cursorY + collapsedMarginBefore,
       widthEmu: childWidth,
       heightEmu: childHeight,
     };
@@ -3097,7 +3157,8 @@ function compileBlockFlowChildren(
     if (compiledNode) {
       flowNodes.push(compiledNode);
     }
-    cursorY += marginTop + childHeight + marginBottom + blockGapEmu;
+    cursorY += collapsedMarginBefore + childHeight + blockGapEmu;
+    previousMarginBottom = marginBottom;
   }
 
   return flowNodes;
@@ -3244,7 +3305,7 @@ function compileChildren(
   const stackMetrics: StackMetrics<LayoutChildNode> = {
     estimateMainSize: estimateChildMainSize,
     estimateCrossSize: estimateChildCrossSize,
-    getMargin: getNodeMargin,
+    getMargin: (child, metricContext) => getNodeMargin(child, metricContext, contentFrame.widthEmu),
     getFlexGrow: (child) => child.props.flexGrow ?? 0,
     getFlexShrink: (child) => child.props.flexShrink ?? 1,
   };
@@ -4815,6 +4876,9 @@ export function resolveProjectedLayout(
     viewportWidthEmu: slideFrame.widthEmu,
     viewportHeightEmu: slideFrame.heightEmu,
     ...(resolutionOptions.fontMetrics ? { fontMetrics: resolutionOptions.fontMetrics } : {}),
+    ...(resolutionOptions.fallbackTextWidthSafetyFactor !== undefined
+      ? { fallbackTextWidthSafetyFactor: resolutionOptions.fallbackTextWidthSafetyFactor }
+      : {}),
   };
 
   return {

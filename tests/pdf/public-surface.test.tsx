@@ -166,8 +166,8 @@ describe("pdf public surface", () => {
           backgroundColor: "#F7F3EC",
         }}
       >
-        <p style={{ fontSize: 18 }}>First flow line</p>
-        <p style={{ fontSize: 14 }}>Second flow line</p>
+        <p style={{ fontSize: 18, margin: 0 }}>First flow line</p>
+        <p style={{ fontSize: 14, margin: 0 }}>Second flow line</p>
       </main>
     ));
 
@@ -213,7 +213,7 @@ describe("pdf public surface", () => {
       output: { formats: ["pdf"] },
     });
     deck.slide({ name: "PDF Wrapped Auto Height" }, () => (
-      <p style={{ width: "100pt", fontSize: 20 }}>Alpha beta gamma</p>
+      <p style={{ width: "100pt", fontSize: 20, margin: 0 }}>Alpha beta gamma</p>
     ));
 
     const projectResult = await deck.project({ format: "pdf", inspection: "none" });
@@ -1248,6 +1248,7 @@ describe("pdf public surface", () => {
           backgroundColor: "#EEF2FF",
           border: "1pt solid #334455",
           fit: "resize",
+          margin: 0,
         }}
       >
         Resize autofit text should be called out separately
@@ -1277,7 +1278,7 @@ describe("pdf public surface", () => {
       kind: "shape",
       box: expect.objectContaining({
         width: 57.6,
-        height: expect.closeTo(69.6, 5),
+        height: expect.closeTo(169.2, 5),
       }),
     });
     expect(textVisual).toMatchObject({
@@ -1285,7 +1286,7 @@ describe("pdf public surface", () => {
       style: expect.objectContaining({ fit: "resize" }),
       box: expect.objectContaining({
         width: 57.6,
-        height: expect.closeTo(69.6, 5),
+        height: expect.closeTo(169.2, 5),
       }),
     });
     expect(summary?.slides?.[0]?.elements).toContainEqual(
@@ -1295,8 +1296,8 @@ describe("pdf public surface", () => {
         textMetrics: expect.objectContaining({
           fit: "resize",
           wrap: true,
-          availableHeightPt: expect.closeTo(69.6, 5),
-          estimatedLineCapacity: 4,
+          availableHeightPt: expect.closeTo(169.2, 5),
+          estimatedLineCapacity: 7,
         }),
       }),
     );
@@ -1669,6 +1670,40 @@ describe("pdf public surface", () => {
           estimatedLineCapacity: 1,
         }),
       }),
+    );
+  });
+
+  test("does not report padded one-line auto-height PDF text as overflowing", async () => {
+    const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Padded PDF auto height" }, () => (
+      <p style={{ width: 4, fontSize: 15, lineHeight: 1.2, padding: 0.14, margin: 0 }}>
+        One padded line
+      </p>
+    ));
+
+    const result = await deck.project({ format: "pdf", inspection: "summary" });
+    const summary = result.summary as
+      | {
+          readonly slides?: readonly {
+            readonly elements: readonly {
+              readonly kind: string;
+              readonly textMetrics?: unknown;
+            }[];
+            readonly visualChecks?: readonly { readonly code: string }[];
+          }[];
+        }
+      | undefined;
+    const slide = summary?.slides?.[0];
+    const text = slide?.elements.find((element) => element.kind === "text");
+
+    expectPdfProjectionAvailable(result);
+    expect(text?.textMetrics).toMatchObject({
+      lineHeightPt: 18,
+      estimatedLineCount: 1,
+      estimatedLineCapacity: 1,
+    });
+    expect(slide?.visualChecks).not.toContainEqual(
+      expect.objectContaining({ code: "W_VISUAL_TEXT_MAY_OVERFLOW" }),
     );
   });
 
@@ -2098,7 +2133,7 @@ describe("pdf public surface", () => {
   test("projects and renders rich text runs as positioned pdf text operations", async () => {
     const deck = new Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.slide({ name: "Rich PDF" }, () => (
-      <p style={{ color: "#111111", fontSize: 20 }}>
+      <p style={{ color: "#111111", fontSize: 20, margin: 0 }}>
         Sales <span style={{ color: "#DC2626" }}>grew</span> YoY
       </p>
     ));
@@ -5428,6 +5463,53 @@ describe("pdf public surface", () => {
     expect(pdfBytes).toContain("0.8784 0.949 0.9961 rg");
     expect(pdfBytes).toContain("0.0118 0.4118 0.6314 RG");
     expect(pdfBytes.indexOf("72 261 216 72 re")).toBeLessThan(pdfBytes.indexOf("(In box) Tj"));
+  });
+
+  test("keeps nested sibling backgrounds behind their own child text", async () => {
+    const deck = new Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      output: { formats: ["pdf"] },
+    });
+    deck.slide({ name: "Nested paint order" }, () => (
+      <>
+        {["First", "Second", "Third"].map((label, index) => (
+          <div
+            key={label}
+            style={{
+              position: "absolute",
+              left: 0.5 + index * 3.1,
+              top: 1,
+              width: 2.8,
+              height: 2,
+              backgroundColor: "#DDEEFF",
+            }}
+          >
+            <h2 style={{ position: "absolute", left: 0.2, top: 0.2, margin: 0 }}>{label}</h2>
+          </div>
+        ))}
+      </>
+    ));
+
+    const projectResult = await deck.project({ format: "pdf", inspection: "none" });
+
+    expect(projectResult.ok).toBe(true);
+    expect(projectResult.diagnostics.items).toEqual([]);
+
+    const projection = expectPdfPageModel(projectResult.projection);
+    const visuals = projection.pages[0]?.visuals ?? [];
+    const content = projection.pages[0]?.content ?? [];
+    const visualSequences = visuals.map((visual) => visual.paintOrder.sequence);
+
+    expect(visualSequences).toEqual(visuals.map((_, index) => index));
+    for (const [index, label] of ["First", "Second", "Third"].entries()) {
+      const backgroundX = (0.5 + index * 3.1) * 72;
+      const backgroundIndex = content.findIndex(
+        (op) => op.op === "fillRect" && Math.abs(op.box.x - backgroundX) < 0.001,
+      );
+      const textIndex = content.findIndex((op) => op.op === "text" && op.text === label);
+      expect(backgroundIndex).toBeGreaterThanOrEqual(0);
+      expect(textIndex).toBeGreaterThan(backgroundIndex);
+    }
   });
 
   test("projects and renders rounded view outlines as pdf round rect strokes", async () => {

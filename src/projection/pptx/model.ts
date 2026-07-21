@@ -1076,6 +1076,7 @@ export type ProjectInspectionTextMetrics = {
   readonly characterCount: number;
   readonly textDirection?: TextStyleIR["textDirection"];
   readonly fontSizePt: number;
+  readonly estimatedRenderedFontSizePt: number;
   readonly requestedFontFamily?: string;
   readonly projectedFontFamily?: string;
   readonly fontResourceId?: string;
@@ -1105,6 +1106,7 @@ export type ProjectInspectionVisualCheck = {
     | "I_VISUAL_TEXT_FONT_SUBSTITUTED"
     | "I_VISUAL_MEDIA_CROPPED"
     | "W_VISUAL_MEDIA_SMALL"
+    | "W_VISUAL_ELEMENT_OUTSIDE_TEMPLATE_AREA"
     | "W_VISUAL_TEXT_MAY_OVERFLOW"
     | "W_VISUAL_TEXT_MAY_RESIZE"
     | "W_VISUAL_TEXT_MAY_SHRINK"
@@ -1116,6 +1118,7 @@ export type ProjectInspectionVisualCheck = {
   readonly kind?: PptxElementKind;
   readonly textPreview?: string;
   readonly metrics?: ProjectInspectionTextMetrics | ProjectInspectionMediaMetrics;
+  readonly origin?: PptxElementOrigin;
 };
 
 export type ProjectInspectionResolvedValues = {

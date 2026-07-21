@@ -150,13 +150,14 @@ function layoutAnchorFor(input: {
   templateAreaRef?: { readonly template: string; readonly area: string };
   templateAreaKind?: TemplateAreaKind;
   frame: FrameIR;
+  templateAreaFrame?: FrameIR;
 }): PptxLayoutAnchor | undefined {
   return input.templateAreaRef
     ? {
         template: input.templateAreaRef.template,
         area: input.templateAreaRef.area,
         kind: input.templateAreaKind ?? "generic",
-        frame: input.frame,
+        frame: input.templateAreaFrame ?? input.frame,
       }
     : undefined;
 }
@@ -1252,6 +1253,7 @@ function mapProjectedLayoutNodeToElement(input: {
     templateAreaRef: input.node.origin?.templateAreaRef,
     templateAreaKind: input.node.origin?.templateAreaKind,
     frame: input.node.frame,
+    templateAreaFrame: input.node.origin?.templateAreaFrame,
   });
   const ownerShapeObjectId = input.shapeObjectIds.shapeObjectId(input.indexPath);
   const base = {

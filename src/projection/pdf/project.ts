@@ -7607,11 +7607,11 @@ function visualElementsFromLayoutTable(input: {
         ...(tableBackgroundVisual ? [tableBackgroundVisual] : []),
         ...tableGradientBackgroundVisuals,
         ...tableBackgroundImageVisuals,
-        ...innerShadowVisuals,
       ],
       input.node.origin,
     ),
     ...transformedCellVisuals,
+    ...pdfVisualsWithLayoutOrigin(innerShadowVisuals, input.node.origin),
     ...pdfVisualsWithLayoutOrigin(
       [...tableEdgeVisuals, ...(outlineVisual ? [outlineVisual] : [])],
       input.node.origin,
@@ -9972,7 +9972,10 @@ function visualElementsFromLayoutSlide(input: {
   return [
     ...pdfVisualsWithLayoutOrigin(backgroundVisuals, input.layoutSlide?.origin),
     ...childVisuals,
-  ];
+  ].map((visual, sequence) => ({
+    ...visual,
+    paintOrder: { ...visual.paintOrder, sequence },
+  }));
 }
 
 function pageFontIdsForContent(content: readonly PdfContentOp[]): readonly PdfFontResource["id"][] {
@@ -10078,6 +10081,8 @@ export function projectGraphToPdfPageModel(input: {
   });
   const projectedLayout = resolveProjectedLayout(input.options, layoutInput.snapshot, {
     fontMetrics: textFontMetricsFromRegistrations(input.integrationContext?.fontAssets),
+    // The unregistered-font PDF path uses the built-in Helvetica width table directly.
+    fallbackTextWidthSafetyFactor: 1,
   });
   const requestsByTextNode = explicitFontRequestsByTextNode({
     graph: input.graph,

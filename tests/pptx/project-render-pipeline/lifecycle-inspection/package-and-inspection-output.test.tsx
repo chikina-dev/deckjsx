@@ -290,6 +290,7 @@ describe("project/render package and inspection output", () => {
       textMetrics: expect.objectContaining({
         characterCount: 85,
         fontSizePt: 8,
+        estimatedRenderedFontSizePt: expect.any(Number),
         estimatedLineCount: expect.any(Number),
         estimatedLineCapacity: 1,
         fit: "shrink",
@@ -324,6 +325,160 @@ describe("project/render package and inspection output", () => {
           elementId: imageSummary?.id,
         }),
       ]),
+    );
+  });
+
+  test("does not report padded one-line auto-height text as overflowing", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Padded auto height" }, () => (
+      <p style={{ width: 4, fontSize: 15, lineHeight: 1.2, padding: 0.14, margin: 0 }}>
+        One padded line
+      </p>
+    ));
+
+    const project = await deck.project({ inspection: "summary" });
+    const text = project.summary?.slides[0]?.elements[0];
+
+    expect(project.ok).toBe(true);
+    expect(text?.textMetrics).toMatchObject({
+      lineHeightPt: 18,
+      estimatedLineCount: 1,
+      estimatedLineCapacity: 1,
+    });
+    expect(project.summary?.slides[0]?.visualChecks).not.toContainEqual(
+      expect.objectContaining({ code: "W_VISUAL_TEXT_MAY_OVERFLOW" }),
+    );
+  });
+
+  test("project inspection estimates the readable font size after shrink", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Shrink estimate" }, () => (
+      <p
+        style={{
+          position: "absolute",
+          left: 1,
+          top: 1,
+          width: 1,
+          height: 0.25,
+          fontSize: 18,
+          fit: "shrink",
+        }}
+      >
+        This text requires several lines and must shrink substantially to fit.
+      </p>
+    ));
+
+    const project = await deck.project({ inspection: "summary" });
+    const text = project.summary?.slides[0]?.elements[0];
+    const checks = project.summary?.slides[0]?.visualChecks ?? [];
+
+    expect(text?.textMetrics?.estimatedRenderedFontSizePt).toBeLessThan(9);
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "W_VISUAL_TEXT_SMALL", origin: expect.any(Object) }),
+        expect.objectContaining({ code: "W_VISUAL_TEXT_MAY_SHRINK" }),
+      ]),
+    );
+  });
+
+  test("project inspection includes hard line breaks in shrink estimates", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Hard line shrink estimate" }, () => (
+      <p
+        style={{
+          position: "absolute",
+          left: 1,
+          top: 1,
+          width: 2,
+          height: "19.2pt",
+          fontSize: 16,
+          fit: "shrink",
+        }}
+      >
+        {"A\nB"}
+      </p>
+    ));
+
+    const project = await deck.project({ inspection: "summary" });
+    const text = project.summary?.slides[0]?.elements[0];
+
+    expect(text?.textMetrics).toMatchObject({
+      estimatedLineCount: 2,
+      estimatedLineCapacity: 1,
+    });
+    expect(text?.textMetrics?.estimatedRenderedFontSizePt).toBeLessThan(9);
+    expect(project.summary?.slides[0]?.visualChecks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "W_VISUAL_TEXT_SMALL" }),
+        expect.objectContaining({ code: "W_VISUAL_TEXT_MAY_SHRINK" }),
+      ]),
+    );
+  });
+
+  test("project inspection warns when content extends outside its template area", async () => {
+    const deck = new H.Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      templates: {
+        report: {
+          style: {
+            display: "grid",
+            gridTemplateAreas: ['"title"', '"body"'],
+            gridTemplateRows: [0.5, "1fr"],
+          },
+          areas: {
+            title: { kind: "title", style: { gridArea: "title" } },
+            body: { style: { gridArea: "body" } },
+          },
+        },
+      },
+    });
+    deck.slide({ name: "Area overflow", template: "report" }, ({ template }) => (
+      <h1 area={template.title} style={{ height: 1, margin: 0 }}>
+        Oversized title
+      </h1>
+    ));
+
+    const project = await deck.project({ inspection: "summary" });
+
+    expect(project.summary?.slides[0]?.visualChecks).toContainEqual(
+      expect.objectContaining({
+        code: "W_VISUAL_ELEMENT_OUTSIDE_TEMPLATE_AREA",
+        kind: "text",
+        origin: expect.any(Object),
+      }),
+    );
+  });
+
+  test("template area inspection compares negative margins with the original grid cell", async () => {
+    const deck = new H.Deck({
+      layout: { width: 10, height: 5.625, unit: "in" },
+      templates: {
+        report: {
+          style: {
+            display: "grid",
+            gridTemplateAreas: ['"title"', '"body"'],
+            gridTemplateRows: [0.5, "1fr"],
+          },
+          areas: {
+            title: { kind: "title", style: { gridArea: "title" } },
+            body: { style: { gridArea: "body" } },
+          },
+        },
+      },
+    });
+    deck.slide({ name: "Negative area margin", template: "report" }, ({ template }) => (
+      <h1 area={template.title} style={{ height: 0.5, margin: [0, 0, 0, -0.25] }}>
+        Shifted title
+      </h1>
+    ));
+
+    const project = await deck.project({ inspection: "summary" });
+
+    expect(project.summary?.slides[0]?.visualChecks).toContainEqual(
+      expect.objectContaining({
+        code: "W_VISUAL_ELEMENT_OUTSIDE_TEMPLATE_AREA",
+        kind: "text",
+      }),
     );
   });
 

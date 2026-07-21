@@ -50,9 +50,9 @@ describe(" containing blocks", () => {
             padding: 0.1,
           }}
         >
-          <p style={{ width: "30%", height: 0.32, fontSize: 12 }}>30%</p>
-          <p style={{ flexGrow: 1, height: 0.32, fontSize: 12 }}>grow</p>
-          <p style={{ width: 1.1, height: 0.32, fontSize: 12 }}>fixed</p>
+          <p style={{ width: "30%", height: 0.32, fontSize: 12, margin: 0 }}>30%</p>
+          <p style={{ flexGrow: 1, height: 0.32, fontSize: 12, margin: 0 }}>grow</p>
+          <p style={{ width: 1.1, height: 0.32, fontSize: 12, margin: 0 }}>fixed</p>
         </div>
       </>
     ));
@@ -74,7 +74,7 @@ describe(" containing blocks", () => {
         >
           <shape shape="rect" />
           <shape shape="rect" />
-          <p style={{ gridColumn: "span 2", fontSize: 12 }}>span 2 columns</p>
+          <p style={{ gridColumn: "span 2", fontSize: 12, margin: 0 }}>span 2 columns</p>
         </div>
         <div
           style={{

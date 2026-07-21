@@ -19,8 +19,12 @@ describe("stack layout positioning and wrap", () => {
           padding: 0.5,
         }}
       >
-        <p style={{ position: "relative", left: 0.25, top: 0.1, width: 1, fontSize: 18 }}>Offset</p>
-        <p style={{ width: 1, fontSize: 18 }}>Next</p>
+        <p
+          style={{ position: "relative", left: 0.25, top: 0.1, width: 1, fontSize: 18, margin: 0 }}
+        >
+          Offset
+        </p>
+        <p style={{ width: 1, fontSize: 18, margin: 0 }}>Next</p>
       </div>
     ));
 
@@ -83,8 +87,8 @@ describe("stack layout positioning and wrap", () => {
             padding: 0.5,
           }}
         >
-          <p style={{ width: 2, height: 0.5, fontSize: 18, order: 2 }}>Third</p>
-          <p style={{ width: 2, height: 0.5, fontSize: 18, order: -1 }}>First</p>
+          <p style={{ width: 2, height: 0.5, fontSize: 18, order: 2, margin: 0 }}>Third</p>
+          <p style={{ width: 2, height: 0.5, fontSize: 18, order: -1, margin: 0 }}>First</p>
           <p
             style={{
               position: "absolute",
@@ -97,7 +101,7 @@ describe("stack layout positioning and wrap", () => {
           >
             Overlay
           </p>
-          <p style={{ width: 2, height: 0.5, fontSize: 18 }}>Second</p>
+          <p style={{ width: 2, height: 0.5, fontSize: 18, margin: 0 }}>Second</p>
         </div>
       </>
     ));
@@ -187,9 +191,9 @@ describe("stack layout positioning and wrap", () => {
             padding: 0.5,
           }}
         >
-          <p style={{ width: 2, height: 0.5, fontSize: 18 }}>One</p>
-          <p style={{ width: 2, height: 0.5, fontSize: 18 }}>Two</p>
-          <p style={{ width: 2, height: 0.5, fontSize: 18 }}>Three</p>
+          <p style={{ width: 2, height: 0.5, fontSize: 18, margin: 0 }}>One</p>
+          <p style={{ width: 2, height: 0.5, fontSize: 18, margin: 0 }}>Two</p>
+          <p style={{ width: 2, height: 0.5, fontSize: 18, margin: 0 }}>Three</p>
         </div>
       </>
     ));

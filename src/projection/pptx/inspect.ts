@@ -135,6 +135,23 @@ function textRunsForMetrics(input: {
   return [{ text: input.text, fontSizePt: input.style.fontSizePt ?? DEFAULT_TEXT_FONT_SIZE_PT }];
 }
 
+function hardLineWidthsPt(
+  runs: readonly { readonly text: string; readonly fontSizePt: number }[],
+): readonly number[] {
+  const widths = [0];
+  runs.forEach((run) => {
+    const hardLines = run.text.split(/\r\n|\r|\n/u);
+    hardLines.forEach((line, index) => {
+      widths[widths.length - 1] =
+        (widths[widths.length - 1] ?? 0) + estimatedTextWidthPt(line, run.fontSizePt);
+      if (index < hardLines.length - 1) {
+        widths.push(0);
+      }
+    });
+  });
+  return widths;
+}
+
 function summarizeTextMetricsFromInput(input: {
   readonly text: string;
   readonly runs?: readonly { readonly text: string; readonly style?: PptxTableCell["style"] }[];
@@ -153,18 +170,30 @@ function summarizeTextMetricsFromInput(input: {
     0,
     pointsFromEmu(input.frame.heightEmu) - padding[0] - padding[2],
   );
-  const estimatedWidthPt = runs.reduce(
-    (total, run) => total + estimatedTextWidthPt(run.text, run.fontSizePt),
+  const hardLineWidths = hardLineWidthsPt(runs);
+  const estimatedWidthPt = Math.max(...hardLineWidths);
+  const estimatedLineCount = hardLineWidths.reduce(
+    (total, width) =>
+      total +
+      (input.style.wrap === false
+        ? 1
+        : Math.max(1, Math.ceil(width / Math.max(availableWidthPt, 1)))),
     0,
   );
-  const estimatedLineCount =
-    input.style.wrap === false
-      ? 1
-      : Math.max(1, Math.ceil(estimatedWidthPt / Math.max(availableWidthPt, 1)));
   const estimatedLineCapacity = Math.max(
     0,
-    Math.floor(availableHeightPt / Math.max(resolvedLineHeightPt, 1)),
+    Math.floor((availableHeightPt + 1e-6) / Math.max(resolvedLineHeightPt, 1)),
   );
+  const heightScale =
+    estimatedLineCount > 0 && resolvedLineHeightPt > 0
+      ? availableHeightPt / (estimatedLineCount * resolvedLineHeightPt)
+      : 1;
+  const widthScale =
+    input.style.wrap === false && estimatedWidthPt > 0 ? availableWidthPt / estimatedWidthPt : 1;
+  const estimatedRenderedFontSizePt =
+    input.style.fit === "shrink"
+      ? fontSizePt * Math.min(1, Math.max(0, heightScale), Math.max(0, widthScale))
+      : fontSizePt;
 
   return {
     characterCount: Array.from(input.text).length,
@@ -172,6 +201,7 @@ function summarizeTextMetricsFromInput(input: {
       ? { textDirection: input.style.textDirection }
       : {}),
     fontSizePt,
+    estimatedRenderedFontSizePt,
     lineHeightPt: resolvedLineHeightPt,
     availableWidthPt,
     availableHeightPt,
@@ -239,6 +269,7 @@ function textVisualChecks(input: {
   readonly metrics: ProjectInspectionTextMetrics | undefined;
   readonly slidePartId: ProjectInspectionVisualCheck["slidePartId"];
   readonly slideId: string;
+  readonly origin?: PptxElementOrigin;
 }): ProjectInspectionVisualCheck[] {
   const metrics = input.metrics;
   if (!metrics) {
@@ -247,17 +278,21 @@ function textVisualChecks(input: {
 
   const checks: ProjectInspectionVisualCheck[] = [];
 
-  if (metrics.fontSizePt < SMALL_TEXT_THRESHOLD_PT) {
+  if (metrics.estimatedRenderedFontSizePt < SMALL_TEXT_THRESHOLD_PT) {
+    const shrunk = metrics.estimatedRenderedFontSizePt < metrics.fontSizePt;
     checks.push({
       severity: "warning",
       code: "W_VISUAL_TEXT_SMALL",
-      message: `Text uses ${metrics.fontSizePt}pt type, which may be hard to read in the generated PPTX.`,
+      message: shrunk
+        ? `Text may render near ${metrics.estimatedRenderedFontSizePt.toFixed(1)}pt after shrinking from ${metrics.fontSizePt}pt, which may be hard to read in the generated PPTX.`
+        : `Text uses ${metrics.fontSizePt}pt type, which may be hard to read in the generated PPTX.`,
       slidePartId: input.slidePartId,
       slideId: input.slideId,
       ...(input.elementId ? { elementId: input.elementId } : {}),
       kind: input.kind,
       textPreview: input.textPreview.slice(0, 80),
       metrics,
+      ...(input.origin ? { origin: input.origin } : {}),
     });
   }
 
@@ -272,6 +307,7 @@ function textVisualChecks(input: {
       kind: input.kind,
       textPreview: input.textPreview.slice(0, 80),
       metrics,
+      ...(input.origin ? { origin: input.origin } : {}),
     });
   }
 
@@ -296,10 +332,20 @@ function textVisualChecks(input: {
       kind: input.kind,
       textPreview: input.textPreview.slice(0, 80),
       metrics,
+      ...(input.origin ? { origin: input.origin } : {}),
     });
   }
 
   return checks;
+}
+
+function frameExtendsOutside(inner: PptxElement["frame"], outer: PptxElement["frame"]): boolean {
+  return (
+    inner.xEmu < outer.xEmu ||
+    inner.yEmu < outer.yEmu ||
+    inner.xEmu + inner.widthEmu > outer.xEmu + outer.widthEmu ||
+    inner.yEmu + inner.heightEmu > outer.yEmu + outer.heightEmu
+  );
 }
 
 function mediaVisualChecks(input: {
@@ -369,6 +415,7 @@ function collectVisualChecksForSlide(
         metrics: textMetrics,
         slidePartId: slide.id,
         slideId: slide.payload.slideId,
+        origin: element.origin,
       }),
       ...mediaVisualChecks({
         element,
@@ -377,6 +424,19 @@ function collectVisualChecksForSlide(
         slideId: slide.payload.slideId,
       }),
     );
+
+    if (element.layoutAnchor && frameExtendsOutside(element.frame, element.layoutAnchor.frame)) {
+      checks.push({
+        severity: "warning",
+        code: "W_VISUAL_ELEMENT_OUTSIDE_TEMPLATE_AREA",
+        message: `Element extends outside template area "${element.layoutAnchor.template}.${element.layoutAnchor.area}" and may overlap neighboring slide content.`,
+        slidePartId: slide.id,
+        slideId: slide.payload.slideId,
+        elementId: element.id,
+        kind: element.kind,
+        origin: element.origin,
+      });
+    }
 
     if (element.kind === "group") {
       element.children.forEach((child) => collectFromElement(child, elementHidden));
@@ -393,6 +453,7 @@ function collectVisualChecksForSlide(
                 metrics: cellMetrics,
                 slidePartId: slide.id,
                 slideId: slide.payload.slideId,
+                origin: element.origin,
               }),
             );
             cell.children.forEach((child) => collectFromElement(child, elementHidden));

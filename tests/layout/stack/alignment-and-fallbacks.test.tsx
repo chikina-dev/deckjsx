@@ -21,7 +21,7 @@ describe("stack layout alignment and fallbacks", () => {
             padding: [0.25, 0.5, 0.25, 0.5],
           }}
         >
-          <p style={{ width: 1, height: 0.5, fontSize: 18, alignSelf: "flex-end" }}>A</p>
+          <p style={{ width: 1, height: 0.5, fontSize: 18, alignSelf: "flex-end", margin: 0 }}>A</p>
           <div style={{ width: 1, backgroundColor: "#EEEEEE" }} />
           <shape shape="rect" style={{ width: 1, height: 1, fill: "#2563EB" }} />
         </div>
@@ -93,7 +93,7 @@ describe("stack layout alignment and fallbacks", () => {
           alignItems: "first baseline" as never,
         }}
       >
-        <p style={{ width: 1, fontSize: 18 }}>A</p>
+        <p style={{ width: 1, fontSize: 18, margin: 0 }}>A</p>
       </div>
     ));
 

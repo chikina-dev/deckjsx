@@ -28,6 +28,7 @@ export type ProjectedLayoutOrigin = {
   readonly componentProvenance?: ComponentProvenance;
   readonly templateAreaRef?: SemanticTemplateAreaRef;
   readonly templateAreaKind?: TemplateAreaKind;
+  readonly templateAreaFrame?: FrameIR;
 };
 
 export type ProjectedLayoutDocument = {

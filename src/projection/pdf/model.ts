@@ -416,6 +416,8 @@ export type PdfContentOp = (
 export type PdfPaintOrderInput = {
   readonly zIndex?: number;
   readonly siblingOrder: number;
+  /** Stable document-order position assigned after recursively flattening the layout tree. */
+  readonly sequence?: number;
   readonly generatedLayerRole?:
     | "authored"
     | "background"

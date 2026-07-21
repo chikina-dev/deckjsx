@@ -7,8 +7,8 @@ describe("absolute layout CSS lengths and fallbacks", () => {
 
     deck.slide({ name: "Aspect ratio flow" }, () => (
       <div style={{ position: "absolute", left: 1, top: 1, width: 3, height: 2 }}>
-        <p style={{ aspectRatio: "16 / 9", fontSize: 18 }}>Ratio</p>
-        <p style={{ fontSize: 18 }}>Next</p>
+        <p style={{ aspectRatio: "16 / 9", fontSize: 18, margin: 0 }}>Ratio</p>
+        <p style={{ fontSize: 18, margin: 0 }}>Next</p>
       </div>
     ));
 

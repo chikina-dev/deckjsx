@@ -22,7 +22,7 @@ describe("grid layout fundamentals", () => {
             padding: 0.5,
           }}
         >
-          <p style={{ gridColumn: 1, gridRow: 1, fontSize: 18 }}>One</p>
+          <p style={{ gridColumn: 1, gridRow: 1, fontSize: 18, margin: 0 }}>One</p>
           <div
             style={{
               gridColumn: "2 / 3",
@@ -32,7 +32,7 @@ describe("grid layout fundamentals", () => {
               backgroundColor: "#D1D5DB",
             }}
           />
-          <p style={{ fontSize: 18 }}>Auto</p>
+          <p style={{ fontSize: 18, margin: 0 }}>Auto</p>
         </div>
       </>
     ));
@@ -220,8 +220,8 @@ describe("grid layout fundamentals", () => {
           gridTemplateRows: "1fr 1fr",
         }}
       >
-        <p style={{ gridColumn: 1, gridRow: 1, fontSize: 18 }}>One</p>
-        <p style={{ gridColumn: 2, gridRow: 2, fontSize: 18 }}>Two</p>
+        <p style={{ gridColumn: 1, gridRow: 1, fontSize: 18, margin: 0 }}>One</p>
+        <p style={{ gridColumn: 2, gridRow: 2, fontSize: 18, margin: 0 }}>Two</p>
       </div>
     ));
 
@@ -262,6 +262,51 @@ describe("grid layout fundamentals", () => {
             fontSizePt: 18,
           },
         ],
+      },
+    ]);
+  });
+
+  test("includes percentage item margins in grid auto track minimums", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+
+    deck.slide({ name: "Grid percentage item margins" }, () => (
+      <div
+        style={{
+          position: "absolute",
+          left: 1,
+          top: 1,
+          width: 6,
+          height: 2,
+          display: "grid",
+          padding: 0.5,
+          gridTemplateColumns: ["minmax(auto, auto)", "minmax(auto, auto)"],
+          gridTemplateRows: "1fr",
+          justifyContent: "start",
+        }}
+      >
+        <p style={{ width: 1, height: 0.5, margin: "0 10%", fontSize: 18 }}>A</p>
+        <p style={{ width: 1, height: 0.5, margin: "0 10%", fontSize: 18 }}>B</p>
+      </div>
+    ));
+
+    const [group] = H.expectPptxProjection(await deck.project()).slides[0].payload.drawing.children;
+    expect(group?.kind).toBe("group");
+    if (group?.kind !== "group") {
+      return;
+    }
+
+    expect(group.children.map((child) => child.frame)).toEqual([
+      {
+        xEmu: 2 * H.EMU_PER_INCH,
+        yEmu: 1.5 * H.EMU_PER_INCH,
+        widthEmu: 1 * H.EMU_PER_INCH,
+        heightEmu: 0.5 * H.EMU_PER_INCH,
+      },
+      {
+        xEmu: 4 * H.EMU_PER_INCH,
+        yEmu: 1.5 * H.EMU_PER_INCH,
+        widthEmu: 1 * H.EMU_PER_INCH,
+        heightEmu: 0.5 * H.EMU_PER_INCH,
       },
     ]);
   });
