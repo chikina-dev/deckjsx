@@ -934,7 +934,7 @@ export function collectPptxUnsupportedProjectionDiagnostics(input: {
     });
   });
   const items = [...input.graph.nodes.values()].flatMap((node) => {
-    if (input.projection && projectedGraphNodeIds.has(node.id)) {
+    if (input.projection && node.kind !== "slide" && projectedGraphNodeIds.has(node.id)) {
       return [];
     }
     const semantics = unsupportedSemanticsForGraphNode(node, input.resolvedStyles);

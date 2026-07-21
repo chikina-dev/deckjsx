@@ -301,32 +301,40 @@ async function verifyNodeFileAssetContainment(filePath: {
   }
 }
 
-async function probeFileAsset(filePath: string): Promise<AssetProbeResult> {
-  const [metadata, bytes] = await Promise.all([stat(filePath), readFile(filePath)]);
+function probeFileAssetBytes(
+  filePath: string,
+  bytes: Uint8Array,
+  byteLength: number,
+): AssetProbeResult {
   const extension = extensionFromPath(filePath);
   const mediaType = mediaTypeFromExtension(extension);
   const dimensions = mediaType === "image/png" ? pngDimensions(bytes) : {};
+  const hash = fingerprintBytes(bytes);
   return {
     ...(mediaType ? { mediaType } : {}),
     ...(extension ? { extension } : {}),
     ...(dimensions.width ? { width: dimensions.width } : {}),
     ...(dimensions.height ? { height: dimensions.height } : {}),
-    byteLength: metadata.size,
-    hash: fingerprintBytes(bytes),
+    byteLength,
+    hash,
     provenance: {
       kind: "file",
-      resolvedId: fingerprintBytes(bytes),
+      resolvedId: hash,
       hashSource: "bytes",
     },
   };
 }
 
+async function probeFileAsset(filePath: string): Promise<AssetProbeResult> {
+  const [metadata, buffer] = await Promise.all([stat(filePath), readFile(filePath)]);
+  return probeFileAssetBytes(filePath, new Uint8Array(buffer), metadata.size);
+}
+
 async function loadFileAsset(filePath: string): Promise<AssetLoadResult> {
   const buffer = await readFile(filePath);
   const bytes = new Uint8Array(buffer);
-  const probe = await probeFileAsset(filePath);
   return {
-    ...probe,
+    ...probeFileAssetBytes(filePath, bytes, bytes.byteLength),
     bytes,
   };
 }

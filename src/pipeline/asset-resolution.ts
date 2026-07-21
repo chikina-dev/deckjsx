@@ -421,6 +421,7 @@ export async function resolveAssetArtifacts(input: {
         ...cached,
         assetEntityId,
         probeDiagnostics,
+        loadDiagnostics: durableLoadDiagnostics,
         diagnostics: reusableDiagnostics,
       } satisfies AssetArtifact;
       input.artifacts?.materializeAsset(artifact);

@@ -1283,6 +1283,15 @@ function paintIntentFromProps(props: {
   return Object.keys(paintIntent).length > 0 ? paintIntent : undefined;
 }
 
+function paintIntentSnapshotFromProps(props: {
+  readonly filter?: string;
+  readonly mixBlendMode?: string;
+  readonly isolation?: string;
+}): { readonly paintIntent?: ProjectedPaintIntent } {
+  const paintIntent = paintIntentFromProps(props);
+  return paintIntent ? { paintIntent } : {};
+}
+
 function backgroundInput(props: {
   readonly background?: string;
   readonly backgroundColor?: string;
@@ -3431,7 +3440,7 @@ function compileGroupNode(
     siblingOrder: node.siblingOrder,
     ...(clip ? { clip } : {}),
     opacity: resolved.opacity,
-    ...(paintIntentFromProps(props) ? { paintIntent: paintIntentFromProps(props) } : {}),
+    ...paintIntentSnapshotFromProps(props),
     rotation: resolved.rotation,
     zIndex: resolved.zIndex,
     ...(props.visibility !== undefined ? { visibility: props.visibility } : {}),
@@ -3753,7 +3762,7 @@ function compileTableNode(
     siblingOrder: node.siblingOrder,
     ...(clip ? { clip } : {}),
     opacity: resolved.opacity,
-    ...(paintIntentFromProps(props) ? { paintIntent: paintIntentFromProps(props) } : {}),
+    ...paintIntentSnapshotFromProps(props),
     rotation: resolved.rotation,
     zIndex: resolved.zIndex,
     ...(shadow.shadow ? { shadow: shadow.shadow } : {}),
@@ -3800,9 +3809,7 @@ function compileTableNode(
         frame: sectionFrame,
         ...(section.source.origin ? { origin: section.source.origin } : {}),
         opacity: section.source.props.opacity,
-        ...(paintIntentFromProps(section.source.props)
-          ? { paintIntent: paintIntentFromProps(section.source.props) }
-          : {}),
+        ...paintIntentSnapshotFromProps(section.source.props),
         fill: sectionBackground.fill,
         ...(sectionBackground.backgroundLayers
           ? { backgroundLayers: sectionBackground.backgroundLayers }
@@ -3847,9 +3854,7 @@ function compileTableNode(
             ...(row.source.origin ? { origin: row.source.origin } : {}),
             frame: rowFrame,
             opacity: row.props.opacity,
-            ...(paintIntentFromProps(row.props)
-              ? { paintIntent: paintIntentFromProps(row.props) }
-              : {}),
+            ...paintIntentSnapshotFromProps(row.props),
             fill: rowBackground.fill,
             ...(rowBackground.backgroundLayers
               ? { backgroundLayers: rowBackground.backgroundLayers }
@@ -3931,9 +3936,7 @@ function compileTableNode(
                 ...(cell.source.origin ? { origin: cell.source.origin } : {}),
                 frame: cellFrame,
                 opacity: cell.props.opacity,
-                ...(paintIntentFromProps(cell.props)
-                  ? { paintIntent: paintIntentFromProps(cell.props) }
-                  : {}),
+                ...paintIntentSnapshotFromProps(cell.props),
                 fill: cellBackground.fill,
                 ...(cellBackground.backgroundLayers
                   ? { backgroundLayers: cellBackground.backgroundLayers }
@@ -4264,7 +4267,7 @@ function compileTextNode(
     siblingOrder: node.siblingOrder,
     ...(clip ? { clip } : {}),
     opacity: resolved.opacity,
-    ...(paintIntentFromProps(props) ? { paintIntent: paintIntentFromProps(props) } : {}),
+    ...paintIntentSnapshotFromProps(props),
     rotation: resolved.rotation,
     zIndex: resolved.zIndex,
     ...(props.visibility !== undefined ? { visibility: props.visibility } : {}),
@@ -4363,7 +4366,7 @@ function compileImageNode(
     ...(clip ? { clip } : {}),
     sourceFrame: originalFrame,
     opacity: resolved.opacity,
-    ...(paintIntentFromProps(props) ? { paintIntent: paintIntentFromProps(props) } : {}),
+    ...paintIntentSnapshotFromProps(props),
     rotation: resolved.rotation,
     zIndex: resolved.zIndex,
     ...(props.visibility !== undefined ? { visibility: props.visibility } : {}),
@@ -4523,7 +4526,7 @@ function compileVideoNode(
     ...(clip ? { clip } : {}),
     sourceFrame: originalFrame,
     opacity: resolved.opacity,
-    ...(paintIntentFromProps(props) ? { paintIntent: paintIntentFromProps(props) } : {}),
+    ...paintIntentSnapshotFromProps(props),
     rotation: resolved.rotation,
     zIndex: resolved.zIndex,
     ...(props.visibility !== undefined ? { visibility: props.visibility } : {}),
@@ -4616,7 +4619,7 @@ function compileShapeNode(
     siblingOrder: node.siblingOrder,
     ...(clip ? { clip } : {}),
     opacity: resolved.opacity,
-    ...(paintIntentFromProps(props) ? { paintIntent: paintIntentFromProps(props) } : {}),
+    ...paintIntentSnapshotFromProps(props),
     rotation: resolved.rotation,
     zIndex: resolved.zIndex,
     ...(props.visibility !== undefined ? { visibility: props.visibility } : {}),

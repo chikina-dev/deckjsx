@@ -240,6 +240,13 @@ describe("project/render asset diagnostics", () => {
       artifacts,
       assetLoaders: [loader],
     });
+    const reprojection = await H.projectSource({
+      source: deck,
+      options: deck.options,
+      artifacts,
+      assetLoaders: [loader],
+    });
+    const reprojectedArtifact = [...artifacts.assetsById.values()][0];
     const recovered = await H.renderSource({
       source: deck,
       options: deck.options,
@@ -248,6 +255,11 @@ describe("project/render asset diagnostics", () => {
     });
 
     expect(failed.ok).toBe(false);
+    expect(reprojection.ok).toBe(true);
+    expect(reprojectedArtifact?.loadDiagnostics).toMatchObject({
+      items: [],
+      hasErrors: false,
+    });
     expect(
       failed.diagnostics.items.some((item) => item.code === "E_RENDER_ASSET_LOAD_FAILED"),
     ).toBe(true);
