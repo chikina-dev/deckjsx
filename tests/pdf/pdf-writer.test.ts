@@ -484,8 +484,8 @@ describe("PDF writer", () => {
     expect(pdf).toContain("(Hello \\(PDF\\) \\\\ writer) Tj");
   });
 
-  test("renders visual-only text elements by lowering them to content operations", async () => {
-    const model = onePageModel("ignored");
+  test("serializes committed content without lowering visual elements", async () => {
+    const model = onePageModel("Committed content");
     const fontId = model.resources.fonts[0]!.id;
     const result = await renderPdfPageModel(
       {
@@ -493,11 +493,10 @@ describe("PDF writer", () => {
         pages: [
           {
             ...model.pages[0]!,
-            content: [],
             visuals: [
               {
                 kind: "text",
-                text: "Visual only",
+                text: "Uncommitted visual",
                 box: { x: 72, y: 96, width: 180, height: 24 },
                 fontId,
                 style: { fontSize: 12 },
@@ -512,7 +511,8 @@ describe("PDF writer", () => {
     const pdf = decodePdf(result.artifact?.bytes ?? new Uint8Array());
 
     expect(result.diagnostics.items).toEqual([]);
-    expect(pdf).toContain("(Visual only) Tj");
+    expect(pdf).toContain("(Committed content) Tj");
+    expect(pdf).not.toContain("(Uncommitted visual) Tj");
   });
 
   test("clips gradient fills and shape strokes before rotated child transforms", () => {
@@ -565,7 +565,7 @@ describe("PDF writer", () => {
     expect(strokePaint).toBeGreaterThan(secondTransform);
   });
 
-  test("merges explicit content operations with lowered visual elements", async () => {
+  test("does not merge visual elements into explicit content operations", async () => {
     const model = onePageModel("ignored");
     const fontId = model.resources.fonts[0]!.id;
     const result = await renderPdfPageModel(
@@ -603,7 +603,7 @@ describe("PDF writer", () => {
 
     expect(result.diagnostics.items).toEqual([]);
     expect(pdf).toContain("(Existing content) Tj");
-    expect(pdf).toContain("(Visual extra) Tj");
+    expect(pdf).not.toContain("(Visual extra) Tj");
   });
 
   test("encodes WinAnsi text as PDF literal string octal escapes", async () => {
@@ -3113,545 +3113,15 @@ describe("PDF writer", () => {
     );
   });
 
-  test("rejects direct writes with malformed page visual collections", () => {
-    const model = onePageModel("Bad page visuals");
+  test("ignores inspection-only visuals when serializing canonical content", () => {
+    const model = onePageModel("Canonical content");
 
     expect(() =>
       writePdfDocument({
         ...model,
-        pages: [{ ...model.pages[0]!, visuals: "not-an-array" }],
+        pages: [{ ...model.pages[0]!, visuals: "stale inspection snapshot" }],
       } as never),
-    ).toThrow("PDF page visuals must be an array when present.");
-  });
-
-  test("rejects direct writes with invalid page visual elements", () => {
-    const model = onePageModel("Bad page visual element");
-
-    expect(() =>
-      writePdfDocument({
-        ...model,
-        pages: [
-          {
-            ...model.pages[0]!,
-            visuals: [
-              {
-                kind: "text",
-                text: "Bad visual",
-                box: { x: 72, y: 96, width: 0, height: 24 },
-                fontId: model.resources.fonts[0]!.id,
-                style: {},
-                paintOrder: { siblingOrder: 0 },
-              },
-            ],
-          },
-        ],
-      }),
-    ).toThrow(
-      "PDF visual elements must be valid text visual elements with frame, font, style, and paint order fields.",
-    );
-  });
-
-  test("rejects direct writes with malformed visual element objects", () => {
-    const model = onePageModel("Bad visual element object");
-
-    expect(() =>
-      writePdfDocument({
-        ...model,
-        pages: [
-          {
-            ...model.pages[0]!,
-            visuals: [
-              Object.assign([], {
-                kind: "text",
-                text: "Array visual",
-                box: { x: 72, y: 96, width: 120, height: 24 },
-                fontId: model.resources.fonts[0]!.id,
-                style: {},
-                paintOrder: { siblingOrder: 0 },
-              }),
-            ],
-          },
-        ],
-      } as never),
-    ).toThrow(
-      "PDF visual elements must be valid text visual elements with frame, font, style, and paint order fields.",
-    );
-  });
-
-  test("rejects direct writes with malformed visual element origins", () => {
-    const model = onePageModel("Bad visual element origin");
-
-    expect(() =>
-      writePdfDocument({
-        ...model,
-        pages: [
-          {
-            ...model.pages[0]!,
-            visuals: [
-              {
-                kind: "text",
-                text: "Bad origin",
-                box: { x: 72, y: 96, width: 120, height: 24 },
-                fontId: model.resources.fonts[0]!.id,
-                style: {},
-                origin: { graphNodeIds: [""] },
-                paintOrder: { siblingOrder: 0 },
-              },
-            ],
-          },
-        ],
-      } as never),
-    ).toThrow(
-      "PDF visual elements must be valid text visual elements with frame, font, style, and paint order fields.",
-    );
-  });
-
-  test("rejects direct writes with malformed visual text styles", () => {
-    const model = onePageModel("Bad visual text style");
-
-    expect(() =>
-      writePdfDocument({
-        ...model,
-        pages: [
-          {
-            ...model.pages[0]!,
-            visuals: [
-              {
-                kind: "text",
-                text: "Bad visual style",
-                box: { x: 72, y: 96, width: 120, height: 24 },
-                fontId: model.resources.fonts[0]!.id,
-                style: [],
-                paintOrder: { siblingOrder: 0 },
-              },
-            ],
-          },
-        ],
-      } as never),
-    ).toThrow(
-      "PDF visual elements must be valid text visual elements with frame, font, style, and paint order fields.",
-    );
-  });
-
-  test("rejects direct writes with unsupported visual text encodings", () => {
-    const model = onePageModel("Unsupported visual text encoding");
-
-    expect(() =>
-      writePdfDocument({
-        ...model,
-        pages: [
-          {
-            ...model.pages[0]!,
-            visuals: [
-              {
-                kind: "text",
-                text: "Visual 😀",
-                box: { x: 72, y: 96, width: 120, height: 24 },
-                fontId: model.resources.fonts[0]!.id,
-                style: {},
-                paintOrder: { siblingOrder: 0 },
-              },
-            ],
-          },
-        ],
-      }),
-    ).toThrow("PDF text must use WinAnsi text or utf16be text with an Identity-H font.");
-  });
-
-  test("rejects direct writes with malformed visual paint orders", () => {
-    const model = onePageModel("Bad visual paint order");
-
-    expect(() =>
-      writePdfDocument({
-        ...model,
-        pages: [
-          {
-            ...model.pages[0]!,
-            visuals: [
-              {
-                kind: "text",
-                text: "Bad paint order",
-                box: { x: 72, y: 96, width: 120, height: 24 },
-                fontId: model.resources.fonts[0]!.id,
-                style: {},
-                paintOrder: Object.assign([], { siblingOrder: 0 }),
-              },
-            ],
-          },
-        ],
-      } as never),
-    ).toThrow(
-      "PDF visual elements must be valid text visual elements with frame, font, style, and paint order fields.",
-    );
-  });
-
-  test("rejects direct writes with malformed visual strokes", () => {
-    const model = onePageModel("Bad visual stroke");
-
-    expect(() =>
-      writePdfDocument({
-        ...model,
-        pages: [
-          {
-            ...model.pages[0]!,
-            visuals: [
-              {
-                kind: "shape",
-                shape: "rect",
-                box: { x: 72, y: 96, width: 120, height: 80 },
-                stroke: Object.assign([], { color: { r: 1, g: 0, b: 0 }, width: 2 }),
-                paintOrder: { siblingOrder: 0 },
-              },
-            ],
-          },
-        ],
-      } as never),
-    ).toThrow(
-      "PDF visual elements must be valid text visual elements with frame, font, style, and paint order fields.",
-    );
-  });
-
-  test("rejects direct writes with malformed visual image fit metadata", () => {
-    const model = onePageModel("Bad visual image fit");
-    const imageId = pdfResourceId("image", "photo");
-
-    expect(() =>
-      writePdfDocument({
-        ...model,
-        pages: [
-          {
-            ...model.pages[0]!,
-            resources: { ...model.pages[0]!.resources, images: [imageId] },
-            visuals: [
-              {
-                kind: "image",
-                imageId,
-                box: { x: 72, y: 96, width: 120, height: 80 },
-                fit: "crop",
-                objectPosition: { x: 0.5, y: Number.NaN },
-                paintOrder: { siblingOrder: 0 },
-              },
-            ],
-          },
-        ],
-        resources: {
-          ...model.resources,
-          images: [
-            {
-              id: imageId,
-              name: "Im1",
-              mediaType: "image/jpeg",
-              width: 1,
-              height: 1,
-              data: validJpegBytes(),
-            },
-          ],
-        },
-      } as never),
-    ).toThrow(
-      "PDF visual elements must be valid text visual elements with frame, font, style, and paint order fields.",
-    );
-  });
-
-  test("rejects direct writes with malformed solid visual fills", () => {
-    const model = onePageModel("Bad visual fill");
-
-    expect(() =>
-      writePdfDocument({
-        ...model,
-        pages: [
-          {
-            ...model.pages[0]!,
-            visuals: [
-              {
-                kind: "shape",
-                shape: "rect",
-                box: { x: 72, y: 96, width: 120, height: 80 },
-                fill: Object.assign([], { color: { r: 1, g: 0, b: 0 } }),
-                paintOrder: { siblingOrder: 0 },
-              },
-            ],
-          },
-        ],
-      } as never),
-    ).toThrow(
-      "PDF visual elements must be valid text visual elements with frame, font, style, and paint order fields.",
-    );
-  });
-
-  test("rejects direct writes with malformed gradient visual fills", () => {
-    const model = onePageModel("Bad gradient visual fill");
-    const gradientId = pdfResourceId("gradient", "Bad visual fill");
-
-    expect(() =>
-      writePdfDocument({
-        ...model,
-        pages: [
-          {
-            ...model.pages[0]!,
-            resources: { ...model.pages[0]!.resources, gradients: [gradientId] },
-            visuals: [
-              {
-                kind: "shape",
-                shape: "rect",
-                box: { x: 72, y: 96, width: 120, height: 80 },
-                fill: Object.assign([], {
-                  kind: "linear-gradient",
-                  gradientId,
-                  angle: 0,
-                  stops: [
-                    { position: 0, color: { r: 1, g: 0, b: 0 } },
-                    { position: 1, color: { r: 0, g: 0, b: 1 } },
-                  ],
-                }),
-                paintOrder: { siblingOrder: 0 },
-              },
-            ],
-          },
-        ],
-        resources: {
-          ...model.resources,
-          gradients: [
-            {
-              id: gradientId,
-              name: "Grad1",
-              kind: "linear-gradient",
-              box: { x: 72, y: 96, width: 120, height: 80 },
-              angle: 0,
-              stops: [
-                { position: 0, color: { r: 1, g: 0, b: 0 } },
-                { position: 1, color: { r: 0, g: 0, b: 1 } },
-              ],
-            },
-          ],
-        },
-      } as never),
-    ).toThrow(
-      "PDF visual elements must be valid text visual elements with frame, font, style, and paint order fields.",
-    );
-  });
-
-  test("rejects direct writes with malformed visual hyperlinks", () => {
-    const model = onePageModel("Bad visual hyperlink");
-
-    expect(() =>
-      writePdfDocument({
-        ...model,
-        pages: [
-          {
-            ...model.pages[0]!,
-            visuals: [
-              {
-                kind: "text",
-                text: "Bad hyperlink",
-                box: { x: 72, y: 96, width: 120, height: 24 },
-                fontId: model.resources.fonts[0]!.id,
-                style: {},
-                hyperlink: Object.assign([], { url: "https://example.com/docs" }),
-                paintOrder: { siblingOrder: 0 },
-              },
-            ],
-          },
-        ],
-      } as never),
-    ).toThrow(
-      "PDF visual elements must be valid text visual elements with frame, font, style, and paint order fields.",
-    );
-  });
-
-  test("rejects direct writes with visual hyperlink fallback boxes outside the page", () => {
-    const model = onePageModel("Bad visual hyperlink fallback box");
-
-    expect(() =>
-      writePdfDocument({
-        ...model,
-        pages: [
-          {
-            ...model.pages[0]!,
-            visuals: [
-              {
-                kind: "text",
-                text: "Bad fallback link box",
-                box: { x: 600, y: 780, width: 80, height: 24 },
-                fontId: model.resources.fonts[0]!.id,
-                style: {},
-                hyperlink: { url: "https://example.com/docs" },
-                paintOrder: { siblingOrder: 0 },
-              },
-            ],
-          },
-        ],
-      }),
-    ).toThrow(
-      "PDF visual elements must be valid text visual elements with frame, font, style, and paint order fields.",
-    );
-  });
-
-  test("rejects direct writes with malformed radial gradient visual centers", () => {
-    const model = onePageModel("Bad radial visual center");
-    const gradientId = pdfResourceId("gradient", "Bad radial visual center");
-
-    expect(() =>
-      writePdfDocument({
-        ...model,
-        pages: [
-          {
-            ...model.pages[0]!,
-            resources: { ...model.pages[0]!.resources, gradients: [gradientId] },
-            visuals: [
-              {
-                kind: "shape",
-                shape: "rect",
-                box: { x: 72, y: 96, width: 120, height: 80 },
-                fill: {
-                  kind: "radial-gradient",
-                  gradientId,
-                  shape: "circle",
-                  center: Object.assign([], { x: 0.5, y: 0.5 }),
-                  radius: { x: 0.5, y: 0.5 },
-                  stops: [
-                    { position: 0, color: { r: 1, g: 0, b: 0 } },
-                    { position: 1, color: { r: 0, g: 0, b: 1 } },
-                  ],
-                },
-                paintOrder: { siblingOrder: 0 },
-              },
-            ],
-          },
-        ],
-        resources: {
-          ...model.resources,
-          gradients: [
-            {
-              id: gradientId,
-              name: "Grad1",
-              kind: "radial-gradient",
-              box: { x: 72, y: 96, width: 120, height: 80 },
-              shape: "circle",
-              center: { x: 0.5, y: 0.5 },
-              radius: { x: 0.5, y: 0.5 },
-              stops: [
-                { position: 0, color: { r: 1, g: 0, b: 0 } },
-                { position: 1, color: { r: 0, g: 0, b: 1 } },
-              ],
-            },
-          ],
-        },
-      } as never),
-    ).toThrow(
-      "PDF visual elements must be valid text visual elements with frame, font, style, and paint order fields.",
-    );
-  });
-
-  test("rejects direct writes with malformed radial gradient visual radii", () => {
-    const model = onePageModel("Bad radial visual radius");
-    const gradientId = pdfResourceId("gradient", "Bad radial visual radius");
-
-    expect(() =>
-      writePdfDocument({
-        ...model,
-        pages: [
-          {
-            ...model.pages[0]!,
-            resources: { ...model.pages[0]!.resources, gradients: [gradientId] },
-            visuals: [
-              {
-                kind: "shape",
-                shape: "rect",
-                box: { x: 72, y: 96, width: 120, height: 80 },
-                fill: {
-                  kind: "radial-gradient",
-                  gradientId,
-                  shape: "circle",
-                  center: { x: 0.5, y: 0.5 },
-                  radius: Object.assign([], { x: 0.5, y: 0.5 }),
-                  stops: [
-                    { position: 0, color: { r: 1, g: 0, b: 0 } },
-                    { position: 1, color: { r: 0, g: 0, b: 1 } },
-                  ],
-                },
-                paintOrder: { siblingOrder: 0 },
-              },
-            ],
-          },
-        ],
-        resources: {
-          ...model.resources,
-          gradients: [
-            {
-              id: gradientId,
-              name: "Grad1",
-              kind: "radial-gradient",
-              box: { x: 72, y: 96, width: 120, height: 80 },
-              shape: "circle",
-              center: { x: 0.5, y: 0.5 },
-              radius: { x: 0.5, y: 0.5 },
-              stops: [
-                { position: 0, color: { r: 1, g: 0, b: 0 } },
-                { position: 1, color: { r: 0, g: 0, b: 1 } },
-              ],
-            },
-          ],
-        },
-      } as never),
-    ).toThrow(
-      "PDF visual elements must be valid text visual elements with frame, font, style, and paint order fields.",
-    );
-  });
-
-  test("rejects direct writes with rectangle visual radii", () => {
-    const model = onePageModel("Bad rectangle visual radius");
-
-    expect(() =>
-      writePdfDocument({
-        ...model,
-        pages: [
-          {
-            ...model.pages[0]!,
-            visuals: [
-              {
-                kind: "shape",
-                shape: "rect",
-                box: { x: 72, y: 96, width: 120, height: 80 },
-                radius: 8,
-                fill: { color: { r: 1, g: 0, b: 0 } },
-                paintOrder: { siblingOrder: 0 },
-              },
-            ],
-          },
-        ],
-      }),
-    ).toThrow(
-      "PDF visual elements must be valid text visual elements with frame, font, style, and paint order fields.",
-    );
-  });
-
-  test("rejects direct writes with visual font references missing from the page", () => {
-    const model = onePageModel("Visual page resource miss");
-    const fontId = model.resources.fonts[0]!.id;
-
-    expect(() =>
-      writePdfDocument({
-        ...model,
-        pages: [
-          {
-            ...model.pages[0]!,
-            resources: { fonts: [], images: [] },
-            content: [],
-            visuals: [
-              {
-                kind: "text",
-                text: "Hidden visual font",
-                box: { x: 72, y: 96, width: 120, height: 24 },
-                fontId,
-                style: { fontSize: 12 },
-                paintOrder: { siblingOrder: 0 },
-              },
-            ],
-          },
-        ],
-      }),
-    ).toThrow("The PDF visual element references a resource id that is not declared on the page.");
+    ).not.toThrow();
   });
 
   test("encodes link annotation tooltips as PDF text strings", async () => {
@@ -3682,7 +3152,7 @@ describe("PDF writer", () => {
     expect(pdf).toContain("/URI (https://example.com/docs)");
   });
 
-  test("emits link annotations from visual-only text hyperlinks", async () => {
+  test("does not synthesize annotations from visual-only text hyperlinks", async () => {
     const model = onePageModel("ignored");
     const fontId = model.resources.fonts[0]!.id;
     const result = await renderPdfPageModel(
@@ -3711,13 +3181,13 @@ describe("PDF writer", () => {
     const pdf = decodePdf(result.artifact?.bytes ?? new Uint8Array());
 
     expect(result.diagnostics.items).toEqual([]);
-    expect(pdf).toContain("(Visual link) Tj");
-    expect(pdf).toContain("/Annots [");
-    expect(pdf).toContain("/URI (https://example.com/visual)");
-    expect(pdf).toContain("/Contents (Visual tip)");
+    expect(pdf).not.toContain("(Visual link) Tj");
+    expect(pdf).not.toContain("/Annots [");
+    expect(pdf).not.toContain("/URI (https://example.com/visual)");
+    expect(pdf).not.toContain("/Contents (Visual tip)");
   });
 
-  test("merges explicit link annotations with visual text hyperlinks", async () => {
+  test("serializes committed annotations without merging visual text hyperlinks", async () => {
     const model = onePageModel("ignored");
     const fontId = model.resources.fonts[0]!.id;
     const result = await renderPdfPageModel(
@@ -3754,7 +3224,7 @@ describe("PDF writer", () => {
 
     expect(result.diagnostics.items).toEqual([]);
     expect(pdf).toContain("/URI (https://example.com/explicit)");
-    expect(pdf).toContain("/URI (https://example.com/visual)");
+    expect(pdf).not.toContain("/URI (https://example.com/visual)");
   });
 
   test("offsets link annotation rectangles by non-zero page media box origins", async () => {

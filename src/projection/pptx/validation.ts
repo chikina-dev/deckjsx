@@ -2008,6 +2008,27 @@ function validateDrawingUnsupportedSemantics(input: {
   return issues;
 }
 
+function validateNestedUnsupportedSemantics(input: {
+  readonly value: readonly PptxUnsupportedSemantic[] | undefined;
+  readonly path: string;
+  readonly label: string;
+}): Diagnostics["items"] {
+  if (input.value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(input.value)) {
+    return [
+      drawingPayloadDiagnostic({
+        path: input.path,
+        message: `invalid ${input.label} unsupported semantics`,
+      }),
+    ];
+  }
+  return input.value.flatMap((semantic, index) =>
+    validateUnsupportedSemantic({ semantic, path: `${input.path}.${index}` }),
+  );
+}
+
 function validateDrawingLayoutAnchor(input: {
   element: PptxElement;
   path: string;
@@ -4691,6 +4712,14 @@ function validateDrawingElementPayload(input: {
         return;
       }
 
+      issues.push(
+        ...validateNestedUnsupportedSemantics({
+          value: section.unsupportedSemantics,
+          path: `${input.path}.sections.${sectionIndex}.unsupportedSemantics`,
+          label: "table section",
+        }),
+      );
+
       section.rows.forEach((row: PptxTableRow, rowIndex: number) => {
         issues.push(
           ...validateDrawingPayloadFrame({
@@ -4708,6 +4737,14 @@ function validateDrawingElementPayload(input: {
           );
           return;
         }
+
+        issues.push(
+          ...validateNestedUnsupportedSemantics({
+            value: row.unsupportedSemantics,
+            path: `${input.path}.sections.${sectionIndex}.rows.${rowIndex}.unsupportedSemantics`,
+            label: "table row",
+          }),
+        );
 
         row.cells.forEach((cell: PptxTableCell, cellIndex: number) => {
           const cellPath = `${input.path}.sections.${sectionIndex}.rows.${rowIndex}.cells.${cellIndex}`;
@@ -4754,25 +4791,13 @@ function validateDrawingElementPayload(input: {
               }),
             );
           });
-          if (cell.unsupportedSemantics !== undefined) {
-            if (!Array.isArray(cell.unsupportedSemantics)) {
-              issues.push(
-                drawingPayloadDiagnostic({
-                  path: `${cellPath}.unsupportedSemantics`,
-                  message: "invalid table cell unsupported semantics",
-                }),
-              );
-            } else {
-              cell.unsupportedSemantics.forEach((semantic, semanticIndex) => {
-                issues.push(
-                  ...validateUnsupportedSemantic({
-                    semantic,
-                    path: `${cellPath}.unsupportedSemantics.${semanticIndex}`,
-                  }),
-                );
-              });
-            }
-          }
+          issues.push(
+            ...validateNestedUnsupportedSemantics({
+              value: cell.unsupportedSemantics,
+              path: `${cellPath}.unsupportedSemantics`,
+              label: "table cell",
+            }),
+          );
         });
       });
     });

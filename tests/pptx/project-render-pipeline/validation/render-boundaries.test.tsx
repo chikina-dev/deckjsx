@@ -637,7 +637,7 @@ describe("project/render validation render boundaries", () => {
     });
   });
 
-  test("project integration failures remain diagnostics instead of rejected promises", async () => {
+  test("invalid resolved style updates are rejected at the plugin snapshot seam", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     deck.plugin({
       kind: "deckjsx.plugin",
@@ -664,7 +664,7 @@ describe("project/render validation render boundaries", () => {
         },
       },
     });
-    deck.slide({ name: "Project boundary" }, () => (
+    deck.slide({ name: "Project boundary", style: { backgroundColor: "#123456" } }, () => (
       <p style={{ position: "absolute", left: 1, top: 1, width: 4, height: 0.5 }}>
         invalid style from plugin
       </p>
@@ -676,12 +676,20 @@ describe("project/render validation render boundaries", () => {
     expect(project.diagnostics.items).toContainEqual(
       expect.objectContaining({
         severity: "error",
-        code: "E_PROJECT_FAILED",
+        code: "E_PLUGIN_HOOK_INVALID_UPDATE_VALUE",
       }),
     );
     expect(project.stages.project.diagnostics.items).toContainEqual(
-      expect.objectContaining({ code: "E_PROJECT_FAILED" }),
+      expect.objectContaining({ code: "E_PLUGIN_HOOK_INVALID_UPDATE_VALUE" }),
     );
+    expect(project.stages.project.artifact).toBe("partial");
+    expect(project.projection?.format).toBe("pptx");
+    if (project.projection?.format === "pptx") {
+      expect(project.projection.slides[0]?.payload.background).toMatchObject({
+        kind: "solid",
+        color: "123456",
+      });
+    }
   });
 
   test("adapter-like invalid writer values are render-blocking errors", async () => {
@@ -707,6 +715,59 @@ describe("project/render validation render boundaries", () => {
     expect(result.diagnostics.items).toContainEqual(
       expect.objectContaining({ code: "E_RENDER_INVALID_WRITER_ADAPTER", severity: "error" }),
     );
+  });
+
+  test("custom writer adapters do not inherit built-in asset byte requirements", async () => {
+    let called = false;
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.plugin({
+      kind: "deckjsx.plugin",
+      id: "test:probe-only-custom-adapter",
+      integration: {
+        id: "test:probe-only-custom-adapter" as never,
+        assetLoaders: [
+          {
+            resolverIdentity: "test:probe-only",
+            async probe() {
+              return {
+                ok: true as const,
+                value: { mediaType: "image/png", width: 1, height: 1 },
+              };
+            },
+          },
+        ],
+      },
+    });
+    deck.slide({ name: "Custom adapter assets" }, () => (
+      <img
+        src="./unresolved-custom-adapter.png"
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
+    ));
+    const adapter: H.WriterAdapter<H.PptxPackageModel, "pptx"> = {
+      kind: "deckjsx.writerAdapter",
+      name: "asset-independent",
+      projectionFormat: "pptx",
+      format: "pptx",
+      options: {},
+      async render() {
+        called = true;
+        return {
+          diagnostics: H.createDiagnostics(),
+          artifact: {
+            format: "pptx",
+            mediaType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            extension: "pptx",
+            bytes: new Uint8Array([1]),
+          },
+        };
+      },
+    };
+
+    const result = await deck.render(adapter);
+
+    expect(result.ok).toBe(true);
+    expect(called).toBe(true);
   });
 
   test("malformed writer adapter results remain render diagnostics", async () => {

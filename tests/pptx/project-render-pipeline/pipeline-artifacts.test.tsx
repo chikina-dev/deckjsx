@@ -3,7 +3,21 @@ import { compositionRevisionForSource } from "@/src/composition/source.ts";
 import { resolveComposition } from "@/src/composition/resolve.ts";
 import { createDiagnostics } from "@/src/diagnostics/index.ts";
 import { resolveStyles } from "@/src/style/resolve.ts";
+import type {
+  DefinedPptxProjectionArtifact,
+  DefinedProjectionArtifact,
+} from "@/src/pipeline/artifacts.ts";
 import * as H from "./helpers.tsx";
+
+function pptxArtifact(
+  artifact: DefinedProjectionArtifact | undefined,
+): DefinedPptxProjectionArtifact {
+  expect(artifact?.format).toBe("pptx");
+  if (!artifact || artifact.format !== "pptx") {
+    throw new Error("expected a PPTX projection artifact");
+  }
+  return artifact;
+}
 
 describe("project/render pipeline artifacts", () => {
   test("pipeline artifact collection keeps keyed snapshots behind whole-artifact defines", async () => {
@@ -36,8 +50,12 @@ describe("project/render pipeline artifacts", () => {
 
     expect(artifacts.graph).toBeUndefined();
     expect(artifacts.projection?.projection).toBe(projection);
-    expect(artifacts.projection?.partsById.get(projection.parts[0]!.id)).toBe(projection.parts[0]);
-    expect(artifacts.projection?.packageDependencies.dependenciesByPartId.size).toBeGreaterThan(0);
+    expect(pptxArtifact(artifacts.projection).partsById.get(projection.parts[0]!.id)).toBe(
+      projection.parts[0],
+    );
+    expect(
+      pptxArtifact(artifacts.projection).packageDependencies.dependenciesByPartId.size,
+    ).toBeGreaterThan(0);
   });
 
   test("pipeline artifact collection replaces projection artifacts with pdf models", () => {
@@ -56,8 +74,50 @@ describe("project/render pipeline artifacts", () => {
 
     expect(artifacts.graph).toBeUndefined();
     expect(artifacts.projection?.projection).toBe(projection);
-    expect(artifacts.projection?.partsById.size).toBe(0);
-    expect(artifacts.projection?.packageDependencies.dependenciesByPartId.size).toBe(0);
+    expect(artifacts.projection).not.toHaveProperty("partsById");
+    expect(artifacts.projection).not.toHaveProperty("packageDependencies");
+  });
+
+  test("materializing a changed asset source does not inherit observations from the old source", () => {
+    const artifacts = new H.PipelineArtifactCollection();
+    const assetEntityId = "asset:source-aware" as never;
+    const diagnostics = createDiagnostics();
+
+    artifacts.materializeAsset({
+      assetEntityId,
+      source: { kind: "path", path: "./before.png" },
+      sourceField: "src",
+      resolverIdentity: "test:source-aware",
+      probe: { mediaType: "image/png", width: 10, height: 10 },
+      load: { bytes: new Uint8Array([1, 2, 3]), mediaType: "image/png" },
+      probeDiagnostics: diagnostics,
+      loadDiagnostics: diagnostics,
+      diagnostics,
+    });
+    artifacts.materializeAsset({
+      assetEntityId,
+      source: { kind: "path", path: "./after.png" },
+      sourceField: "src",
+      resolverIdentity: "test:source-aware",
+      diagnostics,
+    });
+
+    const artifact = artifacts.assetsById.get(assetEntityId);
+    expect(artifact?.source).toEqual({ kind: "path", path: "./after.png" });
+    expect(artifact?.probe).toBeUndefined();
+    expect(artifact?.load).toBeUndefined();
+    expect(artifact?.probeDiagnostics).toBeUndefined();
+    expect(artifact?.loadDiagnostics).toBeUndefined();
+    expect(
+      artifacts.assetsBySourceCacheKey.has(
+        H.assetSourceCacheKey(
+          { kind: "path", path: "./before.png" },
+          "test:source-aware",
+          undefined,
+          "src",
+        ),
+      ),
+    ).toBe(false);
   });
 
   test("pipeline artifact invalidation clears stale package part build artifacts", async () => {
@@ -129,8 +189,11 @@ describe("project/render pipeline artifacts", () => {
     expect(artifacts.sourcesByKey.get("deck:root")?.rootCount).toBe(1);
     expect(artifacts.graphsBySourceKey.get("deck:root")?.graph).toBe(compile.graph);
     expect(project.ok).toBe(true);
-    expect(artifacts.projection?.projection).toBe(project.projection);
-    expect(artifacts.projection?.partsById.size).toBe(project.projection?.parts.length);
+    expect(artifacts.projection?.projection).not.toBe(project.projection);
+    expect(artifacts.projection?.projection).toStrictEqual(project.projection);
+    expect(pptxArtifact(artifacts.projection).partsById.size).toBe(
+      project.projection?.parts.length,
+    );
   });
 
   test("Source invalidation exposes a single projection reuse snapshot until the next projection materializes", async () => {
@@ -243,18 +306,18 @@ describe("project/render pipeline artifacts", () => {
       (slide) => slide.payload.name === "Stable",
     );
 
-    const firstEditedFingerprint = first.artifacts.projection?.slidePackagePartFingerprints.get(
-      firstEditedSlide!.id,
-    );
-    const firstStableFingerprint = first.artifacts.projection?.slidePackagePartFingerprints.get(
-      firstStableSlide!.id,
-    );
-    const secondEditedFingerprint = second.artifacts.projection?.slidePackagePartFingerprints.get(
-      secondEditedSlide!.id,
-    );
-    const secondStableFingerprint = second.artifacts.projection?.slidePackagePartFingerprints.get(
-      secondStableSlide!.id,
-    );
+    const firstEditedFingerprint = pptxArtifact(
+      first.artifacts.projection,
+    ).slidePackagePartFingerprints.get(firstEditedSlide!.id);
+    const firstStableFingerprint = pptxArtifact(
+      first.artifacts.projection,
+    ).slidePackagePartFingerprints.get(firstStableSlide!.id);
+    const secondEditedFingerprint = pptxArtifact(
+      second.artifacts.projection,
+    ).slidePackagePartFingerprints.get(secondEditedSlide!.id);
+    const secondStableFingerprint = pptxArtifact(
+      second.artifacts.projection,
+    ).slidePackagePartFingerprints.get(secondStableSlide!.id);
 
     expect(firstEditedFingerprint).toEqual(
       expect.objectContaining({
@@ -303,10 +366,10 @@ describe("project/render pipeline artifacts", () => {
     const secondEditedSlideNodeId = secondEditedSlide?.origin?.graphNodeIds?.[0];
     const secondStableSlideNodeId = secondStableSlide?.origin?.graphNodeIds?.[0];
 
-    const editedFingerprint = artifacts.projection?.slideProjectionFingerprints.get(
+    const editedFingerprint = pptxArtifact(artifacts.projection).slideProjectionFingerprints.get(
       secondEditedSlideNodeId!,
     );
-    const stableFingerprint = artifacts.projection?.slideProjectionFingerprints.get(
+    const stableFingerprint = pptxArtifact(artifacts.projection).slideProjectionFingerprints.get(
       secondStableSlideNodeId!,
     );
 
@@ -343,7 +406,9 @@ describe("project/render pipeline artifacts", () => {
     });
     const slide = project.projection?.slides[0];
     const slideNodeId = slide?.origin?.graphNodeIds?.[0];
-    const fingerprint = artifacts.projection?.slideProjectionFingerprints.get(slideNodeId!);
+    const fingerprint = pptxArtifact(artifacts.projection).slideProjectionFingerprints.get(
+      slideNodeId!,
+    );
 
     expect(project.ok).toBe(true);
     expect(fingerprint).toEqual(
@@ -372,13 +437,16 @@ describe("project/render pipeline artifacts", () => {
       projectOptions: { inspection: "none" },
       artifacts,
     });
-    const firstEditedSlide = first.projection?.slides.find(
+    const firstInternalProjection = artifacts.projection?.projection as
+      | H.PptxPackageModel
+      | undefined;
+    const firstEditedSlide = firstInternalProjection?.slides.find(
       (slide) => slide.payload.name === "Edited",
     );
-    const firstStableSlide = first.projection?.slides.find(
+    const firstStableSlide = firstInternalProjection?.slides.find(
       (slide) => slide.payload.name === "Stable",
     );
-    const firstStableSlideRelationships = first.projection?.parts.find(
+    const firstStableSlideRelationships = firstInternalProjection?.parts.find(
       (part) =>
         part.kind === "relationships" &&
         firstStableSlide?.origin?.graphNodeIds?.some((id) =>
@@ -396,13 +464,16 @@ describe("project/render pipeline artifacts", () => {
       projectOptions: { inspection: "none" },
       artifacts,
     });
-    const secondEditedSlide = second.projection?.slides.find(
+    const secondInternalProjection = artifacts.projection?.projection as
+      | H.PptxPackageModel
+      | undefined;
+    const secondEditedSlide = secondInternalProjection?.slides.find(
       (slide) => slide.payload.name === "Edited",
     );
-    const secondStableSlide = second.projection?.slides.find(
+    const secondStableSlide = secondInternalProjection?.slides.find(
       (slide) => slide.payload.name === "Stable",
     );
-    const secondStableSlideRelationships = second.projection?.parts.find(
+    const secondStableSlideRelationships = secondInternalProjection?.parts.find(
       (part) =>
         part.kind === "relationships" &&
         secondStableSlide?.origin?.graphNodeIds?.some((id) =>
@@ -476,7 +547,10 @@ describe("project/render pipeline artifacts", () => {
       projectOptions: { inspection: "none" },
       artifacts,
     });
-    const firstStableMedia = first.projection?.parts.find((part) => part.kind === "media");
+    const firstInternalProjection = artifacts.projection?.projection as
+      | H.PptxPackageModel
+      | undefined;
+    const firstStableMedia = firstInternalProjection?.parts.find((part) => part.kind === "media");
 
     editedText = "after";
     artifacts.invalidateForSourceChange({
@@ -488,7 +562,10 @@ describe("project/render pipeline artifacts", () => {
       projectOptions: { inspection: "none" },
       artifacts,
     });
-    const secondStableMedia = second.projection?.parts.find(
+    const secondInternalProjection = artifacts.projection?.projection as
+      | H.PptxPackageModel
+      | undefined;
+    const secondStableMedia = secondInternalProjection?.parts.find(
       (part) => part.id === firstStableMedia?.id,
     );
 
@@ -527,10 +604,13 @@ describe("project/render pipeline artifacts", () => {
       projectOptions: { inspection: "none" },
       artifacts,
     });
-    const firstEditedMedia = first.projection?.parts.find(
+    const firstInternalProjection = artifacts.projection?.projection as
+      | H.PptxPackageModel
+      | undefined;
+    const firstEditedMedia = firstInternalProjection?.parts.find(
       (part) => part.kind === "media" && part.path === "ppt/media/media1.svg",
     );
-    const firstStableMedia = first.projection?.parts.find(
+    const firstStableMedia = firstInternalProjection?.parts.find(
       (part) => part.kind === "media" && part.path === "ppt/media/media2.svg",
     );
 
@@ -544,10 +624,13 @@ describe("project/render pipeline artifacts", () => {
       projectOptions: { inspection: "none" },
       artifacts,
     });
-    const secondEditedMedia = second.projection?.parts.find(
+    const secondInternalProjection = artifacts.projection?.projection as
+      | H.PptxPackageModel
+      | undefined;
+    const secondEditedMedia = secondInternalProjection?.parts.find(
       (part) => part.id === firstEditedMedia?.id,
     );
-    const secondStableMedia = second.projection?.parts.find(
+    const secondStableMedia = secondInternalProjection?.parts.find(
       (part) => part.id === firstStableMedia?.id,
     );
 
@@ -577,6 +660,9 @@ describe("project/render pipeline artifacts", () => {
       projectOptions: { inspection: "none" },
       artifacts,
     });
+    const firstInternalProjection = artifacts.projection?.projection as
+      | H.PptxPackageModel
+      | undefined;
     const firstRender = await H.renderPptxPackage(
       firstProject.projection!,
       { inspection: "none" },
@@ -585,10 +671,10 @@ describe("project/render pipeline artifacts", () => {
       },
     );
     artifacts.materializePptxBuildArtifacts(firstRender.buildArtifacts ?? []);
-    const firstStableSlide = firstProject.projection?.slides.find(
+    const firstStableSlide = firstInternalProjection?.slides.find(
       (slide) => slide.payload.name === "Stable",
     );
-    const firstStableSlideRelationships = firstProject.projection?.parts.find(
+    const firstStableSlideRelationships = firstInternalProjection?.parts.find(
       (part) =>
         part.kind === "relationships" &&
         firstStableSlide?.origin?.graphNodeIds?.some((id) =>
@@ -606,6 +692,9 @@ describe("project/render pipeline artifacts", () => {
       projectOptions: { inspection: "none" },
       artifacts,
     });
+    const secondInternalProjection = artifacts.projection?.projection as
+      | H.PptxPackageModel
+      | undefined;
     const secondRender = await H.renderPptxPackage(
       secondProject.projection!,
       { inspection: "none" },
@@ -613,10 +702,10 @@ describe("project/render pipeline artifacts", () => {
         pptxBuildArtifactsByPartId: artifacts.pptxBuildArtifactsByPartId,
       },
     );
-    const secondStableSlide = secondProject.projection?.slides.find(
+    const secondStableSlide = secondInternalProjection?.slides.find(
       (slide) => slide.payload.name === "Stable",
     );
-    const secondStableSlideRelationships = secondProject.projection?.parts.find(
+    const secondStableSlideRelationships = secondInternalProjection?.parts.find(
       (part) =>
         part.kind === "relationships" &&
         secondStableSlide?.origin?.graphNodeIds?.some((id) =>
@@ -705,7 +794,9 @@ describe("project/render pipeline artifacts", () => {
       ),
     ).toBe(true);
     expect(project.ok).toBe(true);
-    expect(artifacts.projection?.partsBySourceKey.get("child")?.length).toBeGreaterThan(0);
+    expect(
+      pptxArtifact(artifacts.projection).partsBySourceKey.get("child")?.length,
+    ).toBeGreaterThan(0);
   });
 
   test("root Deck projection does not reuse stale artifacts after a mounted child Deck changes", async () => {
@@ -801,6 +892,7 @@ describe("project/render pipeline artifacts", () => {
     );
     const mediaPart = project.projection?.parts.find((part) => part.kind === "media");
     const dependencyDetails = project.summary?.details?.packageDependencyInvalidation.entries ?? [];
+    const packageDependencies = pptxArtifact(artifacts.projection).packageDependencies;
     const detailEntryFor = (id: H.PackagePartId | undefined) =>
       dependencyDetails.find((entry) => entry.partId === id);
 
@@ -811,37 +903,21 @@ describe("project/render pipeline artifacts", () => {
     expect(presentationRels).toBeDefined();
     expect(slideRels).toBeDefined();
     expect(mediaPart).toBeDefined();
-    expect(
-      artifacts.projection?.packageDependencies.dependenciesByPartId.get(presentationRels!.id),
-    ).toContain(slide!.id);
-    expect(artifacts.projection?.packageDependencies.dependentsByPartId.get(slide!.id)).toContain(
+    expect(packageDependencies.dependenciesByPartId.get(presentationRels!.id)).toContain(slide!.id);
+    expect(packageDependencies.dependentsByPartId.get(slide!.id)).toContain(presentationRels!.id);
+    expect(packageDependencies.dependenciesByPartId.get(contentTypes!.id)).toContain(slide!.id);
+    expect(packageDependencies.dependentsByPartId.get(slide!.id)).toContain(contentTypes!.id);
+    expect(packageDependencies.dependenciesByPartId.get(presentation!.id)).toContain(
       presentationRels!.id,
     );
-    expect(
-      artifacts.projection?.packageDependencies.dependenciesByPartId.get(contentTypes!.id),
-    ).toContain(slide!.id);
-    expect(artifacts.projection?.packageDependencies.dependentsByPartId.get(slide!.id)).toContain(
-      contentTypes!.id,
+    expect(packageDependencies.dependentsByPartId.get(presentationRels!.id)).toContain(
+      presentation!.id,
     );
-    expect(
-      artifacts.projection?.packageDependencies.dependenciesByPartId.get(presentation!.id),
-    ).toContain(presentationRels!.id);
-    expect(
-      artifacts.projection?.packageDependencies.dependentsByPartId.get(presentationRels!.id),
-    ).toContain(presentation!.id);
-    expect(
-      artifacts.projection?.packageDependencies.dependenciesByPartId.get(slideRels!.id),
-    ).toContain(mediaPart!.id);
-    expect(
-      artifacts.projection?.packageDependencies.dependentsByPartId.get(mediaPart!.id),
-    ).toContain(slideRels!.id);
-    expect(
-      artifacts.projection?.packageDependencies.dependenciesByPartId.get(mediaPart!.id),
-    ).toContain(slideRels!.id);
-    expect(
-      artifacts.projection?.packageDependencies.dependentsByPartId.get(slideRels!.id),
-    ).toContain(mediaPart!.id);
-    expect(artifacts.projection?.packageDependencies.edges).toContainEqual(
+    expect(packageDependencies.dependenciesByPartId.get(slideRels!.id)).toContain(mediaPart!.id);
+    expect(packageDependencies.dependentsByPartId.get(mediaPart!.id)).toContain(slideRels!.id);
+    expect(packageDependencies.dependenciesByPartId.get(mediaPart!.id)).toContain(slideRels!.id);
+    expect(packageDependencies.dependentsByPartId.get(slideRels!.id)).toContain(mediaPart!.id);
+    expect(packageDependencies.edges).toContainEqual(
       expect.objectContaining({
         ownerPartId: presentationRels!.id,
         targetPartId: slide!.id,
@@ -849,7 +925,7 @@ describe("project/render pipeline artifacts", () => {
         relationshipType: "slide",
       }),
     );
-    expect(artifacts.projection?.packageDependencies.edges).toContainEqual(
+    expect(packageDependencies.edges).toContainEqual(
       expect.objectContaining({
         ownerPartId: contentTypes!.id,
         targetPartId: slide!.id,
@@ -857,7 +933,7 @@ describe("project/render pipeline artifacts", () => {
         contentType: "application/vnd.openxmlformats-officedocument.presentationml.slide+xml",
       }),
     );
-    expect(artifacts.projection?.packageDependencies.edges).toContainEqual(
+    expect(packageDependencies.edges).toContainEqual(
       expect.objectContaining({
         ownerPartId: presentation!.id,
         targetPartId: presentationRels!.id,
@@ -865,7 +941,7 @@ describe("project/render pipeline artifacts", () => {
         fingerprint: expect.stringMatching(/^fnv1a32:/),
       }),
     );
-    expect(artifacts.projection?.packageDependencies.edges).toContainEqual(
+    expect(packageDependencies.edges).toContainEqual(
       expect.objectContaining({
         ownerPartId: mediaPart!.id,
         targetPartId: slideRels!.id,
@@ -874,9 +950,7 @@ describe("project/render pipeline artifacts", () => {
         requirementCondition: "referencedByRelationship",
       }),
     );
-    expect(artifacts.projection?.packageDependencies.edges).toEqual(
-      project.summary?.packageDependencies,
-    );
+    expect(packageDependencies.edges).toEqual(project.summary?.packageDependencies);
     expect(dependencyDetails.length).toBe(project.projection?.parts.length);
     expect(detailEntryFor(presentation!.id)).toEqual(
       expect.objectContaining({

@@ -8,7 +8,7 @@ import type { AssetEntityId, SemanticAuthorGraph } from "./graph";
 import type { DeckIntegrationContext } from "./integration-context";
 import type { MediaSourceOrigin } from "./media-source-origin";
 import type { RenderedArtifact } from "./pipeline/public";
-import type { AssetArtifact } from "./pipeline/artifacts";
+import type { AssetArtifact } from "./asset-artifact";
 import type { ProjectedDocumentModel } from "./projection/registry";
 import type { ResolvedStyleMap } from "./style/resolve";
 

@@ -122,6 +122,41 @@ describe("deckjsx integration incremental artifact session", () => {
     expect((secondProjection.projection as { format: string }).format).toBe("pptx");
   });
 
+  test("project results do not share projection ownership with the Deck cache", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Cached original" }, () => <p>cached projection ownership</p>);
+
+    const project = await deck.project({ inspection: "none" });
+    const projection = project.projection as H.PptxPackageModel;
+    const projectedSlide = projection.slides[0] as { payload: { name?: string } };
+    projectedSlide.payload.name = "Mutated result";
+    const projectedPart = projection.parts.find((part) => part.kind === "slide") as {
+      payload: { name?: string };
+    };
+    projectedPart.payload.name = "Mutated result";
+
+    const cachedProject = await deck.project({ inspection: "none" });
+
+    expect(cachedProject.ok).toBe(true);
+    expect((cachedProject.projection as H.PptxPackageModel).slides[0]?.payload.name).toBe(
+      "Cached original",
+    );
+  });
+
+  test("explicit defineProjection inputs remain the caller-declared source of truth", async () => {
+    const source = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    source.slide({ name: "Explicit definition" }, () => <p>explicit projection</p>);
+    const projection = (await source.project({ inspection: "none" }))
+      .projection as H.PptxPackageModel;
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.defineProjection(projection);
+
+    const project = await deck.project({ inspection: "none" });
+
+    expect(project.ok).toBe(true);
+    expect(project.projection).toBe(projection);
+  });
+
   test("incremental artifact cycle complete rejects active and repeated completion", async () => {
     const session = H.createIncrementalArtifactSession();
     const cycle = session.beginCycle();
@@ -202,6 +237,45 @@ describe("deckjsx integration incremental artifact session", () => {
     );
     expect(outer.complete().writes).toEqual([]);
     expect(inner.complete().writes).toEqual([]);
+  });
+
+  test("artifact write leases reserve one effect and record exactly once", async () => {
+    const session = H.createIncrementalArtifactSession();
+    const cycle = session.beginCycle();
+
+    await cycle.run(async () => {
+      const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+      deck.slide({ name: "Lease" }, () => <p>lease</p>);
+      const token = H.getArtifactWriteToken(await deck.render(H.pptx()));
+      const lease = H.claimArtifactWrite(token);
+      expect(() => H.claimArtifactWrite(token)).toThrow("has already been claimed");
+
+      const record = lease?.commit({ path: "/project/output.pptx", result: { status: "created" } });
+      expect(record).toEqual({
+        cycle: 1,
+        slot: 0,
+        path: "/project/output.pptx",
+        result: { status: "created" },
+      });
+      expect(() =>
+        lease?.commit({ path: "/project/duplicate.pptx", result: { status: "created" } }),
+      ).toThrow("has already been recorded");
+    });
+
+    expect(cycle.complete().writes).toHaveLength(1);
+  });
+
+  test("artifact write leases prevent completion while an effect is outstanding", async () => {
+    const session = H.createIncrementalArtifactSession();
+    const cycle = session.beginCycle();
+
+    await cycle.run(async () => {
+      const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+      deck.slide({ name: "Pending lease" }, () => <p>pending</p>);
+      H.claimArtifactWrite(H.getArtifactWriteToken(await deck.render(H.pptx())));
+    });
+
+    expect(() => cycle.complete()).toThrow("cannot complete with 1 pending artifact write(s)");
   });
 
   test("incremental artifact session scopes active cycles to async execution", async () => {

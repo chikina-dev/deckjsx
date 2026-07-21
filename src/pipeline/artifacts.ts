@@ -17,33 +17,26 @@ import type {
   PptxPackageModel,
   PptxPackageModelCandidate,
 } from "../projection/pptx/model";
-import { isPptxPackageModel } from "../projection/pptx/model";
 import { isPdfPageModel, type PdfPageModel } from "../projection/pdf/model";
 import { pptxProjectionArtifact, projectionShapeDiagnostics } from "../projection/pptx/artifact";
 import type { ResolvedStyle, ResolvedStyleMap } from "../style/resolve";
+import { assetSourceCacheKey, type AssetArtifact } from "../asset-artifact";
 import {
-  assetSourceCacheKey,
   ROOT_SOURCE_ARTIFACT_KEY,
-  type AssetArtifact,
   type DefinedGraphArtifact,
   type DefinedProjectionArtifact,
   type GraphArtifactReplacement,
   type IncrementalProjectionReuseSnapshot,
-  type ProjectionArtifact,
   type PptxPackageBuildArtifact,
-  type PptxProjectionArtifact,
   type SourceArtifact,
   type SourceGraphArtifactSlice,
   type SlideProjectionFingerprintSnapshot,
 } from "./artifact-contract";
 
 export {
-  assetSourceCacheKey,
-  fingerprintBytes,
   ROOT_SOURCE_ARTIFACT_KEY,
-  type AssetArtifact,
-  type AssetArtifactStore,
   type DefinedGraphArtifact,
+  type DefinedPptxProjectionArtifact,
   type DefinedProjectionArtifact,
   type GraphArtifactReplacement,
   type IncrementalProjectionReuseSnapshot,
@@ -55,26 +48,12 @@ export {
   type SourceGraphArtifactSlice,
   type SlideProjectionFingerprintSnapshot,
 } from "./artifact-contract";
-
-type ProjectionArtifactIndexes = Omit<
-  PptxProjectionArtifact<PptxPackageModelCandidate>,
-  keyof ProjectionArtifact<PptxPackageModelCandidate>
->;
-
-function emptyProjectionArtifactIndexes(): ProjectionArtifactIndexes {
-  return {
-    partsById: new Map(),
-    partsBySourceKey: new Map(),
-    partsByGraphNodeId: new Map(),
-    slideProjectionFingerprints: new Map(),
-    slidePackagePartFingerprints: new Map(),
-    packageDependencies: {
-      edges: [],
-      dependenciesByPartId: new Map(),
-      dependentsByPartId: new Map(),
-    },
-  };
-}
+export {
+  assetSourceCacheKey,
+  fingerprintBytes,
+  type AssetArtifact,
+  type AssetArtifactStore,
+} from "../asset-artifact";
 
 function projectionArtifactForModel(
   projection: PptxPackageModel | PdfPageModel,
@@ -86,30 +65,14 @@ function projectionArtifactForModel(
     >;
   } = {},
 ): DefinedProjectionArtifact {
-  return isPptxPackageModel(projection as PptxPackageModelCandidate)
-    ? pptxProjectionArtifact(projection as PptxPackageModel, diagnostics, artifactOptions)
-    : {
-        projection,
-        diagnostics,
-        ...emptyProjectionArtifactIndexes(),
-      };
-}
+  if (isPdfPageModel(projection)) {
+    return { format: "pdf", projection, diagnostics };
+  }
 
-function mergeAssetDiagnostics(previous: Diagnostics, next: Diagnostics): Diagnostics {
-  const items = [...previous.items];
-  const seen = new Set(items.map(assetDiagnosticKey));
-  next.items.forEach((item) => {
-    const key = assetDiagnosticKey(item);
-    if (!seen.has(key)) {
-      seen.add(key);
-      items.push(item);
-    }
-  });
-  return createDiagnostics(items);
-}
-
-function assetDiagnosticKey(item: Diagnostics["items"][number]): string {
-  return JSON.stringify(item);
+  return {
+    format: "pptx",
+    ...pptxProjectionArtifact(projection, diagnostics, artifactOptions),
+  };
 }
 
 function sourceKeyFor(source: SourceOrigin | undefined): string {
@@ -272,38 +235,23 @@ export class PipelineArtifactCollection {
   invalidateFromSource(): void {
     this.#sourcesByKey.clear();
     this.#graphsBySourceKey.clear();
-    this.#assetsById.clear();
-    this.#assetsBySourceCacheKey.clear();
-    this.#pptxBuildArtifactsByPartId.clear();
-    this.#projection = undefined;
-    this.#projectionOptions = undefined;
-    this.clearIncrementalProjectionReuseSnapshot();
+    this.clearAssetState();
+    this.clearProjectionState();
   }
 
   invalidateFromGraph(): void {
     this.#graphsBySourceKey.clear();
-    this.#assetsById.clear();
-    this.#assetsBySourceCacheKey.clear();
-    this.#pptxBuildArtifactsByPartId.clear();
-    this.#projection = undefined;
-    this.#projectionOptions = undefined;
-    this.clearIncrementalProjectionReuseSnapshot();
+    this.clearAssetState();
+    this.clearProjectionState();
   }
 
   invalidateFromProjection(): void {
-    this.#pptxBuildArtifactsByPartId.clear();
-    this.#projection = undefined;
-    this.#projectionOptions = undefined;
-    this.clearIncrementalProjectionReuseSnapshot();
+    this.clearProjectionState();
   }
 
   invalidateAssets(): void {
-    this.#assetsById.clear();
-    this.#assetsBySourceCacheKey.clear();
-    this.#pptxBuildArtifactsByPartId.clear();
-    this.#projection = undefined;
-    this.#projectionOptions = undefined;
-    this.clearIncrementalProjectionReuseSnapshot();
+    this.clearAssetState();
+    this.clearProjectionState();
   }
 
   invalidateForSourceChange(invalidation: SourceInvalidation): boolean {
@@ -319,10 +267,8 @@ export class PipelineArtifactCollection {
       this.preserveProjectionForIncrementalReuse();
       this.#sourcesByKey.clear();
       this.#graphsBySourceKey.clear();
-      this.#assetsById.clear();
-      this.#assetsBySourceCacheKey.clear();
-      this.#projection = undefined;
-      this.#projectionOptions = undefined;
+      this.clearAssetState();
+      this.clearProjectionState({ clearBuildArtifacts: false, clearReuseSnapshot: false });
       this.#staleAssetEntityIdsForReuse.clear();
       return true;
     }
@@ -349,9 +295,29 @@ export class PipelineArtifactCollection {
         asset,
       );
     });
+    this.clearProjectionState({ clearBuildArtifacts: false, clearReuseSnapshot: false });
+    return true;
+  }
+
+  private clearAssetState(): void {
+    this.#assetsById.clear();
+    this.#assetsBySourceCacheKey.clear();
+  }
+
+  private clearProjectionState(
+    options: {
+      readonly clearBuildArtifacts?: boolean;
+      readonly clearReuseSnapshot?: boolean;
+    } = {},
+  ): void {
+    if (options.clearBuildArtifacts !== false) {
+      this.#pptxBuildArtifactsByPartId.clear();
+    }
     this.#projection = undefined;
     this.#projectionOptions = undefined;
-    return true;
+    if (options.clearReuseSnapshot !== false) {
+      this.clearIncrementalProjectionReuseSnapshot();
+    }
   }
 
   private preserveProjectionForIncrementalReuse(): void {
@@ -565,24 +531,31 @@ export class PipelineArtifactCollection {
 
   materializeAsset(input: AssetArtifact): void {
     const previous = this.#assetsById.get(input.assetEntityId);
-    const artifact = {
-      ...previous,
-      ...input,
-      diagnostics: mergeAssetDiagnostics(
-        previous?.diagnostics ?? createDiagnostics(),
-        input.diagnostics,
-      ),
-    };
-    this.#assetsById.set(input.assetEntityId, artifact);
-    this.#assetsBySourceCacheKey.set(
-      assetSourceCacheKey(
-        artifact.source,
-        artifact.resolverIdentity,
-        artifact.origin,
-        artifact.sourceField,
-      ),
-      artifact,
+    const previousCacheKey = previous
+      ? assetSourceCacheKey(
+          previous.source,
+          previous.resolverIdentity,
+          previous.origin,
+          previous.sourceField,
+        )
+      : undefined;
+    const inputCacheKey = assetSourceCacheKey(
+      input.source,
+      input.resolverIdentity,
+      input.origin,
+      input.sourceField,
     );
+    const artifact = previousCacheKey === inputCacheKey ? { ...previous, ...input } : input;
+
+    if (
+      previousCacheKey !== undefined &&
+      previousCacheKey !== inputCacheKey &&
+      this.#assetsBySourceCacheKey.get(previousCacheKey)?.assetEntityId === input.assetEntityId
+    ) {
+      this.#assetsBySourceCacheKey.delete(previousCacheKey);
+    }
+    this.#assetsById.set(input.assetEntityId, artifact);
+    this.#assetsBySourceCacheKey.set(inputCacheKey, artifact);
   }
 
   materializePptxBuildArtifact(input: PptxPackageBuildArtifact): void {
@@ -613,7 +586,10 @@ export class PipelineArtifactCollection {
     this.#graphsBySourceKey.clear();
     this.#projection = isPdfPageModel(projection)
       ? projectionArtifactForModel(projection, createDiagnostics())
-      : pptxProjectionArtifact(projection, projectionShapeDiagnostics(projection));
+      : {
+          format: "pptx",
+          ...pptxProjectionArtifact(projection, projectionShapeDiagnostics(projection)),
+        };
     this.#projectionOptions = undefined;
     this.clearIncrementalProjectionReuseSnapshot();
   }

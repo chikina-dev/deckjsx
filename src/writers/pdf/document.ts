@@ -14,10 +14,6 @@ import type {
 } from "../../projection/pdf/model";
 import { normalizedPdfDateValue, pdfMetadataDateStringIsValid } from "../../projection/pdf/date";
 import { pdfCssColorFilterTransform } from "../../projection/pdf/filter-color";
-import {
-  annotationsFromPdfTextVisuals,
-  contentOpsFromPdfVisuals,
-} from "../../projection/pdf/lower";
 import { pdfEmbeddablePngImage, type PdfEmbeddablePngAlphaMask } from "../../projection/pdf/png";
 import { pdfTextEncodingIsSupported } from "../../projection/pdf/text-encoding";
 import {
@@ -558,19 +554,6 @@ function assertPdfPageCollections(page: PdfPage): void {
   if (page.annotations !== undefined && !Array.isArray(page.annotations)) {
     throw new Error("PDF page annotations must be an array when present.");
   }
-  if (page.visuals !== undefined && !Array.isArray(page.visuals)) {
-    throw new Error("PDF page visuals must be an array when present.");
-  }
-}
-
-function assertPdfVisualElements(page: PdfPage): void {
-  const invalidMessage =
-    "PDF visual elements must be valid text visual elements with frame, font, style, and paint order fields.";
-  (page.visuals ?? []).forEach((visual) => {
-    if (!pdfVisualElementIsValid(visual, page.mediaBox)) {
-      throw new Error(invalidMessage);
-    }
-  });
 }
 
 function assertPdfContentOperations(page: PdfPage): void {
@@ -767,109 +750,6 @@ function assertPdfContentOperations(page: PdfPage): void {
   });
 }
 
-function pdfVisualElementIsValid(value: unknown, pageMediaBox: PdfPage["mediaBox"]): boolean {
-  const visual = value as {
-    readonly actualText?: unknown;
-    readonly kind?: unknown;
-    readonly box?: unknown;
-    readonly clipBox?: unknown;
-    readonly clipRadius?: unknown;
-    readonly fit?: unknown;
-    readonly fill?: unknown;
-    readonly fontId?: unknown;
-    readonly from?: unknown;
-    readonly glyphs?: unknown;
-    readonly hyperlink?: unknown;
-    readonly hyperlinkBox?: unknown;
-    readonly imageId?: unknown;
-    readonly opacity?: unknown;
-    readonly objectPosition?: unknown;
-    readonly paintOrder?: unknown;
-    readonly radius?: unknown;
-    readonly shape?: unknown;
-    readonly stroke?: unknown;
-    readonly style?: unknown;
-    readonly text?: unknown;
-    readonly textEncoding?: unknown;
-    readonly to?: unknown;
-  };
-
-  if (
-    typeof visual !== "object" ||
-    visual === null ||
-    Array.isArray(visual) ||
-    !pdfOptionalBlendModeIsValid((visual as { readonly blendMode?: unknown }).blendMode) ||
-    !pdfVisualOriginIsValid((visual as { readonly origin?: unknown }).origin)
-  ) {
-    return false;
-  }
-
-  switch (visual.kind) {
-    case "image":
-      return (
-        typeof visual.imageId === "string" &&
-        pdfRectangleIsPositive(visual.box) &&
-        (visual.clipBox === undefined || pdfRectangleIsPositive(visual.clipBox)) &&
-        (visual.clipRadius === undefined ||
-          (visual.clipBox !== undefined &&
-            typeof visual.clipRadius === "number" &&
-            Number.isFinite(visual.clipRadius) &&
-            visual.clipRadius >= 0)) &&
-        pdfImageFitIsValid(visual.fit) &&
-        pdfObjectPositionIsValid(visual.objectPosition) &&
-        pdfTransformIsValid(visual) &&
-        pdfOptionalOpacityIsValid(visual.opacity) &&
-        pdfPaintOrderIsValid(visual.paintOrder)
-      );
-    case "line":
-      return (
-        pdfPointIsFinite(visual.from) &&
-        pdfPointIsFinite(visual.to) &&
-        pdfTransformIsValid(visual) &&
-        pdfStrokeIsValid(visual.stroke) &&
-        pdfOptionalOpacityIsValid(visual.opacity) &&
-        pdfPaintOrderIsValid(visual.paintOrder)
-      );
-    case "shape":
-      return (
-        (visual.shape === "rect" || visual.shape === "ellipse" || visual.shape === "roundRect") &&
-        pdfRectangleIsPositive(visual.box) &&
-        pdfClipIsValid(visual) &&
-        pdfShapeRadiusIsValid(visual.shape, visual.radius) &&
-        pdfTransformIsValid(visual) &&
-        (visual.fill === undefined ||
-          pdfSolidVisualFillIsValid(visual.fill) ||
-          pdfGradientVisualFillIsValid(visual.fill)) &&
-        (visual.stroke === undefined || pdfStrokeIsValid(visual.stroke)) &&
-        pdfOptionalOpacityIsValid(visual.opacity) &&
-        pdfPaintOrderIsValid(visual.paintOrder)
-      );
-    case "text":
-      return (
-        typeof visual.text === "string" &&
-        pdfRectangleIsPositive(visual.box) &&
-        pdfTextEncodingIsValid(visual.textEncoding) &&
-        (visual.actualText === undefined || typeof visual.actualText === "string") &&
-        (visual.hyperlink === undefined || pdfHyperlinkIsValid(visual.hyperlink)) &&
-        (visual.hyperlinkBox === undefined ||
-          (visual.hyperlink !== undefined && pdfRectangleIsPositive(visual.hyperlinkBox))) &&
-        (visual.hyperlink === undefined ||
-          pdfRectangleFitsInsidePageBox(
-            pageMediaBox,
-            visual.hyperlinkBox === undefined ? visual.box : visual.hyperlinkBox,
-          )) &&
-        typeof visual.fontId === "string" &&
-        pdfTextGlyphsIsValid(visual.glyphs) &&
-        pdfVisualStyleIsValid(visual.style) &&
-        pdfTransformIsValid(visual) &&
-        pdfOptionalOpacityIsValid(visual.opacity) &&
-        pdfPaintOrderIsValid(visual.paintOrder)
-      );
-    default:
-      return false;
-  }
-}
-
 function pdfPointIsFinite(value: unknown): boolean {
   const point = value as { readonly x?: unknown; readonly y?: unknown } | undefined;
   return (
@@ -880,56 +760,6 @@ function pdfPointIsFinite(value: unknown): boolean {
     typeof point.y === "number" &&
     Number.isFinite(point.x) &&
     Number.isFinite(point.y)
-  );
-}
-
-function pdfPaintOrderIsValid(value: unknown): boolean {
-  const paintOrder = value as {
-    readonly generatedLayerRole?: unknown;
-    readonly siblingOrder?: unknown;
-    readonly zIndex?: unknown;
-  };
-  return (
-    typeof paintOrder === "object" &&
-    paintOrder !== null &&
-    !Array.isArray(paintOrder) &&
-    (paintOrder.zIndex === undefined ||
-      (typeof paintOrder.zIndex === "number" && Number.isFinite(paintOrder.zIndex))) &&
-    typeof paintOrder.siblingOrder === "number" &&
-    Number.isFinite(paintOrder.siblingOrder) &&
-    (paintOrder.generatedLayerRole === undefined ||
-      paintOrder.generatedLayerRole === "authored" ||
-      paintOrder.generatedLayerRole === "background" ||
-      paintOrder.generatedLayerRole === "border" ||
-      paintOrder.generatedLayerRole === "filter" ||
-      paintOrder.generatedLayerRole === "outline" ||
-      paintOrder.generatedLayerRole === "shadow")
-  );
-}
-
-function pdfImageFitIsValid(value: unknown): boolean {
-  return value === undefined || value === "contain" || value === "cover" || value === "stretch";
-}
-
-function pdfTextFitIsValid(value: unknown): boolean {
-  return value === undefined || value === "none" || value === "shrink" || value === "resize";
-}
-
-function pdfTextDirectionIsValid(value: unknown): boolean {
-  return value === undefined || value === "horz" || value === "vert" || value === "vert270";
-}
-
-function pdfObjectPositionIsValid(value: unknown): boolean {
-  const position = value as { readonly x?: unknown; readonly y?: unknown };
-  return (
-    value === undefined ||
-    (typeof position === "object" &&
-      position !== null &&
-      !Array.isArray(position) &&
-      typeof position.x === "number" &&
-      Number.isFinite(position.x) &&
-      typeof position.y === "number" &&
-      Number.isFinite(position.y))
   );
 }
 
@@ -978,48 +808,6 @@ function pdfTextGlyphsIsValid(value: unknown): boolean {
   );
 }
 
-function pdfHyperlinkIsValid(value: unknown): boolean {
-  const hyperlink = value as { readonly tooltip?: unknown; readonly url?: unknown };
-  return (
-    typeof hyperlink === "object" &&
-    hyperlink !== null &&
-    !Array.isArray(hyperlink) &&
-    typeof hyperlink.url === "string" &&
-    pdfExternalUrlIsValid(hyperlink.url) &&
-    (hyperlink.tooltip === undefined || typeof hyperlink.tooltip === "string")
-  );
-}
-
-function pdfVisualStyleIsValid(value: unknown): boolean {
-  const style = value as {
-    readonly charSpacing?: unknown;
-    readonly color?: unknown;
-    readonly fit?: unknown;
-    readonly fontFamily?: unknown;
-    readonly fontSize?: unknown;
-    readonly textDirection?: unknown;
-    readonly textRise?: unknown;
-    readonly wrap?: unknown;
-  };
-  return (
-    typeof style === "object" &&
-    style !== null &&
-    !Array.isArray(style) &&
-    (style.fontFamily === undefined ||
-      (typeof style.fontFamily === "string" && style.fontFamily.trim().length > 0)) &&
-    (style.fontSize === undefined ||
-      (typeof style.fontSize === "number" &&
-        Number.isFinite(style.fontSize) &&
-        style.fontSize > 0)) &&
-    pdfOptionalFiniteNumberIsValid(style.charSpacing) &&
-    pdfOptionalFiniteNumberIsValid(style.textRise) &&
-    (style.color === undefined || pdfColorIsValid(style.color)) &&
-    pdfTextDirectionIsValid(style.textDirection) &&
-    pdfTextFitIsValid(style.fit) &&
-    (style.wrap === undefined || typeof style.wrap === "boolean")
-  );
-}
-
 function pdfOptionalIdentifierArrayIsValid(value: unknown): boolean {
   return (
     value === undefined ||
@@ -1055,93 +843,6 @@ function pdfVisualOriginIsValid(value: unknown): boolean {
   );
 }
 
-function pdfShapeRadiusIsValid(shape: unknown, value: unknown): boolean {
-  if (shape === "roundRect") {
-    return typeof value === "number" && Number.isFinite(value) && value >= 0;
-  }
-  return value === undefined;
-}
-
-function pdfStrokeIsValid(value: unknown): boolean {
-  const stroke = value as {
-    readonly color?: unknown;
-    readonly opacity?: unknown;
-    readonly width?: unknown;
-  };
-  return (
-    typeof stroke === "object" &&
-    stroke !== null &&
-    !Array.isArray(stroke) &&
-    pdfColorIsValid(stroke.color) &&
-    typeof stroke.width === "number" &&
-    Number.isFinite(stroke.width) &&
-    stroke.width > 0 &&
-    pdfStrokeStyleEnumsAreValid(stroke) &&
-    pdfOptionalOpacityIsValid(stroke.opacity)
-  );
-}
-
-function pdfSolidVisualFillIsValid(value: unknown): boolean {
-  const fill = value as { readonly color?: unknown; readonly opacity?: unknown };
-  return (
-    typeof fill === "object" &&
-    fill !== null &&
-    !Array.isArray(fill) &&
-    pdfColorIsValid(fill.color) &&
-    pdfOptionalOpacityIsValid(fill.opacity)
-  );
-}
-
-function pdfGradientVisualFillIsValid(value: unknown): boolean {
-  const fill = value as {
-    readonly angle?: unknown;
-    readonly center?: unknown;
-    readonly gradientId?: unknown;
-    readonly kind?: unknown;
-    readonly opacity?: unknown;
-    readonly radius?: unknown;
-    readonly shape?: unknown;
-    readonly stops?: unknown;
-  };
-  if (
-    typeof fill !== "object" ||
-    fill === null ||
-    Array.isArray(fill) ||
-    typeof fill.gradientId !== "string" ||
-    !Array.isArray(fill.stops) ||
-    fill.stops.length < 2 ||
-    !fill.stops.every(pdfGradientStopIsValid) ||
-    !pdfOptionalOpacityIsValid(fill.opacity)
-  ) {
-    return false;
-  }
-  if (fill.kind === "linear-gradient") {
-    return typeof fill.angle === "number" && Number.isFinite(fill.angle);
-  }
-  const center = fill.center as { readonly x?: unknown; readonly y?: unknown } | undefined;
-  const radius = fill.radius as { readonly x?: unknown; readonly y?: unknown } | undefined;
-  return (
-    fill.kind === "radial-gradient" &&
-    (fill.shape === "circle" || fill.shape === "ellipse") &&
-    typeof center === "object" &&
-    center !== null &&
-    !Array.isArray(center) &&
-    typeof center.x === "number" &&
-    typeof center.y === "number" &&
-    Number.isFinite(center.x) &&
-    Number.isFinite(center.y) &&
-    typeof radius === "object" &&
-    radius !== null &&
-    !Array.isArray(radius) &&
-    typeof radius.x === "number" &&
-    typeof radius.y === "number" &&
-    Number.isFinite(radius.x) &&
-    Number.isFinite(radius.y) &&
-    radius.x > 0 &&
-    radius.y > 0
-  );
-}
-
 function assertPdfContentOperationResourceReferences(page: PdfPage): void {
   const pageFontIds = new Set(page.resources.fonts);
   const pageImageIds = new Set(page.resources.images);
@@ -1171,36 +872,6 @@ function assertPdfContentOperationResourceReferences(page: PdfPage): void {
     if ("gradientId" in operation && !pageGradientIds.has(operation.gradientId)) {
       throw new Error(
         "The PDF content operation references a resource id that is not declared on the page.",
-      );
-    }
-  });
-}
-
-function assertPdfVisualElementResourceReferences(page: PdfPage): void {
-  const pageFontIds = new Set(page.resources.fonts);
-  const pageImageIds = new Set(page.resources.images);
-  const pageGradientIds = new Set(page.resources.gradients ?? []);
-
-  (page.visuals ?? []).forEach((visual) => {
-    if (visual.kind === "text" && !pageFontIds.has(visual.fontId)) {
-      throw new Error(
-        "The PDF visual element references a resource id that is not declared on the page.",
-      );
-    }
-    if (visual.kind === "image" && !pageImageIds.has(visual.imageId)) {
-      throw new Error(
-        "The PDF visual element references a resource id that is not declared on the page.",
-      );
-    }
-    if (
-      visual.kind === "shape" &&
-      visual.fill !== undefined &&
-      "gradientId" in visual.fill &&
-      typeof visual.fill.gradientId === "string" &&
-      !pageGradientIds.has(visual.fill.gradientId)
-    ) {
-      throw new Error(
-        "The PDF visual element references a resource id that is not declared on the page.",
       );
     }
   });
@@ -1246,23 +917,6 @@ function assertPdfTextEncodings(page: PdfPage, resources: PdfResourceDictionary)
         font,
         text: operation.text,
         textEncoding: operation.textEncoding,
-      })
-    ) {
-      throw new Error(invalidMessage);
-    }
-  });
-
-  page.visuals?.forEach((visual) => {
-    if (visual.kind !== "text") {
-      return;
-    }
-
-    const font = pdfPageFontResource({ fontId: visual.fontId, page, resources });
-    if (
-      !pdfTextEncodingIsRenderable({
-        font,
-        text: visual.text,
-        textEncoding: visual.textEncoding,
       })
     ) {
       throw new Error(invalidMessage);
@@ -2869,64 +2523,6 @@ function buildObjects(model: PdfPageModel): readonly PdfIndirectObject[] {
   return objects;
 }
 
-function pageWithRenderableContent(page: PdfPage): PdfPage {
-  const visuals = page.visuals ?? [];
-  if (visuals.length === 0) {
-    return page;
-  }
-
-  const visualContent = contentOpsFromPdfVisuals(visuals);
-  const existingContentKeys = new Set(page.content.map(pdfContentOperationKey));
-  const mergedContent = [
-    ...page.content,
-    ...visualContent.filter(
-      (operation) => !existingContentKeys.has(pdfContentOperationKey(operation)),
-    ),
-  ];
-  const needsContent = mergedContent.length !== page.content.length;
-  const visualAnnotations = annotationsFromPdfTextVisuals(visuals);
-  const existingAnnotations = page.annotations ?? [];
-  const existingAnnotationKeys = new Set(existingAnnotations.map(pdfAnnotationKey));
-  const mergedAnnotations = [
-    ...existingAnnotations,
-    ...visualAnnotations.filter(
-      (annotation) => !existingAnnotationKeys.has(pdfAnnotationKey(annotation)),
-    ),
-  ];
-  const needsAnnotations = mergedAnnotations.length !== existingAnnotations.length;
-
-  if (!needsContent && !needsAnnotations) {
-    return page;
-  }
-
-  return {
-    ...page,
-    ...(needsContent ? { content: mergedContent } : {}),
-    ...(needsAnnotations ? { annotations: mergedAnnotations } : {}),
-  };
-}
-
-function pdfContentOperationKey(operation: PdfContentOp): string {
-  return JSON.stringify(operation) ?? String(operation.op);
-}
-
-function pdfAnnotationKey(annotation: NonNullable<PdfPage["annotations"]>[number]): string {
-  return [
-    annotation.kind,
-    annotation.box.x,
-    annotation.box.y,
-    annotation.box.width,
-    annotation.box.height,
-    annotation.url,
-    annotation.tooltip ?? "",
-  ].join("\u0000");
-}
-
-function modelWithRenderableContent(model: PdfPageModel): PdfPageModel {
-  const pages = model.pages.map(pageWithRenderableContent);
-  return pages.every((page, index) => page === model.pages[index]) ? model : { ...model, pages };
-}
-
 export function writePdfDocument(model: PdfPageModel): Uint8Array {
   assertPdfDocumentHeader(model);
   assertPdfDocumentId(model.documentId);
@@ -2946,14 +2542,11 @@ export function writePdfDocument(model: PdfPageModel): Uint8Array {
     assertPdfPageCollections(page);
     assertPdfContentOperations(page);
     assertPdfContentOperationResourceReferences(page);
-    assertPdfVisualElements(page);
-    assertPdfVisualElementResourceReferences(page);
     assertPdfTextEncodings(page, model.resources);
     assertPdfAnnotations(page);
   });
 
-  const renderModel = modelWithRenderableContent(model);
-  const objects = buildObjects(renderModel);
+  const objects = buildObjects(model);
   const chunks: Uint8Array[] = [bytesFromString(PDF_HEADER)];
   let position = byteLength(PDF_HEADER);
   const offsets = new Map<number, number>();

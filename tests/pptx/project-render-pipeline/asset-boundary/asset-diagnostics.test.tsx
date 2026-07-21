@@ -198,6 +198,70 @@ describe("project/render asset diagnostics", () => {
     expect(diagnostic?.notes?.some((note) => note.startsWith("assetEntityId="))).toBe(true);
   });
 
+  test("a successful retry replaces transient asset load diagnostics", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    const pngBytes = H.pngHeaderBytes(1, 1);
+    let loadAttempts = 0;
+    const loader = H.testAssetLoader({
+      resolverIdentity: "retry-load",
+      async probe({ source }) {
+        return source.kind === "path"
+          ? { mediaType: "image/png", extension: "png", width: 1, height: 1 }
+          : undefined;
+      },
+      async load({ source }) {
+        if (source.kind !== "path") {
+          return undefined;
+        }
+        loadAttempts += 1;
+        if (loadAttempts === 1) {
+          throw new Error("transient load failure");
+        }
+        return {
+          mediaType: "image/png",
+          extension: "png",
+          width: 1,
+          height: 1,
+          bytes: pngBytes,
+        };
+      },
+    });
+    deck.slide({ name: "Retry load" }, () => (
+      <img
+        src="/public/retry.png"
+        style={{ position: "absolute", left: 1, top: 1, width: 1, height: 1 }}
+      />
+    ));
+    const artifacts = new H.PipelineArtifactCollection();
+
+    const failed = await H.renderSource({
+      source: deck,
+      options: deck.options,
+      artifacts,
+      assetLoaders: [loader],
+    });
+    const recovered = await H.renderSource({
+      source: deck,
+      options: deck.options,
+      artifacts,
+      assetLoaders: [loader],
+    });
+
+    expect(failed.ok).toBe(false);
+    expect(
+      failed.diagnostics.items.some((item) => item.code === "E_RENDER_ASSET_LOAD_FAILED"),
+    ).toBe(true);
+    expect(recovered.ok).toBe(true);
+    expect(
+      recovered.diagnostics.items.some((item) => item.code === "E_RENDER_ASSET_LOAD_FAILED"),
+    ).toBe(false);
+    expect(
+      [...artifacts.assetsById.values()][0]?.diagnostics.items.some(
+        (item) => item.code === "E_RENDER_ASSET_LOAD_FAILED",
+      ),
+    ).toBe(false);
+  });
+
   test("render reports invalid asset load result shapes", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
     const loader = H.testAssetLoader({

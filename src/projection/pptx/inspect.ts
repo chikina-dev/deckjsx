@@ -32,6 +32,7 @@ import type {
   PptxBackgroundLayer,
   PptxTextBodyStyle,
   PptxTableCell,
+  PptxUnsupportedSemantic,
 } from "./model";
 
 type InspectedDrawingElement = PptxElement &
@@ -961,6 +962,38 @@ function collectUnsupportedSemanticRecords(
 
     if (element.kind === "group") {
       element.children.forEach((child) => visit(child, slide));
+    }
+    if (element.kind === "table") {
+      const recordNested = (semantics: readonly PptxUnsupportedSemantic[] | undefined): void => {
+        for (const semantic of semantics ?? []) {
+          records.push({
+            ...semantic,
+            elementId: element.id,
+            kind: element.kind,
+            packagePartId: element.packagePartId,
+            slidePartId: slide.id,
+            slideId: slide.payload.slideId,
+            origin: element.origin,
+            ...(drawingNodeContext
+              ? {
+                  emissionTarget: drawingNodeContext.emissionTarget,
+                  paintOrderIndex: drawingNodeContext.paintOrderIndex,
+                }
+              : {}),
+            ...(element.paintOrder ? { paintOrder: element.paintOrder } : {}),
+          });
+        }
+      };
+      element.sections.forEach((section) => {
+        recordNested(section.unsupportedSemantics);
+        section.rows.forEach((row) => {
+          recordNested(row.unsupportedSemantics);
+          row.cells.forEach((cell) => {
+            recordNested(cell.unsupportedSemantics);
+            cell.children.forEach((child) => visit(child, slide));
+          });
+        });
+      });
     }
   };
 

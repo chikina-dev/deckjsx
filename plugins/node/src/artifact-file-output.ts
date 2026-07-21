@@ -1,0 +1,582 @@
+import { constants } from "node:fs";
+import { access, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import path from "node:path";
+import type { FileHandle } from "node:fs/promises";
+import type { RenderResult } from "deckjsx";
+import type { RenderPatchPlanPart } from "deckjsx/integration";
+import { claimArtifactWrite, getArtifactWriteToken } from "deckjsx/integration";
+import {
+  PATCH_MANIFEST_PATH,
+  STORE_METHOD,
+  fingerprintPatchableEntry,
+  parsePatchManifest,
+  parseZipArchive,
+  tryCreateInPlacePatch,
+  type PatchSegment,
+  type WriteDiagnostic,
+} from "./package-patch";
+
+export type { WriteDiagnostic } from "./package-patch";
+
+/**
+ * Disk write strategy used by `write()`.
+ *
+ * `atomic-replace` writes a temporary file and renames it over the target, `in-place` updates
+ * patchable PPTX parts inside an existing file, and `write-file` writes bytes directly when a safer
+ * strategy is unavailable or unnecessary.
+ */
+export type WriteStrategy = "atomic-replace" | "in-place" | "write-file";
+
+/**
+ * Result returned by `@deckjsx/node` file writes.
+ *
+ * `write()` reports ordinary render or filesystem failures through this value instead of throwing.
+ * Check `ok` first, then inspect `diagnostics` for user-facing failure details. `patchedParts` is
+ * populated only when the in-place PPTX patch path succeeds.
+ */
+export type WriteResult = {
+  /** Whether the requested file write completed successfully. */
+  readonly ok: boolean;
+  /** Output path passed to `write()`, after deckjsx has associated diagnostics with the target. */
+  readonly path: string;
+  /** High-level outcome of the attempted write. */
+  readonly status: "created" | "failed" | "patched" | "replaced" | "written";
+  /** File write mechanism selected for this attempt. */
+  readonly strategy: WriteStrategy;
+  /** Number of bytes written or patched during this attempt. */
+  readonly bytesWritten: number;
+  /** PPTX package part paths updated by an in-place patch. */
+  readonly patchedParts: readonly string[];
+  /** Node writer diagnostics. Empty when `ok` is true unless the strategy reports non-fatal detail. */
+  readonly diagnostics: readonly WriteDiagnostic[];
+};
+type WriteResultInput = Omit<WriteResult, "ok">;
+
+/** Inspection status for one PPTX package part in an existing output file. */
+export type PatchablePptxPartInspectionStatus = "missing" | "stale" | "unsupported" | "verified";
+
+/**
+ * Inspection record for one part that deckjsx may patch in-place.
+ *
+ * The record compares the current file entry with the render patch plan and explains whether the
+ * part is present, still valid, stale, or unsupported by the in-place patcher.
+ */
+export type PatchablePptxPartInspection = Omit<
+  RenderPatchPlanPart,
+  "buildReason" | "buildStatus"
+> & {
+  /** Whether the current output file entry can be reused, patched, or must be rebuilt. */
+  readonly status: PatchablePptxPartInspectionStatus;
+  /** Fingerprint found in the current output file, when the part exists and can be inspected. */
+  readonly currentFingerprint?: string;
+  /** ZIP compression method for the current output entry, when available. */
+  readonly zipMethod?: number;
+};
+
+/**
+ * Result of checking whether an existing PPTX can be updated through deckjsx in-place patching.
+ *
+ * This is an inspection helper for tooling and development workflows. It does not modify the file.
+ */
+export type PatchablePptxInspectionResult = {
+  /** PPTX file path that was inspected. */
+  readonly path: string;
+  /** Whether inspection completed without diagnostics. */
+  readonly ok: boolean;
+  /** Whether every required part can be patched in-place. */
+  readonly patchable: boolean;
+  /** Path of the deckjsx patch manifest inside the PPTX package. */
+  readonly manifestPath: string;
+  /** Number of patch-plan parts inspected. */
+  readonly partCount: number;
+  /** Per-part inspection records. */
+  readonly parts: readonly PatchablePptxPartInspection[];
+  /** Inspection diagnostics, including file read and manifest parse failures. */
+  readonly diagnostics: readonly WriteDiagnostic[];
+};
+
+type WriteLock = {
+  readonly path: string;
+  readonly handle: FileHandle;
+};
+
+type WriteLockResult =
+  | {
+      readonly ok: true;
+      readonly lock: WriteLock;
+    }
+  | {
+      readonly ok: false;
+      readonly diagnostics: readonly WriteDiagnostic[];
+    };
+
+const WRITE_LOCK_HEADER = "deckjsx-lock-v1";
+
+/**
+ * Inspect an existing PPTX file for deckjsx in-place patch compatibility.
+ *
+ * The function reads the PPTX package and deckjsx patch manifest, then reports which planned parts
+ * are verified, stale, missing, or unsupported. It is read-only and returns diagnostics instead of
+ * throwing for ordinary inspection failures.
+ *
+ * @param outputPath - Existing `.pptx` file path to inspect.
+ * @returns Per-part patchability status plus diagnostics for read or manifest failures.
+ */
+export async function inspectPatchablePptx(
+  outputPath: string,
+): Promise<PatchablePptxInspectionResult> {
+  try {
+    return inspectPatchablePptxBytes(new Uint8Array(await readFile(outputPath)), outputPath);
+  } catch (error) {
+    return {
+      path: outputPath,
+      ok: false,
+      patchable: false,
+      manifestPath: PATCH_MANIFEST_PATH,
+      partCount: 0,
+      parts: [],
+      diagnostics: [
+        {
+          code: "deckjsx.node.inspect.readFailed",
+          message: error instanceof Error ? error.message : String(error),
+          path: outputPath,
+        },
+      ],
+    };
+  }
+}
+
+/**
+ * Write a successful deckjsx PPTX render result to disk.
+ *
+ * This is the stable Node.js file-output API for `@deckjsx/node`. It is intentionally result-based:
+ * callers pass the full `deck.render(...)` result, and expected render or filesystem failures are
+ * returned as `WriteResult` diagnostics rather than thrown.
+ *
+ * The function accepts render results with a PPTX or PDF artifact. Failed renders or other
+ * artifact formats return a failed `WriteResult`. When an existing PPTX contains deckjsx patch
+ * metadata, `write()` may update patchable package parts in place; otherwise it writes or
+ * atomically replaces the destination file. PDF artifacts are always written as ordinary bytes.
+ *
+ * @param render - Result returned by `deck.render(...)`.
+ * @param outputPath - Destination `.pptx` or `.pdf` path.
+ * @returns Write status, byte counts, patched part paths, and diagnostics.
+ */
+export async function write(render: RenderResult, outputPath: string): Promise<WriteResult> {
+  const writeToken = getArtifactWriteToken(render);
+  const writeLease = claimArtifactWrite(writeToken);
+  const finishWrite = (result: WriteResultInput): WriteResult => {
+    const finished = { ...result, ok: result.status !== "failed" };
+    writeLease?.commit({ path: outputPath, result: finished });
+    return finished;
+  };
+
+  if (!render.ok) {
+    const renderDiagnosticCodes = render.diagnostics.items.map((item) => item.code);
+    return finishWrite({
+      path: outputPath,
+      status: "failed",
+      strategy: "write-file",
+      bytesWritten: 0,
+      patchedParts: [],
+      diagnostics: [
+        {
+          code: "deckjsx.node.write.renderFailed",
+          message: renderDiagnosticCodes.length
+            ? `@deckjsx/node write() requires a successful render result. Render diagnostics: ${renderDiagnosticCodes.join(", ")}.`
+            : "@deckjsx/node write() requires a successful render result.",
+          path: outputPath,
+        },
+      ],
+    });
+  }
+
+  const artifact = render.artifact;
+  if (!artifact) {
+    return finishWrite({
+      path: outputPath,
+      status: "failed",
+      strategy: "write-file",
+      bytesWritten: 0,
+      patchedParts: [],
+      diagnostics: [
+        {
+          code: "deckjsx.node.write.missingArtifact",
+          message: "@deckjsx/node write() requires a render result with an artifact.",
+          path: outputPath,
+        },
+      ],
+    });
+  }
+  const artifactFormat = String((artifact as { readonly format: unknown }).format);
+  if (artifactFormat !== "pptx" && artifactFormat !== "pdf") {
+    return finishWrite({
+      path: outputPath,
+      status: "failed",
+      strategy: "write-file",
+      bytesWritten: 0,
+      patchedParts: [],
+      diagnostics: [
+        {
+          code: "deckjsx.node.write.unsupportedFormat",
+          message: `@deckjsx/node write() can only write pptx or pdf artifacts, got ${artifactFormat}.`,
+          path: outputPath,
+        },
+      ],
+    });
+  }
+
+  const lock = await acquireWriteLock(outputPath);
+  if (!lock.ok) {
+    return finishWrite({
+      path: outputPath,
+      status: "failed",
+      strategy: "write-file",
+      bytesWritten: 0,
+      patchedParts: [],
+      diagnostics: lock.diagnostics,
+    });
+  }
+
+  try {
+    if (artifact.format === "pdf") {
+      await replaceWithLockFile(lock.lock, outputPath, artifact.bytes);
+      return finishWrite({
+        path: outputPath,
+        status: "written",
+        strategy: "write-file",
+        bytesWritten: artifact.bytes.byteLength,
+        patchedParts: [],
+        diagnostics: [],
+      });
+    }
+
+    if (!(await pathExists(outputPath))) {
+      await replaceWithLockFile(lock.lock, outputPath, artifact.bytes);
+      return finishWrite({
+        path: outputPath,
+        status: "created",
+        strategy: "write-file",
+        bytesWritten: artifact.bytes.byteLength,
+        patchedParts: [],
+        diagnostics: [],
+      });
+    }
+
+    const patch = render.patchPlan
+      ? tryCreateInPlacePatch(await readFile(outputPath), artifact.bytes, render.patchPlan)
+      : undefined;
+    if (patch?.ok) {
+      await writePatchSegments(outputPath, patch.segments);
+      return finishWrite({
+        path: outputPath,
+        status: "patched",
+        strategy: "in-place",
+        bytesWritten: patch.segments.reduce(
+          (total, segment) => total + segment.bytes.byteLength,
+          0,
+        ),
+        patchedParts: patch.patchedParts,
+        diagnostics: [],
+      });
+    }
+
+    await replaceWithLockFile(lock.lock, outputPath, artifact.bytes, {
+      preserveLockMetadata: true,
+    });
+    return finishWrite({
+      path: outputPath,
+      status: "replaced",
+      strategy: "atomic-replace",
+      bytesWritten: artifact.bytes.byteLength,
+      patchedParts: [],
+      diagnostics: patch?.diagnostics ?? [],
+    });
+  } catch (error) {
+    return finishWrite({
+      path: outputPath,
+      status: "failed",
+      strategy: "write-file",
+      bytesWritten: 0,
+      patchedParts: [],
+      diagnostics: [
+        {
+          code: "deckjsx.node.write.failed",
+          message: error instanceof Error ? error.message : String(error),
+          path: outputPath,
+        },
+      ],
+    });
+  } finally {
+    await releaseWriteLock(lock.lock);
+  }
+}
+
+function inspectPatchablePptxBytes(
+  bytes: Uint8Array,
+  outputPath: string,
+): PatchablePptxInspectionResult {
+  const archive = parseZipArchive(bytes);
+  if (!archive) {
+    return {
+      path: outputPath,
+      ok: false,
+      patchable: false,
+      manifestPath: PATCH_MANIFEST_PATH,
+      partCount: 0,
+      parts: [],
+      diagnostics: [
+        {
+          code: "deckjsx.node.inspect.unreadableZip",
+          message: "Existing PPTX bytes could not be read as a ZIP archive.",
+          path: outputPath,
+        },
+      ],
+    };
+  }
+
+  const manifestEntry = archive.entries.get(PATCH_MANIFEST_PATH);
+  if (!manifestEntry) {
+    return {
+      path: outputPath,
+      ok: false,
+      patchable: false,
+      manifestPath: PATCH_MANIFEST_PATH,
+      partCount: 0,
+      parts: [],
+      diagnostics: [
+        {
+          code: "deckjsx.node.inspect.missingPatchManifest",
+          message: "Existing PPTX does not contain a deckjsx patch manifest.",
+          path: PATCH_MANIFEST_PATH,
+        },
+      ],
+    };
+  }
+
+  const manifest = parsePatchManifest(manifestEntry.bytes);
+  if (!manifest) {
+    return {
+      path: outputPath,
+      ok: false,
+      patchable: false,
+      manifestPath: PATCH_MANIFEST_PATH,
+      partCount: 0,
+      parts: [],
+      diagnostics: [
+        {
+          code: "deckjsx.node.inspect.invalidPatchManifest",
+          message: "Existing PPTX deckjsx patch manifest could not be parsed.",
+          path: PATCH_MANIFEST_PATH,
+        },
+      ],
+    };
+  }
+
+  const diagnostics: WriteDiagnostic[] = [];
+  const parts = manifest.parts.map((part): PatchablePptxPartInspection => {
+    const entry = archive.entries.get(part.path);
+    if (!entry) {
+      diagnostics.push({
+        code: "deckjsx.node.inspect.missingPatchPart",
+        message: "Patch manifest references a package part that is missing from the PPTX archive.",
+        path: part.path,
+      });
+      return { ...part, status: "missing" };
+    }
+
+    if (entry.method !== STORE_METHOD) {
+      diagnostics.push({
+        code: "deckjsx.node.inspect.unsupportedZipEntry",
+        message: "Patch manifest references a ZIP entry that cannot be updated in place.",
+        path: part.path,
+      });
+      return { ...part, status: "unsupported", zipMethod: entry.method };
+    }
+
+    const currentFingerprint = fingerprintPatchableEntry(part, entry.bytes);
+    if (currentFingerprint !== part.fingerprint) {
+      diagnostics.push({
+        code: "deckjsx.node.inspect.patchManifestStale",
+        message: "Existing PPTX package part bytes do not match the deckjsx patch manifest.",
+        path: part.path,
+      });
+      return { ...part, status: "stale", currentFingerprint, zipMethod: entry.method };
+    }
+
+    return { ...part, status: "verified", currentFingerprint, zipMethod: entry.method };
+  });
+
+  return {
+    path: outputPath,
+    ok: diagnostics.length === 0,
+    patchable: diagnostics.length === 0,
+    manifestPath: PATCH_MANIFEST_PATH,
+    partCount: parts.length,
+    parts,
+    diagnostics,
+  };
+}
+
+function lockPathFor(outputPath: string): string {
+  return path.join(path.dirname(outputPath), ".deckjsx-lock");
+}
+
+function outputScopedLockPathFor(outputPath: string): string {
+  return path.join(path.dirname(outputPath), `.${path.basename(outputPath)}.deckjsx-lock`);
+}
+
+async function acquireWriteLock(outputPath: string): Promise<WriteLockResult> {
+  const lockPath = lockPathFor(outputPath);
+  const lock = await tryAcquireWriteLock(lockPath, outputPath);
+  if (lock.ok) {
+    return lock;
+  }
+  const diagnostic = lock.diagnostics[0];
+  if (diagnostic?.code !== "deckjsx.node.write.lockUnavailable") {
+    return lock;
+  }
+
+  const lockedOutputPath = await readLockedOutputPath(lockPath);
+  if (!lockedOutputPath || path.resolve(lockedOutputPath) === path.resolve(outputPath)) {
+    return lock;
+  }
+
+  return tryAcquireWriteLock(outputScopedLockPathFor(outputPath), outputPath);
+}
+
+async function tryAcquireWriteLock(lockPath: string, outputPath: string): Promise<WriteLockResult> {
+  let handle: FileHandle;
+  try {
+    handle = await open(lockPath, "wx");
+  } catch (error) {
+    const code = typeof error === "object" && error !== null && "code" in error ? error.code : "";
+    return {
+      ok: false,
+      diagnostics: [
+        {
+          code:
+            code === "EEXIST"
+              ? "deckjsx.node.write.lockUnavailable"
+              : "deckjsx.node.write.lockFailed",
+          message:
+            code === "EEXIST"
+              ? "Another deckjsx write appears to hold the output lock."
+              : error instanceof Error
+                ? error.message
+                : String(error),
+          path: lockPath,
+        },
+      ],
+    };
+  }
+
+  try {
+    await handle.writeFile(lockFileContentsFor(outputPath));
+  } catch {
+    await handle.close();
+    await unlink(lockPath).catch(() => undefined);
+    return {
+      ok: false,
+      diagnostics: [
+        {
+          code: "deckjsx.node.write.lockFailed",
+          message: "Deckjsx could not initialize the output lock file.",
+          path: lockPath,
+        },
+      ],
+    };
+  }
+
+  return { ok: true, lock: { path: lockPath, handle } };
+}
+
+function lockFileContentsFor(outputPath: string): string {
+  return `${WRITE_LOCK_HEADER}\n${process.pid}\n${path.resolve(outputPath)}\n`;
+}
+
+async function readLockedOutputPath(lockPath: string): Promise<string | undefined> {
+  try {
+    const [header, , outputPath] = (await readFile(lockPath, "utf8")).split("\n");
+    if (header !== WRITE_LOCK_HEADER || !outputPath) {
+      return undefined;
+    }
+    return outputPath;
+  } catch {
+    return undefined;
+  }
+}
+
+async function releaseWriteLock(lock: WriteLock): Promise<void> {
+  await lock.handle.close().catch(() => undefined);
+  await unlink(lock.path).catch(() => undefined);
+}
+
+async function pathExists(outputPath: string): Promise<boolean> {
+  try {
+    await access(outputPath, constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function replaceWithLockFile(
+  lock: WriteLock,
+  outputPath: string,
+  bytes: Uint8Array,
+  options: { readonly preserveLockMetadata?: boolean } = {},
+): Promise<void> {
+  const stagingPath = stagingPathForLockedWrite(lock.path, outputPath, options);
+  try {
+    if (stagingPath === lock.path) {
+      await writeBytesToLockFile(lock.handle, bytes);
+      await lock.handle.close();
+    } else {
+      await lock.handle.close();
+      await writeFile(stagingPath, bytes, { flag: "wx" });
+    }
+    await rename(stagingPath, outputPath);
+  } catch (error) {
+    await lock.handle.close().catch(() => undefined);
+    await unlink(stagingPath).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function writeBytesToLockFile(handle: FileHandle, bytes: Uint8Array): Promise<void> {
+  await handle.truncate(0);
+  let offset = 0;
+  while (offset < bytes.byteLength) {
+    const { bytesWritten } = await handle.write(bytes, offset, bytes.byteLength - offset, offset);
+    if (bytesWritten === 0) {
+      throw new Error("Deckjsx could not write artifact bytes to the output lock file.");
+    }
+    offset += bytesWritten;
+  }
+}
+
+function stagingPathForLockedWrite(
+  lockPath: string,
+  outputPath: string,
+  options: { readonly preserveLockMetadata?: boolean },
+): string {
+  return options.preserveLockMetadata && lockPath === lockPathFor(outputPath)
+    ? outputScopedLockPathFor(outputPath)
+    : lockPath;
+}
+
+async function writePatchSegments(
+  outputPath: string,
+  segments: readonly PatchSegment[],
+): Promise<void> {
+  const file = await open(outputPath, "r+");
+  try {
+    for (const segment of segments) {
+      await file.write(segment.bytes, 0, segment.bytes.byteLength, segment.position);
+    }
+    await file.sync();
+  } finally {
+    await file.close();
+  }
+}

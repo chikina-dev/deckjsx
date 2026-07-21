@@ -58,6 +58,13 @@ export type ProjectedLayoutClip = {
   readonly visibleFrame: FrameIR;
 };
 
+/** Output-neutral paint and compositing intent retained beside resolved geometry. */
+export type ProjectedPaintIntent = {
+  readonly filter?: string;
+  readonly mixBlendMode?: string;
+  readonly isolation?: "isolate";
+};
+
 export type ProjectedUnsupportedSemanticFeature =
   | "blend"
   | "background"
@@ -129,6 +136,7 @@ export type ProjectedLayoutBaseNode = {
   flipH?: boolean;
   flipV?: boolean;
   clip?: ProjectedLayoutClip;
+  paintIntent?: ProjectedPaintIntent;
   unsupportedSemantics?: ReadonlyArray<ProjectedUnsupportedSemantic>;
 };
 
@@ -187,6 +195,7 @@ export type ProjectedLayoutTableSection = {
   sectionKind: "head" | "body" | "foot";
   frame: FrameIR;
   opacity?: number;
+  paintIntent?: ProjectedPaintIntent;
   unsupportedSemantics?: ReadonlyArray<ProjectedUnsupportedSemantic>;
   fill?: FillIR;
   backgroundLayers?: ReadonlyArray<BackgroundLayerIR>;
@@ -198,6 +207,7 @@ export type ProjectedLayoutTableRow = {
   kind: "tableRow";
   frame: FrameIR;
   opacity?: number;
+  paintIntent?: ProjectedPaintIntent;
   unsupportedSemantics?: ReadonlyArray<ProjectedUnsupportedSemantic>;
   fill?: FillIR;
   backgroundLayers?: ReadonlyArray<BackgroundLayerIR>;
@@ -213,6 +223,7 @@ export type ProjectedLayoutTableCell = {
   rowSpan: number;
   frame: FrameIR;
   opacity?: number;
+  paintIntent?: ProjectedPaintIntent;
   unsupportedSemantics?: ReadonlyArray<ProjectedUnsupportedSemantic>;
   fill?: FillIR;
   backgroundLayers?: ReadonlyArray<BackgroundLayerIR>;

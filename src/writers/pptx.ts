@@ -13,7 +13,8 @@ import {
   type RenderPatchPlan,
   type RenderPatchPlanPart,
 } from "../patchable-pptx";
-import type { AssetArtifact, PptxPackageBuildArtifact } from "../pipeline/artifacts";
+import type { AssetArtifact, AssetLoadRequirement } from "../asset-artifact";
+import type { PptxPackageBuildArtifact } from "../pipeline/artifact-contract";
 import type {
   PackagePartId,
   PptxMediaPartPayload,
@@ -69,12 +70,7 @@ export type PptxWriterContext = {
   readonly onBuildArtifacts?: (artifacts: readonly PptxPackageBuildArtifact[]) => void;
 };
 
-export type PptxMediaAssetLoadRequirement = {
-  readonly assetEntityId: NonNullable<PptxMediaPartPayload["assetEntityId"]>;
-  readonly packagePartPath: string;
-  readonly source: PptxMediaPartPayload["source"];
-  readonly sourceField: AssetArtifact["sourceField"];
-};
+export type PptxMediaAssetLoadRequirement = AssetLoadRequirement;
 
 const PATCH_MANIFEST_PART_ID = "deckjsx:patch-manifest";
 const PATCH_RESERVE_MARKER = "deckjsx-patch-reserve:";

@@ -1,5 +1,9 @@
 import { createDiagnostics, diagnostic, type Diagnostic } from "../diagnostics";
-import { assetSourceCacheKey, type AssetArtifact } from "../pipeline/artifacts";
+import {
+  assetSourceCacheKey,
+  type AssetArtifact,
+  type AssetLoadRequirement,
+} from "../asset-artifact";
 import type { RenderedArtifact, RenderInspectionSummary } from "../pipeline/public";
 import type { PdfDocumentModel, PdfImageResource } from "../projection/pdf/model";
 import { pdfEmbeddableJpegImage } from "../projection/pdf/jpeg";
@@ -17,12 +21,7 @@ export type PdfWriterResult = {
   readonly summary?: RenderInspectionSummary;
 };
 
-export type PdfImageAssetLoadRequirement = {
-  readonly assetEntityId: NonNullable<PdfImageResource["assetEntityId"]>;
-  readonly packagePartPath: string;
-  readonly source: NonNullable<PdfImageResource["source"]>;
-  readonly sourceField: NonNullable<PdfImageResource["sourceField"]>;
-};
+export type PdfImageAssetLoadRequirement = AssetLoadRequirement;
 
 function loadedAssetMatchesImage(
   artifact: AssetArtifact | undefined,

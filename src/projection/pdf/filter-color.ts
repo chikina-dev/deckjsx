@@ -1,13 +1,13 @@
 import type { PdfRgbColor } from "./model";
 
-type PdfCssFilterFunction = {
+export type PdfCssFilterFunction = {
   readonly name: string;
   readonly args: string;
 };
 
 export type PdfColorTransform = (color: PdfRgbColor) => PdfRgbColor;
 
-function pdfCssFilterFunctions(value: string): readonly PdfCssFilterFunction[] {
+export function pdfCssFilterFunctions(value: string): readonly PdfCssFilterFunction[] {
   const normalized = value.trim();
   const functionMatches = [...normalized.matchAll(/([a-z-]+)\(((?:[^()]|\([^()]*\))*)\)/giu)];
   if (functionMatches.length === 0) {
@@ -40,7 +40,7 @@ function pdfCssFilterFunctionMatchesCoverValue(
   return value.slice(offset).trim().length === 0;
 }
 
-function pdfCssFilterNumberArgs(value: string):
+export function pdfCssFilterNumberArgs(value: string):
   | {
       readonly unit?: string;
       readonly value: number;
@@ -57,13 +57,15 @@ function pdfCssFilterNumberArgs(value: string):
     : undefined;
 }
 
-function pdfCssFilterFunctionIsVisualNoop(filter: PdfCssFilterFunction): boolean {
+export function pdfCssFilterFunctionIsVisualNoop(filter: PdfCssFilterFunction): boolean {
   const args = pdfCssFilterNumberArgs(filter.args);
   if (!args) {
     return false;
   }
 
   switch (filter.name) {
+    case "blur":
+      return args.value === 0;
     case "brightness":
     case "contrast":
     case "saturate":
@@ -87,11 +89,11 @@ function pdfCssFilterFunctionIsVisualNoop(filter: PdfCssFilterFunction): boolean
   }
 }
 
-function pdfCssVisibleEffectFilterFunctions(value: string): readonly PdfCssFilterFunction[] {
+export function pdfCssVisibleEffectFilterFunctions(value: string): readonly PdfCssFilterFunction[] {
   return pdfCssFilterFunctions(value).filter((filter) => !pdfCssFilterFunctionIsVisualNoop(filter));
 }
 
-function pdfOpacityFromCssOpacityFilterArgs(value: string): number | undefined {
+export function pdfOpacityFromCssOpacityFilterArgs(value: string): number | undefined {
   const match = /^([+-]?(?:\d+|\d*\.\d+))\s*(%)?$/iu.exec(value.trim());
   if (!match) {
     return undefined;
@@ -106,7 +108,7 @@ function pdfOpacityFromCssOpacityFilterArgs(value: string): number | undefined {
   return Math.min(Math.max(opacity, 0), 1);
 }
 
-function pdfCssFilterFactorFromArgs(argsValue: string): number | undefined {
+export function pdfCssFilterFactorFromArgs(argsValue: string): number | undefined {
   const args = pdfCssFilterNumberArgs(argsValue);
   if (!args) {
     return undefined;
@@ -116,12 +118,12 @@ function pdfCssFilterFactorFromArgs(argsValue: string): number | undefined {
   return Number.isFinite(factor) && factor >= 0 ? factor : undefined;
 }
 
-function pdfCssFilterUnitIntervalFactorFromArgs(argsValue: string): number | undefined {
+export function pdfCssFilterUnitIntervalFactorFromArgs(argsValue: string): number | undefined {
   const factor = pdfCssFilterFactorFromArgs(argsValue);
   return factor === undefined ? undefined : Math.min(factor, 1);
 }
 
-function pdfHueRotateRadiansFromCssFilterArgs(argsValue: string): number | undefined {
+export function pdfHueRotateRadiansFromCssFilterArgs(argsValue: string): number | undefined {
   const args = pdfCssFilterNumberArgs(argsValue);
   if (!args || !Number.isFinite(args.value)) {
     return undefined;
@@ -327,4 +329,33 @@ export function pdfCssColorFilterTransform(value: string): PdfColorTransform | u
   return pdfCssColorFilterAdjustsColor(value)
     ? (color) => pdfAdjustedColorFromCssColorFilter(value, color) ?? color
     : undefined;
+}
+
+export function pdfCssFilterIsVisualNoop(value: string): boolean {
+  const filters = pdfCssFilterFunctions(value);
+  return filters.length > 0 && filters.every(pdfCssFilterFunctionIsVisualNoop);
+}
+
+export function pdfOpacityFromCssFilter(value: string): number | undefined {
+  const opacityValues = pdfCssFilterFunctions(value).flatMap((filter) => {
+    if (filter.name !== "opacity") {
+      return [];
+    }
+    const opacity = pdfOpacityFromCssOpacityFilterArgs(filter.args);
+    return opacity === undefined ? [] : [opacity];
+  });
+  return opacityValues.length > 0
+    ? opacityValues.reduce((opacity, value) => opacity * value, 1)
+    : undefined;
+}
+
+export function pdfCssFilterIsProjectedAsOpacity(value: string): boolean {
+  const filters = pdfCssFilterFunctions(value);
+  return (
+    filters.length > 0 &&
+    filters.every(
+      (filter) =>
+        filter.name === "opacity" && pdfOpacityFromCssOpacityFilterArgs(filter.args) !== undefined,
+    )
+  );
 }

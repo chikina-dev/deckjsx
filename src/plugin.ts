@@ -1,12 +1,20 @@
 import { isAuthorTreeChild, type AuthorTreeChild } from "./authoring/tree";
 import type { JsxNode } from "./authoring/jsx-types";
 import type { AssetLoader, AssetSource } from "./assets";
-import type { Diagnostic } from "./diagnostics";
+import type { Diagnostic, Diagnostics } from "./diagnostics";
 import { snapshotComposedAuthorRoots } from "./composition/snapshot";
 import { clonePluginStageValue } from "./plugin-snapshot";
 import type { AssetEntityId, SemanticAuthorGraph } from "./graph";
 import type { DeckIntegrationContext } from "./integration-context";
 import type { MediaSourceOrigin } from "./media-source-origin";
+import {
+  normalizeImageProps,
+  normalizeShapeProps,
+  normalizeSlideProps,
+  normalizeTextProps,
+  normalizeVideoProps,
+  normalizeViewProps,
+} from "./layout/normalization";
 import {
   isComposedAuthorRootArray,
   isResolvedStyleMap,
@@ -14,7 +22,7 @@ import {
 } from "./pipeline/artifact-input";
 import { isRenderedArtifact } from "./pipeline/results-public";
 import type { ProjectionFormat } from "./pipeline/public";
-import type { AssetArtifact } from "./pipeline/artifacts";
+import type { AssetArtifact } from "./asset-artifact";
 import { isPdfPageModel } from "./projection/pdf/model";
 import type { ProjectedDocumentModel } from "./projection/registry";
 import { isPptxPackageModel, type PptxPackageModel } from "./projection/pptx/model";
@@ -522,7 +530,7 @@ export function applyPluginHooks<THook extends keyof DeckPluginHooks>(
       }),
     );
     if (Object.keys(allowedUpdates).length > 0) {
-      context = { ...context, ...allowedUpdates };
+      context = { ...context, ...snapshotPluginHookContext(allowedUpdates) };
     }
   }
 
@@ -694,7 +702,39 @@ function isNonEmptyString(value: unknown): value is string {
 function isResolvedStyleMapForContext(value: unknown, context: object): boolean {
   const graph =
     isRecord(context) && isSemanticAuthorGraph(context.graph) ? context.graph : undefined;
-  return isResolvedStyleMap(value, graph);
+  if (!isResolvedStyleMap(value, graph)) {
+    return false;
+  }
+
+  try {
+    for (const [nodeId, resolved] of value) {
+      const kind = graph?.nodes.get(nodeId)?.kind;
+      switch (kind) {
+        case "slide":
+          normalizeSlideProps(resolved.style);
+          break;
+        case "text":
+        case "textRun":
+        case "tableCell":
+          normalizeTextProps(resolved.style);
+          break;
+        case "image":
+          normalizeImageProps(resolved.style);
+          break;
+        case "video":
+          normalizeVideoProps(resolved.style);
+          break;
+        case "shape":
+          normalizeShapeProps(resolved.style);
+          break;
+        default:
+          normalizeViewProps(resolved.style);
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isRenderedArtifactForActiveFormat(value: unknown, context: object): boolean {
@@ -744,6 +784,8 @@ function isAssetArtifactValue(value: unknown): value is AssetArtifact {
       "origin",
       "probe",
       "load",
+      "probeDiagnostics",
+      "loadDiagnostics",
       "diagnostics",
     ]) &&
     isNonEmptyString(value.assetEntityId) &&
@@ -753,6 +795,8 @@ function isAssetArtifactValue(value: unknown): value is AssetArtifact {
     (value.origin === undefined || isMediaSourceOrigin(value.origin)) &&
     (value.probe === undefined || isAssetProbeResult(value.probe)) &&
     (value.load === undefined || isAssetLoadResult(value.load)) &&
+    (value.probeDiagnostics === undefined || isDiagnosticsValue(value.probeDiagnostics)) &&
+    (value.loadDiagnostics === undefined || isDiagnosticsValue(value.loadDiagnostics)) &&
     isDiagnosticsValue(value.diagnostics)
   );
 }
@@ -876,8 +920,14 @@ function isAssetSourceField(value: unknown): boolean {
   );
 }
 
-function isDiagnosticsValue(value: unknown): value is { readonly items: readonly Diagnostic[] } {
-  return isRecord(value) && hasOnlyKeys(value, ["items"]) && isDiagnosticArray(value.items);
+function isDiagnosticsValue(value: unknown): value is Diagnostics {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["items", "hasErrors", "hasWarnings"]) &&
+    isDiagnosticArray(value.items) &&
+    typeof value.hasErrors === "boolean" &&
+    typeof value.hasWarnings === "boolean"
+  );
 }
 
 function isAssetLoaderArray(value: unknown): value is readonly AssetLoader[] {

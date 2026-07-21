@@ -1,4 +1,3 @@
-import type { AssetLoadResult, AssetProbeResult, AssetSource, AssetSourceField } from "../assets";
 import type { DeckOptions } from "../authoring/options";
 import type { ComposedAuthorRoot } from "../composition/types";
 import type { Diagnostics } from "../diagnostics";
@@ -12,7 +11,8 @@ import type {
   StyleEntity,
   StyleEntityId,
 } from "../graph";
-import type { MediaSourceOrigin } from "../media-source-origin";
+import type { AssetArtifact } from "../asset-artifact";
+export type { AssetArtifact, AssetArtifactStore } from "../asset-artifact";
 import type { PdfPageModel } from "../projection/pdf/model";
 import type {
   PackageDependencyEdge,
@@ -64,15 +64,15 @@ export type SourceArtifact = {
   readonly diagnostics: Diagnostics;
 };
 
-type ProjectionArtifactIndexes = Omit<
-  PptxProjectionArtifact<PptxPackageModelCandidate>,
-  keyof ProjectionArtifact<PptxPackageModelCandidate>
->;
+export type PdfProjectionArtifact = ProjectionArtifact<PdfPageModel> & {
+  readonly format: "pdf";
+};
 
-export type DefinedProjectionArtifact = ProjectionArtifact<
-  PptxPackageModelCandidate | PdfPageModel
-> &
-  ProjectionArtifactIndexes;
+export type DefinedPptxProjectionArtifact = PptxProjectionArtifact<PptxPackageModelCandidate> & {
+  readonly format: "pptx";
+};
+
+export type DefinedProjectionArtifact = DefinedPptxProjectionArtifact | PdfProjectionArtifact;
 
 export type {
   PackageDependencyEdge,
@@ -83,24 +83,6 @@ export type {
   SlideProjectionFingerprintSnapshot,
 };
 
-export type AssetArtifact = {
-  readonly assetEntityId: AssetEntityId;
-  readonly source: AssetSource;
-  readonly sourceField: AssetSourceField;
-  readonly resolverIdentity?: string;
-  readonly origin?: MediaSourceOrigin;
-  readonly probe?: AssetProbeResult;
-  readonly load?: AssetLoadResult;
-  readonly diagnostics: Diagnostics;
-};
-
-export type AssetArtifactStore = {
-  readonly assetsById: ReadonlyMap<AssetEntityId, AssetArtifact>;
-  readonly assetsBySourceCacheKey: ReadonlyMap<string, AssetArtifact>;
-  readonly pptxBuildArtifactsByPartId: ReadonlyMap<PackagePartId, PptxPackageBuildArtifact>;
-  materializeAsset(input: AssetArtifact): void;
-};
-
 export type IncrementalProjectionReuseSnapshot = {
   readonly graph: DefinedGraphArtifact;
   readonly projection: DefinedProjectionArtifact;
@@ -108,37 +90,6 @@ export type IncrementalProjectionReuseSnapshot = {
   readonly assetsById: ReadonlyMap<AssetEntityId, AssetArtifact>;
   readonly staleAssetEntityIds: ReadonlySet<AssetEntityId>;
 };
-
-export function fingerprintBytes(bytes: Uint8Array): string {
-  let hash = 0x811c9dc5;
-  for (const byte of bytes) {
-    hash ^= byte;
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, "0")}`;
-}
-
-export function assetSourceCacheKey(
-  source: AssetSource,
-  resolverIdentity = "deckjsx:builtin",
-  origin?: MediaSourceOrigin,
-  sourceField?: AssetSourceField,
-): string {
-  const fieldKey = sourceField ? `:${sourceField}` : "";
-  const originKey = origin
-    ? `:${origin.sourceIdentity ?? ""}:${origin.importer ?? ""}:${origin.source ?? ""}`
-    : "";
-  switch (source.kind) {
-    case "bytes":
-      return `${resolverIdentity}${fieldKey}:bytes:${source.mediaType ?? ""}:${source.extension ?? ""}:${source.bytes.byteLength}:${fingerprintBytes(source.bytes)}`;
-    case "data":
-      return `${resolverIdentity}${fieldKey}:data:${source.data}`;
-    case "path":
-      return `${resolverIdentity}${fieldKey}:path${originKey}:${source.path}`;
-    case "url":
-      return `${resolverIdentity}${fieldKey}:url:${source.url}`;
-  }
-}
 
 export type PptxPackageBuildReason =
   | "dependencyFingerprintChanged"

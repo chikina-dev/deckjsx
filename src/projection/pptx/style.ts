@@ -920,9 +920,25 @@ function unsupportedSemanticsForGraphNode(
 export function collectPptxUnsupportedProjectionDiagnostics(input: {
   graph: SemanticAuthorGraph;
   resolvedStyles: ResolvedStyleMap;
+  projection?: PptxPackageModel;
 }): Diagnostics {
-  const items = [...input.graph.nodes.values()].flatMap((node) =>
-    unsupportedSemanticsForGraphNode(node, input.resolvedStyles).map((semantic) =>
+  const projectedGraphNodeIds = new Set<string>();
+  input.projection?.slides.forEach((slide) => {
+    for (const graphNodeId of slide.origin?.graphNodeIds ?? []) {
+      projectedGraphNodeIds.add(graphNodeId);
+    }
+    walkElements(slide.payload.drawing.children, (element) => {
+      for (const graphNodeId of element.origin.graphNodeIds ?? []) {
+        projectedGraphNodeIds.add(graphNodeId);
+      }
+    });
+  });
+  const items = [...input.graph.nodes.values()].flatMap((node) => {
+    if (input.projection && projectedGraphNodeIds.has(node.id)) {
+      return [];
+    }
+    const semantics = unsupportedSemanticsForGraphNode(node, input.resolvedStyles);
+    return semantics.map((semantic) =>
       diagnostic({
         severity: "warning",
         code: "W_PROJECT_UNSUPPORTED_PPTX_SEMANTIC",
@@ -953,8 +969,8 @@ export function collectPptxUnsupportedProjectionDiagnostics(input: {
           "The projected PPTX model keeps this unsupported CSS-like meaning for inspection, but the current direct writer uses a fallback instead of reproducing it exactly.",
         ],
       }),
-    ),
-  );
+    );
+  });
   return createDiagnostics(items);
 }
 
@@ -1023,55 +1039,81 @@ export function collectPptxUnsupportedProjectionModelDiagnostics(
       }
 
       if (element.kind === "table") {
-        element.sections.forEach((section, sectionIndex) => {
-          section.rows.forEach((row, rowIndex) => {
-            row.cells.forEach((cell, cellIndex) => {
-              for (const semantic of cell.unsupportedSemantics ?? []) {
-                if (!options.includeAllUnsupportedSemantics && semantic.feature !== "content") {
-                  continue;
-                }
+        const appendNestedTableDiagnostics = (input: {
+          readonly semantics?: readonly PptxUnsupportedSemantic[];
+          readonly path: string;
+          readonly contextNotes: readonly string[];
+        }): void => {
+          for (const semantic of input.semantics ?? []) {
+            if (!options.includeAllUnsupportedSemantics && semantic.feature !== "content") {
+              continue;
+            }
 
-                const graphNodeId = element.origin.graphNodeIds?.[0];
-                slideItems.push(
-                  diagnostic({
-                    severity: "warning",
-                    code: "W_PROJECT_UNSUPPORTED_PPTX_SEMANTIC",
-                    title: "css-like semantic was preserved with a pptx fallback",
-                    message: semantic.reason,
-                    labels: [
-                      {
-                        path: `projection.parts.${element.packagePartId}.elements.${element.id}.sections.${sectionIndex}.rows.${rowIndex}.cells.${cellIndex}.${semantic.property}`,
-                        message: `${semantic.feature} fallback for ${semantic.value}`,
-                        severity: "primary",
-                      },
-                    ],
-                    notes: [
-                      graphNodeId ? `graphNodeId=${graphNodeId}` : undefined,
-                      `elementId=${element.id}`,
-                      "elementKind=table",
-                      `slidePartId=${slide.id}`,
-                      `slideId=${slide.payload.slideId}`,
-                      `tableSection=${section.sectionKind}`,
-                      `tableCellKind=${cell.cellKind}`,
-                      `feature=${semantic.feature}`,
-                      `property=${semantic.property}`,
-                      `value=${semantic.value}`,
-                      semantic.fallback
-                        ? `fallbackStrategy=${semantic.fallback.strategy}`
-                        : undefined,
-                      semantic.fallback?.preserves.length
-                        ? `fallbackPreserves=${semantic.fallback.preserves.join(",")}`
-                        : undefined,
-                      semantic.fallback?.missing.length
-                        ? `fallbackMissing=${semantic.fallback.missing.join(",")}`
-                        : undefined,
-                    ].filter((note): note is string => note !== undefined),
-                    help: [
-                      "The projected PPTX model keeps this unsupported CSS-like meaning for inspection, but the current direct writer uses a fallback instead of reproducing it exactly.",
-                    ],
-                  }),
-                );
-              }
+            const graphNodeId = element.origin.graphNodeIds?.[0];
+            slideItems.push(
+              diagnostic({
+                severity: "warning",
+                code: "W_PROJECT_UNSUPPORTED_PPTX_SEMANTIC",
+                title: "css-like semantic was preserved with a pptx fallback",
+                message: semantic.reason,
+                labels: [
+                  {
+                    path: `${input.path}.${semantic.property}`,
+                    message: `${semantic.feature} fallback for ${semantic.value}`,
+                    severity: "primary",
+                  },
+                ],
+                notes: [
+                  graphNodeId ? `graphNodeId=${graphNodeId}` : undefined,
+                  `elementId=${element.id}`,
+                  "elementKind=table",
+                  `slidePartId=${slide.id}`,
+                  `slideId=${slide.payload.slideId}`,
+                  ...input.contextNotes,
+                  `feature=${semantic.feature}`,
+                  `property=${semantic.property}`,
+                  `value=${semantic.value}`,
+                  semantic.fallback ? `fallbackStrategy=${semantic.fallback.strategy}` : undefined,
+                  semantic.fallback?.preserves.length
+                    ? `fallbackPreserves=${semantic.fallback.preserves.join(",")}`
+                    : undefined,
+                  semantic.fallback?.missing.length
+                    ? `fallbackMissing=${semantic.fallback.missing.join(",")}`
+                    : undefined,
+                ].filter((note): note is string => note !== undefined),
+                help: [
+                  "The projected PPTX model keeps this unsupported CSS-like meaning for inspection, but the current direct writer uses a fallback instead of reproducing it exactly.",
+                ],
+              }),
+            );
+          }
+        };
+
+        element.sections.forEach((section, sectionIndex) => {
+          const sectionPath = `projection.parts.${element.packagePartId}.elements.${element.id}.sections.${sectionIndex}`;
+          appendNestedTableDiagnostics({
+            semantics: section.unsupportedSemantics,
+            path: sectionPath,
+            contextNotes: [`tableSection=${section.sectionKind}`],
+          });
+          section.rows.forEach((row, rowIndex) => {
+            const rowPath = `${sectionPath}.rows.${rowIndex}`;
+            appendNestedTableDiagnostics({
+              semantics: row.unsupportedSemantics,
+              path: rowPath,
+              contextNotes: [`tableSection=${section.sectionKind}`, `tableRow=${rowIndex}`],
+            });
+            row.cells.forEach((cell, cellIndex) => {
+              appendNestedTableDiagnostics({
+                semantics: cell.unsupportedSemantics,
+                path: `${rowPath}.cells.${cellIndex}`,
+                contextNotes: [
+                  `tableSection=${section.sectionKind}`,
+                  `tableRow=${rowIndex}`,
+                  `tableCellKind=${cell.cellKind}`,
+                  `tableCell=${cellIndex}`,
+                ],
+              });
             });
           });
         });

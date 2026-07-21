@@ -4,6 +4,9 @@ import type { PdfRenderOptions, PptxRenderOptions, WriterAdapter } from "./publi
 import { pptxWriterContext, writerContext } from "./context";
 import { renderPdfDocument } from "../writers/pdf";
 import { renderPptxPackage } from "../writers/pptx";
+import { pptxMediaAssetLoadRequirements } from "../writers/pptx";
+import { pdfImageAssetLoadRequirements } from "../writers/pdf";
+import { registerAdapterAssetRequirements } from "./asset-requirements";
 
 export type {
   PdfRenderOptions,
@@ -26,7 +29,7 @@ export type {
  * @returns A Writer Adapter that renders projected PPTX models into `.pptx` artifact bytes.
  */
 export function pptx(options: PptxRenderOptions = {}): WriterAdapter<PptxPackageModel, "pptx"> {
-  return {
+  const adapter: WriterAdapter<PptxPackageModel, "pptx"> = {
     kind: "deckjsx.writerAdapter",
     name: "pptx",
     projectionFormat: "pptx",
@@ -36,6 +39,15 @@ export function pptx(options: PptxRenderOptions = {}): WriterAdapter<PptxPackage
       return renderPptxPackage(projection, options, pptxWriterContext(context));
     },
   };
+  return registerAdapterAssetRequirements(adapter, (projection, context) =>
+    projection.format === "pptx"
+      ? pptxMediaAssetLoadRequirements({
+          projection,
+          assetsById: context.assetsById,
+          buildArtifactsByPartId: context.pptxBuildArtifactsByPartId,
+        })
+      : [],
+  );
 }
 
 /**
@@ -48,7 +60,7 @@ export function pptx(options: PptxRenderOptions = {}): WriterAdapter<PptxPackage
  * @returns A Writer Adapter that renders projected PDF models into `.pdf` artifact bytes.
  */
 export function pdf(options: PdfRenderOptions = {}): WriterAdapter<PdfDocumentModel, "pdf"> {
-  return {
+  const adapter: WriterAdapter<PdfDocumentModel, "pdf"> = {
     kind: "deckjsx.writerAdapter",
     name: "pdf",
     projectionFormat: "pdf",
@@ -58,4 +70,9 @@ export function pdf(options: PdfRenderOptions = {}): WriterAdapter<PdfDocumentMo
       return renderPdfDocument(projection, options, writerContext(context));
     },
   };
+  return registerAdapterAssetRequirements(adapter, (projection, context) =>
+    projection.format === "pdf"
+      ? pdfImageAssetLoadRequirements({ projection, assetsById: context.assetsById })
+      : [],
+  );
 }
