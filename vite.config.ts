@@ -53,13 +53,15 @@ export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     coverage: {
+      include: ["src/**/*.ts"],
+      exclude: ["dist/**"],
       reporter: ["text-summary", "json-summary", "html"],
       reportsDirectory: "coverage",
       thresholds: {
-        statements: 50,
-        branches: 43,
-        functions: 55,
-        lines: 55,
+        statements: 65,
+        branches: 65,
+        functions: 65,
+        lines: 65,
       },
     },
   },

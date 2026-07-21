@@ -40,6 +40,18 @@ export default defineConfig({
         replacement: new URL("../../dist/index.mjs", import.meta.url).pathname,
       },
     ],
+    coverage: {
+      include: ["src/**/*.ts"],
+      exclude: ["dist/**"],
+      reporter: ["text-summary", "json-summary", "html"],
+      reportsDirectory: "coverage",
+      thresholds: {
+        statements: 65,
+        branches: 65,
+        functions: 65,
+        lines: 65,
+      },
+    },
   },
   pack: {
     entry: ["src/index.ts", "src/dev.ts", "src/cli.ts"],
