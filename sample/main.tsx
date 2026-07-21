@@ -31,11 +31,18 @@ deck.useStyles(
       },
       title: {
         target: "h1.title",
-        style: { color: "#0F172A", fontSize: 34, fontWeight: 700, height: 0.48 },
+        style: { color: "#0F172A", fontSize: 34, fontWeight: 700, height: 0.48, margin: 0 },
       },
       eyebrow: {
         target: "p.eyebrow",
-        style: { color: "#0F766E", fontSize: 11, fontWeight: 700, letterSpacing: 0, height: 0.18 },
+        style: {
+          color: "#0F766E",
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: 0,
+          height: 0.18,
+          margin: 0,
+        },
       },
       dashboard: {
         target: "section.dashboard",
@@ -105,23 +112,23 @@ deck.useStyles(
       },
       metricLabel: {
         target: "p.metricLabel",
-        style: { color: "#475569", fontSize: 12, height: 0.2 },
+        style: { color: "#475569", fontSize: 12, height: 0.2, margin: 0 },
       },
       metricValue: {
         target: "p.metricValue",
-        style: { color: "#0F172A", fontSize: 30, fontWeight: 700, height: 0.44 },
+        style: { color: "#0F172A", fontSize: 30, fontWeight: 700, height: 0.44, margin: 0 },
       },
       positive: {
         target: "p.positive",
-        style: { color: "#047857", fontWeight: 700 },
+        style: { color: "#047857", fontWeight: 700, margin: 0 },
       },
       warning: {
         target: "p.warning",
-        style: { color: "#B45309", fontWeight: 700 },
+        style: { color: "#B45309", fontWeight: 700, margin: 0 },
       },
       muted: {
         target: "p.muted",
-        style: { color: "#64748B", fontSize: 12 },
+        style: { color: "#64748B", fontSize: 12, margin: 0 },
       },
       command: {
         target: "div.command",
@@ -133,7 +140,7 @@ deck.useStyles(
       },
       commandName: {
         target: "p.commandName",
-        style: { color: "#0369A1", fontSize: 13, height: 0.2 },
+        style: { color: "#0369A1", fontSize: 13, height: 0.2, margin: 0 },
       },
       pill: {
         target: "p.pill",
@@ -144,6 +151,7 @@ deck.useStyles(
           fontWeight: 700,
           borderRadius: 6,
           padding: "0.05in 0.1in",
+          margin: 0,
         },
       },
       statusPanel: {
@@ -215,12 +223,14 @@ function StatusPanel() {
   return (
     <aside className="card statusPanel">
       <p className="pill">LIVE DEV</p>
-      <h2 style={{ height: 0.34, fontSize: 20, fontWeight: 700 }}>Update this file</h2>
+      <h2 style={{ height: 0.34, fontSize: 20, fontWeight: 700, margin: 0 }}>
+        Update this file
+      </h2>
       <p className="muted">
         Change a metric, className, or command chip and watch the dev console redraw without losing
         the prompt.
       </p>
-      <p style={{ height: 0.22, fontSize: 12, color: "#0F766E" }}>
+      <p style={{ height: 0.22, fontSize: 12, color: "#0F766E", margin: 0 }}>
         sample revision 2026-06-28
       </p>
     </aside>
@@ -245,7 +255,7 @@ function InspectorCard({
   return (
     <div className={["card", "inspectorCard", { selected }]}>
       <p className="eyebrow">{eyebrow}</p>
-      <h2 style={{ height: 0.44, fontSize: 24, fontWeight: 700 }}>{title}</h2>
+      <h2 style={{ height: 0.44, fontSize: 24, fontWeight: 700, margin: 0 }}>{title}</h2>
       <p className="muted">{body}</p>
       <p className={tone} style={{ height: 0.28, fontSize: 14 }}>
         {footer}
