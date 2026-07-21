@@ -1335,6 +1335,26 @@ describe("PDF writer", () => {
     expect(pdf).toContain("/ModDate (D:20260705170910+09'00')");
   });
 
+  test("accepts leap-day metadata in both ISO and native PDF date forms", async () => {
+    const model = onePageModel("Leap-day metadata page");
+    const result = await renderPdfPageModel(
+      {
+        ...model,
+        metadata: {
+          ...model.metadata,
+          creationDate: "2024-02-29T23:59:59Z",
+          modificationDate: "D:20000229010203-05'30'",
+        },
+      },
+      { inspection: "none" },
+    );
+    const pdf = decodePdf(result.artifact?.bytes ?? new Uint8Array());
+
+    expect(result.diagnostics.items).toEqual([]);
+    expect(pdf).toContain("/CreationDate (D:20240229235959Z)");
+    expect(pdf).toContain("/ModDate (D:20000229010203-05'30')");
+  });
+
   test("rejects direct writes with invalid document date metadata", () => {
     const model = onePageModel("Invalid dated metadata page");
 
@@ -1350,6 +1370,21 @@ describe("PDF writer", () => {
     ).toThrow(
       "PDF document metadata must be an object whose title, author, subject, producer, creationDate, and modificationDate fields are strings when present.",
     );
+  });
+
+  test("rejects calendar-shaped PDF metadata dates that do not exist", () => {
+    const model = onePageModel("Impossible dated metadata page");
+
+    for (const creationDate of ["2023-02-29T12:00:00Z", "D:20260431120000Z"]) {
+      expect(() =>
+        writePdfDocument({
+          ...model,
+          metadata: { ...model.metadata, creationDate },
+        }),
+      ).toThrow(
+        "PDF document metadata must be an object whose title, author, subject, producer, creationDate, and modificationDate fields are strings when present.",
+      );
+    }
   });
 
   test("rejects direct writes without pages", () => {

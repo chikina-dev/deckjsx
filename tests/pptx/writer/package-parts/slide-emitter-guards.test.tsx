@@ -2,6 +2,28 @@ import { describe, expect, test } from "vite-plus/test";
 import * as H from "../helpers.tsx";
 
 describe("direct pptx writer slide emitter guards", () => {
+  test("package emission rejects malformed slide payloads before invoking the slide writer", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Malformed slide payload" }, () => <></>);
+    const projection = (await deck.project()).projection!;
+    const slide = projection.slides[0]!;
+    let writerCalled = false;
+
+    expect(() =>
+      H.emitPartBytes(
+        { ...slide, payload: { kind: "malformed-slide-payload" } } as H.PptxPackagePart,
+        projection,
+        {
+          slideBytes: () => {
+            writerCalled = true;
+            return new Uint8Array();
+          },
+        },
+      ),
+    ).toThrow("Slide package parts must carry a structured slide payload.");
+    expect(writerCalled).toBe(false);
+  });
+
   test("slide XML emitter rejects missing image and hyperlink relationship ids", async () => {
     const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
 
