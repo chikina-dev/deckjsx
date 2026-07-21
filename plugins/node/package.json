@@ -34,6 +34,7 @@
     "dev": "vp pack --watch",
     "test": "vp test",
     "test:coverage": "vp test run --coverage",
+    "test:ci": "vp run build && vp run test:coverage",
     "check": "vp check",
     "prepublishOnly": "vp run build"
   },

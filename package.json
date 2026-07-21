@@ -56,6 +56,7 @@
     "dev": "vp pack --watch",
     "test": "vp test",
     "test:coverage": "vp test run --coverage",
+    "test:ci": "vp run build && vp run test:coverage",
     "check": "vp check",
     "benchmark:interactive": "node scripts/benchmark-interactive-dev.mjs",
     "benchmark:node": "node --preserve-symlinks --preserve-symlinks-main scripts/benchmark-node-runtime.mjs",
