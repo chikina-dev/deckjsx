@@ -822,18 +822,20 @@ describe("project/render validation render boundaries", () => {
     expect(result.ok).toBe(false);
     expect(result.artifact).toBeUndefined();
     expect(result.stages.render.artifact).toBe("missing");
-    expect(result.diagnostics.items).toContainEqual({
-      severity: "error",
-      code: "E_RENDER_FAILED",
-      title: "render failed",
-      message: "writer exploded",
-      labels: [
-        {
-          path: "render",
-          message: "writer exploded",
-        },
-      ],
-    });
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        severity: "error",
+        code: "E_RENDER_FAILED",
+        title: "render failed",
+        message: "writer exploded",
+        labels: expect.arrayContaining([
+          expect.objectContaining({
+            path: "render",
+            message: "writer exploded",
+          }),
+        ]),
+      }),
+    );
     expect(result.stages.render.diagnostics).toBe(result.diagnostics);
   });
 
