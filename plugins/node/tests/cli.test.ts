@@ -33,6 +33,21 @@ function pendingInteractiveLines(): AsyncIterable<string> {
 }
 
 describe("@deckjsx/node cli", () => {
+  test("rejects missing and unknown top-level commands with usage diagnostics", () => {
+    for (const args of [[], ["build"]] as const) {
+      expect(parseDeckjsxNodeCliArgs(args)).toEqual({
+        ok: false,
+        diagnostics: [
+          expect.objectContaining({
+            severity: "error",
+            code: "deckjsx.node.cli.unknownCommand",
+            title: "Usage: deckjsx dev [--interactive]",
+          }),
+        ],
+      });
+    }
+  });
+
   test("parses config-driven dev and interactive mode", () => {
     expect(parseDeckjsxNodeCliArgs(["dev", "--interactive"])).toEqual({
       ok: true,

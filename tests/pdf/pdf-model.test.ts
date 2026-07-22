@@ -73,6 +73,12 @@ describe("PDF Page Model", () => {
     expect(pdfResourceId("font", "Inter Regular")).toBe("pdf:resource:font:inter-regular");
   });
 
+  test("keeps PDF identifiers valid when source names contain no identity characters", () => {
+    expect(pdfDocumentId("  :::  ")).toBe("pdf:document:unnamed");
+    expect(pdfPageId("💥", 2)).toBe("pdf:page:unnamed:2");
+    expect(pdfResourceId("image", "---")).toBe("pdf:resource:image:unnamed");
+  });
+
   test("validates a minimal model", () => {
     const model: PdfPageModel = {
       format: "pdf",

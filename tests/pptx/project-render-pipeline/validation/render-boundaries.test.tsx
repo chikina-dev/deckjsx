@@ -802,4 +802,71 @@ describe("project/render validation render boundaries", () => {
       expect.objectContaining({ code: "E_RENDER_ADAPTER_RESULT_INVALID" }),
     );
   });
+
+  test("thrown writer adapter errors become render diagnostics", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Throwing adapter" }, () => <></>);
+    const throwingAdapter: H.WriterAdapter = {
+      kind: "deckjsx.writerAdapter",
+      name: "test:throwing-adapter",
+      projectionFormat: "pptx",
+      format: "pptx",
+      options: {},
+      async render() {
+        throw new Error("writer exploded");
+      },
+    };
+
+    const result = await deck.render(throwingAdapter);
+
+    expect(result.ok).toBe(false);
+    expect(result.artifact).toBeUndefined();
+    expect(result.stages.render.artifact).toBe("missing");
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        severity: "error",
+        code: "E_RENDER_FAILED",
+        title: "render failed",
+        message: "writer exploded",
+        labels: expect.arrayContaining([
+          expect.objectContaining({
+            path: "render",
+            message: "writer exploded",
+          }),
+        ]),
+      }),
+    );
+    expect(result.stages.render.diagnostics).toBe(result.diagnostics);
+  });
+
+  test("non-Error writer adapter throws are stringified in render diagnostics", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "Non-error throwing adapter" }, () => <></>);
+    const throwingAdapter: H.WriterAdapter = {
+      kind: "deckjsx.writerAdapter",
+      name: "test:non-error-throwing-adapter",
+      projectionFormat: "pptx",
+      format: "pptx",
+      options: {},
+      async render() {
+        throw "writer exploded without Error";
+      },
+    };
+
+    const result = await deck.render(throwingAdapter);
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.items).toContainEqual(
+      expect.objectContaining({
+        code: "E_RENDER_FAILED",
+        message: "writer exploded without Error",
+        labels: [
+          expect.objectContaining({
+            path: "render",
+            message: "writer exploded without Error",
+          }),
+        ],
+      }),
+    );
+  });
 });

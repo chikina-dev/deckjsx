@@ -179,9 +179,16 @@ jobs:
       - name: Benchmark @deckjsx/node runtime
         run: bash .github/scripts/benchmark-node-runtime-with-diagnostics.sh
 
-      - name: Test @deckjsx/node
+      - name: Test @deckjsx/node with coverage thresholds
         working-directory: plugins/node
-        run: ./node_modules/.bin/vp test
+        run: ./node_modules/.bin/vp run test:coverage
+
+      - name: Upload @deckjsx/node coverage report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: node-coverage-report
+          path: plugins/node/coverage
 
       - name: Smoke test packed packages
         run: bun run smoke:tarball
@@ -210,11 +217,8 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build
-        run: bun run build
-
-      - name: Test with coverage thresholds
-        run: bun run test:coverage
+      - name: Build and test with coverage thresholds
+        run: bun run test:ci
 
       - name: Upload coverage report
         if: always()

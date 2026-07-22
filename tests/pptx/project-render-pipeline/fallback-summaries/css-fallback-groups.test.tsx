@@ -455,4 +455,43 @@ describe("project/render CSS fallback groups", () => {
       ]),
     );
   });
+
+  test("explicitly disabled borders do not produce stroke fallback warnings", async () => {
+    const deck = new H.Deck({ layout: { width: 10, height: 5.625, unit: "in" } });
+    deck.slide({ name: "No border" }, () => (
+      <div
+        style={{
+          position: "absolute",
+          left: 1,
+          top: 1,
+          width: 2,
+          height: 1,
+          backgroundColor: "#F8FAFC",
+          border: "none",
+        }}
+      />
+    ));
+
+    const project = await deck.project();
+    const group = project.projection?.slides[0]?.payload.drawing.children[0];
+
+    expect(project.ok).toBe(true);
+    expect(group?.kind).toBe("group");
+    if (!group || group.kind !== "group") {
+      throw new Error("Expected group node.");
+    }
+    expect(group.stroke).toBeUndefined();
+    expect(group.edgeStrokes).toBeUndefined();
+    expect(group.unsupportedSemantics ?? []).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ feature: expect.stringMatching(/^(border|stroke)$/u) }),
+      ]),
+    );
+    expect(project.diagnostics.items).not.toContainEqual(
+      expect.objectContaining({
+        code: "W_PROJECT_UNSUPPORTED_PPTX_SEMANTIC",
+        notes: expect.arrayContaining([expect.stringMatching(/^feature=(border|stroke)$/u)]),
+      }),
+    );
+  });
 });

@@ -9,40 +9,22 @@ import {
   isPptxSlidePart,
   isPptxSupportPart,
 } from "@/src/projection/pptx/model";
-import {
-  contentTypesBytes,
-  contentTypesXml,
-  relationshipOwnerPath,
-  relationshipsBytes,
-  relationshipsXml,
-} from "./package-xml";
+import { contentTypesBytes, relationshipOwnerPath, relationshipsBytes } from "./package-xml";
 import {
   appPropertiesBytes,
-  appPropertiesXml,
   corePropertiesBytes,
-  corePropertiesXml,
   emptyPresentationPropertiesBytes,
-  emptyPresentationPropertiesXml,
   presentationBytes,
-  presentationXml,
   slideLayoutBytes,
-  slideLayoutXml,
   slideMasterBytes,
-  slideMasterXml,
   tableStylesBytes,
-  tableStylesXml,
   themeBytes,
-  themeXml,
 } from "./support-xml";
 
 export type PptxSlidePartEmitter = (
   slide: PptxSlidePart,
   projection: PptxPackageModel,
 ) => Uint8Array;
-
-function encodeXml(value: string): Uint8Array {
-  return new TextEncoder().encode(value);
-}
 
 function requireContentTypesPart(part: PptxPackagePartCandidate) {
   if (!isPptxContentTypesPart(part)) {
@@ -98,75 +80,6 @@ function supportPayloadMessage(part: PptxPackagePartCandidate): string {
       return "notes-slide support parts must carry a structured notes-slide payload.";
     default:
       return `${part.kind} support parts must carry a structured support payload.`;
-  }
-}
-
-export function partXml(
-  part: PptxPackagePartCandidate,
-  projection: PptxPackageModel,
-  emitters: { readonly slideBytes: PptxSlidePartEmitter },
-): string | undefined {
-  switch (part.kind) {
-    case "content-types":
-      return contentTypesXml(requireContentTypesPart(part));
-    case "relationships": {
-      const relationshipPart = requireRelationshipsPart(part);
-      return relationshipsXml(
-        relationshipPart.payload.relationships,
-        relationshipOwnerPath(relationshipPart.path),
-      );
-    }
-    case "presentation": {
-      const supportPart = requireSupportPart(part);
-      return supportPart.kind === "presentation"
-        ? presentationXml(supportPart, projection)
-        : undefined;
-    }
-    case "slide":
-      return new TextDecoder().decode(emitters.slideBytes(requireSlidePart(part), projection));
-    case "theme": {
-      const supportPart = requireSupportPart(part);
-      return supportPart.kind === "theme" ? themeXml(supportPart) : undefined;
-    }
-    case "slide-master": {
-      const supportPart = requireSupportPart(part);
-      return supportPart.kind === "slide-master"
-        ? slideMasterXml(supportPart, projection)
-        : undefined;
-    }
-    case "slide-layout": {
-      const supportPart = requireSupportPart(part);
-      return supportPart.kind === "slide-layout" ? slideLayoutXml(supportPart) : undefined;
-    }
-    case "document-properties": {
-      const supportPart = requireSupportPart(part);
-      if (supportPart.kind !== "document-properties") {
-        return undefined;
-      }
-      return supportPart.payload.propertyKind === "extended"
-        ? appPropertiesXml(supportPart, projection)
-        : corePropertiesXml(supportPart, projection);
-    }
-    case "view-properties": {
-      const supportPart = requireSupportPart(part);
-      return supportPart.kind === "view-properties"
-        ? emptyPresentationPropertiesXml(supportPart, "view-properties")
-        : undefined;
-    }
-    case "presentation-properties": {
-      const supportPart = requireSupportPart(part);
-      return supportPart.kind === "presentation-properties"
-        ? emptyPresentationPropertiesXml(supportPart, "presentation-properties")
-        : undefined;
-    }
-    case "table-styles": {
-      const supportPart = requireSupportPart(part);
-      return supportPart.kind === "table-styles" ? tableStylesXml(supportPart) : undefined;
-    }
-    case "media":
-    case "notes-master":
-    case "notes-slide":
-      return undefined;
   }
 }
 
@@ -232,9 +145,9 @@ export function emitPartBytes(
       const supportPart = requireSupportPart(part);
       return supportPart.kind === "table-styles" ? tableStylesBytes(supportPart) : undefined;
     }
-    default: {
-      const content = partXml(part, projection, emitters);
-      return content ? encodeXml(content) : undefined;
-    }
+    case "media":
+    case "notes-master":
+    case "notes-slide":
+      return undefined;
   }
 }
